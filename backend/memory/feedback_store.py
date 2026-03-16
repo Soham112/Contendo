@@ -25,6 +25,10 @@ def init_db() -> None:
             authenticity_score INTEGER NOT NULL
         )
     """)
+    try:
+        conn.execute("ALTER TABLE posts ADD COLUMN svg_diagrams TEXT")
+    except Exception:
+        pass  # column already exists
     conn.commit()
     conn.close()
 
@@ -35,14 +39,15 @@ def log_post(
     tone: str,
     content: str,
     authenticity_score: int,
+    svg_diagrams: str | None = None,
 ) -> int:
     conn = _connect()
     cursor = conn.execute(
         """
-        INSERT INTO posts (topic, format, tone, content, authenticity_score)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO posts (topic, format, tone, content, authenticity_score, svg_diagrams)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (topic, format, tone, content, authenticity_score),
+        (topic, format, tone, content, authenticity_score, svg_diagrams),
     )
     post_id = cursor.lastrowid
     conn.commit()
