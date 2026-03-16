@@ -33,6 +33,15 @@ interface Suggestion {
   reasoning: string;
 }
 
+interface Visual {
+  type: "diagram" | "image_reminder";
+  placeholder: string;
+  description: string;
+  position: number;
+  svg_code: string | null;
+  reminder_text: string | null;
+}
+
 const FORMAT_BADGE: Record<string, string> = {
   "linkedin post": "LinkedIn",
   "medium article": "Medium",
@@ -46,6 +55,89 @@ function ScoreRing({ score }: { score: number }) {
     <div className={`text-4xl font-bold tabular-nums ${color}`}>
       {score}
       <span className="text-lg text-gray-400 font-normal">/100</span>
+    </div>
+  );
+}
+
+function downloadSVGAsPNG(svgCode: string, filename: string) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(svgCode, "image/svg+xml");
+  const svgEl = doc.querySelector("svg");
+  const viewBox = svgEl?.getAttribute("viewBox") ?? "0 0 680 400";
+  const parts = viewBox.split(/[\s,]+/);
+  const vbW = parseFloat(parts[2]) || 680;
+  const vbH = parseFloat(parts[3]) || 400;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = vbW * 2;
+  canvas.height = vbH * 2;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  const img = new Image();
+  const blob = new Blob([svgCode], { type: "image/svg+xml" });
+  const url = URL.createObjectURL(blob);
+
+  img.onload = () => {
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const link = document.createElement("a");
+    link.download = filename;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+  img.src = url;
+}
+
+function DiagramCard({ visual }: { visual: Visual }) {
+  if (!visual.svg_code) {
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50 px-5 py-4">
+        <p className="text-sm font-medium text-red-600">
+          Diagram generation failed — try regenerating the post
+        </p>
+        <p className="text-xs text-red-400 mt-1">{visual.description}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+      <div className="px-5 py-3 border-b border-gray-100">
+        <p className="text-sm font-medium text-gray-700">
+          Diagram —{" "}
+          <span className="font-normal text-gray-500">
+            {visual.description.length > 60
+              ? visual.description.slice(0, 60) + "…"
+              : visual.description}
+          </span>
+        </p>
+      </div>
+      <div
+        className="p-4 overflow-x-auto"
+        dangerouslySetInnerHTML={{ __html: visual.svg_code }}
+      />
+      <div className="px-5 py-3 border-t border-gray-100">
+        <button
+          onClick={() =>
+            downloadSVGAsPNG(visual.svg_code!, `diagram-${visual.position}.png`)
+          }
+          className="text-xs border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:border-gray-400 hover:text-gray-900 transition-colors"
+        >
+          Download PNG
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ImageReminderCard({ visual }: { visual: Visual }) {
+  return (
+    <div className="rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 px-5 py-4 space-y-1">
+      <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">
+        Add your own visual
+      </p>
+      <p className="text-sm text-gray-500 leading-relaxed">{visual.reminder_text}</p>
     </div>
   );
 }
@@ -67,6 +159,10 @@ export default function CreatePost() {
   const [suggestionsVisible, setSuggestionsVisible] = useState(false);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
 
+  const [visuals, setVisuals] = useState<Visual[]>([]);
+  const [visualsLoading, setVisualsLoading] = useState(false);
+  const [visualsVisible, setVisualsVisible] = useState(false);
+
   const topicRef = useRef<HTMLInputElement>(null);
 
   const generate = async () => {
@@ -78,6 +174,8 @@ export default function CreatePost() {
     setLoading(true);
     setResult(null);
     setSaved(false);
+    setVisuals([]);
+    setVisualsVisible(false);
 
     try {
       const res = await fetch(`${API}/generate`, {
@@ -128,6 +226,26 @@ export default function CreatePost() {
       // silently fail — non-critical
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleGenerateVisuals = async () => {
+    setVisualsLoading(true);
+    setVisualsVisible(true);
+    setVisuals([]);
+    try {
+      const res = await fetch(`${API}/generate-visuals`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ post_content: editedPost }),
+      });
+      if (!res.ok) throw new Error("Visuals generation failed");
+      const data = await res.json();
+      setVisuals(data.visuals ?? []);
+    } catch {
+      setVisuals([]);
+    } finally {
+      setVisualsLoading(false);
     }
   };
 
@@ -384,6 +502,13 @@ export default function CreatePost() {
                 {saved ? "Saved to history" : saving ? "Saving..." : "Save to history"}
               </button>
               <button
+                onClick={handleGenerateVisuals}
+                disabled={visualsLoading}
+                className="flex-1 rounded-xl border border-gray-200 text-gray-600 font-medium py-2.5 text-sm hover:border-gray-400 hover:text-gray-900 transition-colors bg-white disabled:opacity-50"
+              >
+                {visualsLoading ? "Scanning post..." : "Generate visuals"}
+              </button>
+              <button
                 onClick={generate}
                 disabled={loading}
                 className="flex-1 rounded-xl bg-gray-900 text-white font-medium py-2.5 text-sm hover:bg-gray-700 disabled:opacity-50 transition-colors"
@@ -392,6 +517,44 @@ export default function CreatePost() {
               </button>
             </div>
           </div>
+
+          {/* Visuals panel */}
+          {visualsVisible && (
+            <div className="space-y-4 pt-2">
+              <p className="text-xs uppercase tracking-widest text-gray-400">Visuals</p>
+
+              {visualsLoading && (
+                <p className="text-sm text-gray-400">
+                  Scanning post for visual opportunities...
+                </p>
+              )}
+
+              {!visualsLoading && visuals.length === 0 && (
+                <div className="rounded-xl border border-gray-200 bg-white px-5 py-4">
+                  <p className="text-sm text-gray-400">
+                    No visual placeholders found. Add{" "}
+                    <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">
+                      [DIAGRAM: description]
+                    </code>{" "}
+                    or{" "}
+                    <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">
+                      [IMAGE: description]
+                    </code>{" "}
+                    to your post and try again.
+                  </p>
+                </div>
+              )}
+
+              {!visualsLoading &&
+                visuals.map((v, i) =>
+                  v.type === "diagram" ? (
+                    <DiagramCard key={i} visual={v} />
+                  ) : (
+                    <ImageReminderCard key={i} visual={v} />
+                  )
+                )}
+            </div>
+          )}
         </div>
       )}
     </div>
