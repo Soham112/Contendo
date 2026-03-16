@@ -1,3 +1,4 @@
+import json
 import os
 from contextlib import asynccontextmanager
 
@@ -72,6 +73,7 @@ class LogPostRequest(BaseModel):
     tone: str
     content: str
     authenticity_score: int
+    svg_diagrams: list | None = None
 
 
 class LogPostResponse(BaseModel):
@@ -139,6 +141,7 @@ async def log_post_endpoint(req: LogPostRequest) -> LogPostResponse:
         tone=req.tone,
         content=req.content,
         authenticity_score=req.authenticity_score,
+        svg_diagrams=json.dumps(req.svg_diagrams) if req.svg_diagrams is not None else None,
     )
     return LogPostResponse(post_id=post_id, saved=True)
 
@@ -146,6 +149,9 @@ async def log_post_endpoint(req: LogPostRequest) -> LogPostResponse:
 @app.get("/history")
 async def history() -> dict:
     posts = get_recent_posts(limit=20)
+    for post in posts:
+        raw = post.get("svg_diagrams")
+        post["svg_diagrams"] = json.loads(raw) if raw else None
     return {"posts": posts}
 
 
