@@ -1,0 +1,162 @@
+import os
+from contextlib import asynccontextmanager
+
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+load_dotenv()
+
+from agents.ingestion_agent import ingest_content
+from agents.vision_agent import extract_from_image
+from agents.ideation_agent import generate_suggestions
+from memory.vector_store import get_total_chunks, get_all_tags
+from memory.feedback_store import init_db, log_post, get_recent_posts
+from pipeline.graph import run_pipeline
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="Contendo API", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "https://localhost:3000",
+        "https://*.vercel.app",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# --- Request / Response Models ---
+
+
+class IngestRequest(BaseModel):
+    content: str = ""
+    source_type: str  # "article" | "youtube" | "image" | "note"
+    raw_image: str | None = None
+
+
+class IngestResponse(BaseModel):
+    chunks_stored: int
+    tags: list[str]
+
+
+class GenerateRequest(BaseModel):
+    topic: str
+    format: str
+    tone: str
+    context: str = ""
+
+
+class GenerateResponse(BaseModel):
+    post: str
+    score: int
+    score_feedback: list[str]
+    iterations: int
+
+
+class LogPostRequest(BaseModel):
+    topic: str
+    format: str
+    tone: str
+    content: str
+    authenticity_score: int
+
+
+class LogPostResponse(BaseModel):
+    post_id: int
+    saved: bool
+
+
+class StatsResponse(BaseModel):
+    total_chunks: int
+    tags: list[str]
+
+
+# --- Routes ---
+
+
+@app.post("/ingest", response_model=IngestResponse)
+async def ingest(req: IngestRequest) -> IngestResponse:
+    if req.source_type == "image":
+        if not req.raw_image:
+            raise HTTPException(status_code=400, detail="raw_image is required for image source_type")
+        media_type = "image/jpeg"
+        if req.raw_image.startswith("data:"):
+            header = req.raw_image.split(",")[0]
+            if "image/png" in header:
+                media_type = "image/png"
+            elif "image/webp" in header:
+                media_type = "image/webp"
+        extracted_text = extract_from_image(req.raw_image, media_type=media_type)
+        result = ingest_content(extracted_text, source_type="image")
+    else:
+        if not req.content or not req.content.strip():
+            raise HTTPException(status_code=400, detail="content is required")
+        result = ingest_content(req.content, source_type=req.source_type)
+
+    return IngestResponse(chunks_stored=result["chunks_stored"], tags=result["tags"])
+
+
+@app.post("/generate", response_model=GenerateResponse)
+async def generate(req: GenerateRequest) -> GenerateResponse:
+    if not req.topic.strip():
+        raise HTTPException(status_code=400, detail="topic is required")
+
+    result = run_pipeline(
+        topic=req.topic,
+        format=req.format,
+        tone=req.tone,
+        context=req.context,
+    )
+
+    return GenerateResponse(
+        post=result["post"],
+        score=result["score"],
+        score_feedback=result["score_feedback"],
+        iterations=result["iterations"],
+    )
+
+
+@app.post("/log-post", response_model=LogPostResponse)
+async def log_post_endpoint(req: LogPostRequest) -> LogPostResponse:
+    if not req.content.strip():
+        raise HTTPException(status_code=400, detail="content is required")
+    post_id = log_post(
+        topic=req.topic,
+        format=req.format,
+        tone=req.tone,
+        content=req.content,
+        authenticity_score=req.authenticity_score,
+    )
+    return LogPostResponse(post_id=post_id, saved=True)
+
+
+@app.get("/history")
+async def history() -> dict:
+    posts = get_recent_posts(limit=20)
+    return {"posts": posts}
+
+
+@app.get("/suggestions")
+async def suggestions(count: int = Query(default=5, ge=1, le=10)) -> dict:
+    ideas = generate_suggestions(count=count)
+    return {"suggestions": ideas}
+
+
+@app.get("/stats", response_model=StatsResponse)
+async def stats() -> StatsResponse:
+    return StatsResponse(
+        total_chunks=get_total_chunks(),
+        tags=get_all_tags(),
+    )

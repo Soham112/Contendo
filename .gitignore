@@ -1,0 +1,48 @@
+# Python virtual environment
+backend/venv/
+
+# Environment variables
+backend/.env
+.env
+
+# ChromaDB local data
+backend/data/chroma_db/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Node modules
+frontend/node_modules/
+node_modules/
+
+# Next.js build output and generated files
+frontend/.next/
+frontend/out/
+frontend/next-env.d.ts
+frontend/tsconfig.tsbuildinfo
+
+# SQLite database
+backend/data/*.db
+backend/data/*.sqlite
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
