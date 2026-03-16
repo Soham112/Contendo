@@ -6,6 +6,44 @@
 
 ---
 
+### Visual Agent — agents/visual_agent.py
+
+**Purpose:** Parse `[DIAGRAM:]` and `[IMAGE:]` placeholders from a post. For each diagram, call Claude to generate a clean self-contained SVG. For each image, return a reminder card with no Claude call.
+
+**System prompt (diagram generation — injected as user message, no system role):**
+```
+Generate a clean SVG diagram for the following concept:
+{description}
+
+Requirements:
+- viewBox must be '0 0 680 400' or taller if needed
+- Light white or off-white background
+- Use colored rounded rectangles for components
+- Use arrows with clear direction to show flow
+- Bold title at the top describing the diagram
+- Color code by category — same type of component gets the same color
+- Clean sans-serif labels on every component
+- Group related components inside dashed border containers
+- Maximum 12 components — keep it readable
+- No gradients, no shadows, no decorative elements
+- No external fonts, no external images, no CDN links — fully self-contained SVG
+- Output ONLY the raw SVG code starting with <svg — no explanation, no markdown, no backticks
+```
+
+**Input variables injected:**
+- `description` — the text inside the `[DIAGRAM: ...]` placeholder
+
+**Error handling:**
+- If Claude returns output that does not start with `<svg`, a `ValueError` is raised and the visual object is returned with `svg_code: null`
+- Frontend renders an error card: "Diagram generation failed — try regenerating the post"
+- Markdown code fences are stripped if Claude wraps the SVG in backticks
+
+**Image reminder (no Claude call):**
+- For `[IMAGE: description]` placeholders, `reminder_text` is constructed as:
+  `"Add a visual here: {description}. Use a real photo, screenshot, or data chart that shows this directly."`
+
+---
+
 ### Ideation Agent — agents/ideation_agent.py
 
 **Purpose:** Generate N specific, fresh content ideas grounded in the user's knowledge base, avoiding topics they have already written about.
