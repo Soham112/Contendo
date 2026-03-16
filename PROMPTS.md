@@ -173,16 +173,19 @@ Knowledge base (use what's relevant, ignore the rest):
 Topic: {topic}
 {context_section}
 {posted_topics_section}
-Visual placeholders:
-Include a [DIAGRAM: description] placeholder only when the post contains a technical concept, process, or comparison that would be genuinely clearer as a visual — for example a pipeline, architecture, workflow, or step-by-step process.
-
-Do not force a diagram into opinion pieces, personal stories, or short punchy posts where the words are the point. If the post does not need a diagram, do not include one.
-
-When a diagram does belong, make the description specific enough to draw from — not just 'RAG diagram' but 'flowchart showing the 5 stages of RAG with failure points marked at the retrieval stage'.
-
-For personal or story posts where a real photo would add credibility — a competition, a team moment, a screenshot of real work — include one [IMAGE: description] placeholder suggesting exactly what photo or screenshot would work.
-
 Write the draft now. Do not add any preamble or explanation — output only the post content itself.
+
+---
+VISUAL PLACEHOLDER RULES (mandatory):
+For technical posts about systems, pipelines, architectures, or processes — you MUST include at least one [DIAGRAM: detailed description] placeholder.
+The description must be specific enough to draw from.
+Good: [DIAGRAM: flowchart showing 5 RAG pipeline stages with failure points marked in red at retrieval layer]
+Bad: [DIAGRAM: RAG diagram]
+
+For personal or story posts — include one [IMAGE: description] only if a real photo or screenshot would genuinely strengthen the post.
+
+Never force a diagram into opinion pieces or short punchy posts where the words are the point.
+---
 ```
 
 **Input variables injected:**
@@ -293,6 +296,14 @@ Return ONLY valid JSON in exactly this format, nothing else:
 | No LLM fingerprints | 0–20 | Free from AI tells: no buzzwords, no "In today's world", no passive voice chains, no formulaic lists |
 | Value delivery | 0–20 | Reader gets a real insight, lesson, or new perspective — not fluff |
 | **Total** | **0–100** | Sum of all five dimensions |
+
+**JSON parsing (defined in scorer_agent.py):**
+Three-attempt parse with fallback:
+1. `json.loads(raw)` directly
+2. Strip markdown code fences (```` ```json ``` ````), then `json.loads`
+3. `re.search(r'\{.*\}', raw, re.DOTALL)` to extract embedded object, then `json.loads`
+
+If all three fail: logs raw response, returns `score=50`, `feedback=["Score parsing failed — retry to get fresh evaluation."]`.
 
 **Retry logic (defined in pipeline/graph.py):**
 - Score ≥ 75 → finalize
