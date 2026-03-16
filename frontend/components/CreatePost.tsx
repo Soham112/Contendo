@@ -59,37 +59,40 @@ function ScoreRing({ score }: { score: number }) {
   );
 }
 
-function downloadSVGAsPNG(svgCode: string, filename: string) {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(svgCode, "image/svg+xml");
-  const svgEl = doc.querySelector("svg");
-  const viewBox = svgEl?.getAttribute("viewBox") ?? "0 0 680 400";
-  const parts = viewBox.split(/[\s,]+/);
-  const vbW = parseFloat(parts[2]) || 680;
-  const vbH = parseFloat(parts[3]) || 400;
+function svgToDataURL(svgCode: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgCode, "image/svg+xml");
+    const svgEl = doc.querySelector("svg");
+    const viewBox = svgEl?.getAttribute("viewBox") ?? "0 0 680 400";
+    const parts = viewBox.split(/[\s,]+/);
+    const vbW = parseFloat(parts[2]) || 680;
+    const vbH = parseFloat(parts[3]) || 400;
 
-  const canvas = document.createElement("canvas");
-  canvas.width = vbW * 2;
-  canvas.height = vbH * 2;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = vbW * 2;
+    canvas.height = vbH * 2;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) { reject(new Error("No canvas context")); return; }
 
-  const img = new Image();
-  const blob = new Blob([svgCode], { type: "image/svg+xml" });
-  const url = URL.createObjectURL(blob);
+    const img = new Image();
+    const blob = new Blob([svgCode], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
 
-  img.onload = () => {
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    const link = document.createElement("a");
-    link.download = filename;
-    link.href = canvas.toDataURL("image/png");
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-  img.src = url;
+    img.onload = () => {
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Image load failed")); };
+    img.src = url;
+  });
 }
 
 function DiagramCard({ visual }: { visual: Visual }) {
+  const [pngState, setPngState] = useState<"idle" | "opened" | "blocked">("idle");
+  const [fallbackDataURL, setFallbackDataURL] = useState<string | null>(null);
+
   if (!visual.svg_code) {
     return (
       <div className="rounded-xl border border-red-200 bg-red-50 px-5 py-4">
@@ -100,6 +103,29 @@ function DiagramCard({ visual }: { visual: Visual }) {
       </div>
     );
   }
+
+  const handleOpen = async () => {
+    try {
+      const dataURL = await svgToDataURL(visual.svg_code!);
+      const win = window.open();
+      if (win) {
+        win.document.write(
+          `<html><body style="margin:0;background:#f5f5f5;display:flex;justify-content:center;padding:24px">` +
+          `<img src="${dataURL}" style="max-width:100%;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,.15)" />` +
+          `</body></html>`
+        );
+        win.document.close();
+        setPngState("opened");
+        setTimeout(() => setPngState("idle"), 5000);
+      } else {
+        // popup blocked — show inline fallback
+        setFallbackDataURL(dataURL);
+        setPngState("blocked");
+      }
+    } catch {
+      // conversion failed — do nothing
+    }
+  };
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
@@ -117,15 +143,33 @@ function DiagramCard({ visual }: { visual: Visual }) {
         className="p-4 overflow-x-auto"
         dangerouslySetInnerHTML={{ __html: visual.svg_code }}
       />
-      <div className="px-5 py-3 border-t border-gray-100">
-        <button
-          onClick={() =>
-            downloadSVGAsPNG(visual.svg_code!, `diagram-${visual.position}.png`)
-          }
-          className="text-xs border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:border-gray-400 hover:text-gray-900 transition-colors"
-        >
-          Download PNG
-        </button>
+      <div className="px-5 py-3 border-t border-gray-100 space-y-2">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleOpen}
+            className="text-xs border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:border-gray-400 hover:text-gray-900 transition-colors"
+          >
+            Open as PNG
+          </button>
+          {pngState === "opened" && (
+            <span className="text-xs text-gray-500">
+              PNG opened in new tab — right-click the image and select <strong>Save Image</strong> to download
+            </span>
+          )}
+          {pngState === "blocked" && (
+            <span className="text-xs text-gray-500">
+              Popup blocked — right-click the image below and select <strong>Save Image</strong>
+            </span>
+          )}
+        </div>
+        {pngState === "blocked" && fallbackDataURL && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={fallbackDataURL}
+            alt="diagram PNG"
+            className="max-w-full rounded-lg border border-gray-200"
+          />
+        )}
       </div>
     </div>
   );
