@@ -11,6 +11,7 @@ load_dotenv()
 from agents.ingestion_agent import ingest_content
 from agents.vision_agent import extract_from_image
 from agents.ideation_agent import generate_suggestions
+from agents.visual_agent import generate_visuals
 from memory.vector_store import get_total_chunks, get_all_tags
 from memory.feedback_store import init_db, log_post, get_recent_posts
 from pipeline.graph import run_pipeline
@@ -152,6 +153,18 @@ async def history() -> dict:
 async def suggestions(count: int = Query(default=5, ge=1, le=10)) -> dict:
     ideas = generate_suggestions(count=count)
     return {"suggestions": ideas}
+
+
+class GenerateVisualsRequest(BaseModel):
+    post_content: str
+
+
+@app.post("/generate-visuals")
+async def generate_visuals_endpoint(req: GenerateVisualsRequest) -> dict:
+    if not req.post_content.strip():
+        raise HTTPException(status_code=400, detail="post_content is required")
+    visuals = generate_visuals(req.post_content)
+    return {"visuals": visuals}
 
 
 @app.get("/stats", response_model=StatsResponse)
