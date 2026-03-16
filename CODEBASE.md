@@ -18,6 +18,7 @@
 | `backend/requirements.txt` | All Python dependencies pinned |
 | `backend/.env.example` | Required env var keys with no values |
 | `backend/agents/ideation_agent.py` | Generates N content ideas from ChromaDB sample, profile, and posted topic history |
+| `backend/agents/visual_agent.py` | Parses [DIAGRAM:] and [IMAGE:] placeholders from post; calls Claude to generate SVG for diagrams; returns reminder text for images |
 | `backend/agents/ingestion_agent.py` | Chunks content, extracts tags via Claude, upserts to ChromaDB |
 | `backend/agents/vision_agent.py` | Sends base64 images to Claude vision, returns extracted text |
 | `backend/agents/retrieval_agent.py` | Semantic search node in the LangGraph pipeline |
@@ -212,6 +213,38 @@
 
 ---
 
+### POST /generate-visuals
+**Request body:**
+```json
+{ "post_content": "string — full post text including [DIAGRAM:] and [IMAGE:] placeholders" }
+```
+**Response:**
+```json
+{
+  "visuals": [
+    {
+      "type": "diagram",
+      "placeholder": "[DIAGRAM: RAG pipeline showing query → retrieval → generation]",
+      "description": "RAG pipeline showing query → retrieval → generation",
+      "position": 0,
+      "svg_code": "<svg viewBox='0 0 680 400' ...>...</svg>",
+      "reminder_text": null
+    },
+    {
+      "type": "image_reminder",
+      "placeholder": "[IMAGE: Screenshot of latency dashboard]",
+      "description": "Screenshot of latency dashboard",
+      "position": 1,
+      "svg_code": null,
+      "reminder_text": "Add a visual here: Screenshot of latency dashboard. Use a real photo, screenshot, or data chart that shows this directly."
+    }
+  ]
+}
+```
+**Notes:** One Claude call per `[DIAGRAM:]` placeholder; zero Claude calls for `[IMAGE:]`. Visuals returned in the order placeholders appear in the post. If SVG generation fails, `svg_code` is `null` and the frontend shows an error card.
+
+---
+
 ### GET /stats
 **Response:**
 ```json
@@ -306,6 +339,12 @@
 | feedback_store.py owns the SQLite table | `main.py` no longer contains `init_db` or `save_post` — all DB logic is in `feedback_store.py`; `init_db()` is called from the FastAPI lifespan |
 | draft_node injects posted topics | `load_profile_node` fetches `get_all_topics_posted()` and stores in pipeline state; `draft_node` formats them into the prompt to prevent repeated angles |
 | `source_type: "youtube"` treated identically to `"article"` in ingestion | Same chunking + embedding pipeline; only difference is the UI label |
+| Diagrams generated as SVG, converted to PNG in browser | Claude returns self-contained SVG; Canvas API converts at 2x viewBox resolution for retina quality — no server-side image processing needed |
+| Image placeholders are not auto-generated | `[IMAGE:]` placeholders return reminder cards so the user adds real photos or screenshots — Claude is not called for these |
+| PNG exported at 2x resolution | Canvas dimensions are set to 2× the SVG viewBox width/height, parsed dynamically from the returned SVG element |
+| Placeholders never auto-stripped from post textarea | `[DIAGRAM:]` and `[IMAGE:]` remain in the editable textarea — user removes them manually before copying |
+| SVG diagrams saved to SQLite alongside post text | `svg_diagrams` column stores a JSON array of `{position, description, svg_code}` objects; nullable — posts without diagrams store NULL |
+| Create Post session state persists in sessionStorage | Post text, score, feedback, iterations, and visuals are written to `contentOS_last_*` keys; restored on page mount; cleared on Regenerate or banner dismiss |
 
 ---
 

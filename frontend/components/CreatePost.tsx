@@ -1,6 +1,12 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+const SS_POST = "contentOS_last_post";
+const SS_SCORE = "contentOS_last_score";
+const SS_FEEDBACK = "contentOS_last_feedback";
+const SS_ITERATIONS = "contentOS_last_iterations";
+const SS_VISUALS = "contentOS_last_visuals";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -33,6 +39,15 @@ interface Suggestion {
   reasoning: string;
 }
 
+interface Visual {
+  type: "diagram" | "image_reminder";
+  placeholder: string;
+  description: string;
+  position: number;
+  svg_code: string | null;
+  reminder_text: string | null;
+}
+
 const FORMAT_BADGE: Record<string, string> = {
   "linkedin post": "LinkedIn",
   "medium article": "Medium",
@@ -46,6 +61,133 @@ function ScoreRing({ score }: { score: number }) {
     <div className={`text-4xl font-bold tabular-nums ${color}`}>
       {score}
       <span className="text-lg text-gray-400 font-normal">/100</span>
+    </div>
+  );
+}
+
+function svgToDataURL(svgCode: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgCode, "image/svg+xml");
+    const svgEl = doc.querySelector("svg");
+    const viewBox = svgEl?.getAttribute("viewBox") ?? "0 0 680 400";
+    const parts = viewBox.split(/[\s,]+/);
+    const vbW = parseFloat(parts[2]) || 680;
+    const vbH = parseFloat(parts[3]) || 400;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = vbW * 2;
+    canvas.height = vbH * 2;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) { reject(new Error("No canvas context")); return; }
+
+    const img = new Image();
+    const blob = new Blob([svgCode], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
+
+    img.onload = () => {
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Image load failed")); };
+    img.src = url;
+  });
+}
+
+function DiagramCard({ visual }: { visual: Visual }) {
+  const [pngState, setPngState] = useState<"idle" | "opened" | "blocked">("idle");
+  const [fallbackDataURL, setFallbackDataURL] = useState<string | null>(null);
+
+  if (!visual.svg_code) {
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50 px-5 py-4">
+        <p className="text-sm font-medium text-red-600">
+          Diagram generation failed — try regenerating the post
+        </p>
+        <p className="text-xs text-red-400 mt-1">{visual.description}</p>
+      </div>
+    );
+  }
+
+  const handleOpen = async () => {
+    try {
+      const dataURL = await svgToDataURL(visual.svg_code!);
+      const win = window.open();
+      if (win) {
+        win.document.write(
+          `<html><body style="margin:0;background:#f5f5f5;display:flex;justify-content:center;padding:24px">` +
+          `<img src="${dataURL}" style="max-width:100%;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,.15)" />` +
+          `</body></html>`
+        );
+        win.document.close();
+        setPngState("opened");
+        setTimeout(() => setPngState("idle"), 5000);
+      } else {
+        // popup blocked — show inline fallback
+        setFallbackDataURL(dataURL);
+        setPngState("blocked");
+      }
+    } catch {
+      // conversion failed — do nothing
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+      <div className="px-5 py-3 border-b border-gray-100">
+        <p className="text-sm font-medium text-gray-700">
+          Diagram —{" "}
+          <span className="font-normal text-gray-500">
+            {visual.description.length > 60
+              ? visual.description.slice(0, 60) + "…"
+              : visual.description}
+          </span>
+        </p>
+      </div>
+      <div
+        className="p-4 overflow-x-auto"
+        dangerouslySetInnerHTML={{ __html: visual.svg_code }}
+      />
+      <div className="px-5 py-3 border-t border-gray-100 space-y-2">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleOpen}
+            className="text-xs border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:border-gray-400 hover:text-gray-900 transition-colors"
+          >
+            Open as PNG
+          </button>
+          {pngState === "opened" && (
+            <span className="text-xs text-gray-500">
+              PNG opened in new tab — right-click the image and select <strong>Save Image</strong> to download
+            </span>
+          )}
+          {pngState === "blocked" && (
+            <span className="text-xs text-gray-500">
+              Popup blocked — right-click the image below and select <strong>Save Image</strong>
+            </span>
+          )}
+        </div>
+        {pngState === "blocked" && fallbackDataURL && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={fallbackDataURL}
+            alt="diagram PNG"
+            className="max-w-full rounded-lg border border-gray-200"
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ImageReminderCard({ visual }: { visual: Visual }) {
+  return (
+    <div className="rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 px-5 py-4 space-y-1">
+      <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">
+        Add your own visual
+      </p>
+      <p className="text-sm text-gray-500 leading-relaxed">{visual.reminder_text}</p>
     </div>
   );
 }
@@ -67,7 +209,63 @@ export default function CreatePost() {
   const [suggestionsVisible, setSuggestionsVisible] = useState(false);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
 
+  const [visuals, setVisuals] = useState<Visual[]>([]);
+  const [visualsLoading, setVisualsLoading] = useState(false);
+  const [visualsVisible, setVisualsVisible] = useState(false);
+
+  const [restored, setRestored] = useState(false);
+
   const topicRef = useRef<HTMLInputElement>(null);
+
+  // Restore session from sessionStorage on mount
+  useEffect(() => {
+    try {
+      const savedPost = sessionStorage.getItem(SS_POST);
+      const savedScore = sessionStorage.getItem(SS_SCORE);
+      const savedFeedback = sessionStorage.getItem(SS_FEEDBACK);
+      const savedIterations = sessionStorage.getItem(SS_ITERATIONS);
+      const savedVisuals = sessionStorage.getItem(SS_VISUALS);
+      if (savedPost && savedScore && savedFeedback && savedIterations) {
+        const restoredResult: GenerateResult = {
+          post: savedPost,
+          score: Number(savedScore),
+          score_feedback: JSON.parse(savedFeedback),
+          iterations: Number(savedIterations),
+        };
+        setResult(restoredResult);
+        setEditedPost(savedPost);
+        if (savedVisuals) {
+          const parsedVisuals: Visual[] = JSON.parse(savedVisuals);
+          setVisuals(parsedVisuals);
+          setVisualsVisible(parsedVisuals.length > 0);
+        }
+        setRestored(true);
+      }
+    } catch {
+      // corrupt sessionStorage — ignore
+    }
+  }, []);
+
+  // Persist session to sessionStorage whenever result or visuals change
+  useEffect(() => {
+    if (!result) return;
+    try {
+      sessionStorage.setItem(SS_POST, editedPost);
+      sessionStorage.setItem(SS_SCORE, String(result.score));
+      sessionStorage.setItem(SS_FEEDBACK, JSON.stringify(result.score_feedback));
+      sessionStorage.setItem(SS_ITERATIONS, String(result.iterations));
+      sessionStorage.setItem(SS_VISUALS, JSON.stringify(visuals));
+    } catch {
+      // sessionStorage full or unavailable — ignore
+    }
+  }, [result, editedPost, visuals]);
+
+  const clearSession = () => {
+    [SS_POST, SS_SCORE, SS_FEEDBACK, SS_ITERATIONS, SS_VISUALS].forEach((k) =>
+      sessionStorage.removeItem(k)
+    );
+    setRestored(false);
+  };
 
   const generate = async () => {
     if (!topic.trim()) {
@@ -78,6 +276,9 @@ export default function CreatePost() {
     setLoading(true);
     setResult(null);
     setSaved(false);
+    setVisuals([]);
+    setVisualsVisible(false);
+    clearSession();
 
     try {
       const res = await fetch(`${API}/generate`, {
@@ -110,6 +311,9 @@ export default function CreatePost() {
   const handleSave = async () => {
     if (!result) return;
     setSaving(true);
+    const diagrams = visuals
+      .filter((v) => v.type === "diagram" && v.svg_code)
+      .map((v) => ({ position: v.position, description: v.description, svg_code: v.svg_code }));
     try {
       const res = await fetch(`${API}/log-post`, {
         method: "POST",
@@ -120,6 +324,7 @@ export default function CreatePost() {
           tone,
           content: editedPost,
           authenticity_score: result.score,
+          svg_diagrams: diagrams.length > 0 ? diagrams : null,
         }),
       });
       if (!res.ok) throw new Error("Save failed");
@@ -128,6 +333,26 @@ export default function CreatePost() {
       // silently fail — non-critical
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleGenerateVisuals = async () => {
+    setVisualsLoading(true);
+    setVisualsVisible(true);
+    setVisuals([]);
+    try {
+      const res = await fetch(`${API}/generate-visuals`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ post_content: editedPost }),
+      });
+      if (!res.ok) throw new Error("Visuals generation failed");
+      const data = await res.json();
+      setVisuals(data.visuals ?? []);
+    } catch {
+      setVisuals([]);
+    } finally {
+      setVisualsLoading(false);
     }
   };
 
@@ -332,6 +557,20 @@ export default function CreatePost() {
         </button>
       </div>
 
+      {/* Restored session banner */}
+      {restored && (
+        <div className="flex items-center justify-between rounded-xl border border-blue-100 bg-blue-50 px-4 py-2.5">
+          <p className="text-xs text-blue-600">Restored your last session</p>
+          <button
+            onClick={() => { clearSession(); setResult(null); setEditedPost(""); setVisuals([]); setVisualsVisible(false); }}
+            className="text-blue-400 hover:text-blue-700 text-lg leading-none ml-4"
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Result */}
       {result && (
         <div className="space-y-6 pt-2 border-t border-gray-200">
@@ -384,6 +623,13 @@ export default function CreatePost() {
                 {saved ? "Saved to history" : saving ? "Saving..." : "Save to history"}
               </button>
               <button
+                onClick={handleGenerateVisuals}
+                disabled={visualsLoading}
+                className="flex-1 rounded-xl border border-gray-200 text-gray-600 font-medium py-2.5 text-sm hover:border-gray-400 hover:text-gray-900 transition-colors bg-white disabled:opacity-50"
+              >
+                {visualsLoading ? "Scanning post..." : "Generate visuals"}
+              </button>
+              <button
                 onClick={generate}
                 disabled={loading}
                 className="flex-1 rounded-xl bg-gray-900 text-white font-medium py-2.5 text-sm hover:bg-gray-700 disabled:opacity-50 transition-colors"
@@ -392,6 +638,44 @@ export default function CreatePost() {
               </button>
             </div>
           </div>
+
+          {/* Visuals panel */}
+          {visualsVisible && (
+            <div className="space-y-4 pt-2">
+              <p className="text-xs uppercase tracking-widest text-gray-400">Visuals</p>
+
+              {visualsLoading && (
+                <p className="text-sm text-gray-400">
+                  Scanning post for visual opportunities...
+                </p>
+              )}
+
+              {!visualsLoading && visuals.length === 0 && (
+                <div className="rounded-xl border border-gray-200 bg-white px-5 py-4">
+                  <p className="text-sm text-gray-400">
+                    No visual placeholders found. Add{" "}
+                    <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">
+                      [DIAGRAM: description]
+                    </code>{" "}
+                    or{" "}
+                    <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">
+                      [IMAGE: description]
+                    </code>{" "}
+                    to your post and try again.
+                  </p>
+                </div>
+              )}
+
+              {!visualsLoading &&
+                visuals.map((v, i) =>
+                  v.type === "diagram" ? (
+                    <DiagramCard key={i} visual={v} />
+                  ) : (
+                    <ImageReminderCard key={i} visual={v} />
+                  )
+                )}
+            </div>
+          )}
         </div>
       )}
     </div>

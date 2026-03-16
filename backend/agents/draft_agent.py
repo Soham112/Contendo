@@ -24,6 +24,15 @@ Knowledge base (use what's relevant, ignore the rest):
 Topic: {topic}
 {context_section}
 {posted_topics_section}
+Visual placeholders:
+Include a [DIAGRAM: description] placeholder only when the post contains a technical concept, process, or comparison that would be genuinely clearer as a visual — for example a pipeline, architecture, workflow, or step-by-step process.
+
+Do not force a diagram into opinion pieces, personal stories, or short punchy posts where the words are the point. If the post does not need a diagram, do not include one.
+
+When a diagram does belong, make the description specific enough to draw from — not just 'RAG diagram' but 'flowchart showing the 5 stages of RAG with failure points marked at the retrieval stage'.
+
+For personal or story posts where a real photo would add credibility — a competition, a team moment, a screenshot of real work — include one [IMAGE: description] placeholder suggesting exactly what photo or screenshot would work.
+
 Write the draft now. Do not add any preamble or explanation — output only the post content itself."""
 
 
