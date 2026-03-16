@@ -1,6 +1,12 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+const SS_POST = "contentOS_last_post";
+const SS_SCORE = "contentOS_last_score";
+const SS_FEEDBACK = "contentOS_last_feedback";
+const SS_ITERATIONS = "contentOS_last_iterations";
+const SS_VISUALS = "contentOS_last_visuals";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -207,7 +213,59 @@ export default function CreatePost() {
   const [visualsLoading, setVisualsLoading] = useState(false);
   const [visualsVisible, setVisualsVisible] = useState(false);
 
+  const [restored, setRestored] = useState(false);
+
   const topicRef = useRef<HTMLInputElement>(null);
+
+  // Restore session from sessionStorage on mount
+  useEffect(() => {
+    try {
+      const savedPost = sessionStorage.getItem(SS_POST);
+      const savedScore = sessionStorage.getItem(SS_SCORE);
+      const savedFeedback = sessionStorage.getItem(SS_FEEDBACK);
+      const savedIterations = sessionStorage.getItem(SS_ITERATIONS);
+      const savedVisuals = sessionStorage.getItem(SS_VISUALS);
+      if (savedPost && savedScore && savedFeedback && savedIterations) {
+        const restoredResult: GenerateResult = {
+          post: savedPost,
+          score: Number(savedScore),
+          score_feedback: JSON.parse(savedFeedback),
+          iterations: Number(savedIterations),
+        };
+        setResult(restoredResult);
+        setEditedPost(savedPost);
+        if (savedVisuals) {
+          const parsedVisuals: Visual[] = JSON.parse(savedVisuals);
+          setVisuals(parsedVisuals);
+          setVisualsVisible(parsedVisuals.length > 0);
+        }
+        setRestored(true);
+      }
+    } catch {
+      // corrupt sessionStorage — ignore
+    }
+  }, []);
+
+  // Persist session to sessionStorage whenever result or visuals change
+  useEffect(() => {
+    if (!result) return;
+    try {
+      sessionStorage.setItem(SS_POST, editedPost);
+      sessionStorage.setItem(SS_SCORE, String(result.score));
+      sessionStorage.setItem(SS_FEEDBACK, JSON.stringify(result.score_feedback));
+      sessionStorage.setItem(SS_ITERATIONS, String(result.iterations));
+      sessionStorage.setItem(SS_VISUALS, JSON.stringify(visuals));
+    } catch {
+      // sessionStorage full or unavailable — ignore
+    }
+  }, [result, editedPost, visuals]);
+
+  const clearSession = () => {
+    [SS_POST, SS_SCORE, SS_FEEDBACK, SS_ITERATIONS, SS_VISUALS].forEach((k) =>
+      sessionStorage.removeItem(k)
+    );
+    setRestored(false);
+  };
 
   const generate = async () => {
     if (!topic.trim()) {
@@ -220,6 +278,7 @@ export default function CreatePost() {
     setSaved(false);
     setVisuals([]);
     setVisualsVisible(false);
+    clearSession();
 
     try {
       const res = await fetch(`${API}/generate`, {
@@ -252,6 +311,9 @@ export default function CreatePost() {
   const handleSave = async () => {
     if (!result) return;
     setSaving(true);
+    const diagrams = visuals
+      .filter((v) => v.type === "diagram" && v.svg_code)
+      .map((v) => ({ position: v.position, description: v.description, svg_code: v.svg_code }));
     try {
       const res = await fetch(`${API}/log-post`, {
         method: "POST",
@@ -262,6 +324,7 @@ export default function CreatePost() {
           tone,
           content: editedPost,
           authenticity_score: result.score,
+          svg_diagrams: diagrams.length > 0 ? diagrams : null,
         }),
       });
       if (!res.ok) throw new Error("Save failed");
@@ -493,6 +556,20 @@ export default function CreatePost() {
           )}
         </button>
       </div>
+
+      {/* Restored session banner */}
+      {restored && (
+        <div className="flex items-center justify-between rounded-xl border border-blue-100 bg-blue-50 px-4 py-2.5">
+          <p className="text-xs text-blue-600">Restored your last session</p>
+          <button
+            onClick={() => { clearSession(); setResult(null); setEditedPost(""); setVisuals([]); setVisualsVisible(false); }}
+            className="text-blue-400 hover:text-blue-700 text-lg leading-none ml-4"
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* Result */}
       {result && (
