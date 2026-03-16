@@ -4,6 +4,12 @@ import { useEffect, useState } from "react";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+interface Diagram {
+  position: number;
+  description: string;
+  svg_code: string;
+}
+
 interface Post {
   id: number;
   created_at: string;
@@ -12,6 +18,111 @@ interface Post {
   tone: string;
   content: string;
   authenticity_score: number;
+  svg_diagrams: Diagram[] | null;
+}
+
+function svgToDataURL(svgCode: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgCode, "image/svg+xml");
+    const svgEl = doc.querySelector("svg");
+    const viewBox = svgEl?.getAttribute("viewBox") ?? "0 0 680 400";
+    const parts = viewBox.split(/[\s,]+/);
+    const vbW = parseFloat(parts[2]) || 680;
+    const vbH = parseFloat(parts[3]) || 400;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = vbW * 2;
+    canvas.height = vbH * 2;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) { reject(new Error("No canvas context")); return; }
+
+    const img = new Image();
+    const blob = new Blob([svgCode], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
+
+    img.onload = () => {
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Image load failed")); };
+    img.src = url;
+  });
+}
+
+function HistoryDiagramCard({ diagram }: { diagram: Diagram }) {
+  const [pngState, setPngState] = useState<"idle" | "opened" | "blocked">("idle");
+  const [fallbackDataURL, setFallbackDataURL] = useState<string | null>(null);
+
+  const handleOpen = async () => {
+    try {
+      const dataURL = await svgToDataURL(diagram.svg_code);
+      const win = window.open();
+      if (win) {
+        win.document.write(
+          `<html><body style="margin:0;background:#f5f5f5;display:flex;justify-content:center;padding:24px">` +
+          `<img src="${dataURL}" style="max-width:100%;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,.15)" />` +
+          `</body></html>`
+        );
+        win.document.close();
+        setPngState("opened");
+        setTimeout(() => setPngState("idle"), 5000);
+      } else {
+        setFallbackDataURL(dataURL);
+        setPngState("blocked");
+      }
+    } catch {
+      // conversion failed
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-gray-100">
+        <p className="text-xs font-medium text-gray-600">
+          Diagram —{" "}
+          <span className="font-normal text-gray-400">
+            {diagram.description.length > 60
+              ? diagram.description.slice(0, 60) + "…"
+              : diagram.description}
+          </span>
+        </p>
+      </div>
+      <div
+        className="p-3 overflow-x-auto"
+        dangerouslySetInnerHTML={{ __html: diagram.svg_code }}
+      />
+      <div className="px-4 py-2.5 border-t border-gray-100 space-y-2">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleOpen}
+            className="text-xs border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:border-gray-400 hover:text-gray-900 transition-colors"
+          >
+            Open as PNG
+          </button>
+          {pngState === "opened" && (
+            <span className="text-xs text-gray-500">
+              PNG opened in new tab — right-click and select <strong>Save Image</strong>
+            </span>
+          )}
+          {pngState === "blocked" && (
+            <span className="text-xs text-gray-500">
+              Popup blocked — right-click the image below to save
+            </span>
+          )}
+        </div>
+        {pngState === "blocked" && fallbackDataURL && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={fallbackDataURL}
+            alt="diagram PNG"
+            className="max-w-full rounded-lg border border-gray-200"
+          />
+        )}
+      </div>
+    </div>
+  );
 }
 
 const FORMAT_LABELS: Record<string, string> = {
@@ -85,7 +196,7 @@ function PostCard({ post }: { post: Post }) {
       </div>
 
       {expanded && (
-        <div className="border-t border-gray-100 px-5 py-4 space-y-3">
+        <div className="border-t border-gray-100 px-5 py-4 space-y-4">
           <pre className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed font-sans">
             {post.content}
           </pre>
@@ -95,6 +206,14 @@ function PostCard({ post }: { post: Post }) {
           >
             {copied ? "Copied!" : "Copy"}
           </button>
+          {post.svg_diagrams && post.svg_diagrams.length > 0 && (
+            <div className="space-y-3 pt-1">
+              <p className="text-xs uppercase tracking-widest text-gray-400">Diagrams</p>
+              {post.svg_diagrams.map((d) => (
+                <HistoryDiagramCard key={d.position} diagram={d} />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
