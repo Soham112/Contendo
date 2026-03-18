@@ -66,6 +66,12 @@ Rules for good ideas:
 - No idea should repeat or closely overlap with their previously posted topics
 - Format suggestions must match the idea's natural shape: personal stories → linkedin post, deep dives → medium article, rapid insights → thread
 
+Diversity rules (mandatory):
+- Generate ideas that span DIFFERENT topics from the knowledge base — do not cluster ideas around the same theme
+- Each idea should draw from a different area of the knowledge base where possible
+- Actively look for unexpected connections between different topics in the knowledge base
+- If the knowledge base covers 5 topics, your ideas should touch at least 4 of them
+
 Return ONLY a valid JSON array with exactly {count} objects. Each object must have these fields:
 - "title": string — specific, catchy, ready to use as-is
 - "angle": string — the unique hook or perspective in one sentence
@@ -78,7 +84,7 @@ Return nothing outside the JSON array.
 **Input variables injected:**
 - `count` — number of ideas requested (1–10), injected into both system prompt and user message
 - `profile_context` — string-formatted output of `profile_to_context_string(profile)`
-- `knowledge_section` — up to 20 diverse ChromaDB chunks sampled across 5 broad queries (technology, career, learning, building, data), numbered and separated by `---`
+- `knowledge_section` — up to 30 diverse ChromaDB chunks sampled across 8 queries: 5 broad topic sweeps + 2 random tag queries + 1 oldest-source query to counteract recency bias; numbered and separated by `---`
 - `posted_section` — bullet list of all topics previously saved to feedback_store via `get_all_topics_posted()`
 
 ---
