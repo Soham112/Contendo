@@ -56,6 +56,8 @@ def upsert_chunks(
     source_type: str,
     tags: list[str],
     source_id: Optional[str] = None,
+    source_title: str = "",
+    ingested_at: str = "",
 ) -> int:
     collection = _get_collection()
     if not chunks:
@@ -63,16 +65,20 @@ def upsert_chunks(
 
     source_id = source_id or str(uuid.uuid4())
     embeddings = embed_texts(chunks)
+    total = len(chunks)
 
-    ids = [f"{source_id}_{i}" for i in range(len(chunks))]
+    ids = [f"{source_id}_{i}" for i in range(total)]
     metadatas = [
         {
             "source_type": source_type,
             "tags": ",".join(tags),
             "source_id": source_id,
             "chunk_index": i,
+            "total_chunks": total,
+            "source_title": source_title,
+            "ingested_at": ingested_at,
         }
-        for i in range(len(chunks))
+        for i in range(total)
     ]
 
     collection.upsert(
@@ -81,7 +87,7 @@ def upsert_chunks(
         documents=chunks,
         metadatas=metadatas,
     )
-    return len(chunks)
+    return total
 
 
 def query_similar(query: str, top_k: int = 8) -> list[dict]:
@@ -137,3 +143,44 @@ def get_all_tags() -> list[str]:
                 if tag:
                     tag_set.add(tag)
     return sorted(tag_set)
+
+
+def get_all_sources() -> list[dict]:
+    collection = _get_collection()
+    if collection.count() == 0:
+        return []
+
+    results = collection.get(include=["metadatas"])
+    # Group chunks by source_id
+    groups: dict[str, dict] = {}
+    for meta in results["metadatas"]:
+        sid = meta.get("source_id", "unknown")
+        if sid not in groups:
+            groups[sid] = {
+                "source_title": meta.get("source_title", "") or "Untitled",
+                "source_type": meta.get("source_type", "unknown"),
+                "ingested_at": meta.get("ingested_at", ""),
+                "chunk_count": 0,
+                "tag_set": set(),
+            }
+        groups[sid]["chunk_count"] += 1
+        raw_tags = meta.get("tags", "")
+        if raw_tags:
+            for tag in raw_tags.split(","):
+                tag = tag.strip()
+                if tag:
+                    groups[sid]["tag_set"].add(tag)
+
+    sources = []
+    for entry in groups.values():
+        sources.append({
+            "source_title": entry["source_title"],
+            "source_type": entry["source_type"],
+            "ingested_at": entry["ingested_at"],
+            "chunk_count": entry["chunk_count"],
+            "tags": sorted(entry["tag_set"]),
+        })
+
+    # Sort newest first; entries without ingested_at go last
+    sources.sort(key=lambda s: s["ingested_at"] or "", reverse=True)
+    return sources
