@@ -1,6 +1,7 @@
 import anthropic
 import json
 import os
+import re
 from dotenv import load_dotenv
 
 from pipeline.state import PipelineState
@@ -62,14 +63,40 @@ def scorer_node(state: PipelineState) -> PipelineState:
     )
 
     raw = message.content[0].text.strip()
+    print(f"[scorer_agent] raw response:\n{raw}\n")
 
+    result = None
+
+    # Attempt 1: direct parse
     try:
         result = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Attempt 2: strip markdown code fences, then parse
+    if result is None:
+        stripped = re.sub(r"^```[a-z]*\n?", "", raw, flags=re.MULTILINE)
+        stripped = re.sub(r"\n?```$", "", stripped, flags=re.MULTILINE).strip()
+        try:
+            result = json.loads(stripped)
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Attempt 3: extract first JSON object with regex
+    if result is None:
+        match = re.search(r"\{.*\}", raw, re.DOTALL)
+        if match:
+            try:
+                result = json.loads(match.group())
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+    if result is not None:
         score = int(result.get("total_score", 0))
         feedback = result.get("feedback", [])
         flagged = result.get("flagged_sentences", [])
-    except (json.JSONDecodeError, ValueError):
-        # If JSON parsing fails, default to a low score to trigger retry
+    else:
+        print(f"[scorer_agent] all parse attempts failed. raw was:\n{raw}")
         score = 50
         feedback = ["Score parsing failed — retry to get fresh evaluation."]
         flagged = []
