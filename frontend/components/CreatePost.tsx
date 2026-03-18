@@ -361,7 +361,7 @@ export default function CreatePost() {
     setSuggestionsVisible(true);
     setSuggestions([]);
     try {
-      const res = await fetch(`${API}/suggestions?count=5`);
+      const res = await fetch(`${API}/suggestions?count=8`);
       if (!res.ok) throw new Error("Failed to fetch suggestions");
       const data = await res.json();
       setSuggestions(data.suggestions ?? []);
@@ -407,15 +407,30 @@ export default function CreatePost() {
       {suggestionsVisible && (
         <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
           <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
-            <p className="text-sm font-medium text-gray-700">
-              {suggestionsLoading ? "Loading..." : `${suggestions.length} idea${suggestions.length !== 1 ? "s" : ""} from your memory`}
-            </p>
-            <button
-              onClick={() => { setSuggestionsVisible(false); setSuggestions([]); }}
-              className="text-gray-400 hover:text-gray-700 transition-colors text-lg leading-none"
-            >
-              ×
-            </button>
+            <div>
+              <p className="text-sm font-medium text-gray-700">
+                {suggestionsLoading ? "Loading..." : `${suggestions.length} idea${suggestions.length !== 1 ? "s" : ""} from your memory`}
+              </p>
+              {!suggestionsLoading && (
+                <p className="text-xs text-gray-400 mt-0.5">Ideas drawn from your full knowledge base</p>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              {!suggestionsLoading && (
+                <button
+                  onClick={handleGetIdeas}
+                  className="text-xs text-gray-500 hover:text-gray-900 border border-gray-200 rounded-lg px-2.5 py-1 transition-colors"
+                >
+                  Refresh ideas
+                </button>
+              )}
+              <button
+                onClick={() => { setSuggestionsVisible(false); setSuggestions([]); }}
+                className="text-gray-400 hover:text-gray-700 transition-colors text-lg leading-none"
+              >
+                ×
+              </button>
+            </div>
           </div>
 
           {suggestionsLoading && (
