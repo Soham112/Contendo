@@ -13,7 +13,7 @@ from agents.ingestion_agent import ingest_content
 from agents.vision_agent import extract_from_image
 from agents.ideation_agent import generate_suggestions
 from agents.visual_agent import generate_visuals
-from memory.vector_store import get_total_chunks, get_all_tags
+from memory.vector_store import get_total_chunks, get_all_tags, get_all_sources
 from memory.feedback_store import init_db, log_post, get_recent_posts
 from pipeline.graph import run_pipeline
 
@@ -155,8 +155,18 @@ async def history() -> dict:
     return {"posts": posts}
 
 
+@app.get("/library")
+async def library() -> dict:
+    sources = get_all_sources()
+    return {
+        "sources": sources,
+        "total_chunks": get_total_chunks(),
+        "total_sources": len(sources),
+    }
+
+
 @app.get("/suggestions")
-async def suggestions(count: int = Query(default=5, ge=1, le=10)) -> dict:
+async def suggestions(count: int = Query(default=8, ge=1, le=10)) -> dict:
     ideas = generate_suggestions(count=count)
     return {"suggestions": ideas}
 
