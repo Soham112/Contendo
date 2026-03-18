@@ -1,5 +1,6 @@
 import anthropic
 import os
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 from memory.vector_store import upsert_chunks
@@ -53,6 +54,19 @@ def ingest_content(content: str, source_type: str) -> dict:
         return {"chunks_stored": 0, "tags": []}
 
     tags = _extract_tags(content)
-    stored = upsert_chunks(chunks, source_type=source_type, tags=tags)
+
+    # Derive a human-readable title from the first 80 chars of content
+    first_line = content.strip().splitlines()[0].strip()
+    source_title = (first_line[:80] + "…") if len(first_line) > 80 else first_line
+
+    ingested_at = datetime.now(timezone.utc).isoformat()
+
+    stored = upsert_chunks(
+        chunks,
+        source_type=source_type,
+        tags=tags,
+        source_title=source_title,
+        ingested_at=ingested_at,
+    )
 
     return {"chunks_stored": stored, "tags": tags}
