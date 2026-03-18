@@ -1,9 +1,10 @@
 import anthropic
 import json
 import os
+import random
 from dotenv import load_dotenv
 
-from memory.vector_store import query_similar
+from memory.vector_store import query_similar, get_all_tags, get_all_sources
 from memory.feedback_store import get_all_topics_posted
 from memory.profile_store import load_profile, profile_to_context_string
 
@@ -25,6 +26,12 @@ Rules for good ideas:
 - No idea should repeat or closely overlap with their previously posted topics
 - Format suggestions must match the idea's natural shape: personal stories → linkedin post, deep dives → medium article, rapid insights → thread
 
+Diversity rules (mandatory):
+- Generate ideas that span DIFFERENT topics from the knowledge base — do not cluster ideas around the same theme
+- Each idea should draw from a different area of the knowledge base where possible
+- Actively look for unexpected connections between different topics in the knowledge base
+- If the knowledge base covers 5 topics, your ideas should touch at least 4 of them
+
 Return ONLY a valid JSON array with exactly {count} objects. Each object must have these fields:
 - "title": string — specific, catchy, ready to use as-is
 - "angle": string — the unique hook or perspective in one sentence
@@ -34,30 +41,52 @@ Return ONLY a valid JSON array with exactly {count} objects. Each object must ha
 Return nothing outside the JSON array."""
 
 
-def generate_suggestions(count: int = 5) -> list[dict]:
+def generate_suggestions(count: int = 8) -> list[dict]:
     count = min(max(count, 1), 10)
 
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     profile = load_profile()
     profile_context = profile_to_context_string(profile)
 
-    # Broad diverse query to sample knowledge base widely
-    diverse_queries = ["technology", "career", "learning", "building", "data"]
+    # Multi-query diversity sampling across the full knowledge base
+    broad_queries = ["technology", "career", "learning", "building", "data"]
     seen_texts: set[str] = set()
     chunks: list[str] = []
-    for q in diverse_queries:
-        results = query_similar(q, top_k=4)
+
+    def _add_results(results: list[dict]) -> None:
         for r in results:
             if r["text"] not in seen_texts:
                 seen_texts.add(r["text"])
                 chunks.append(r["text"])
-        if len(chunks) >= 20:
-            break
+
+    # Query 1-5: broad topic sweep
+    for q in broad_queries:
+        _add_results(query_similar(q, top_k=4))
+
+    # Query 6-7: two random tags for coverage of niche topics
+    all_tags = get_all_tags()
+    if all_tags:
+        sample_tags = random.sample(all_tags, min(2, len(all_tags)))
+        for tag in sample_tags:
+            _add_results(query_similar(tag, top_k=5))
+
+    # Query 8: oldest sources — pull chunks from sources added earliest
+    # to counteract recency bias from embedding similarity
+    all_sources = get_all_sources()
+    if all_sources:
+        oldest = sorted(
+            [s for s in all_sources if s["ingested_at"]],
+            key=lambda s: s["ingested_at"],
+        )
+        if oldest:
+            oldest_title = oldest[0]["source_title"]
+            if oldest_title and oldest_title != "Untitled":
+                _add_results(query_similar(oldest_title, top_k=5))
 
     posted_topics = get_all_topics_posted()
 
     knowledge_section = (
-        "\n\n---\n\n".join(f"[Chunk {i+1}]\n{chunk}" for i, chunk in enumerate(chunks[:20]))
+        "\n\n---\n\n".join(f"[Chunk {i+1}]\n{chunk}" for i, chunk in enumerate(chunks[:30]))
         if chunks
         else "No knowledge base entries yet."
     )
