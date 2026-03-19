@@ -24,7 +24,8 @@ Score across exactly these 5 dimensions, each out of 20 points (total: 100):
 
 Also identify up to 3 specific sentences that most hurt the score. These are the sentences that most need fixing.
 
-Return ONLY valid JSON in exactly this format, nothing else:
+Return ONLY raw JSON — no markdown, no explanation, no code blocks. The response must start with { and end with }. No text before or after the JSON object.
+
 {
   "total_score": <integer 0-100>,
   "dimension_scores": {
@@ -43,6 +44,46 @@ Return ONLY valid JSON in exactly this format, nothing else:
     "<one specific actionable note>"
   ]
 }"""
+
+
+def parse_scorer_response(response_text: str) -> dict:
+    # Try direct JSON parse first
+    try:
+        return json.loads(response_text)
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Try extracting JSON from markdown code blocks
+    code_block = re.search(
+        r'```(?:json)?\s*(\{.*\})\s*```',
+        response_text,
+        re.DOTALL,
+    )
+    if code_block:
+        try:
+            return json.loads(code_block.group(1))
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Try finding any JSON object in the response that contains total_score
+    json_match = re.search(
+        r'\{.*"total_score".*\}',
+        response_text,
+        re.DOTALL,
+    )
+    if json_match:
+        try:
+            return json.loads(json_match.group())
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Return default only as last resort
+    return {
+        "total_score": 50,
+        "dimension_scores": {},
+        "flagged_sentences": [],
+        "feedback": ["Score parsing failed — retry to get fresh evaluation."],
+    }
 
 
 def scorer_node(state: PipelineState) -> PipelineState:
@@ -65,41 +106,14 @@ def scorer_node(state: PipelineState) -> PipelineState:
     raw = message.content[0].text.strip()
     print(f"[scorer_agent] raw response:\n{raw}\n")
 
-    result = None
+    result = parse_scorer_response(raw)
 
-    # Attempt 1: direct parse
-    try:
-        result = json.loads(raw)
-    except (json.JSONDecodeError, ValueError):
-        pass
-
-    # Attempt 2: strip markdown code fences, then parse
-    if result is None:
-        stripped = re.sub(r"^```[a-z]*\n?", "", raw, flags=re.MULTILINE)
-        stripped = re.sub(r"\n?```$", "", stripped, flags=re.MULTILINE).strip()
-        try:
-            result = json.loads(stripped)
-        except (json.JSONDecodeError, ValueError):
-            pass
-
-    # Attempt 3: extract first JSON object with regex
-    if result is None:
-        match = re.search(r"\{.*\}", raw, re.DOTALL)
-        if match:
-            try:
-                result = json.loads(match.group())
-            except (json.JSONDecodeError, ValueError):
-                pass
-
-    if result is not None:
-        score = int(result.get("total_score", 0))
-        feedback = result.get("feedback", [])
-        flagged = result.get("flagged_sentences", [])
-    else:
+    if result.get("total_score") == 50 and not result.get("dimension_scores"):
         print(f"[scorer_agent] all parse attempts failed. raw was:\n{raw}")
-        score = 50
-        feedback = ["Score parsing failed — retry to get fresh evaluation."]
-        flagged = []
+
+    score = int(result.get("total_score", 50))
+    feedback = result.get("feedback", [])
+    flagged = result.get("flagged_sentences", [])
 
     state["score"] = score
     state["score_feedback"] = feedback + flagged
