@@ -28,6 +28,12 @@ export default function RootLayout({
                 Feed Memory
               </Link>
               <Link
+                href="/library"
+                className="text-gray-500 hover:text-gray-900 transition-colors"
+              >
+                Library
+              </Link>
+              <Link
                 href="/create"
                 className="text-gray-500 hover:text-gray-900 transition-colors"
               >

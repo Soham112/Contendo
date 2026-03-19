@@ -38,10 +38,11 @@
 | `backend/data/posts.db` | SQLite post history (gitignored) |
 | `backend/venv/` | Python virtual environment (gitignored) |
 | **Frontend** | |
-| `frontend/app/layout.tsx` | Root layout — nav bar with links to all three screens |
+| `frontend/app/layout.tsx` | Root layout — nav bar with links to all four screens |
 | `frontend/app/page.tsx` | Screen 1: Feed Memory (default route `/`) |
-| `frontend/app/create/page.tsx` | Screen 2: Create Post (`/create`) |
-| `frontend/app/history/page.tsx` | Screen 3: Post History (`/history`) — cards, expandable content, copy |
+| `frontend/app/library/page.tsx` | Screen 2: Library (`/library`) — source cards, stats bar, filter/sort |
+| `frontend/app/create/page.tsx` | Screen 3: Create Post (`/create`) |
+| `frontend/app/history/page.tsx` | Screen 4: Post History (`/history`) — cards, expandable content, copy |
 | `frontend/app/globals.css` | Global styles — Tailwind directives, dark background, Inter font |
 | `frontend/components/FeedMemory.tsx` | Feed Memory form — tabs, textarea, image upload, result display |
 | `frontend/components/CreatePost.tsx` | Create Post form — topic, format, tone, output + score display |
@@ -58,7 +59,14 @@
 |---|---|
 | **Reads** | `content: str`, `source_type: str` (passed directly, not from pipeline state) |
 | **Writes** | Returns `{ chunks_stored: int, tags: list[str] }` — not a pipeline node |
-| **Side effects** | Upserts chunks to ChromaDB |
+| **Side effects** | Upserts chunks to ChromaDB with `source_title` (first 80 chars of content) and `ingested_at` (UTC ISO timestamp) |
+
+### vector_store.py — get_all_sources()
+| | |
+|---|---|
+| **Reads** | All ChromaDB chunk metadatas via `collection.get()` |
+| **Returns** | `list[dict]` — one entry per unique `source_id` with `source_title`, `source_type`, `ingested_at`, `chunk_count`, `tags` (deduplicated) |
+| **Sort** | Newest `ingested_at` first; sources without timestamp sort last |
 
 ### vision_agent.py
 | | |
@@ -245,6 +253,27 @@
 
 ---
 
+### GET /library
+**Response:**
+```json
+{
+  "sources": [
+    {
+      "source_title": "Why RAG fails in production — 3 lessons",
+      "source_type": "article",
+      "ingested_at": "2026-03-18T10:22:01+00:00",
+      "chunk_count": 5,
+      "tags": ["rag", "machine learning", "production systems"]
+    }
+  ],
+  "total_chunks": 47,
+  "total_sources": 9
+}
+```
+**Notes:** Groups all ChromaDB chunks by `source_id`. Sources without `ingested_at` (ingested before this feature) sort last. Source titles derived from first 80 chars of ingested content.
+
+---
+
 ### GET /stats
 **Response:**
 ```json
@@ -345,6 +374,9 @@
 | Placeholders never auto-stripped from post textarea | `[DIAGRAM:]` and `[IMAGE:]` remain in the editable textarea — user removes them manually before copying |
 | SVG diagrams saved to SQLite alongside post text | `svg_diagrams` column stores a JSON array of `{position, description, svg_code}` objects; nullable — posts without diagrams store NULL |
 | Create Post session state persists in sessionStorage | Post text, score, feedback, iterations, and visuals are written to `contentOS_last_*` keys; restored on page mount; cleared on Regenerate or banner dismiss |
+| Library screen groups chunks by source | `get_all_sources()` groups ChromaDB chunks by `source_id` so the user sees one card per ingested item, not raw chunk counts |
+| Ideation agent uses multi-query diversity sampling | 8 queries (5 broad + 2 random tags + 1 oldest source) prevent recency bias; chunk cap raised to 30; diversity rules added to system prompt |
+| Default idea count is 8 | Raised from 5 — more ideas needed to span different knowledge base topics after diversity sampling |
 
 ---
 
