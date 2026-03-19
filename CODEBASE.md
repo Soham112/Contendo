@@ -33,7 +33,8 @@
 | `backend/tools/__init__.py` | Empty — tools directory retained for future use |
 | `backend/utils/chunker.py` | 500-word chunks with 50-word overlap |
 | `backend/utils/formatters.py` | Format + tone instruction strings per output type |
-| `backend/data/profile.json` | User voice and style profile — auto-created on first run |
+| `backend/data/profile.json` | User voice and style profile — **gitignored**, never committed. Copy from `profile.template.json` to create. |
+| `backend/data/profile.template.json` | Committed template with placeholder values — starting point for new users |
 | `backend/data/chroma_db/` | ChromaDB persistent storage (gitignored) |
 | `backend/data/posts.db` | SQLite post history (gitignored) |
 | `backend/venv/` | Python virtual environment (gitignored) |
@@ -294,30 +295,30 @@
 ## 4. DATA SCHEMAS
 
 ### profile.json (full structure)
-```json
-{
-  "name": "Soham",
-  "role": "Builder and founder",
-  "voice_descriptors": ["direct", "opinionated", "first-person", "conversational", "no fluff"],
-  "writing_rules": [
-    "Never start sentences with 'I' back-to-back.",
-    "Use short paragraphs — max 3 sentences.",
-    "Prefer concrete examples over abstract claims.",
-    "No corporate jargon or buzzwords.",
-    "Vary sentence length: mix short punchy lines with longer ones.",
-    "Avoid passive voice.",
-    "Never use filler phrases like 'In conclusion' or 'It is worth noting'."
-  ],
-  "topics_of_expertise": ["AI and LLMs", "product building", "startups", "developer tools"],
-  "linkedin_style_notes": "Hook in the first line...",
-  "medium_style_notes": "Start in the middle of the story...",
-  "thread_style_notes": "Each tweet stands alone but pulls into the next...",
-  "words_to_avoid": ["leverage", "synergy", "delve", "unlock", "game-changer", "revolutionary", "transformative", "it's important to note", "in today's world", "crucial"]
-}
-```
+
 **Location:** `backend/data/profile.json`
-**Auto-created:** Yes — on first call to `load_profile()` if file does not exist.
-**Forward-compatible:** Missing keys are filled in from defaults on load.
+**Gitignored:** Yes — personal details never committed. Copy from `backend/data/profile.template.json` to create.
+**Auto-created:** `load_profile()` creates a minimal default if the file does not exist, but the output will be generic until the user fills in their real profile.
+**Forward-compatible:** Missing keys are filled in from defaults on load — adding new fields to the template does not break existing profiles.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | str | User's name |
+| `role` | str | Role/title — injected into every draft prompt |
+| `bio` | str | 2–3 sentence summary of who they are and what they believe |
+| `location` | str | City, country |
+| `target_audience` | str | Who they write for — shapes tone and framing |
+| `topics_of_expertise` | list[str] | Domains the user knows deeply |
+| `projects` | list[dict] | Built things — name, description with real numbers, stack |
+| `opinions` | list[str] | Strong takes the user actually holds — not facts |
+| `phrases_i_use` | list[str] | Natural phrases specific to this person |
+| `words_to_avoid` | list[str] | Injected into humanizer prompt as banned language |
+| `writing_rules` | list[str] | Style rules injected into draft and humanizer prompts |
+| `technical_voice_notes` | list[str] | How the user specifically explains hard technical things |
+| `linkedin_style_notes` | str | Format-specific style notes for LinkedIn posts |
+| `medium_style_notes` | str | Format-specific style notes for Medium articles |
+| `thread_style_notes` | str | Format-specific style notes for threads |
+| `writing_samples` | list[str] | Real past posts — the single most powerful signal for voice matching |
 
 ---
 

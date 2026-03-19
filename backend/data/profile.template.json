@@ -1,0 +1,54 @@
+{
+  "name": "Your Name",
+  "role": "Your role — e.g. Data Scientist, Product Manager, Founder",
+  "bio": "2-3 sentences about who you are, what you do, and what you believe. Be specific — this gets injected into every post.",
+  "location": "Your city, country",
+  "target_audience": "Who you are writing for — e.g. ML engineers, founders, designers",
+  "topics_of_expertise": [
+    "Topic 1 you know deeply",
+    "Topic 2",
+    "Topic 3"
+  ],
+  "projects": [
+    {
+      "name": "Project name",
+      "description": "What you built and what it did — include real numbers if you have them",
+      "stack": "Tech stack used"
+    }
+  ],
+  "opinions": [
+    "A strong opinion you hold about your field — not a fact, an actual take",
+    "Another opinion",
+    "Another opinion"
+  ],
+  "phrases_i_use": [
+    "Natural phrases you say — e.g. 'Here is the thing', 'Nobody tells you this'",
+    "Another phrase"
+  ],
+  "words_to_avoid": [
+    "leverage",
+    "synergy",
+    "delve",
+    "game-changer",
+    "it is worth noting"
+  ],
+  "writing_rules": [
+    "Short paragraphs — max 3 sentences",
+    "Concrete examples over abstract claims",
+    "No passive voice",
+    "Add your own rules here"
+  ],
+  "technical_voice_notes": [
+    "Describe how you specifically explain technical things — e.g. 'I always use real numbers not vague claims'",
+    "e.g. 'I reference my actual experience not hypotheticals'",
+    "e.g. 'I acknowledge when something is hard instead of making it sound easy'"
+  ],
+  "linkedin_style_notes": "Describe your LinkedIn style — e.g. hook in first line, short paragraphs, end with opinion not CTA",
+  "medium_style_notes": "Describe your Medium style if different",
+  "thread_style_notes": "Describe your thread style",
+  "writing_samples": [
+    "Paste one of your real past LinkedIn posts here — full text",
+    "Paste another real post here",
+    "Paste a third one here — the more the better"
+  ]
+}

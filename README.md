@@ -157,6 +157,33 @@ npm run dev
 
 ---
 
+## Setup your profile
+
+The system writes in YOUR voice — but it needs to know who you are first.
+
+Before running the system for the first time:
+
+1. Copy the profile template:
+   ```bash
+   cp backend/data/profile.template.json backend/data/profile.json
+   ```
+
+2. Open `backend/data/profile.json` and fill in every field:
+   - `name`, `role`, `bio` — who you are
+   - `topics_of_expertise` — what you know deeply
+   - `projects` — what you have built (with real numbers)
+   - `opinions` — strong takes you actually hold
+   - `phrases_i_use` — words and phrases natural to you
+   - `words_to_avoid` — language that does not sound like you
+   - `writing_samples` — paste 3–5 of your real past posts here
+   - `technical_voice_notes` — how you specifically explain hard things (see examples in the template)
+
+3. The more specific you are, the better the output. Generic profile → generic posts. Specific profile → posts that sound like you wrote them.
+
+Note: `profile.json` is gitignored — your personal details never get committed to the repository. Only the template is tracked.
+
+---
+
 ## Project File Structure
 
 ```
