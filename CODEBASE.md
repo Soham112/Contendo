@@ -14,7 +14,7 @@
 | `PROMPTS.md` | All agent system prompts verbatim — source of truth for agent behaviour |
 | `.gitignore` | Excludes venv, node_modules, .env, chroma_db data |
 | **Backend** | |
-| `backend/main.py` | FastAPI app — all 3 routes, CORS config, SQLite post history init |
+| `backend/main.py` | FastAPI app — all 8 routes, CORS config, SQLite post history init |
 | `backend/requirements.txt` | All Python dependencies pinned |
 | `backend/.env.example` | Required env var keys with no values |
 | `backend/agents/ideation_agent.py` | Generates N content ideas from ChromaDB sample, profile, and posted topic history |
@@ -106,8 +106,8 @@
 ### load_profile_node (graph.py inline)
 | | |
 |---|---|
-| **Reads** | `profile.json` from disk |
-| **Writes to state** | `profile: dict`, `iterations: 0` |
+| **Reads** | `profile.json` from disk; calls `get_all_topics_posted()` from feedback_store |
+| **Writes to state** | `profile: dict`, `iterations: 0`, `posted_topics: list[str]` |
 
 ### finalize_node (graph.py inline)
 | | |
@@ -158,7 +158,7 @@
   "iterations": 2
 }
 ```
-**Notes:** Runs the full LangGraph pipeline. Every generated post is saved to SQLite.
+**Notes:** Runs the full LangGraph pipeline. Posts are NOT auto-saved — the user must explicitly click "Save to history" to call `/log-post`.
 
 ---
 
@@ -170,14 +170,17 @@
   "format": "linkedin post | medium article | thread",
   "tone": "casual | technical | storytelling",
   "content": "string — the post text (may differ from generated if user edited it)",
-  "authenticity_score": 82
+  "authenticity_score": 82,
+  "svg_diagrams": [
+    { "position": 0, "description": "...", "svg_code": "<svg>...</svg>" }
+  ]
 }
 ```
 **Response:**
 ```json
 { "post_id": 7, "saved": true }
 ```
-**Notes:** User-initiated only — never called automatically. The content saved may differ from the originally generated draft if the user edited it before saving.
+**Notes:** User-initiated only — never called automatically. `svg_diagrams` is optional (null if no visuals were generated). Content saved may differ from the originally generated draft if the user edited it.
 
 ---
 
@@ -193,17 +196,20 @@
       "format": "linkedin post",
       "tone": "technical",
       "content": "Full post text...",
-      "authenticity_score": 82
+      "authenticity_score": 82,
+      "svg_diagrams": [
+        { "position": 0, "description": "...", "svg_code": "<svg>...</svg>" }
+      ]
     }
   ]
 }
 ```
-**Notes:** Returns up to 20 most recent saved posts, newest first.
+**Notes:** Returns up to 20 most recent saved posts, newest first. `svg_diagrams` is `null` for posts saved before the visuals feature or saved without diagrams. The JSON string stored in SQLite is parsed back to a list before returning.
 
 ---
 
 ### GET /suggestions
-**Query params:** `count` (int, default 5, range 1–10)
+**Query params:** `count` (int, default 8, range 1–10)
 **Response:**
 ```json
 {
@@ -217,7 +223,7 @@
   ]
 }
 ```
-**Notes:** Calls ideation_agent, which samples ChromaDB broadly, reads all previously posted topics from feedback_store, and asks Claude to generate ideas that avoid repetition.
+**Notes:** Calls ideation_agent, which uses multi-query diversity sampling (8 queries: 5 broad topics + 2 random tags + 1 oldest-source query) across up to 30 ChromaDB chunks, reads all previously posted topics from feedback_store, and asks Claude to generate ideas that avoid repetition and span different knowledge base topics.
 
 ---
 
@@ -330,6 +336,9 @@
 | `tags` | str | Comma-separated tag list |
 | `source_id` | str | UUID grouping all chunks from one ingest call |
 | `chunk_index` | int | Position of this chunk within its source |
+| `total_chunks` | int | Total number of chunks from this source |
+| `source_title` | str | First 80 chars of first line of content — used as display title in Library |
+| `ingested_at` | str | UTC ISO timestamp of when the source was ingested |
 
 ---
 
@@ -347,6 +356,7 @@
 | `tone` | TEXT | Tone type |
 | `content` | TEXT | Post text as saved (may be user-edited) |
 | `authenticity_score` | INTEGER | Score at time of generation (0–100) |
+| `svg_diagrams` | TEXT | JSON array of `{position, description, svg_code}` objects; NULL if no diagrams |
 
 ---
 
@@ -364,7 +374,7 @@
 | profile.json has auto-merge on load | Ensures new profile fields added in code appear without manual migration |
 | CORS allows `*.vercel.app` wildcard | Covers all preview and production Vercel deployments without hardcoding URLs |
 | SQLite used for post history | Zero-config, single-file, sufficient for one user — no PostgreSQL needed at MVP |
-| Posts are not auto-saved | User must explicitly click "Save to history" on Screen 2 — auto-save removed from `/generate` to give the user control over what enters their history |
+| Posts are not auto-saved | User must explicitly click "Save to history" on Screen 3 (Create Post) — auto-save removed from `/generate` to give the user control over what enters their history |
 | feedback_store.py owns the SQLite table | `main.py` no longer contains `init_db` or `save_post` — all DB logic is in `feedback_store.py`; `init_db()` is called from the FastAPI lifespan |
 | draft_node injects posted topics | `load_profile_node` fetches `get_all_topics_posted()` and stores in pipeline state; `draft_node` formats them into the prompt to prevent repeated angles |
 | `source_type: "youtube"` treated identically to `"article"` in ingestion | Same chunking + embedding pipeline; only difference is the UI label |
@@ -384,9 +394,9 @@
 
 - User authentication (single user only for now — no auth layer)
 - Profile editing screen (profile.json must be edited manually)
-- Ideation / ideas screen (brainstorming feature deferred)
+- Dedicated brainstorm / ideas screen (the Get Ideas panel on Create Post exists, but there is no standalone ideas-management screen)
 - Vercel and Railway/Render deployment config files
 - YouTube transcript auto-fetching (removed — manual paste only)
-- Tag filtering in memory (can't filter ChromaDB by tag in the UI)
-- Delete / clear memory (no way to remove chunks via UI)
+- Tag filtering in Library (can't filter ChromaDB chunks by tag in the UI — only source-type filter exists)
+- Delete / clear memory (no way to remove sources or chunks via UI)
 - Multi-format regeneration (regenerate always uses same format/tone)

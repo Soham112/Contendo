@@ -10,60 +10,87 @@ Built for a single user. No auth, no bloat — just a fast loop from raw knowled
 
 ```mermaid
 flowchart TD
-    subgraph UI["Frontend (Next.js 14)"]
+    subgraph UI["Frontend (Next.js 14) — 4 Screens"]
         S1["Screen 1: Feed Memory\n(Article / YouTube / Image / Note)"]
-        S2["Screen 2: Create Post\n(Topic / Format / Tone)"]
+        S2["Screen 2: Library\n(Source cards, stats, filter/sort)"]
+        S3["Screen 3: Create Post\n(Topic / Format / Tone / Ideas)"]
+        S4["Screen 4: History\n(Saved posts + diagrams)"]
     end
 
-    subgraph API["FastAPI Backend"]
+    subgraph API["FastAPI Backend — 8 Endpoints"]
         R1["POST /ingest"]
         R2["POST /generate"]
-        R3["GET /stats"]
+        R3["POST /log-post"]
+        R4["GET /history"]
+        R5["GET /library"]
+        R6["GET /suggestions"]
+        R7["POST /generate-visuals"]
+        R8["GET /stats"]
     end
 
     subgraph Pipeline["LangGraph Pipeline"]
-        N1["1. load_profile_node\nLoad user voice + style"]
-        N2["2. retrieval_node\nSemantic search ChromaDB (top 8)"]
+        N1["1. load_profile_node\nLoad profile + posted topics"]
+        N2["2. retrieval_node\nSemantic search ChromaDB"]
         N3["3. draft_node\nClaude generates initial draft"]
-        N4["4. humanizer_node\nRemove AI patterns, inject human voice"]
+        N4["4. humanizer_node\nRemove AI patterns, inject voice"]
         N5["5. scorer_node\nScore 0–100 across 5 dimensions"]
         N6{"Score ≥ 75\nor iterations ≥ 3?"}
-        N7["Finalize & return"]
+        N7["finalize_node"]
+    end
+
+    subgraph Agents["Standalone Agents"]
+        A1["visual_agent\n(SVG generation per DIAGRAM placeholder)"]
+        A2["ideation_agent\n(multi-query knowledge base sampling)"]
     end
 
     subgraph Memory["Memory Layer"]
-        DB1["ChromaDB\n(vector store)"]
-        DB2["profile.json\n(user voice + style)"]
-        DB3["SQLite\n(post history)"]
+        DB1["ChromaDB\n(vector store — chunks + metadata)"]
+        DB2["profile.json\n(voice, style, words to avoid)"]
+        DB3["SQLite posts.db\n(post history + svg_diagrams)"]
     end
 
-    S1 -->|"content + source_type"| R1
-    S2 -->|"topic + format + tone"| R2
-    R3 -->|"stats"| S1
+    S1 --> R1
+    S1 --> R8
+    S2 --> R5
+    S3 --> R2
+    S3 --> R6
+    S3 --> R7
+    S3 --> R3
+    S4 --> R4
 
-    R1 -->|"chunk + embed"| DB1
+    R1 --> DB1
     R2 --> N1
+    R3 --> DB3
+    R4 --> DB3
+    R5 --> DB1
+    R6 --> A2
+    R7 --> A1
 
-    N1 -->|"profile loaded"| N2
-    N2 -->|"retrieved chunks"| N3
-    N3 -->|"initial draft"| N4
-    N4 -->|"humanized draft"| N5
+    N1 --> N2
+    N2 --> N3
+    N3 --> N4
+    N4 --> N5
     N5 --> N6
     N6 -->|"Yes → finalize"| N7
     N6 -->|"No → retry"| N4
+    N7 --> DB3
 
     N1 --- DB2
     N2 --- DB1
-    N7 --- DB3
+    A2 --- DB1
 ```
 
 ---
 
-## The Two Screens
+## The Four Screens
 
-**Screen 1 — Feed Memory:** The user selects an input type (Article/Text, YouTube URL, Image, or Manual Note), pastes or uploads their content, and clicks "Add to memory." Behind the scenes, the backend extracts the content (fetching YouTube transcripts automatically, or running Claude vision on images), chunks it into 500-word overlapping segments, embeds each chunk with `sentence-transformers`, and upserts them into ChromaDB. The response shows how many chunks were stored and what tags were auto-extracted from the content.
+**Screen 1 — Feed Memory (`/`):** The user selects an input type (Article/Text, YouTube, Image, or Manual Note), pastes or uploads their content, and clicks "Add to memory." For images, Claude vision extracts the knowledge as text first. For all types, the content is chunked into 500-word overlapping segments, embedded locally with `sentence-transformers`, and upserted into ChromaDB. The response shows how many chunks were stored and what tags were auto-extracted. The YouTube tab shows a textarea for manual paste — auto-fetching was removed after YouTube blocked bot-based transcript retrieval.
 
-**Screen 2 — Create Post:** The user enters a topic, picks a format (LinkedIn Post, Medium Article, or Thread), sets a tone (Casual, Technical, or Storytelling), optionally adds context, and clicks "Generate." The backend runs the full LangGraph pipeline — retrieving the most semantically relevant knowledge, drafting in the user's voice, humanizing the output, and scoring it. The final post appears in an editable textarea alongside an authenticity score (0–100) and specific feedback. The user can copy the post or regenerate with a single click.
+**Screen 2 — Library (`/library`):** Shows everything the user has fed into memory, grouped by source (one card per ingest call, not per chunk). A stats bar shows total sources, total chunks, and unique tag count. Source cards display the type badge (Article/Note/Image/YouTube), title derived from the first 80 characters of the content, date added, chunk count, and tag pills. Filterable by source type, sortable newest/oldest. This gives the user full visibility into what knowledge the system has before generating a post.
+
+**Screen 3 — Create Post (`/create`):** The user enters a topic, picks a format (LinkedIn Post, Medium Article, or Thread), sets a tone (Casual, Technical, or Storytelling), optionally adds context, and clicks "Generate." Before generating, "Get Ideas" runs multi-query diversity sampling across the full knowledge base and returns 8 fresh content suggestions the user can use or dismiss. The backend runs the full LangGraph pipeline — retrieving relevant knowledge, drafting in the user's voice, humanizing, and scoring. The final post appears in an editable textarea alongside an authenticity score (0–100) and specific feedback. "Generate visuals" parses `[DIAGRAM:]` and `[IMAGE:]` placeholders and generates SVGs via Claude. "Save to history" saves the post and any generated diagrams explicitly — nothing is auto-saved. Session state (post, score, visuals) persists in sessionStorage so navigating away and back restores the last session.
+
+**Screen 4 — History (`/history`):** All explicitly saved posts, newest first. Each card shows topic, format/tone badges, authenticity score, and date. Clicking "See full post" expands the card to show the full text with a Copy button. If SVG diagrams were saved alongside the post, they are rendered inline in the expanded view with an "Open as PNG" button.
 
 ---
 
@@ -71,11 +98,11 @@ flowchart TD
 
 | Step | Agent | Job |
 |------|-------|-----|
-| 1 | `load_profile_node` | Reads `profile.json` and injects user voice, style rules, and writing preferences into pipeline state |
+| 1 | `load_profile_node` | Reads `profile.json`, injects user voice and style into state. Also loads all previously posted topics from SQLite to prevent repeated angles. |
 | 2 | `retrieval_node` | Queries ChromaDB for the 8 most semantically relevant chunks; filters out anything below 0.3 cosine similarity |
-| 3 | `draft_node` | Calls Claude to produce an initial draft using the user profile, retrieved chunks, and format-specific instructions |
+| 3 | `draft_node` | Calls Claude to produce an initial draft using the user profile, retrieved chunks, format-specific instructions, and mandatory visual placeholder rules |
 | 4 | `humanizer_node` | Calls Claude to strip AI writing patterns, vary sentence structure, and inject the user's authentic voice |
-| 5 | `scorer_node` | Calls Claude to score the draft 0–100 across 5 dimensions and return flagged sentences |
+| 5 | `scorer_node` | Calls Claude to score the draft 0–100 across 5 dimensions; uses 3-attempt JSON parse to handle markdown-wrapped responses |
 | 6 | Conditional | If score ≥ 75 or iterations ≥ 3: finalize. Otherwise: loop back to humanizer |
 
 ---
@@ -91,7 +118,6 @@ flowchart TD
 | Embeddings | sentence-transformers (all-MiniLM-L6-v2) | Local, no API key, good semantic quality for retrieval |
 | Vector DB | ChromaDB | Local persistent storage, simple Python API, no infra needed |
 | Agent orchestration | LangGraph | Stateful graph with conditional edges — perfect for retry loops |
-| YouTube transcripts | youtube-transcript-api | No API key, reliable, returns timestamped chunks |
 | Post history | SQLite (sqlite3) | Zero-config, single-file, sufficient for one user |
 | Deployment (frontend) | Vercel | Native Next.js hosting |
 | Deployment (backend) | Railway or Render | Simple Python service hosting |
@@ -142,37 +168,47 @@ npm run dev
 │
 ├── frontend/
 │   ├── app/
-│   │   ├── layout.tsx                # Root layout — shared shell for both screens
-│   │   ├── page.tsx                  # Screen 1: Feed Memory (default route /)
-│   │   └── create/
-│   │       └── page.tsx              # Screen 2: Create Post (/create)
-│   └── components/
-│       ├── FeedMemory.tsx            # Feed Memory form — input types, submit, feedback
-│       └── CreatePost.tsx            # Create Post form — topic, format, tone, output
+│   │   ├── layout.tsx                # Root layout — nav bar for all four screens
+│   │   ├── globals.css               # Global styles — Tailwind directives, light theme
+│   │   ├── page.tsx                  # Screen 1: Feed Memory (/)
+│   │   ├── library/
+│   │   │   └── page.tsx              # Screen 2: Library (/library)
+│   │   ├── create/
+│   │   │   └── page.tsx              # Screen 3: Create Post (/create)
+│   │   └── history/
+│   │       └── page.tsx              # Screen 4: History (/history)
+│   ├── components/
+│   │   ├── FeedMemory.tsx            # Feed Memory form — input types, submit, feedback
+│   │   └── CreatePost.tsx            # Create Post — topic, format, tone, ideas, visuals, output
+│   ├── .env.local                    # Sets NEXT_PUBLIC_API_URL=http://localhost:8000
+│   ├── tailwind.config.ts            # Tailwind config scoped to app/ and components/
+│   └── package.json                  # Next.js 14 + TypeScript + Tailwind
 │
 └── backend/
-    ├── main.py                       # FastAPI app — all routes + CORS config
-    ├── config.py                     # Shared constants (score threshold, retry limit, etc.)
-    ├── .env.example                  # Required env var keys with no values
+    ├── main.py                       # FastAPI app — all 8 routes + CORS config
     ├── requirements.txt              # All Python dependencies pinned
+    ├── .env.example                  # Required env var keys with no values
     ├── agents/
-    │   ├── ingestion_agent.py        # Chunks, embeds, and upserts content into ChromaDB
+    │   ├── ingestion_agent.py        # Chunks, tags, upserts content into ChromaDB
     │   ├── vision_agent.py           # Sends images to Claude vision for text extraction
-    │   ├── retrieval_agent.py        # Semantic search over ChromaDB, filters by relevance
+    │   ├── visual_agent.py           # Parses [DIAGRAM:]/[IMAGE:] placeholders; generates SVGs
+    │   ├── ideation_agent.py         # Multi-query diversity sampling + idea generation
+    │   ├── retrieval_agent.py        # Semantic search node in the LangGraph pipeline
     │   ├── draft_agent.py            # Generates initial draft via Claude
     │   ├── humanizer_agent.py        # Rewrites draft to remove AI patterns
-    │   └── scorer_agent.py           # Scores draft 0–100, returns flagged sentences
+    │   └── scorer_agent.py           # Scores draft 0–100, robust JSON parse with fallback
     ├── pipeline/
     │   ├── state.py                  # TypedDict defining shared LangGraph pipeline state
-    │   └── graph.py                  # LangGraph graph definition with conditional retry edge
+    │   └── graph.py                  # LangGraph graph — nodes, edges, conditional retry
     ├── memory/
-    │   ├── vector_store.py           # ChromaDB init, upsert, and semantic query
-    │   └── profile_store.py          # profile.json load/save with defaults auto-created
+    │   ├── vector_store.py           # ChromaDB init, upsert, semantic query, get_all_sources
+    │   ├── profile_store.py          # profile.json load/save with defaults auto-created
+    │   └── feedback_store.py         # SQLite posts table — log_post, history, topics posted
     ├── tools/
-    │   └── youtube_tool.py           # Fetches and concatenates YouTube transcripts
+    │   └── __init__.py               # Empty — tools directory retained for future use
     ├── utils/
     │   ├── chunker.py                # 500-word chunks with 50-word overlap
-    │   └── formatters.py            # Format instruction strings per output type
+    │   └── formatters.py             # Format + tone instruction strings per output type
     └── data/
         └── profile.json              # User voice + style profile (auto-created if missing)
 ```
