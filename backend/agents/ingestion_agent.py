@@ -48,16 +48,17 @@ def _extract_tags(text: str) -> list[str]:
     return [t.strip().strip('"[]').lower() for t in raw.split(",") if t.strip()]
 
 
-def ingest_content(content: str, source_type: str) -> dict:
+def ingest_content(content: str, source_type: str, source_title: str | None = None) -> dict:
     chunks = chunk_text(content)
     if not chunks:
         return {"chunks_stored": 0, "tags": []}
 
     tags = _extract_tags(content)
 
-    # Derive a human-readable title from the first 80 chars of content
-    first_line = content.strip().splitlines()[0].strip()
-    source_title = (first_line[:80] + "…") if len(first_line) > 80 else first_line
+    if source_title is None:
+        # Derive a human-readable title from the first 80 chars of content
+        first_line = content.strip().splitlines()[0].strip()
+        source_title = (first_line[:80] + "…") if len(first_line) > 80 else first_line
 
     ingested_at = datetime.now(timezone.utc).isoformat()
 
