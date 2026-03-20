@@ -118,6 +118,11 @@ def score_text(draft: str) -> tuple[int, list[str]]:
 
 
 def scorer_node(state: PipelineState) -> PipelineState:
+    if state.get("quality") == "draft":
+        state["score"] = 0
+        state["score_feedback"] = []
+        return state
+
     score, score_feedback = score_text(state["current_draft"])
     state["score"] = score
     state["score_feedback"] = score_feedback
