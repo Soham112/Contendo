@@ -1,15 +1,18 @@
 import json
 import os
+import re
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 load_dotenv()
 
 from agents.ingestion_agent import ingest_content
+from utils.file_extractor import extract_text_from_file
 from agents.vision_agent import extract_from_image
 from agents.ideation_agent import generate_suggestions
 from agents.visual_agent import generate_visuals
@@ -242,6 +245,51 @@ async def generate_visuals_endpoint(req: GenerateVisualsRequest) -> dict:
         raise HTTPException(status_code=400, detail="post_content is required")
     visuals = generate_visuals(req.post_content)
     return {"visuals": visuals}
+
+
+MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
+def _title_from_text(text: str, filename: str) -> str:
+    """Extract a human-readable title from the start of document text.
+
+    Looks for the first newline or sentence boundary within the first 150
+    characters. Falls back to the filename stem if the result is too short
+    (e.g. a page number or single word on its own line).
+    """
+    head = text.strip()[:150]
+
+    cuts: list[int] = []
+    newline_pos = head.find("\n")
+    if newline_pos != -1:
+        cuts.append(newline_pos)
+    sentence_match = re.search(r"[.!?](?:\s|$)", head)
+    if sentence_match:
+        cuts.append(sentence_match.start() + 1)  # include the punctuation
+
+    title = head[: min(cuts)].strip() if cuts else head.strip()
+
+    if len(title) < 10:
+        title = Path(filename).stem
+
+    return title
+
+
+@app.post("/ingest-file", response_model=IngestResponse)
+async def ingest_file(file: UploadFile = File(...)) -> IngestResponse:
+    raw = await file.read()
+    if len(raw) > MAX_FILE_BYTES:
+        raise HTTPException(status_code=413, detail="File exceeds 10 MB limit.")
+    if not raw:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+    try:
+        text = extract_text_from_file(file.filename or "", raw)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    source_title = _title_from_text(text, file.filename or "")
+    result = ingest_content(text, source_type="article", source_title=source_title)
+    return IngestResponse(chunks_stored=result["chunks_stored"], tags=result["tags"])
 
 
 @app.get("/stats", response_model=StatsResponse)

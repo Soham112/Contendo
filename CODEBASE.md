@@ -14,7 +14,7 @@
 | `PROMPTS.md` | All agent system prompts verbatim — source of truth for agent behaviour |
 | `.gitignore` | Excludes venv, node_modules, .env, chroma_db data |
 | **Backend** | |
-| `backend/main.py` | FastAPI app — all 8 routes, CORS config, SQLite post history init |
+| `backend/main.py` | FastAPI app — all routes, CORS config, SQLite post history init |
 | `backend/requirements.txt` | All Python dependencies pinned |
 | `backend/.env.example` | Required env var keys with no values |
 | `backend/agents/ideation_agent.py` | Generates N content ideas from ChromaDB sample, profile, and posted topic history |
@@ -33,6 +33,7 @@
 | `backend/tools/__init__.py` | Empty — tools directory retained for future use |
 | `backend/utils/chunker.py` | 500-word chunks with 50-word overlap |
 | `backend/utils/formatters.py` | Format + tone instruction strings per output type |
+| `backend/utils/file_extractor.py` | Extracts plain text from PDF (PyMuPDF), DOCX (python-docx), and TXT files; raises ValueError on unsupported types, scanned PDFs, password-protected PDFs, and empty files |
 | `backend/data/profile.json` | User voice and style profile — **gitignored**, never committed. Copy from `profile.template.json` to create. |
 | `backend/data/profile.template.json` | Committed template with placeholder values — starting point for new users |
 | `backend/data/chroma_db/` | ChromaDB persistent storage (gitignored) |
@@ -45,7 +46,7 @@
 | `frontend/app/create/page.tsx` | Screen 3: Create Post (`/create`) |
 | `frontend/app/history/page.tsx` | Screen 4: Post History (`/history`) — cards, expandable content, copy |
 | `frontend/app/globals.css` | Global styles — Tailwind directives, dark background, Inter font |
-| `frontend/components/FeedMemory.tsx` | Feed Memory form — tabs, textarea, image upload, result display |
+| `frontend/components/FeedMemory.tsx` | Feed Memory form — tabs (Article/Text, File, YouTube, Image, Note), textarea, file upload with drag-and-drop, image upload, result display |
 | `frontend/components/CreatePost.tsx` | Create Post form — topic, format, tone, output + score display |
 | `frontend/.env.local` | Sets `NEXT_PUBLIC_API_URL=http://localhost:8000` |
 | `frontend/tailwind.config.ts` | Tailwind config scoped to app/ and components/ |
@@ -137,6 +138,19 @@
 }
 ```
 **Notes:** For `image` source_type, backend calls `vision_agent` first, then passes extracted text to `ingestion_agent`. For all others, `content` is chunked and embedded directly.
+
+---
+
+### POST /ingest-file
+**Request:** `multipart/form-data` with a single `file` field (PDF, DOCX, or TXT)
+**Response:**
+```json
+{
+  "chunks_stored": 4,
+  "tags": ["machine learning", "transformers"]
+}
+```
+**Notes:** 10 MB max size limit (returns 413 if exceeded). Text is extracted via `utils/file_extractor.py`, then passed to `ingest_content()` with `source_type="article"`. Raises 422 for unsupported file types, scanned/image-only PDFs (<100 chars extracted), password-protected PDFs, corrupted files, or empty files.
 
 ---
 
@@ -443,6 +457,10 @@
 | User can delete posts from History | `DELETE /history/{post_id}` removes the SQLite row; frontend filters the card from state without a page reload. |
 | `/refine` does not run the full pipeline | Refinement is a targeted one-pass fix: `refine_draft()` + `score_text()` only. No retrieval, no draft agent, no retry loop — running the full pipeline would discard the user's manual edits |
 | `score_text()` extracted from `scorer_node` | Scoring logic lives in exactly one place (`scorer_agent.py`); both the LangGraph pipeline (`scorer_node`) and the standalone `/refine` endpoint call `score_text()` internally — no duplication |
+| File uploads use a separate `/ingest-file` endpoint | Keeps multipart form-data handling separate from the JSON `/ingest` route; avoids mixed content-type complexity in a single endpoint |
+| Uploaded files are ingested as `source_type="article"` | PDF/DOCX/TXT content is plain text after extraction — same chunking and embedding pipeline applies; no need for a new source type |
+| Scanned/image-only PDFs are rejected with 422 | PyMuPDF returns < 100 characters for image-only PDFs; a clear error message is returned rather than silently ingesting empty chunks |
+| File drag-and-drop uses native HTML5 events only | No external DnD library added; `onDragOver`, `onDragLeave`, `onDrop` on the drop zone div are sufficient and keep the bundle small |
 
 ---
 

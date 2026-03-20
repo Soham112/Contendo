@@ -4,13 +4,18 @@ import { useState, useEffect, useRef } from "react";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-type SourceType = "article" | "youtube" | "image" | "note";
+type SourceType = "article" | "file" | "youtube" | "image" | "note";
 
 const TABS: { id: SourceType; label: string; description: string }[] = [
   {
     id: "article",
     label: "Article / Text",
     description: "Paste any article, blog post, or long-form text.",
+  },
+  {
+    id: "file",
+    label: "File",
+    description: "Upload a PDF, DOCX, or TXT file. Text will be extracted and added to your knowledge base.",
   },
   {
     id: "youtube",
@@ -30,6 +35,18 @@ const TABS: { id: SourceType; label: string; description: string }[] = [
   },
 ];
 
+const FILE_TYPE_LABELS: Record<string, string> = {
+  "application/pdf": "PDF",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "DOCX",
+  "text/plain": "TXT",
+};
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 interface Stats {
   total_chunks: number;
   tags: string[];
@@ -40,11 +57,14 @@ export default function FeedMemory() {
   const [content, setContent] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>("");
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ chunks_stored: number; tags: string[] } | null>(null);
   const [error, setError] = useState("");
   const [stats, setStats] = useState<Stats | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const docFileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchStats = async () => {
     try {
@@ -62,6 +82,8 @@ export default function FeedMemory() {
     setContent("");
     setImageFile(null);
     setImagePreview("");
+    setUploadedFile(null);
+    setIsDragging(false);
     setResult(null);
     setError("");
   };
@@ -75,6 +97,43 @@ export default function FeedMemory() {
     reader.readAsDataURL(file);
   };
 
+  const acceptDocFile = (file: File) => {
+    const allowed = [
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "text/plain",
+    ];
+    const extAllowed = file.name.match(/\.(pdf|docx|txt)$/i);
+    if (!allowed.includes(file.type) && !extAllowed) {
+      setError("Unsupported file type. Please upload a PDF, DOCX, or TXT file.");
+      return;
+    }
+    setError("");
+    setUploadedFile(file);
+  };
+
+  const handleDocFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) acceptDocFile(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) acceptDocFile(file);
+  };
+
   const handleSubmit = async () => {
     setError("");
     setResult(null);
@@ -82,6 +141,11 @@ export default function FeedMemory() {
     if (activeTab === "image") {
       if (!imageFile) {
         setError("Please select an image file.");
+        return;
+      }
+    } else if (activeTab === "file") {
+      if (!uploadedFile) {
+        setError("Please upload a file.");
         return;
       }
     } else {
@@ -93,19 +157,29 @@ export default function FeedMemory() {
 
     setLoading(true);
     try {
-      const body: Record<string, string> = { source_type: activeTab };
-      if (activeTab === "image") {
-        body.raw_image = imagePreview;
-        body.content = "";
-      } else {
-        body.content = content;
-      }
+      let res: Response;
 
-      const res = await fetch(`${API}/ingest`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      if (activeTab === "file") {
+        const formData = new FormData();
+        formData.append("file", uploadedFile!);
+        res = await fetch(`${API}/ingest-file`, {
+          method: "POST",
+          body: formData,
+        });
+      } else {
+        const body: Record<string, string> = { source_type: activeTab };
+        if (activeTab === "image") {
+          body.raw_image = imagePreview;
+          body.content = "";
+        } else {
+          body.content = content;
+        }
+        res = await fetch(`${API}/ingest`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      }
 
       if (!res.ok) {
         const err = await res.json();
@@ -117,7 +191,9 @@ export default function FeedMemory() {
       setContent("");
       setImageFile(null);
       setImagePreview("");
+      setUploadedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
+      if (docFileInputRef.current) docFileInputRef.current.value = "";
       await fetchStats();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
@@ -214,6 +290,57 @@ export default function FeedMemory() {
               <p className="text-xs text-gray-400">{imageFile.name}</p>
             )}
           </div>
+        ) : activeTab === "file" ? (
+          <div className="space-y-4">
+            {!uploadedFile ? (
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={() => docFileInputRef.current?.click()}
+                className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-colors bg-white ${
+                  isDragging
+                    ? "border-gray-500 bg-gray-50"
+                    : "border-gray-200 hover:border-gray-400"
+                }`}
+              >
+                <div className="text-gray-400 text-sm">
+                  <p className="text-lg mb-1 text-gray-500">
+                    {isDragging ? "Drop file here" : "Click or drag a file here"}
+                  </p>
+                  <p>PDF, DOCX, or TXT · max 10 MB</p>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 shrink-0">
+                    {FILE_TYPE_LABELS[uploadedFile.type] ??
+                      uploadedFile.name.split(".").pop()?.toUpperCase() ??
+                      "FILE"}
+                  </span>
+                  <span className="text-sm text-gray-700 truncate">{uploadedFile.name}</span>
+                  <span className="text-xs text-gray-400 shrink-0">{formatBytes(uploadedFile.size)}</span>
+                </div>
+                <button
+                  onClick={() => {
+                    setUploadedFile(null);
+                    if (docFileInputRef.current) docFileInputRef.current.value = "";
+                  }}
+                  className="text-xs text-gray-400 hover:text-red-500 shrink-0 transition-colors"
+                >
+                  Remove
+                </button>
+              </div>
+            )}
+            <input
+              ref={docFileInputRef}
+              type="file"
+              accept=".pdf,.docx,.txt"
+              onChange={handleDocFileChange}
+              className="hidden"
+            />
+          </div>
         ) : (
           <textarea
             value={content}
@@ -259,7 +386,11 @@ export default function FeedMemory() {
           disabled={loading}
           className="w-full rounded-xl bg-gray-900 text-white font-medium py-3 text-sm hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          {loading ? "Processing..." : "Add to memory"}
+          {loading
+            ? activeTab === "file" && uploadedFile
+              ? `Processing ${uploadedFile.name}…`
+              : "Processing…"
+            : "Add to memory"}
         </button>
       </div>
     </div>
