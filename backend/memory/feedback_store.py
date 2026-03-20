@@ -70,3 +70,47 @@ def get_all_topics_posted() -> list[str]:
     rows = conn.execute("SELECT topic FROM posts ORDER BY created_at DESC").fetchall()
     conn.close()
     return [row["topic"] for row in rows]
+
+
+_UNSET = object()
+
+
+def update_post(
+    post_id: int,
+    content=_UNSET,
+    authenticity_score=_UNSET,
+    svg_diagrams=_UNSET,
+) -> bool:
+    """Update only the fields that are explicitly provided. _UNSET means skip that field."""
+    fields = []
+    values = []
+    if content is not _UNSET:
+        fields.append("content = ?")
+        values.append(content)
+    if authenticity_score is not _UNSET:
+        fields.append("authenticity_score = ?")
+        values.append(authenticity_score)
+    if svg_diagrams is not _UNSET:
+        fields.append("svg_diagrams = ?")
+        values.append(svg_diagrams)
+    if not fields:
+        return False
+    values.append(post_id)
+    conn = _connect()
+    cursor = conn.execute(
+        f"UPDATE posts SET {', '.join(fields)} WHERE id = ?",
+        values,
+    )
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return updated
+
+
+def delete_post(post_id: int) -> bool:
+    conn = _connect()
+    cursor = conn.execute("DELETE FROM posts WHERE id = ?", (post_id,))
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
