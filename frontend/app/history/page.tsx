@@ -151,10 +151,22 @@ function ScoreBadge({ score }: { score: number }) {
   );
 }
 
-function PostCard({ post, onDelete }: { post: Post; onDelete: (id: number) => void }) {
+function PostCard({
+  post,
+  onDelete,
+  confirmingId,
+  setConfirmingId,
+}: {
+  post: Post;
+  onDelete: (id: number) => void;
+  confirmingId: number | null;
+  setConfirmingId: (id: number | null) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  const isConfirming = confirmingId === post.id;
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(post.content);
@@ -169,6 +181,7 @@ function PostCard({ post, onDelete }: { post: Post; onDelete: (id: number) => vo
       onDelete(post.id);
     } catch {
       setDeleting(false);
+      setConfirmingId(null);
     }
   };
 
@@ -204,13 +217,32 @@ function PostCard({ post, onDelete }: { post: Post; onDelete: (id: number) => vo
             >
               {expanded ? "Hide" : "See full post"}
             </button>
-            <button
-              onClick={handleDelete}
-              disabled={deleting}
-              className="text-xs text-gray-400 hover:text-red-500 whitespace-nowrap transition-colors disabled:opacity-50"
-            >
-              {deleting ? "Deleting..." : "Delete"}
-            </button>
+            {!isConfirming && (
+              <button
+                onClick={() => setConfirmingId(post.id)}
+                className="text-xs text-gray-400 hover:text-red-500 whitespace-nowrap transition-colors"
+              >
+                Delete
+              </button>
+            )}
+            {isConfirming && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500 whitespace-nowrap">Delete this post?</span>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="text-xs text-white bg-red-500 hover:bg-red-600 rounded-lg px-2.5 py-1 whitespace-nowrap transition-colors disabled:opacity-50"
+                >
+                  {deleting ? "Deleting..." : "Yes, delete"}
+                </button>
+                <button
+                  onClick={() => setConfirmingId(null)}
+                  className="text-xs text-gray-500 hover:text-gray-900 border border-gray-200 rounded-lg px-2.5 py-1 whitespace-nowrap transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -244,9 +276,11 @@ export default function HistoryPage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [confirmingId, setConfirmingId] = useState<number | null>(null);
 
   const handleDeletePost = (id: number) => {
     setPosts((prev) => prev.filter((p) => p.id !== id));
+    setConfirmingId(null);
   };
 
   useEffect(() => {
@@ -289,7 +323,13 @@ export default function HistoryPage() {
       {!loading && posts.length > 0 && (
         <div className="space-y-4">
           {posts.map((post) => (
-            <PostCard key={post.id} post={post} onDelete={handleDeletePost} />
+            <PostCard
+              key={post.id}
+              post={post}
+              onDelete={handleDeletePost}
+              confirmingId={confirmingId}
+              setConfirmingId={setConfirmingId}
+            />
           ))}
         </div>
       )}
