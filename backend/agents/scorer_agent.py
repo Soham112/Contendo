@@ -86,10 +86,9 @@ def parse_scorer_response(response_text: str) -> dict:
     }
 
 
-def scorer_node(state: PipelineState) -> PipelineState:
+def score_text(draft: str) -> tuple[int, list[str]]:
+    """Score a draft and return (total_score, combined feedback+flagged_sentences list)."""
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-
-    current_draft = state["current_draft"]
 
     message = client.messages.create(
         model="claude-sonnet-4-6",
@@ -98,7 +97,7 @@ def scorer_node(state: PipelineState) -> PipelineState:
         messages=[
             {
                 "role": "user",
-                "content": f"Score this post:\n\n{current_draft}",
+                "content": f"Score this post:\n\n{draft}",
             }
         ],
     )
@@ -115,6 +114,11 @@ def scorer_node(state: PipelineState) -> PipelineState:
     feedback = result.get("feedback", [])
     flagged = result.get("flagged_sentences", [])
 
+    return score, feedback + flagged
+
+
+def scorer_node(state: PipelineState) -> PipelineState:
+    score, score_feedback = score_text(state["current_draft"])
     state["score"] = score
-    state["score_feedback"] = feedback + flagged
+    state["score_feedback"] = score_feedback
     return state

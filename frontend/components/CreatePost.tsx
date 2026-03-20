@@ -213,6 +213,10 @@ export default function CreatePost() {
   const [visualsLoading, setVisualsLoading] = useState(false);
   const [visualsVisible, setVisualsVisible] = useState(false);
 
+  const [refineInstruction, setRefineInstruction] = useState("");
+  const [refineLoading, setRefineLoading] = useState(false);
+  const [refineError, setRefineError] = useState("");
+
   const [restored, setRestored] = useState(false);
 
   const topicRef = useRef<HTMLInputElement>(null);
@@ -265,6 +269,58 @@ export default function CreatePost() {
       sessionStorage.removeItem(k)
     );
     setRestored(false);
+  };
+
+  // Pre-fill refinement instruction from latest feedback
+  useEffect(() => {
+    if (!result || result.score_feedback.length === 0) return;
+    const items = result.score_feedback.slice(0, 3);
+    setRefineInstruction("Fix the following issues: " + items.map((f) => f.trim().replace(/\.+$/, "")).join(". ") + ".");
+  }, [result]);
+
+  const handleRefine = async () => {
+    if (!refineInstruction.trim()) {
+      setRefineError("Refinement instruction is required.");
+      return;
+    }
+    setRefineError("");
+    setRefineLoading(true);
+    try {
+      const res = await fetch(`${API}/refine`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          current_draft: editedPost,
+          refinement_instruction: refineInstruction,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail ?? "Refinement failed");
+      }
+      const data: { refined_draft: string; score: number; score_feedback: string[] } = await res.json();
+
+      // Update the post textarea
+      setEditedPost(data.refined_draft);
+
+      // Update score and feedback in result (triggers refineInstruction pre-fill via useEffect)
+      setResult((prev) =>
+        prev ? { ...prev, score: data.score, score_feedback: data.score_feedback } : prev
+      );
+
+      // Explicitly persist to sessionStorage — don't rely on effect timing
+      try {
+        sessionStorage.setItem(SS_POST, data.refined_draft);
+        sessionStorage.setItem(SS_SCORE, String(data.score));
+        sessionStorage.setItem(SS_FEEDBACK, JSON.stringify(data.score_feedback));
+      } catch {
+        // sessionStorage unavailable — ignore
+      }
+    } catch (e: unknown) {
+      setRefineError(e instanceof Error ? e.message : "Something went wrong.");
+    } finally {
+      setRefineLoading(false);
+    }
   };
 
   const generate = async () => {
@@ -612,6 +668,36 @@ export default function CreatePost() {
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Refine section */}
+          <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-5 space-y-3">
+            <p className="text-xs uppercase tracking-widest text-gray-400">Refine draft</p>
+            <textarea
+              value={refineInstruction}
+              onChange={(e) => setRefineInstruction(e.target.value)}
+              rows={3}
+              placeholder="Describe what to fix — e.g. Fix the following issues: the hook is too generic. The second paragraph lacks specificity."
+              className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-gray-400 resize-none"
+            />
+            {refineError && <p className="text-xs text-red-500">{refineError}</p>}
+            <button
+              onClick={handleRefine}
+              disabled={refineLoading}
+              className="rounded-xl border border-gray-200 text-gray-600 font-medium px-4 py-2 text-sm hover:border-gray-400 hover:text-gray-900 transition-colors bg-white disabled:opacity-50"
+            >
+              {refineLoading ? (
+                <span className="flex items-center gap-2">
+                  <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                  Refining...
+                </span>
+              ) : (
+                "Refine draft"
+              )}
+            </button>
           </div>
 
           {/* Editable post */}
