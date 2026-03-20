@@ -260,6 +260,26 @@
 
 ---
 
+### POST /refine
+**Request body:**
+```json
+{
+  "current_draft": "string — the post text to refine",
+  "refinement_instruction": "string — specific instruction describing what to fix"
+}
+```
+**Response:**
+```json
+{
+  "refined_draft": "string — the refined post text",
+  "score": 82,
+  "score_feedback": ["note 1", "note 2", "flagged sentence"]
+}
+```
+**Notes:** Calls `refine_draft()` from `humanizer_agent.py` once, then `score_text()` from `scorer_agent.py` once. Does NOT run the full LangGraph pipeline — no retrieval, no draft agent, no retry loop. Designed for targeted fixes after the initial generation. Both functions are standalone callables extracted from their respective pipeline nodes.
+
+---
+
 ### GET /library
 **Response:**
 ```json
@@ -388,6 +408,8 @@
 | Library screen groups chunks by source | `get_all_sources()` groups ChromaDB chunks by `source_id` so the user sees one card per ingested item, not raw chunk counts |
 | Ideation agent uses multi-query diversity sampling | 8 queries (5 broad + 2 random tags + 1 oldest source) prevent recency bias; chunk cap raised to 30; diversity rules added to system prompt |
 | Default idea count is 8 | Raised from 5 — more ideas needed to span different knowledge base topics after diversity sampling |
+| `/refine` does not run the full pipeline | Refinement is a targeted one-pass fix: `refine_draft()` + `score_text()` only. No retrieval, no draft agent, no retry loop — running the full pipeline would discard the user's manual edits |
+| `score_text()` extracted from `scorer_node` | Scoring logic lives in exactly one place (`scorer_agent.py`); both the LangGraph pipeline (`scorer_node`) and the standalone `/refine` endpoint call `score_text()` internally — no duplication |
 
 ---
 

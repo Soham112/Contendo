@@ -13,6 +13,8 @@ from agents.ingestion_agent import ingest_content
 from agents.vision_agent import extract_from_image
 from agents.ideation_agent import generate_suggestions
 from agents.visual_agent import generate_visuals
+from agents.humanizer_agent import refine_draft
+from agents.scorer_agent import score_text
 from memory.vector_store import get_total_chunks, get_all_tags, get_all_sources
 from memory.feedback_store import init_db, log_post, get_recent_posts
 from pipeline.graph import run_pipeline
@@ -171,8 +173,36 @@ async def suggestions(count: int = Query(default=8, ge=1, le=10)) -> dict:
     return {"suggestions": ideas}
 
 
+class RefineRequest(BaseModel):
+    current_draft: str
+    refinement_instruction: str
+
+
+class RefineResponse(BaseModel):
+    refined_draft: str
+    score: int
+    score_feedback: list[str]
+
+
 class GenerateVisualsRequest(BaseModel):
     post_content: str
+
+
+@app.post("/refine", response_model=RefineResponse)
+async def refine(req: RefineRequest) -> RefineResponse:
+    if not req.current_draft.strip():
+        raise HTTPException(status_code=400, detail="current_draft is required")
+    if not req.refinement_instruction.strip():
+        raise HTTPException(status_code=400, detail="refinement_instruction is required")
+
+    refined = refine_draft(req.current_draft, req.refinement_instruction)
+    score, score_feedback = score_text(refined)
+
+    return RefineResponse(
+        refined_draft=refined,
+        score=score,
+        score_feedback=score_feedback,
+    )
 
 
 @app.post("/generate-visuals")
