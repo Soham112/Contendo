@@ -41,15 +41,13 @@ Return ONLY a valid JSON array with exactly {count} objects. Each object must ha
 Return nothing outside the JSON array."""
 
 
-def generate_suggestions(count: int = 8) -> list[dict]:
-    count = min(max(count, 1), 10)
+def generate_suggestions(count: int = 8, topic: str | None = None) -> list[dict]:
+    count = min(max(count, 1), 15)
 
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     profile = load_profile()
     profile_context = profile_to_context_string(profile)
 
-    # Multi-query diversity sampling across the full knowledge base
-    broad_queries = ["technology", "career", "learning", "building", "data"]
     seen_texts: set[str] = set()
     chunks: list[str] = []
 
@@ -59,29 +57,42 @@ def generate_suggestions(count: int = 8) -> list[dict]:
                 seen_texts.add(r["text"])
                 chunks.append(r["text"])
 
-    # Query 1-5: broad topic sweep
-    for q in broad_queries:
-        _add_results(query_similar(q, top_k=4))
+    if topic:
+        # Topic-focused sampling: drill into the requested topic from multiple angles
+        _add_results(query_similar(topic, top_k=8))
+        _add_results(query_similar(f"{topic} lessons learned", top_k=5))
+        _add_results(query_similar(f"{topic} failure or mistake", top_k=5))
+        # One broad random sample for diversity
+        all_tags = get_all_tags()
+        if all_tags:
+            _add_results(query_similar(random.choice(all_tags), top_k=4))
+    else:
+        # Multi-query diversity sampling across the full knowledge base
+        broad_queries = ["technology", "career", "learning", "building", "data"]
 
-    # Query 6-7: two random tags for coverage of niche topics
-    all_tags = get_all_tags()
-    if all_tags:
-        sample_tags = random.sample(all_tags, min(2, len(all_tags)))
-        for tag in sample_tags:
-            _add_results(query_similar(tag, top_k=5))
+        # Query 1-5: broad topic sweep
+        for q in broad_queries:
+            _add_results(query_similar(q, top_k=4))
 
-    # Query 8: oldest sources — pull chunks from sources added earliest
-    # to counteract recency bias from embedding similarity
-    all_sources = get_all_sources()
-    if all_sources:
-        oldest = sorted(
-            [s for s in all_sources if s["ingested_at"]],
-            key=lambda s: s["ingested_at"],
-        )
-        if oldest:
-            oldest_title = oldest[0]["source_title"]
-            if oldest_title and oldest_title != "Untitled":
-                _add_results(query_similar(oldest_title, top_k=5))
+        # Query 6-7: two random tags for coverage of niche topics
+        all_tags = get_all_tags()
+        if all_tags:
+            sample_tags = random.sample(all_tags, min(2, len(all_tags)))
+            for tag in sample_tags:
+                _add_results(query_similar(tag, top_k=5))
+
+        # Query 8: oldest sources — pull chunks from sources added earliest
+        # to counteract recency bias from embedding similarity
+        all_sources = get_all_sources()
+        if all_sources:
+            oldest = sorted(
+                [s for s in all_sources if s["ingested_at"]],
+                key=lambda s: s["ingested_at"],
+            )
+            if oldest:
+                oldest_title = oldest[0]["source_title"]
+                if oldest_title and oldest_title != "Untitled":
+                    _add_results(query_similar(oldest_title, top_k=5))
 
     posted_topics = get_all_topics_posted()
 
@@ -99,7 +110,13 @@ def generate_suggestions(count: int = 8) -> list[dict]:
 
     system = SYSTEM_PROMPT.format(count=count)
 
-    user_message = f"""Generate {count} content ideas.
+    topic_instruction = (
+        f"\nGenerate ideas specifically focused on: {topic}. All ideas should connect to this theme while drawing from the knowledge base.\n"
+        if topic
+        else ""
+    )
+
+    user_message = f"""Generate {count} content ideas.{topic_instruction}
 
 USER PROFILE:
 {profile_context}
