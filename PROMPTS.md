@@ -269,6 +269,34 @@ Rewrite the draft now. Preserve the structure and all factual content — only c
 - `words_to_avoid` — comma-separated list from `profile["words_to_avoid"]`
 - `current_draft` — the current draft string from pipeline state
 
+**Standalone refinement function — `refine_draft(current_draft, refinement_instruction)`:**
+
+Used by `POST /refine` outside the LangGraph pipeline. Uses `REFINE_PROMPT` (separate constant in the same file):
+
+```
+You are refining an existing draft based on specific feedback. Do not rewrite the entire post. Keep everything that is working. Fix only what the instruction identifies as weak.
+
+Current draft:
+{current_draft}
+
+Refinement instruction:
+{refinement_instruction}
+
+Rules:
+- Preserve the hook if it is strong
+- Preserve specific numbers, names, and real details
+- Preserve [DIAGRAM:] and [IMAGE:] placeholders exactly
+- Fix the specific issues identified in the instruction
+- Do not add new sections unless the instruction asks
+- Do not make the post longer unless necessary
+
+Output only the refined post, no commentary.
+```
+
+**Input variables injected into REFINE_PROMPT:**
+- `current_draft` — the draft string passed directly to the function
+- `refinement_instruction` — the targeted fix instruction passed directly to the function
+
 ---
 
 ### Scorer Agent — agents/scorer_agent.py
@@ -340,3 +368,7 @@ If all three fail: logs raw response, returns `score=50`, `feedback=["Score pars
 - Score ≥ 75 → finalize
 - Score < 75 AND iterations < 3 → route back to humanizer_node
 - Iterations ≥ 3 → finalize regardless of score (surfaces best attempt)
+
+**Standalone scoring function — `score_text(draft: str) -> tuple[int, list[str]]`:**
+
+The full 3-attempt JSON parse and Claude call is extracted into `score_text()`. `scorer_node` calls it internally. `POST /refine` also calls it directly without constructing a `PipelineState`. Returns `(total_score, feedback + flagged_sentences combined list)`.

@@ -34,6 +34,39 @@ Current draft:
 Rewrite the draft now. Preserve the structure and all factual content — only change the language and sentence patterns. Output only the rewritten post, no commentary."""
 
 
+REFINE_PROMPT = """You are refining an existing draft based on specific feedback. Do not rewrite the entire post. Keep everything that is working. Fix only what the instruction identifies as weak.
+
+Current draft:
+{current_draft}
+
+Refinement instruction:
+{refinement_instruction}
+
+Rules:
+- Preserve the hook if it is strong
+- Preserve specific numbers, names, and real details
+- Preserve [DIAGRAM:] and [IMAGE:] placeholders exactly
+- Fix the specific issues identified in the instruction
+- Do not add new sections unless the instruction asks
+- Do not make the post longer unless necessary
+
+Output only the refined post, no commentary."""
+
+
+def refine_draft(current_draft: str, refinement_instruction: str) -> str:
+    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    prompt = REFINE_PROMPT.format(
+        current_draft=current_draft,
+        refinement_instruction=refinement_instruction,
+    )
+    message = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=2000,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return message.content[0].text.strip()
+
+
 def humanizer_node(state: PipelineState) -> PipelineState:
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 

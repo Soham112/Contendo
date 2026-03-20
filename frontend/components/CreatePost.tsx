@@ -7,6 +7,9 @@ const SS_SCORE = "contentOS_last_score";
 const SS_FEEDBACK = "contentOS_last_feedback";
 const SS_ITERATIONS = "contentOS_last_iterations";
 const SS_VISUALS = "contentOS_last_visuals";
+const SS_IDEAS = "contentOS_last_ideas";
+const SS_SHOW_ANALYSIS = "contentOS_show_analysis";
+const SS_CURRENT_POST_ID = "contentOS_current_post_id";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -124,7 +127,6 @@ function DiagramCard({ visual }: { visual: Visual }) {
         setPngState("opened");
         setTimeout(() => setPngState("idle"), 5000);
       } else {
-        // popup blocked — show inline fallback
         setFallbackDataURL(dataURL);
         setPngState("blocked");
       }
@@ -202,12 +204,13 @@ export default function CreatePost() {
   const [editedPost, setEditedPost] = useState("");
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [saving, setSaving] = useState(false);
 
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [suggestionsVisible, setSuggestionsVisible] = useState(false);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [selectedIdeaIndex, setSelectedIdeaIndex] = useState<number | null>(null);
+  const [ideaCount, setIdeaCount] = useState(8);
+  const [ideaTopic, setIdeaTopic] = useState("");
 
   const [visuals, setVisuals] = useState<Visual[]>([]);
   const [visualsLoading, setVisualsLoading] = useState(false);
@@ -216,6 +219,9 @@ export default function CreatePost() {
   const [refineInstruction, setRefineInstruction] = useState("");
   const [refineLoading, setRefineLoading] = useState(false);
   const [refineError, setRefineError] = useState("");
+
+  const [showAnalysis, setShowAnalysis] = useState(false);
+  const [currentPostId, setCurrentPostId] = useState<number | null>(null);
 
   const [restored, setRestored] = useState(false);
 
@@ -229,6 +235,10 @@ export default function CreatePost() {
       const savedFeedback = sessionStorage.getItem(SS_FEEDBACK);
       const savedIterations = sessionStorage.getItem(SS_ITERATIONS);
       const savedVisuals = sessionStorage.getItem(SS_VISUALS);
+      const savedIdeas = sessionStorage.getItem(SS_IDEAS);
+      const savedShowAnalysis = sessionStorage.getItem(SS_SHOW_ANALYSIS);
+      const savedPostId = sessionStorage.getItem(SS_CURRENT_POST_ID);
+
       if (savedPost && savedScore && savedFeedback && savedIterations) {
         const restoredResult: GenerateResult = {
           post: savedPost,
@@ -244,6 +254,22 @@ export default function CreatePost() {
           setVisualsVisible(parsedVisuals.length > 0);
         }
         setRestored(true);
+      }
+
+      if (savedIdeas) {
+        const parsedIdeas: Suggestion[] = JSON.parse(savedIdeas);
+        if (parsedIdeas.length > 0) {
+          setSuggestions(parsedIdeas);
+          setSuggestionsVisible(true);
+        }
+      }
+
+      if (savedShowAnalysis !== null) {
+        setShowAnalysis(savedShowAnalysis === "true");
+      }
+
+      if (savedPostId) {
+        setCurrentPostId(Number(savedPostId));
       }
     } catch {
       // corrupt sessionStorage — ignore
@@ -264,11 +290,24 @@ export default function CreatePost() {
     }
   }, [result, editedPost, visuals]);
 
+  // Persist showAnalysis preference
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(SS_SHOW_ANALYSIS, String(showAnalysis));
+    } catch {
+      // ignore
+    }
+  }, [showAnalysis]);
+
   const clearSession = () => {
-    [SS_POST, SS_SCORE, SS_FEEDBACK, SS_ITERATIONS, SS_VISUALS].forEach((k) =>
+    [SS_POST, SS_SCORE, SS_FEEDBACK, SS_ITERATIONS, SS_VISUALS, SS_IDEAS, SS_CURRENT_POST_ID].forEach((k) =>
       sessionStorage.removeItem(k)
     );
     setRestored(false);
+    setCurrentPostId(null);
+    setSuggestions([]);
+    setSuggestionsVisible(false);
+    setSelectedIdeaIndex(null);
   };
 
   // Pre-fill refinement instruction from latest feedback
@@ -277,6 +316,54 @@ export default function CreatePost() {
     const items = result.score_feedback.slice(0, 3);
     setRefineInstruction("Fix the following issues: " + items.map((f) => f.trim().replace(/\.+$/, "")).join(". ") + ".");
   }, [result]);
+
+  const autoSavePost = async (data: GenerateResult, postContent: string) => {
+    try {
+      const res = await fetch(`${API}/log-post`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic,
+          format,
+          tone,
+          content: postContent,
+          authenticity_score: data.score,
+          svg_diagrams: null,
+        }),
+      });
+      if (!res.ok) return;
+      const saved = await res.json();
+      const postId: number = saved.post_id;
+      setCurrentPostId(postId);
+      try {
+        sessionStorage.setItem(SS_CURRENT_POST_ID, String(postId));
+      } catch {
+        // ignore
+      }
+    } catch {
+      // auto-save failure is non-critical — silently ignore
+    }
+  };
+
+  const patchHistory = async (fields: {
+    content?: string;
+    authenticity_score?: number;
+    svg_diagrams?: object[] | null;
+  }) => {
+    const postId = currentPostId ?? (() => {
+      try { return Number(sessionStorage.getItem(SS_CURRENT_POST_ID)) || null; } catch { return null; }
+    })();
+    if (!postId) return;
+    try {
+      await fetch(`${API}/history/${postId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(fields),
+      });
+    } catch {
+      // patch failure is non-critical
+    }
+  };
 
   const handleRefine = async () => {
     if (!refineInstruction.trim()) {
@@ -300,22 +387,22 @@ export default function CreatePost() {
       }
       const data: { refined_draft: string; score: number; score_feedback: string[] } = await res.json();
 
-      // Update the post textarea
       setEditedPost(data.refined_draft);
-
-      // Update score and feedback in result (triggers refineInstruction pre-fill via useEffect)
       setResult((prev) =>
         prev ? { ...prev, score: data.score, score_feedback: data.score_feedback } : prev
       );
 
-      // Explicitly persist to sessionStorage — don't rely on effect timing
+      // Explicitly persist to sessionStorage
       try {
         sessionStorage.setItem(SS_POST, data.refined_draft);
         sessionStorage.setItem(SS_SCORE, String(data.score));
         sessionStorage.setItem(SS_FEEDBACK, JSON.stringify(data.score_feedback));
       } catch {
-        // sessionStorage unavailable — ignore
+        // ignore
       }
+
+      // Update history entry in place
+      await patchHistory({ content: data.refined_draft, authenticity_score: data.score });
     } catch (e: unknown) {
       setRefineError(e instanceof Error ? e.message : "Something went wrong.");
     } finally {
@@ -331,7 +418,6 @@ export default function CreatePost() {
     setError("");
     setLoading(true);
     setResult(null);
-    setSaved(false);
     setVisuals([]);
     setVisualsVisible(false);
     clearSession();
@@ -351,6 +437,9 @@ export default function CreatePost() {
       const data: GenerateResult = await res.json();
       setResult(data);
       setEditedPost(data.post);
+
+      // Auto-save immediately after generation
+      await autoSavePost(data, data.post);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
     } finally {
@@ -362,34 +451,6 @@ export default function CreatePost() {
     await navigator.clipboard.writeText(editedPost);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleSave = async () => {
-    if (!result) return;
-    setSaving(true);
-    const diagrams = visuals
-      .filter((v) => v.type === "diagram" && v.svg_code)
-      .map((v) => ({ position: v.position, description: v.description, svg_code: v.svg_code }));
-    try {
-      const res = await fetch(`${API}/log-post`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          topic,
-          format,
-          tone,
-          content: editedPost,
-          authenticity_score: result.score,
-          svg_diagrams: diagrams.length > 0 ? diagrams : null,
-        }),
-      });
-      if (!res.ok) throw new Error("Save failed");
-      setSaved(true);
-    } catch {
-      // silently fail — non-critical
-    } finally {
-      setSaving(false);
-    }
   };
 
   const handleGenerateVisuals = async () => {
@@ -404,7 +465,16 @@ export default function CreatePost() {
       });
       if (!res.ok) throw new Error("Visuals generation failed");
       const data = await res.json();
-      setVisuals(data.visuals ?? []);
+      const newVisuals: Visual[] = data.visuals ?? [];
+      setVisuals(newVisuals);
+
+      // Patch history entry with generated diagrams
+      const diagrams = newVisuals
+        .filter((v) => v.type === "diagram" && v.svg_code)
+        .map((v) => ({ position: v.position, description: v.description, svg_code: v.svg_code }));
+      if (diagrams.length > 0) {
+        await patchHistory({ svg_diagrams: diagrams });
+      }
     } catch {
       setVisuals([]);
     } finally {
@@ -416,11 +486,20 @@ export default function CreatePost() {
     setSuggestionsLoading(true);
     setSuggestionsVisible(true);
     setSuggestions([]);
+    setSelectedIdeaIndex(null);
     try {
-      const res = await fetch(`${API}/suggestions?count=8`);
+      const params = new URLSearchParams({ count: String(ideaCount) });
+      if (ideaTopic.trim()) params.set("topic", ideaTopic.trim());
+      const res = await fetch(`${API}/suggestions?${params}`);
       if (!res.ok) throw new Error("Failed to fetch suggestions");
       const data = await res.json();
-      setSuggestions(data.suggestions ?? []);
+      const fetched: Suggestion[] = data.suggestions ?? [];
+      setSuggestions(fetched);
+      try {
+        sessionStorage.setItem(SS_IDEAS, JSON.stringify(fetched));
+      } catch {
+        // ignore
+      }
     } catch {
       setSuggestions([]);
     } finally {
@@ -428,14 +507,20 @@ export default function CreatePost() {
     }
   };
 
-  const handleUseSuggestion = (s: Suggestion) => {
+  const handleUseSuggestion = (s: Suggestion, index: number) => {
     setTopic(s.title);
     const fmt = s.format as Format;
     if (FORMATS.find((f) => f.id === fmt)) setFormat(fmt);
-    setSuggestionsVisible(false);
-    setSuggestions([]);
+    setSelectedIdeaIndex(index);
     topicRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     topicRef.current?.focus();
+  };
+
+  const handleDismissIdeas = () => {
+    setSuggestionsVisible(false);
+    setSuggestions([]);
+    setSelectedIdeaIndex(null);
+    try { sessionStorage.removeItem(SS_IDEAS); } catch { /* ignore */ }
   };
 
   return (
@@ -448,15 +533,33 @@ export default function CreatePost() {
         </p>
       </div>
 
-      {/* Get ideas button */}
-      <div>
+      {/* Get ideas row */}
+      <div className="flex flex-wrap items-center gap-3">
         <button
           onClick={handleGetIdeas}
           disabled={suggestionsLoading}
           className="text-sm border border-gray-200 rounded-xl px-4 py-2 text-gray-600 hover:border-gray-400 hover:text-gray-900 transition-colors bg-white disabled:opacity-50"
         >
-          {suggestionsLoading ? "Finding fresh angles from your memory..." : "Get ideas"}
+          {suggestionsLoading ? "Finding angles..." : "Get ideas"}
         </button>
+        <div className="flex items-center gap-1.5">
+          <label className="text-xs text-gray-400">How many?</label>
+          <input
+            type="number"
+            min={3}
+            max={15}
+            value={ideaCount}
+            onChange={(e) => setIdeaCount(Math.min(15, Math.max(3, Number(e.target.value))))}
+            className="w-14 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-700 focus:outline-none focus:border-gray-400 text-center"
+          />
+        </div>
+        <input
+          type="text"
+          value={ideaTopic}
+          onChange={(e) => setIdeaTopic(e.target.value)}
+          placeholder="Focus on a topic (optional) — e.g. 'production ML', 'career lessons'"
+          className="flex-1 min-w-48 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none focus:border-gray-400"
+        />
       </div>
 
       {/* Suggestions panel */}
@@ -468,7 +571,9 @@ export default function CreatePost() {
                 {suggestionsLoading ? "Loading..." : `${suggestions.length} idea${suggestions.length !== 1 ? "s" : ""} from your memory`}
               </p>
               {!suggestionsLoading && (
-                <p className="text-xs text-gray-400 mt-0.5">Ideas drawn from your full knowledge base</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {ideaTopic.trim() ? `Focused on: ${ideaTopic.trim()}` : "Ideas drawn from your full knowledge base"}
+                </p>
               )}
             </div>
             <div className="flex items-center gap-3">
@@ -477,11 +582,11 @@ export default function CreatePost() {
                   onClick={handleGetIdeas}
                   className="text-xs text-gray-500 hover:text-gray-900 border border-gray-200 rounded-lg px-2.5 py-1 transition-colors"
                 >
-                  Refresh ideas
+                  Refresh
                 </button>
               )}
               <button
-                onClick={() => { setSuggestionsVisible(false); setSuggestions([]); }}
+                onClick={handleDismissIdeas}
                 className="text-gray-400 hover:text-gray-700 transition-colors text-lg leading-none"
               >
                 ×
@@ -502,11 +607,21 @@ export default function CreatePost() {
           {!suggestionsLoading && suggestions.length > 0 && (
             <div className="divide-y divide-gray-100">
               {suggestions.map((s, i) => (
-                <div key={i} className="px-5 py-4 flex items-start justify-between gap-4">
+                <div
+                  key={i}
+                  className={`px-5 py-4 flex items-start justify-between gap-4 transition-colors ${
+                    selectedIdeaIndex === i ? "bg-gray-50" : ""
+                  }`}
+                >
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 leading-snug">
-                      {s.title}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      {selectedIdeaIndex === i && (
+                        <span className="text-green-600 text-xs font-medium">✓</span>
+                      )}
+                      <p className="text-sm font-semibold text-gray-900 leading-snug">
+                        {s.title}
+                      </p>
+                    </div>
                     <div className="mt-1 flex items-center gap-2">
                       <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
                         {FORMAT_BADGE[s.format] ?? s.format}
@@ -515,10 +630,14 @@ export default function CreatePost() {
                     <p className="mt-1 text-xs text-gray-500 leading-relaxed">{s.angle}</p>
                   </div>
                   <button
-                    onClick={() => handleUseSuggestion(s)}
-                    className="text-xs whitespace-nowrap border border-gray-900 bg-gray-900 text-white rounded-lg px-3 py-1.5 hover:bg-gray-700 transition-colors"
+                    onClick={() => handleUseSuggestion(s, i)}
+                    className={`text-xs whitespace-nowrap rounded-lg px-3 py-1.5 transition-colors border ${
+                      selectedIdeaIndex === i
+                        ? "border-gray-300 bg-white text-gray-500"
+                        : "border-gray-900 bg-gray-900 text-white hover:bg-gray-700"
+                    }`}
                   >
-                    Use this
+                    {selectedIdeaIndex === i ? "Selected" : "Use this"}
                   </button>
                 </div>
               ))}
@@ -645,60 +764,6 @@ export default function CreatePost() {
       {/* Result */}
       {result && (
         <div className="space-y-6 pt-2 border-t border-gray-200">
-          {/* Score */}
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-widest text-gray-400 mb-2">
-                Authenticity score
-              </p>
-              <ScoreRing score={result.score} />
-              <p className="text-xs text-gray-400 mt-1">
-                {result.iterations} humanizer iteration{result.iterations !== 1 ? "s" : ""}
-              </p>
-            </div>
-            {result.score_feedback.length > 0 && (
-              <div className="max-w-xs space-y-1">
-                <p className="text-xs uppercase tracking-widest text-gray-400 mb-2">
-                  Feedback
-                </p>
-                {result.score_feedback.slice(0, 4).map((f, i) => (
-                  <p key={i} className="text-xs text-gray-500 leading-relaxed">
-                    — {f}
-                  </p>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Refine section */}
-          <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-5 space-y-3">
-            <p className="text-xs uppercase tracking-widest text-gray-400">Refine draft</p>
-            <textarea
-              value={refineInstruction}
-              onChange={(e) => setRefineInstruction(e.target.value)}
-              rows={3}
-              placeholder="Describe what to fix — e.g. Fix the following issues: the hook is too generic. The second paragraph lacks specificity."
-              className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-gray-400 resize-none"
-            />
-            {refineError && <p className="text-xs text-red-500">{refineError}</p>}
-            <button
-              onClick={handleRefine}
-              disabled={refineLoading}
-              className="rounded-xl border border-gray-200 text-gray-600 font-medium px-4 py-2 text-sm hover:border-gray-400 hover:text-gray-900 transition-colors bg-white disabled:opacity-50"
-            >
-              {refineLoading ? (
-                <span className="flex items-center gap-2">
-                  <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                  </svg>
-                  Refining...
-                </span>
-              ) : (
-                "Refine draft"
-              )}
-            </button>
-          </div>
 
           {/* Editable post */}
           <div className="space-y-3">
@@ -717,13 +782,6 @@ export default function CreatePost() {
                 {copied ? "Copied!" : "Copy"}
               </button>
               <button
-                onClick={handleSave}
-                disabled={saving || saved}
-                className="flex-1 rounded-xl border border-gray-200 text-gray-600 font-medium py-2.5 text-sm hover:border-gray-400 hover:text-gray-900 transition-colors bg-white disabled:opacity-50"
-              >
-                {saved ? "Saved to history" : saving ? "Saving..." : "Save to history"}
-              </button>
-              <button
                 onClick={handleGenerateVisuals}
                 disabled={visualsLoading}
                 className="flex-1 rounded-xl border border-gray-200 text-gray-600 font-medium py-2.5 text-sm hover:border-gray-400 hover:text-gray-900 transition-colors bg-white disabled:opacity-50"
@@ -738,7 +796,78 @@ export default function CreatePost() {
                 Regenerate
               </button>
             </div>
+            <p className="text-xs text-gray-400">Auto-saved to history</p>
           </div>
+
+          {/* Analysis toggle */}
+          <div>
+            <button
+              onClick={() => setShowAnalysis((v) => !v)}
+              className="text-xs text-gray-400 hover:text-gray-700 transition-colors underline underline-offset-2"
+            >
+              {showAnalysis ? "Hide authenticity analysis" : "Show authenticity analysis"}
+            </button>
+          </div>
+
+          {/* Analysis section — hidden by default */}
+          {showAnalysis && (
+            <>
+              {/* Score + feedback */}
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-widest text-gray-400 mb-2">
+                    Authenticity score
+                  </p>
+                  <ScoreRing score={result.score} />
+                  <p className="text-xs text-gray-400 mt-1">
+                    {result.iterations} humanizer iteration{result.iterations !== 1 ? "s" : ""}
+                  </p>
+                </div>
+                {result.score_feedback.length > 0 && (
+                  <div className="max-w-xs space-y-1">
+                    <p className="text-xs uppercase tracking-widest text-gray-400 mb-2">
+                      Feedback
+                    </p>
+                    {result.score_feedback.slice(0, 4).map((f, i) => (
+                      <p key={i} className="text-xs text-gray-500 leading-relaxed">
+                        — {f}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Refine section */}
+              <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-5 space-y-3">
+                <p className="text-xs uppercase tracking-widest text-gray-400">Refine draft</p>
+                <textarea
+                  value={refineInstruction}
+                  onChange={(e) => setRefineInstruction(e.target.value)}
+                  rows={3}
+                  placeholder="Describe what to fix — e.g. Fix the following issues: the hook is too generic. The second paragraph lacks specificity."
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-gray-400 resize-none"
+                />
+                {refineError && <p className="text-xs text-red-500">{refineError}</p>}
+                <button
+                  onClick={handleRefine}
+                  disabled={refineLoading}
+                  className="rounded-xl border border-gray-200 text-gray-600 font-medium px-4 py-2 text-sm hover:border-gray-400 hover:text-gray-900 transition-colors bg-white disabled:opacity-50"
+                >
+                  {refineLoading ? (
+                    <span className="flex items-center gap-2">
+                      <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                      </svg>
+                      Refining...
+                    </span>
+                  ) : (
+                    "Refine draft"
+                  )}
+                </button>
+              </div>
+            </>
+          )}
 
           {/* Visuals panel */}
           {visualsVisible && (

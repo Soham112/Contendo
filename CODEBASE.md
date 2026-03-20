@@ -181,7 +181,7 @@
 ```json
 { "post_id": 7, "saved": true }
 ```
-**Notes:** User-initiated only — never called automatically. `svg_diagrams` is optional (null if no visuals were generated). Content saved may differ from the originally generated draft if the user edited it.
+**Notes:** Called automatically by the frontend immediately after generation completes. Returns `post_id` which the frontend stores in `contentOS_current_post_id` sessionStorage for subsequent PATCH calls. `svg_diagrams` is null on initial auto-save; updated later via PATCH when visuals are generated.
 
 ---
 
@@ -210,7 +210,10 @@
 ---
 
 ### GET /suggestions
-**Query params:** `count` (int, default 8, range 1–10)
+**Query params:**
+- `count` (int, default 8, range 1–15)
+- `topic` (str, optional) — if provided, focuses sampling on the given topic
+
 **Response:**
 ```json
 {
@@ -224,7 +227,7 @@
   ]
 }
 ```
-**Notes:** Calls ideation_agent, which uses multi-query diversity sampling (8 queries: 5 broad topics + 2 random tags + 1 oldest-source query) across up to 30 ChromaDB chunks, reads all previously posted topics from feedback_store, and asks Claude to generate ideas that avoid repetition and span different knowledge base topics.
+**Notes:** Calls ideation_agent. If `topic` is provided: uses 3 focused queries (topic, topic + "lessons learned", topic + "failure or mistake") plus 1 random tag for diversity; injects a topic focus instruction into the prompt. If `topic` is omitted: existing multi-query diversity sampling (8 queries: 5 broad topics + 2 random tags + 1 oldest-source query) across up to 30 ChromaDB chunks. All previously posted topics are always excluded.
 
 ---
 
@@ -257,6 +260,52 @@
 }
 ```
 **Notes:** One Claude call per `[DIAGRAM:]` placeholder; zero Claude calls for `[IMAGE:]`. Visuals returned in the order placeholders appear in the post. If SVG generation fails, `svg_code` is `null` and the frontend shows an error card.
+
+---
+
+### DELETE /history/{post_id}
+**Response:**
+```json
+{ "deleted": true }
+```
+**Notes:** Deletes the post with the given id from SQLite. Returns `deleted: false` if the id does not exist.
+
+---
+
+### PATCH /history/{post_id}
+**Request body (all fields optional — only provided fields are updated):**
+```json
+{
+  "content": "updated post text",
+  "authenticity_score": 85,
+  "svg_diagrams": [{ "position": 0, "description": "...", "svg_code": "<svg>...</svg>" }]
+}
+```
+**Response:**
+```json
+{ "updated": true }
+```
+**Notes:** Partial update — uses Pydantic `model_fields_set` to identify which fields were explicitly provided; only those fields are written to SQLite. Called by the frontend after refinement (content + score) and after visuals generation (svg_diagrams only). A request with no fields returns `updated: false` without touching the DB.
+
+---
+
+### POST /refine
+**Request body:**
+```json
+{
+  "current_draft": "string — the post text to refine",
+  "refinement_instruction": "string — specific instruction describing what to fix"
+}
+```
+**Response:**
+```json
+{
+  "refined_draft": "string — the refined post text",
+  "score": 82,
+  "score_feedback": ["note 1", "note 2", "flagged sentence"]
+}
+```
+**Notes:** Calls `refine_draft()` from `humanizer_agent.py` once, then `score_text()` from `scorer_agent.py` once. Does NOT run the full LangGraph pipeline — no retrieval, no draft agent, no retry loop. Designed for targeted fixes after the initial generation. Both functions are standalone callables extracted from their respective pipeline nodes.
 
 ---
 
@@ -375,7 +424,7 @@
 | profile.json has auto-merge on load | Ensures new profile fields added in code appear without manual migration |
 | CORS allows `*.vercel.app` wildcard | Covers all preview and production Vercel deployments without hardcoding URLs |
 | SQLite used for post history | Zero-config, single-file, sufficient for one user — no PostgreSQL needed at MVP |
-| Posts are not auto-saved | User must explicitly click "Save to history" on Screen 3 (Create Post) — auto-save removed from `/generate` to give the user control over what enters their history |
+| Posts are auto-saved after generation | Frontend calls `POST /log-post` immediately after `POST /generate` completes. The returned `post_id` is stored in `contentOS_current_post_id` sessionStorage. Manual "Save to history" button removed. |
 | feedback_store.py owns the SQLite table | `main.py` no longer contains `init_db` or `save_post` — all DB logic is in `feedback_store.py`; `init_db()` is called from the FastAPI lifespan |
 | draft_node injects posted topics | `load_profile_node` fetches `get_all_topics_posted()` and stores in pipeline state; `draft_node` formats them into the prompt to prevent repeated angles |
 | `source_type: "youtube"` treated identically to `"article"` in ingestion | Same chunking + embedding pipeline; only difference is the UI label |
@@ -388,6 +437,12 @@
 | Library screen groups chunks by source | `get_all_sources()` groups ChromaDB chunks by `source_id` so the user sees one card per ingested item, not raw chunk counts |
 | Ideation agent uses multi-query diversity sampling | 8 queries (5 broad + 2 random tags + 1 oldest source) prevent recency bias; chunk cap raised to 30; diversity rules added to system prompt |
 | Default idea count is 8 | Raised from 5 — more ideas needed to span different knowledge base topics after diversity sampling |
+| Refinements update the existing history entry in place | After `/refine`, frontend calls `PATCH /history/{post_id}` with new content + score. After visuals generation, calls `PATCH` with `svg_diagrams`. No new history rows are created — one entry per generation session. |
+| Score and feedback hidden by default | Score ring, iterations, feedback, and refine section are collapsed behind a "Show authenticity analysis" toggle. Post textarea and action buttons are always visible. Preference stored in `contentOS_show_analysis` sessionStorage. Scorer still runs every time — this is display only. |
+| Ideas persist in sessionStorage until dismissed | `contentOS_last_ideas` stores the ideas array; panel is restored on mount if key exists. Panel stays open after "Use this" (idea gets a checkmark). Cleared only by explicit X dismiss, Regenerate, or restored-session dismiss. |
+| User can delete posts from History | `DELETE /history/{post_id}` removes the SQLite row; frontend filters the card from state without a page reload. |
+| `/refine` does not run the full pipeline | Refinement is a targeted one-pass fix: `refine_draft()` + `score_text()` only. No retrieval, no draft agent, no retry loop — running the full pipeline would discard the user's manual edits |
+| `score_text()` extracted from `scorer_node` | Scoring logic lives in exactly one place (`scorer_agent.py`); both the LangGraph pipeline (`scorer_node`) and the standalone `/refine` endpoint call `score_text()` internally — no duplication |
 
 ---
 

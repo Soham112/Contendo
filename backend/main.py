@@ -13,8 +13,10 @@ from agents.ingestion_agent import ingest_content
 from agents.vision_agent import extract_from_image
 from agents.ideation_agent import generate_suggestions
 from agents.visual_agent import generate_visuals
+from agents.humanizer_agent import refine_draft
+from agents.scorer_agent import score_text
 from memory.vector_store import get_total_chunks, get_all_tags, get_all_sources
-from memory.feedback_store import init_db, log_post, get_recent_posts
+from memory.feedback_store import init_db, log_post, get_recent_posts, delete_post, update_post
 from pipeline.graph import run_pipeline
 
 
@@ -166,13 +168,72 @@ async def library() -> dict:
 
 
 @app.get("/suggestions")
-async def suggestions(count: int = Query(default=8, ge=1, le=10)) -> dict:
-    ideas = generate_suggestions(count=count)
+async def suggestions(
+    count: int = Query(default=8, ge=1, le=15),
+    topic: str | None = Query(default=None),
+) -> dict:
+    ideas = generate_suggestions(count=count, topic=topic)
     return {"suggestions": ideas}
+
+
+class UpdatePostRequest(BaseModel):
+    content: str | None = None
+    authenticity_score: int | None = None
+    svg_diagrams: list | None = None
+
+
+@app.patch("/history/{post_id}")
+async def update_post_endpoint(post_id: int, req: UpdatePostRequest) -> dict:
+    provided = req.model_fields_set
+    if not provided:
+        return {"updated": False}
+    kwargs: dict = {}
+    if "content" in provided:
+        kwargs["content"] = req.content
+    if "authenticity_score" in provided:
+        kwargs["authenticity_score"] = req.authenticity_score
+    if "svg_diagrams" in provided:
+        kwargs["svg_diagrams"] = json.dumps(req.svg_diagrams) if req.svg_diagrams is not None else None
+    updated = update_post(post_id, **kwargs)
+    return {"updated": updated}
+
+
+@app.delete("/history/{post_id}")
+async def delete_post_endpoint(post_id: int) -> dict:
+    deleted = delete_post(post_id)
+    return {"deleted": deleted}
+
+
+class RefineRequest(BaseModel):
+    current_draft: str
+    refinement_instruction: str
+
+
+class RefineResponse(BaseModel):
+    refined_draft: str
+    score: int
+    score_feedback: list[str]
 
 
 class GenerateVisualsRequest(BaseModel):
     post_content: str
+
+
+@app.post("/refine", response_model=RefineResponse)
+async def refine(req: RefineRequest) -> RefineResponse:
+    if not req.current_draft.strip():
+        raise HTTPException(status_code=400, detail="current_draft is required")
+    if not req.refinement_instruction.strip():
+        raise HTTPException(status_code=400, detail="refinement_instruction is required")
+
+    refined = refine_draft(req.current_draft, req.refinement_instruction)
+    score, score_feedback = score_text(refined)
+
+    return RefineResponse(
+        refined_draft=refined,
+        score=score,
+        score_feedback=score_feedback,
+    )
 
 
 @app.post("/generate-visuals")
