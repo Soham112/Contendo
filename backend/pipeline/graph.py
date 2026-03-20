@@ -25,12 +25,15 @@ def finalize_node(state: PipelineState) -> PipelineState:
 
 
 def should_retry(state: PipelineState) -> str:
-    score = state.get("score", 0)
-    iterations = state.get("iterations", 0)
+    quality = state.get("quality", "standard")
 
-    if score >= SCORE_THRESHOLD or iterations >= MAX_ITERATIONS:
+    if quality in ("draft", "standard"):
         return "finalize"
-    return "humanizer"
+
+    # quality == "polished": retry loop up to MAX_ITERATIONS
+    if state.get("score", 0) < SCORE_THRESHOLD and state.get("iterations", 0) < MAX_ITERATIONS:
+        return "humanizer"
+    return "finalize"
 
 
 def build_graph() -> StateGraph:
@@ -65,12 +68,13 @@ def build_graph() -> StateGraph:
 pipeline = build_graph()
 
 
-def run_pipeline(topic: str, format: str, tone: str, context: str = "") -> dict:
+def run_pipeline(topic: str, format: str, tone: str, context: str = "", quality: str = "standard") -> dict:
     initial_state: PipelineState = {
         "topic": topic,
         "format": format,
         "tone": tone,
         "context": context,
+        "quality": quality,
         "iterations": 0,
     }
 
