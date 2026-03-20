@@ -151,14 +151,25 @@ function ScoreBadge({ score }: { score: number }) {
   );
 }
 
-function PostCard({ post }: { post: Post }) {
+function PostCard({ post, onDelete }: { post: Post; onDelete: (id: number) => void }) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(post.content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await fetch(`${API}/history/${post.id}`, { method: "DELETE" });
+      onDelete(post.id);
+    } catch {
+      setDeleting(false);
+    }
   };
 
   const date = new Date(post.created_at).toLocaleDateString("en-US", {
@@ -186,12 +197,21 @@ function PostCard({ post }: { post: Post }) {
               <span className="text-xs text-gray-400">{date}</span>
             </div>
           </div>
-          <button
-            onClick={() => setExpanded((v) => !v)}
-            className="text-xs text-gray-500 hover:text-gray-900 whitespace-nowrap transition-colors pt-0.5"
-          >
-            {expanded ? "Hide" : "See full post"}
-          </button>
+          <div className="flex items-center gap-3 pt-0.5">
+            <button
+              onClick={() => setExpanded((v) => !v)}
+              className="text-xs text-gray-500 hover:text-gray-900 whitespace-nowrap transition-colors"
+            >
+              {expanded ? "Hide" : "See full post"}
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="text-xs text-gray-400 hover:text-red-500 whitespace-nowrap transition-colors disabled:opacity-50"
+            >
+              {deleting ? "Deleting..." : "Delete"}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -225,6 +245,10 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const handleDeletePost = (id: number) => {
+    setPosts((prev) => prev.filter((p) => p.id !== id));
+  };
+
   useEffect(() => {
     fetch(`${API}/history`)
       .then((r) => {
@@ -241,7 +265,7 @@ export default function HistoryPage() {
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">History</h1>
         <p className="mt-1 text-gray-500 text-sm">
-          Posts you have saved. Newest first.
+          Auto-saved posts. Newest first.
         </p>
       </div>
 
@@ -255,9 +279,9 @@ export default function HistoryPage() {
 
       {!loading && !error && posts.length === 0 && (
         <div className="rounded-xl border border-gray-200 bg-white px-6 py-12 text-center">
-          <p className="text-gray-400 text-sm">No saved posts yet.</p>
+          <p className="text-gray-400 text-sm">No posts yet.</p>
           <p className="text-gray-400 text-xs mt-1">
-            Generate a post and click "Save to history" to see it here.
+            Posts are auto-saved when you generate. They will appear here.
           </p>
         </div>
       )}
@@ -265,7 +289,7 @@ export default function HistoryPage() {
       {!loading && posts.length > 0 && (
         <div className="space-y-4">
           {posts.map((post) => (
-            <PostCard key={post.id} post={post} />
+            <PostCard key={post.id} post={post} onDelete={handleDeletePost} />
           ))}
         </div>
       )}
