@@ -173,7 +173,7 @@
   "iterations": 2
 }
 ```
-**Notes:** Runs the full LangGraph pipeline. Posts are NOT auto-saved — the user must explicitly click "Save to history" to call `/log-post`.
+**Notes:** Runs the full LangGraph pipeline. `quality` defaults to `"standard"` (1 humanizer + 1 scorer pass, no retry loop). Pass `"polished"` for up to 3 humanizer iterations. Pass `"draft"` to skip humanizer and scorer entirely. Posts are NOT auto-saved by this endpoint — the frontend calls `/log-post` automatically after generation completes.
 
 ---
 
@@ -457,6 +457,9 @@
 | User can delete posts from History | `DELETE /history/{post_id}` removes the SQLite row; frontend filters the card from state without a page reload. |
 | `/refine` does not run the full pipeline | Refinement is a targeted one-pass fix: `refine_draft()` + `score_text()` only. No retrieval, no draft agent, no retry loop — running the full pipeline would discard the user's manual edits |
 | `score_text()` extracted from `scorer_node` | Scoring logic lives in exactly one place (`scorer_agent.py`); both the LangGraph pipeline (`scorer_node`) and the standalone `/refine` endpoint call `score_text()` internally — no duplication |
+| Default generation quality is standard | 1 humanizer pass, 1 scorer pass, no automatic retry loop. Replaces the previous default of polished mode which ran up to 3 iterations automatically. The Refine Draft button is the on-demand polishing step for users who want additional passes after seeing the initial result. |
+| Quality modes: draft, standard, polished | `draft` — skip humanizer and scorer entirely, return raw draft agent output. `standard` — 1 humanizer pass + 1 scorer pass, no retry (default). `polished` — up to 3 humanizer passes, retry if score below 75. Quality is passed in the POST /generate request body and defaults to `standard` if not provided. |
+| The retry loop is preserved for polished mode only | Routing after `scorer_node` checks the `quality` field in state via `should_retry()`. For `draft` and `standard`, it returns `"finalize"` immediately. For `polished`, it falls back to the original score+iterations check. |
 | File uploads use a separate `/ingest-file` endpoint | Keeps multipart form-data handling separate from the JSON `/ingest` route; avoids mixed content-type complexity in a single endpoint |
 | Uploaded files are ingested as `source_type="article"` | PDF/DOCX/TXT content is plain text after extraction — same chunking and embedding pipeline applies; no need for a new source type |
 | Scanned/image-only PDFs are rejected with 422 | PyMuPDF returns < 100 characters for image-only PDFs; a clear error message is returned rather than silently ingesting empty chunks |
