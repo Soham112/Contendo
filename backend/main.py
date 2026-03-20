@@ -63,6 +63,7 @@ class GenerateRequest(BaseModel):
     format: str
     tone: str
     context: str = ""
+    quality: str = "standard"
 
 
 class GenerateResponse(BaseModel):
@@ -126,6 +127,7 @@ async def generate(req: GenerateRequest) -> GenerateResponse:
         format=req.format,
         tone=req.tone,
         context=req.context,
+        quality=req.quality,
     )
 
     return GenerateResponse(
