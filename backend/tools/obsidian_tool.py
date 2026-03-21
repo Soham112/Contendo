@@ -103,7 +103,7 @@ def get_vault_stats(vault_path: str) -> dict:
         except Exception:
             skipped += 1
 
-    estimated_chunks = total_words // 400
+    estimated_chunks = max(1, round(total_words / 400))
 
     return {
         "total_files": total_files,
