@@ -30,6 +30,7 @@
 | `backend/memory/vector_store.py` | ChromaDB init, upsert, semantic query, stats |
 | `backend/memory/profile_store.py` | profile.json read/write, defaults, profile-to-string formatter |
 | `backend/memory/feedback_store.py` | SQLite posts and post_versions tables — log_post, get_recent_posts, get_all_topics_posted, add_version, get_versions, get_best_version, update_latest_version_svg |
+| `backend/tools/scraper_tool.py` | URL scraper using Jina Reader — `is_valid_url()`, `clean_scraped_text()`, `scrape_url()` |
 | `backend/tools/__init__.py` | Empty — tools directory retained for future use |
 | `backend/utils/chunker.py` | 500-word chunks with 50-word overlap |
 | `backend/utils/formatters.py` | Format + tone instruction strings per output type |
@@ -46,7 +47,7 @@
 | `frontend/app/create/page.tsx` | Screen 3: Create Post (`/create`) |
 | `frontend/app/history/page.tsx` | Screen 4: Post History (`/history`) — cards, expandable content, copy |
 | `frontend/app/globals.css` | Global styles — Tailwind directives, dark background, Inter font |
-| `frontend/components/FeedMemory.tsx` | Feed Memory form — tabs (Article/Text, File, YouTube, Image, Note), textarea, file upload with drag-and-drop, image upload, result display |
+| `frontend/components/FeedMemory.tsx` | Feed Memory form — tabs (Article/Text, URL, File, YouTube, Image, Note), URL scraping, textarea, file upload with drag-and-drop, image upload, result display |
 | `frontend/components/CreatePost.tsx` | Create Post form — topic, format, tone, output + score display |
 | `frontend/.env.local` | Sets `NEXT_PUBLIC_API_URL=http://localhost:8000` |
 | `frontend/tailwind.config.ts` | Tailwind config scoped to app/ and components/ |
@@ -120,6 +121,24 @@
 ---
 
 ## 3. API CONTRACT
+
+### POST /scrape-and-ingest
+**Request body:**
+```json
+{ "url": "https://example.com/article" }
+```
+**Response:**
+```json
+{
+  "chunks_stored": 6,
+  "tags": ["ai", "machine learning"],
+  "title": "Why RAG fails in production",
+  "word_count": 1204
+}
+```
+**Notes:** Calls `scrape_url()` from `tools/scraper_tool.py`, which fetches via Jina Reader (`https://r.jina.ai/{url}`) and returns clean markdown. Raises 400 for invalid URLs, timeouts, non-200 responses, or pages with < 200 chars of content. Title is extracted from the first `# ` heading in the scraped markdown; falls back to the URL itself. Content is passed to `ingest_content()` with `source_type="article"` and the extracted title as `source_title`.
+
+---
 
 ### POST /ingest
 **Request body:**
@@ -491,6 +510,8 @@
 | Uploaded files are ingested as `source_type="article"` | PDF/DOCX/TXT content is plain text after extraction — same chunking and embedding pipeline applies; no need for a new source type |
 | Scanned/image-only PDFs are rejected with 422 | PyMuPDF returns < 100 characters for image-only PDFs; a clear error message is returned rather than silently ingesting empty chunks |
 | File drag-and-drop uses native HTML5 events only | No external DnD library added; `onDragOver`, `onDragLeave`, `onDrop` on the drop zone div are sufficient and keep the bundle small |
+| URL scraping uses Jina Reader, not Tavily | Jina Reader (`r.jina.ai`) is free, requires no API key, and returns clean markdown. The `scrape_url()` docstring documents the upgrade path to Tavily for higher quality if an API key is available. |
+| URL success card shows `word_count → chunks_stored` | Gives the user a concrete sense of how much was extracted before chunking — more meaningful than just a chunk count |
 | Post versioning uses a parent + child table design | The `posts` table is the parent record (one row per generation session); `post_versions` stores every historical version. Every generation creates v1; every refinement creates the next version. SVG diagram updates do not create new versions — `update_latest_version_svg()` stamps diagrams onto the current version row in place. |
 | Best version tracked by highest authenticity_score | `get_best_version()` orders by `authenticity_score DESC, version_number DESC` so ties go to the latest version. The History UI highlights the best version with a green "Best" badge. |
 | Restore writes to sessionStorage, not a new PATCH | Restoring a version calls `POST /history/{post_id}/restore/{version_id}`, which updates the `posts` row. The frontend then writes the restored content to `contentOS_last_post` and related keys so Create Post picks it up immediately without an extra fetch. |

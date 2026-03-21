@@ -4,13 +4,19 @@ import { useState, useEffect, useRef } from "react";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-type SourceType = "article" | "file" | "youtube" | "image" | "note";
+type SourceType = "article" | "url" | "file" | "youtube" | "image" | "note";
 
 const TABS: { id: SourceType; label: string; description: string }[] = [
   {
     id: "article",
     label: "Article / Text",
     description: "Paste any article, blog post, or long-form text.",
+  },
+  {
+    id: "url",
+    label: "URL",
+    description:
+      "Works with most blogs, news sites, and research pages. Paywalled content and sites requiring login cannot be scraped.",
   },
   {
     id: "file",
@@ -59,8 +65,9 @@ export default function FeedMemory() {
   const [imagePreview, setImagePreview] = useState<string>("");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [urlInput, setUrlInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ chunks_stored: number; tags: string[] } | null>(null);
+  const [result, setResult] = useState<{ chunks_stored: number; tags: string[]; title?: string; word_count?: number } | null>(null);
   const [error, setError] = useState("");
   const [stats, setStats] = useState<Stats | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -80,6 +87,7 @@ export default function FeedMemory() {
   const handleTabChange = (tab: SourceType) => {
     setActiveTab(tab);
     setContent("");
+    setUrlInput("");
     setImageFile(null);
     setImagePreview("");
     setUploadedFile(null);
@@ -148,6 +156,15 @@ export default function FeedMemory() {
         setError("Please upload a file.");
         return;
       }
+    } else if (activeTab === "url") {
+      if (!urlInput.trim()) {
+        setError("Please enter a URL.");
+        return;
+      }
+      if (!urlInput.startsWith("http://") && !urlInput.startsWith("https://")) {
+        setError("URL must start with http:// or https://");
+        return;
+      }
     } else {
       if (!content.trim()) {
         setError("Please enter some content.");
@@ -165,6 +182,12 @@ export default function FeedMemory() {
         res = await fetch(`${API}/ingest-file`, {
           method: "POST",
           body: formData,
+        });
+      } else if (activeTab === "url") {
+        res = await fetch(`${API}/scrape-and-ingest`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: urlInput.trim() }),
         });
       } else {
         const body: Record<string, string> = { source_type: activeTab };
@@ -189,6 +212,7 @@ export default function FeedMemory() {
       const data = await res.json();
       setResult(data);
       setContent("");
+      setUrlInput("");
       setImageFile(null);
       setImagePreview("");
       setUploadedFile(null);
@@ -260,7 +284,18 @@ export default function FeedMemory() {
 
       {/* Input area */}
       <div className="space-y-4">
-        {activeTab === "image" ? (
+        {activeTab === "url" ? (
+          <div className="space-y-2">
+            <input
+              type="url"
+              value={urlInput}
+              onChange={(e) => setUrlInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
+              placeholder="https://example.com/article"
+              className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-gray-400 shadow-sm"
+            />
+          </div>
+        ) : activeTab === "image" ? (
           <div className="space-y-4">
             <div
               onClick={() => fileInputRef.current?.click()}
@@ -358,14 +393,30 @@ export default function FeedMemory() {
         )}
 
         {error && (
-          <p className="text-sm text-red-500">{error}</p>
+          <div>
+            <p className="text-sm text-red-500">{error}</p>
+            {activeTab === "url" && (
+              <p className="text-xs text-gray-400 mt-1">
+                You can paste the text manually in the Article / Text tab instead.
+              </p>
+            )}
+          </div>
         )}
 
         {result && (
           <div className="rounded-xl border border-green-200 bg-green-50 px-5 py-4">
-            <p className="text-sm font-medium text-green-700">
-              Stored {result.chunks_stored} chunk{result.chunks_stored !== 1 ? "s" : ""}
-            </p>
+            {result.title ? (
+              <p className="text-sm font-medium text-green-700">Scraped and stored: {result.title}</p>
+            ) : (
+              <p className="text-sm font-medium text-green-700">
+                Stored {result.chunks_stored} chunk{result.chunks_stored !== 1 ? "s" : ""}
+              </p>
+            )}
+            {result.word_count != null && (
+              <p className="text-xs text-green-600 mt-0.5">
+                {result.word_count} words → {result.chunks_stored} chunks
+              </p>
+            )}
             {result.tags.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {result.tags.map((tag) => (
@@ -387,9 +438,13 @@ export default function FeedMemory() {
           className="w-full rounded-xl bg-gray-900 text-white font-medium py-3 text-sm hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {loading
-            ? activeTab === "file" && uploadedFile
+            ? activeTab === "url"
+              ? (() => { try { return `Scraping ${new URL(urlInput).hostname}…`; } catch { return "Scraping…"; } })()
+              : activeTab === "file" && uploadedFile
               ? `Processing ${uploadedFile.name}…`
               : "Processing…"
+            : activeTab === "url"
+            ? "Scrape and add to memory"
             : "Add to memory"}
         </button>
       </div>

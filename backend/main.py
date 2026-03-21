@@ -14,6 +14,7 @@ load_dotenv()
 
 from agents.ingestion_agent import ingest_content
 from utils.file_extractor import extract_text_from_file
+from tools.scraper_tool import scrape_url
 from agents.vision_agent import extract_from_image
 from agents.ideation_agent import generate_suggestions
 from agents.visual_agent import generate_visuals
@@ -60,6 +61,10 @@ class IngestRequest(BaseModel):
 class IngestResponse(BaseModel):
     chunks_stored: int
     tags: list[str]
+
+
+class ScrapeRequest(BaseModel):
+    url: str
 
 
 class GenerateRequest(BaseModel):
@@ -378,6 +383,25 @@ def _title_from_text(text: str, filename: str) -> str:
         title = Path(filename).stem
 
     return title
+
+
+@app.post("/scrape-and-ingest")
+async def scrape_and_ingest(req: ScrapeRequest) -> dict:
+    try:
+        scraped = scrape_url(req.url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    result = ingest_content(
+        content=scraped["content"],
+        source_type="article",
+        source_title=scraped["title"],
+    )
+    return {
+        "chunks_stored": result["chunks_stored"],
+        "tags": result["tags"],
+        "title": scraped["title"],
+        "word_count": scraped["word_count"],
+    }
 
 
 @app.post("/ingest-file", response_model=IngestResponse)
