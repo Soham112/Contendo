@@ -31,6 +31,7 @@
 | `backend/memory/profile_store.py` | profile.json read/write, defaults, profile-to-string formatter |
 | `backend/memory/feedback_store.py` | SQLite posts and post_versions tables — log_post, get_recent_posts, get_all_topics_posted, add_version, get_versions, get_best_version, update_latest_version_svg |
 | `backend/tools/scraper_tool.py` | URL scraper using Jina Reader — `is_valid_url()`, `clean_scraped_text()`, `scrape_url()` |
+| `backend/tools/obsidian_tool.py` | Obsidian vault reader — `read_vault()` yields cleaned note dicts, `get_vault_stats()` for preview, `clean_obsidian_markdown()` strips wikilinks/frontmatter/Dataview |
 | `backend/tools/__init__.py` | Empty — tools directory retained for future use |
 | `backend/utils/chunker.py` | 500-word chunks with 50-word overlap |
 | `backend/utils/formatters.py` | Format + tone instruction strings per output type |
@@ -47,7 +48,7 @@
 | `frontend/app/create/page.tsx` | Screen 3: Create Post (`/create`) |
 | `frontend/app/history/page.tsx` | Screen 4: Post History (`/history`) — cards, expandable content, copy |
 | `frontend/app/globals.css` | Global styles — Tailwind directives, dark background, Inter font |
-| `frontend/components/FeedMemory.tsx` | Feed Memory form — tabs (Article/Text, URL, File, YouTube, Image, Note), URL scraping, textarea, file upload with drag-and-drop, image upload, result display |
+| `frontend/components/FeedMemory.tsx` | Feed Memory form — tabs (Article/Text, URL, File, YouTube, Image, Note, Obsidian), URL scraping, textarea, file upload with drag-and-drop, image upload, Obsidian vault preview/ingest flow, result display |
 | `frontend/components/CreatePost.tsx` | Create Post form — topic, format, tone, output + score display |
 | `frontend/.env.local` | Sets `NEXT_PUBLIC_API_URL=http://localhost:8000` |
 | `frontend/tailwind.config.ts` | Tailwind config scoped to app/ and components/ |
@@ -121,6 +122,44 @@
 ---
 
 ## 3. API CONTRACT
+
+### POST /obsidian/preview
+**Request body:**
+```json
+{ "vault_path": "/Users/yourname/Documents/ObsidianVault" }
+```
+**Response:**
+```json
+{
+  "vault_name": "ObsidianVault",
+  "total_files": 87,
+  "total_words": 42300,
+  "estimated_chunks": 105,
+  "skipped_files": 12
+}
+```
+**Notes:** Reads all `.md` files from the vault path and returns stats without ingesting anything. Raises 400 if the path does not exist, is not a directory, or is otherwise invalid. `skipped_files` counts notes shorter than 100 characters after cleaning and files that fail to read. `estimated_chunks` is `total_words // 400`.
+
+---
+
+### POST /obsidian/ingest
+**Request body:**
+```json
+{ "vault_path": "/Users/yourname/Documents/ObsidianVault" }
+```
+**Response:**
+```json
+{
+  "total_files_processed": 85,
+  "total_chunks_stored": 203,
+  "total_words_processed": 41500,
+  "skipped_files": 2,
+  "all_tags": ["ai", "machine learning", "product strategy"]
+}
+```
+**Notes:** Ingests all vault notes via `read_vault()` → `ingest_content()` with `source_type="note"` and `source_title` set to the note filename stem. Per-note errors are caught and skipped; `skipped_files` counts notes that errored during ingestion (not the same as `get_vault_stats` skipped count which refers to short notes). Re-ingesting the same vault is safe — ChromaDB upsert prevents duplicate chunks. Can take 30–120 seconds for large vaults.
+
+---
 
 ### POST /scrape-and-ingest
 **Request body:**
@@ -511,6 +550,10 @@
 | Scanned/image-only PDFs are rejected with 422 | PyMuPDF returns < 100 characters for image-only PDFs; a clear error message is returned rather than silently ingesting empty chunks |
 | File drag-and-drop uses native HTML5 events only | No external DnD library added; `onDragOver`, `onDragLeave`, `onDrop` on the drop zone div are sufficient and keep the bundle small |
 | URL scraping uses Jina Reader, not Tavily | Jina Reader (`r.jina.ai`) is free, requires no API key, and returns clean markdown. The `scrape_url()` docstring documents the upgrade path to Tavily for higher quality if an API key is available. |
+| Obsidian integration reads local `.md` files directly — no plugin or API needed | FastAPI runs locally and has filesystem access. The vault path is entered as a plain text string because browser security prevents JS from accessing local file paths. This only works on localhost — not after cloud deployment. |
+| Obsidian-specific syntax is stripped before ingestion | `clean_obsidian_markdown()` removes YAML frontmatter, `[[wikilinks]]`, `^block-references`, `==highlights==` markers, `![[embedded files]]`, and Dataview query blocks. Plain text content is preserved. |
+| Re-ingesting the same Obsidian vault is safe | ChromaDB uses upsert so running `/obsidian/ingest` a second time updates existing chunks rather than creating duplicates. Users can safely re-run after adding new notes. |
+| Vault notes shorter than 100 characters are skipped | Set as `MIN_CONTENT_LENGTH` in `obsidian_tool.py`. Skips daily journal stubs, empty notes, and template files that contain no usable knowledge. `.obsidian`, `.trash`, `templates`, `Templates`, and `.git` folders are always excluded. |
 | URL success card shows `word_count → chunks_stored` | Gives the user a concrete sense of how much was extracted before chunking — more meaningful than just a chunk count |
 | Post versioning uses a parent + child table design | The `posts` table is the parent record (one row per generation session); `post_versions` stores every historical version. Every generation creates v1; every refinement creates the next version. SVG diagram updates do not create new versions — `update_latest_version_svg()` stamps diagrams onto the current version row in place. |
 | Best version tracked by highest authenticity_score | `get_best_version()` orders by `authenticity_score DESC, version_number DESC` so ties go to the latest version. The History UI highlights the best version with a green "Best" badge. |
@@ -519,6 +562,8 @@
 ---
 
 ## 6. WHAT IS NOT BUILT YET
+
+- Obsidian integration does not work after cloud deployment — vault path is a local filesystem path read by FastAPI. Future solution: vault zip upload or Electron desktop wrapper.
 
 - User authentication (single user only for now — no auth layer)
 - Profile editing screen (profile.json must be edited manually)
