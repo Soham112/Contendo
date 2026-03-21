@@ -27,7 +27,7 @@
 | `backend/agents/scorer_agent.py` | Scores draft 0–100 across 5 dimensions, returns flagged sentences |
 | `backend/pipeline/state.py` | TypedDict schema for shared LangGraph pipeline state |
 | `backend/pipeline/graph.py` | LangGraph graph definition — nodes, edges, conditional retry loop |
-| `backend/memory/vector_store.py` | ChromaDB init, upsert, semantic query, stats |
+| `backend/memory/vector_store.py` | ChromaDB init, upsert, semantic query, stats, delete_source |
 | `backend/memory/profile_store.py` | profile.json read/write, defaults, profile-to-string formatter |
 | `backend/memory/feedback_store.py` | SQLite posts and post_versions tables — log_post, get_recent_posts, get_all_topics_posted, add_version, get_versions, get_best_version, update_latest_version_svg |
 | `backend/tools/scraper_tool.py` | URL scraper using Jina Reader — `is_valid_url()`, `clean_scraped_text()`, `scrape_url()` |
@@ -395,6 +395,23 @@
 
 ---
 
+### DELETE /library/source
+**Request body:**
+```json
+{ "source_title": "Why RAG fails in production — 3 lessons" }
+```
+**Response:**
+```json
+{
+  "deleted": true,
+  "chunks_removed": 5,
+  "message": "Removed 5 chunks"
+}
+```
+**Notes:** Deletes all ChromaDB chunks with matching `source_title` metadata via `delete_source()` in `vector_store.py`. Returns 404 if no chunks found with that title. The frontend removes the card from the UI immediately and subtracts `chunks_removed` from the displayed total.
+
+---
+
 ### GET /library
 **Response:**
 ```json
@@ -549,6 +566,8 @@
 | Uploaded files are ingested as `source_type="article"` | PDF/DOCX/TXT content is plain text after extraction — same chunking and embedding pipeline applies; no need for a new source type |
 | Scanned/image-only PDFs are rejected with 422 | PyMuPDF returns < 100 characters for image-only PDFs; a clear error message is returned rather than silently ingesting empty chunks |
 | File drag-and-drop uses native HTML5 events only | No external DnD library added; `onDragOver`, `onDragLeave`, `onDrop` on the drop zone div are sufficient and keep the bundle small |
+| Library delete removes all ChromaDB chunks with matching `source_title` | `delete_source()` does `collection.get(where={"source_title": ...})` then bulk-deletes by ID. If two sources share the same title, both are deleted — acceptable trade-off given source titles are derived from content and rarely collide. |
+| Captcha/bot-protection detection uses a 2-signal threshold | `detect_captcha()` in `scraper_tool.py` checks for 2+ matches from `CAPTCHA_SIGNALS` before raising an error. A single match (e.g., an article that mentions "Cloudflare") is not flagged; 2+ matches means the page is almost certainly a bot-challenge page. |
 | URL scraping uses Jina Reader, not Tavily | Jina Reader (`r.jina.ai`) is free, requires no API key, and returns clean markdown. The `scrape_url()` docstring documents the upgrade path to Tavily for higher quality if an API key is available. |
 | Obsidian integration reads local `.md` files directly — no plugin or API needed | FastAPI runs locally and has filesystem access. The vault path is entered as a plain text string because browser security prevents JS from accessing local file paths. This only works on localhost — not after cloud deployment. |
 | Obsidian-specific syntax is stripped before ingestion | `clean_obsidian_markdown()` removes YAML frontmatter, `[[wikilinks]]`, `^block-references`, `==highlights==` markers, `![[embedded files]]`, and Dataview query blocks. Plain text content is preserved. |
@@ -571,5 +590,5 @@
 - Vercel and Railway/Render deployment config files
 - YouTube transcript auto-fetching (removed — manual paste only)
 - Tag filtering in Library (can't filter ChromaDB chunks by tag in the UI — only source-type filter exists)
-- Delete / clear memory (no way to remove sources or chunks via UI)
+- Bulk clear memory (individual sources can be deleted via the Library delete button, but there is no "clear all" option)
 - Multi-format regeneration (regenerate always uses same format/tone)
