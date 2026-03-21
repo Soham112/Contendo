@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-type SourceType = "article" | "url" | "file" | "youtube" | "image" | "note";
+type SourceType = "article" | "url" | "file" | "youtube" | "image" | "note" | "obsidian";
 
 const TABS: { id: SourceType; label: string; description: string }[] = [
   {
@@ -39,6 +39,12 @@ const TABS: { id: SourceType; label: string; description: string }[] = [
     label: "Note",
     description: "Freeform thoughts, ideas, or observations.",
   },
+  {
+    id: "obsidian",
+    label: "Obsidian",
+    description:
+      "Connect your local Obsidian vault. All notes will be chunked, embedded, and added to your knowledge base.",
+  },
 ];
 
 const FILE_TYPE_LABELS: Record<string, string> = {
@@ -58,6 +64,22 @@ interface Stats {
   tags: string[];
 }
 
+interface VaultStats {
+  vault_name: string;
+  total_files: number;
+  total_words: number;
+  estimated_chunks: number;
+  skipped_files: number;
+}
+
+interface ObsidianIngestResult {
+  total_files_processed: number;
+  total_chunks_stored: number;
+  total_words_processed: number;
+  skipped_files: number;
+  all_tags: string[];
+}
+
 export default function FeedMemory() {
   const [activeTab, setActiveTab] = useState<SourceType>("article");
   const [content, setContent] = useState("");
@@ -66,6 +88,11 @@ export default function FeedMemory() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [urlInput, setUrlInput] = useState("");
+  const [vaultPath, setVaultPath] = useState("");
+  const [vaultPreview, setVaultPreview] = useState<VaultStats | null>(null);
+  const [obsidianPhase, setObsidianPhase] = useState<"input" | "preview" | "ingesting" | "done">("input");
+  const [obsidianResult, setObsidianResult] = useState<ObsidianIngestResult | null>(null);
+  const [loadingMessage, setLoadingMessage] = useState("Reading vault notes...");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ chunks_stored: number; tags: string[]; title?: string; word_count?: number } | null>(null);
   const [error, setError] = useState("");
@@ -84,10 +111,23 @@ export default function FeedMemory() {
     fetchStats();
   }, []);
 
+  useEffect(() => {
+    if (obsidianPhase !== "ingesting") return;
+    setLoadingMessage("Reading vault notes...");
+    const t1 = setTimeout(() => setLoadingMessage("Chunking and embedding..."), 5000);
+    const t2 = setTimeout(() => setLoadingMessage("Storing in memory..."), 15000);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [obsidianPhase]);
+
   const handleTabChange = (tab: SourceType) => {
     setActiveTab(tab);
     setContent("");
     setUrlInput("");
+    setVaultPath("");
+    setVaultPreview(null);
+    setObsidianPhase("input");
+    setObsidianResult(null);
+    setLoadingMessage("Reading vault notes...");
     setImageFile(null);
     setImagePreview("");
     setUploadedFile(null);
@@ -140,6 +180,65 @@ export default function FeedMemory() {
     setIsDragging(false);
     const file = e.dataTransfer.files?.[0];
     if (file) acceptDocFile(file);
+  };
+
+  const handleVaultPreview = async () => {
+    setError("");
+    setVaultPreview(null);
+    if (!vaultPath.trim()) {
+      setError("Please enter your vault folder path.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`${API}/obsidian/preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vault_path: vaultPath.trim() }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail ?? "Preview failed");
+      }
+      const data: VaultStats = await res.json();
+      if (data.total_files === 0) {
+        setError("No markdown files found in that folder. Make sure you entered the correct vault path.");
+        return;
+      }
+      setVaultPreview(data);
+      setObsidianPhase("preview");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVaultIngest = async () => {
+    setError("");
+    setObsidianPhase("ingesting");
+    setLoading(true);
+    try {
+      const res = await fetch(`${API}/obsidian/ingest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vault_path: vaultPath.trim() }),
+        signal: AbortSignal.timeout(300000),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail ?? "Ingest failed");
+      }
+      const data: ObsidianIngestResult = await res.json();
+      setObsidianResult(data);
+      setObsidianPhase("done");
+      await fetchStats();
+    } catch (e: unknown) {
+      setObsidianPhase("preview");
+      setError(e instanceof Error ? e.message : "Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSubmit = async () => {
@@ -284,7 +383,85 @@ export default function FeedMemory() {
 
       {/* Input area */}
       <div className="space-y-4">
-        {activeTab === "url" ? (
+        {activeTab === "obsidian" ? (
+          <div className="space-y-4">
+            {obsidianPhase === "done" && obsidianResult ? (
+              <div className="rounded-xl border border-green-200 bg-green-50 px-5 py-4">
+                <p className="text-sm font-medium text-green-700">
+                  {obsidianResult.total_files_processed} notes ingested
+                </p>
+                <p className="text-xs text-green-600 mt-0.5">
+                  {obsidianResult.total_chunks_stored} chunks stored · {obsidianResult.total_words_processed.toLocaleString()} words processed
+                </p>
+                {obsidianResult.all_tags.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {obsidianResult.all_tags.slice(0, 10).map((tag) => (
+                      <span key={tag} className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                        {tag}
+                      </span>
+                    ))}
+                    {obsidianResult.all_tags.length > 10 && (
+                      <span className="text-xs text-green-600">+{obsidianResult.all_tags.length - 10} more</span>
+                    )}
+                  </div>
+                )}
+                <p className="text-xs text-gray-500 mt-3">
+                  Your Obsidian notes are now part of your knowledge base. Go to Create Post to generate content from them.
+                </p>
+              </div>
+            ) : obsidianPhase === "ingesting" ? (
+              <div className="rounded-xl border border-gray-200 bg-white px-5 py-8 text-center">
+                <div className="inline-block w-5 h-5 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin mb-3" />
+                <p className="text-sm text-gray-700 font-medium">{loadingMessage}</p>
+                <p className="text-xs text-gray-400 mt-1">Do not close this tab.</p>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-gray-600">Obsidian vault folder path</label>
+                  <input
+                    type="text"
+                    value={vaultPath}
+                    onChange={(e) => { setVaultPath(e.target.value); setVaultPreview(null); setObsidianPhase("input"); }}
+                    onKeyDown={(e) => { if (e.key === "Enter" && obsidianPhase === "input") handleVaultPreview(); }}
+                    placeholder="/Users/yourname/Documents/ObsidianVault"
+                    className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-gray-400 shadow-sm"
+                  />
+                  <p className="text-xs text-gray-400">
+                    Open Obsidian → Settings → About to find your vault path.
+                  </p>
+                </div>
+
+                {vaultPreview && obsidianPhase === "preview" && (
+                  <div className="rounded-xl border border-gray-200 bg-white px-5 py-4 space-y-1">
+                    <p className="text-sm font-semibold text-gray-800">{vaultPreview.vault_name}</p>
+                    <p className="text-sm text-gray-600">
+                      {vaultPreview.total_files} notes · {vaultPreview.total_words.toLocaleString()} words
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      Estimated {vaultPreview.estimated_chunks} chunks to store
+                    </p>
+                    {vaultPreview.skipped_files > 0 && (
+                      <p className="text-xs text-gray-400">
+                        {vaultPreview.skipped_files} short notes will be skipped
+                      </p>
+                    )}
+                    {vaultPreview.total_files > 500 && (
+                      <p className="text-xs text-amber-600 mt-2">
+                        Large vault detected. Ingestion may take 2–3 minutes. Do not close this tab.
+                      </p>
+                    )}
+                    {vaultPreview.total_files > 1000 && (
+                      <p className="text-xs text-amber-600">
+                        This vault has {vaultPreview.total_files} notes. Consider pointing to a subfolder with your most relevant notes instead.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        ) : activeTab === "url" ? (
           <div className="space-y-2">
             <input
               type="url"
@@ -432,21 +609,57 @@ export default function FeedMemory() {
           </div>
         )}
 
-        <button
-          onClick={handleSubmit}
-          disabled={loading}
-          className="w-full rounded-xl bg-gray-900 text-white font-medium py-3 text-sm hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          {loading
-            ? activeTab === "url"
-              ? (() => { try { return `Scraping ${new URL(urlInput).hostname}…`; } catch { return "Scraping…"; } })()
-              : activeTab === "file" && uploadedFile
-              ? `Processing ${uploadedFile.name}…`
-              : "Processing…"
-            : activeTab === "url"
-            ? "Scrape and add to memory"
-            : "Add to memory"}
-        </button>
+        {activeTab === "obsidian" ? (
+          obsidianPhase === "done" ? (
+            <button
+              onClick={() => { setObsidianPhase("input"); setVaultPreview(null); setObsidianResult(null); setVaultPath(""); setError(""); }}
+              className="w-full rounded-xl border border-gray-200 bg-white text-gray-700 font-medium py-3 text-sm hover:bg-gray-50 transition-colors"
+            >
+              Add another vault
+            </button>
+          ) : obsidianPhase === "ingesting" ? null : obsidianPhase === "preview" ? (
+            <div className="flex gap-3">
+              <button
+                onClick={handleVaultIngest}
+                disabled={loading}
+                className="flex-1 rounded-xl bg-gray-900 text-white font-medium py-3 text-sm hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Ingest all notes
+              </button>
+              <button
+                onClick={() => { setObsidianPhase("input"); setVaultPreview(null); setError(""); }}
+                disabled={loading}
+                className="px-5 rounded-xl border border-gray-200 bg-white text-gray-600 font-medium py-3 text-sm hover:bg-gray-50 disabled:opacity-50 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={handleVaultPreview}
+              disabled={loading}
+              className="w-full rounded-xl bg-gray-900 text-white font-medium py-3 text-sm hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {loading ? "Scanning vault…" : "Preview vault"}
+            </button>
+          )
+        ) : (
+          <button
+            onClick={handleSubmit}
+            disabled={loading}
+            className="w-full rounded-xl bg-gray-900 text-white font-medium py-3 text-sm hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {loading
+              ? activeTab === "url"
+                ? (() => { try { return `Scraping ${new URL(urlInput).hostname}…`; } catch { return "Scraping…"; } })()
+                : activeTab === "file" && uploadedFile
+                ? `Processing ${uploadedFile.name}…`
+                : "Processing…"
+              : activeTab === "url"
+              ? "Scrape and add to memory"
+              : "Add to memory"}
+          </button>
+        )}
       </div>
     </div>
   );
