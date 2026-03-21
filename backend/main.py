@@ -20,7 +20,10 @@ from agents.visual_agent import generate_visuals
 from agents.humanizer_agent import refine_draft
 from agents.scorer_agent import score_text
 from memory.vector_store import get_total_chunks, get_all_tags, get_all_sources
-from memory.feedback_store import init_db, log_post, get_recent_posts, delete_post, update_post
+from memory.feedback_store import (
+    init_db, log_post, get_recent_posts, delete_post, update_post,
+    add_version, get_versions, update_latest_version_svg,
+)
 from pipeline.graph import run_pipeline
 
 
@@ -169,6 +172,12 @@ async def log_post_endpoint(req: LogPostRequest) -> LogPostResponse:
         authenticity_score=req.authenticity_score,
         svg_diagrams=json.dumps(req.svg_diagrams) if req.svg_diagrams is not None else None,
     )
+    add_version(
+        post_id=post_id,
+        content=req.content,
+        authenticity_score=req.authenticity_score,
+        version_type="generated",
+    )
     return LogPostResponse(post_id=post_id, saved=True)
 
 
@@ -178,6 +187,10 @@ async def history() -> dict:
     for post in posts:
         raw = post.get("svg_diagrams")
         post["svg_diagrams"] = json.loads(raw) if raw else None
+        versions = get_versions(post["id"])
+        for v in versions:
+            v["svg_diagrams"] = json.loads(v["svg_diagrams"]) if v.get("svg_diagrams") else None
+        post["versions"] = versions
     return {"posts": posts}
 
 
@@ -219,6 +232,22 @@ async def update_post_endpoint(post_id: int, req: UpdatePostRequest) -> dict:
     if "svg_diagrams" in provided:
         kwargs["svg_diagrams"] = json.dumps(req.svg_diagrams) if req.svg_diagrams is not None else None
     updated = update_post(post_id, **kwargs)
+
+    # Versioning side-effects
+    if "content" in provided:
+        # Refinement: create a new version
+        svg_json = kwargs.get("svg_diagrams")
+        add_version(
+            post_id=post_id,
+            content=req.content,
+            authenticity_score=req.authenticity_score,
+            version_type="refined",
+            svg_diagrams=svg_json,
+        )
+    elif "svg_diagrams" in provided:
+        # Diagrams-only update: stamp onto the latest version, no new row
+        update_latest_version_svg(post_id, kwargs.get("svg_diagrams"))
+
     return {"updated": updated}
 
 
@@ -226,6 +255,25 @@ async def update_post_endpoint(post_id: int, req: UpdatePostRequest) -> dict:
 async def delete_post_endpoint(post_id: int) -> dict:
     deleted = delete_post(post_id)
     return {"deleted": deleted}
+
+
+@app.post("/history/{post_id}/restore/{version_id}")
+async def restore_version_endpoint(post_id: int, version_id: int) -> dict:
+    versions = get_versions(post_id)
+    version = next((v for v in versions if v["id"] == version_id), None)
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found.")
+    update_post(
+        post_id,
+        content=version["content"],
+        authenticity_score=version["authenticity_score"],
+    )
+    return {
+        "restored": True,
+        "version_number": version["version_number"],
+        "content": version["content"],
+        "authenticity_score": version["authenticity_score"],
+    }
 
 
 class RefineRequest(BaseModel):
