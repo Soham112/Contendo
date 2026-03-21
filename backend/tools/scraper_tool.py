@@ -1,6 +1,33 @@
 import httpx
 from urllib.parse import urlparse
 
+CAPTCHA_SIGNALS = [
+    "just a moment",
+    "checking your browser",
+    "enable javascript and cookies",
+    "cloudflare",
+    "ddos protection",
+    "please wait while we verify",
+    "ray id",
+    "cf-ray",
+    "security check",
+    "please turn javascript on",
+    "browser check",
+    "one more step",
+    "please complete the security check",
+]
+
+
+def detect_captcha(text: str) -> bool:
+    """Return True if the text looks like a bot-protection challenge page.
+
+    Requires 2+ signals to avoid false positives on legitimate articles
+    that happen to mention Cloudflare or security topics.
+    """
+    text_lower = text.lower()
+    matches = sum(1 for signal in CAPTCHA_SIGNALS if signal in text_lower)
+    return matches >= 2
+
 
 def is_valid_url(url: str) -> bool:
     try:
@@ -86,6 +113,17 @@ def scrape_url(url: str) -> dict:
         )
 
     cleaned = clean_scraped_text(raw_text)
+
+    if detect_captcha(cleaned):
+        raise ValueError(
+            "This URL is protected by Cloudflare or a similar bot-detection system. "
+            "The page could not be scraped.\n\n"
+            "Try these alternatives:\n"
+            "1. Open the article in your browser, copy the full text, and use the "
+            "Article/Text tab to paste it manually.\n"
+            "2. Try the URL again in a few minutes — some protections are temporary.\n"
+            "3. Look for the same article on a different site."
+        )
 
     # Extract title from the first markdown heading if present
     title = url
