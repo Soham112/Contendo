@@ -29,7 +29,7 @@
 | `backend/pipeline/graph.py` | LangGraph graph definition — nodes, edges, conditional retry loop |
 | `backend/memory/vector_store.py` | ChromaDB init, upsert, semantic query, stats |
 | `backend/memory/profile_store.py` | profile.json read/write, defaults, profile-to-string formatter |
-| `backend/memory/feedback_store.py` | SQLite posts table — log_post, get_recent_posts, get_all_topics_posted |
+| `backend/memory/feedback_store.py` | SQLite posts and post_versions tables — log_post, get_recent_posts, get_all_topics_posted, add_version, get_versions, get_best_version, update_latest_version_svg |
 | `backend/tools/__init__.py` | Empty — tools directory retained for future use |
 | `backend/utils/chunker.py` | 500-word chunks with 50-word overlap |
 | `backend/utils/formatters.py` | Format + tone instruction strings per output type |
@@ -219,7 +219,21 @@
   ]
 }
 ```
-**Notes:** Returns up to 20 most recent saved posts, newest first. `svg_diagrams` is `null` for posts saved before the visuals feature or saved without diagrams. The JSON string stored in SQLite is parsed back to a list before returning.
+**Notes:** Returns up to 20 most recent saved posts, newest first. `svg_diagrams` is `null` for posts saved before the visuals feature or saved without diagrams. The JSON string stored in SQLite is parsed back to a list before returning. Each post includes a `versions` array (see `post_versions` schema) with all versions ordered by `version_number` ascending; `svg_diagrams` within each version is also parsed from JSON.
+
+---
+
+### POST /history/{post_id}/restore/{version_id}
+**Response:**
+```json
+{
+  "restored": true,
+  "version_number": 2,
+  "content": "restored post text",
+  "authenticity_score": 82
+}
+```
+**Notes:** Sets the parent `posts` row `content` and `authenticity_score` to match the specified version. Does not create a new version row. The frontend writes the restored content to `contentOS_last_post` (and related sessionStorage keys) so it appears immediately in Create Post.
 
 ---
 
@@ -418,9 +432,22 @@
 | `topic` | TEXT | Topic used for generation |
 | `format` | TEXT | Format type |
 | `tone` | TEXT | Tone type |
-| `content` | TEXT | Post text as saved (may be user-edited) |
-| `authenticity_score` | INTEGER | Score at time of generation (0–100) |
+| `content` | TEXT | Current best post text — updated by refinement and restore |
+| `authenticity_score` | INTEGER | Score of current content (0–100) |
 | `svg_diagrams` | TEXT | JSON array of `{position, description, svg_code}` objects; NULL if no diagrams |
+
+**Table:** `post_versions`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | INTEGER PK | Auto-increment |
+| `post_id` | INTEGER FK | References `posts.id`; cascade deletes |
+| `version_number` | INTEGER | Monotonically increasing per post — starts at 1 for the initial generation |
+| `content` | TEXT | Post text at this version |
+| `authenticity_score` | INTEGER | Nullable — `null` for draft-mode generations where scorer is skipped |
+| `version_type` | TEXT | `"generated"` (initial) or `"refined"` (after `/refine`) |
+| `created_at` | TIMESTAMP | Auto-set on insert |
+| `svg_diagrams` | TEXT | JSON array; updated in-place by `update_latest_version_svg()` when diagrams are added without a new version |
 
 ---
 
@@ -464,6 +491,9 @@
 | Uploaded files are ingested as `source_type="article"` | PDF/DOCX/TXT content is plain text after extraction — same chunking and embedding pipeline applies; no need for a new source type |
 | Scanned/image-only PDFs are rejected with 422 | PyMuPDF returns < 100 characters for image-only PDFs; a clear error message is returned rather than silently ingesting empty chunks |
 | File drag-and-drop uses native HTML5 events only | No external DnD library added; `onDragOver`, `onDragLeave`, `onDrop` on the drop zone div are sufficient and keep the bundle small |
+| Post versioning uses a parent + child table design | The `posts` table is the parent record (one row per generation session); `post_versions` stores every historical version. Every generation creates v1; every refinement creates the next version. SVG diagram updates do not create new versions — `update_latest_version_svg()` stamps diagrams onto the current version row in place. |
+| Best version tracked by highest authenticity_score | `get_best_version()` orders by `authenticity_score DESC, version_number DESC` so ties go to the latest version. The History UI highlights the best version with a green "Best" badge. |
+| Restore writes to sessionStorage, not a new PATCH | Restoring a version calls `POST /history/{post_id}/restore/{version_id}`, which updates the `posts` row. The frontend then writes the restored content to `contentOS_last_post` and related keys so Create Post picks it up immediately without an extra fetch. |
 
 ---
 
