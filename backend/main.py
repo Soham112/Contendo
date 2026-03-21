@@ -21,7 +21,7 @@ from agents.ideation_agent import generate_suggestions
 from agents.visual_agent import generate_visuals
 from agents.humanizer_agent import refine_draft
 from agents.scorer_agent import score_text
-from memory.vector_store import get_total_chunks, get_all_tags, get_all_sources
+from memory.vector_store import get_total_chunks, get_all_tags, get_all_sources, delete_source
 from memory.feedback_store import (
     init_db, log_post, get_recent_posts, delete_post, update_post,
     add_version, get_versions, update_latest_version_svg,
@@ -70,6 +70,10 @@ class ScrapeRequest(BaseModel):
 
 class ObsidianRequest(BaseModel):
     vault_path: str
+
+
+class DeleteSourceRequest(BaseModel):
+    source_title: str
 
 
 class GenerateRequest(BaseModel):
@@ -472,4 +476,19 @@ async def obsidian_ingest(req: ObsidianRequest) -> dict:
         "total_words_processed": sum(n["word_count"] for n in notes),
         "skipped_files": len(notes) - processed,
         "all_tags": sorted(all_tags),
+    }
+
+
+@app.delete("/library/source")
+async def delete_library_source(req: DeleteSourceRequest) -> dict:
+    chunks_removed = delete_source(req.source_title)
+    if chunks_removed == 0:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Source not found: {req.source_title}",
+        )
+    return {
+        "deleted": True,
+        "chunks_removed": chunks_removed,
+        "message": f"Removed {chunks_removed} chunk{'s' if chunks_removed != 1 else ''}",
     }
