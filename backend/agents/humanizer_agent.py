@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 
 from pipeline.state import PipelineState
-from memory.profile_store import profile_to_context_string
+from memory.profile_store import load_profile, profile_to_context_string
 
 load_dotenv()
 
@@ -34,28 +34,61 @@ Current draft:
 Rewrite the draft now. Preserve the structure and all factual content — only change the language and sentence patterns. Output only the rewritten post, no commentary."""
 
 
-REFINE_PROMPT = """You are refining an existing draft based on specific feedback. Do not rewrite the entire post. Keep everything that is working. Fix only what the instruction identifies as weak.
+REFINE_PROMPT = """You are a sharp editor rewriting a post draft based on specific feedback. Your job is to make meaningful improvements — not cosmetic tweaks.
+
+User profile — write in this person's voice:
+{profile_context}
+
+Words this person never uses:
+{words_to_avoid}
 
 Current draft:
 {current_draft}
 
-Refinement instruction:
+Feedback to act on:
 {refinement_instruction}
 
-Rules:
-- Preserve the hook if it is strong
-- Preserve specific numbers, names, and real details
-- Preserve [DIAGRAM:] and [IMAGE:] placeholders exactly
-- Fix the specific issues identified in the instruction
-- Do not add new sections unless the instruction asks
-- Do not make the post longer unless necessary
+How to approach this:
 
-Output only the refined post, no commentary."""
+For STRUCTURAL feedback (move this section, cut this paragraph, the ending is weak):
+  Make the structural change. Move paragraphs. Cut what is not working. Rewrite the ending if the feedback says it is weak. Do not preserve structure at the cost of quality.
+
+For VOICE feedback (too clean, too generic, reads like LLM output, lacks specificity):
+  Rewrite the affected sentences from scratch in the user's voice. Use the profile above as your guide. One specific detail beats three general claims every time.
+
+For CONTENT feedback (reference feels parachuted, missing what actually happened, no friction):
+  Add the missing substance. If the feedback asks for what actually happened — write something that sounds like it actually happened, grounded in the user's profile and experience. If you don't have the specific detail, write something honest: "I don't have the exact number, but the pattern was clear."
+
+What to always preserve:
+  - [DIAGRAM:] and [IMAGE:] placeholders exactly
+  - Specific real numbers and named facts that are clearly sourced
+  - The overall topic and argument
+
+What you are allowed to change:
+  - Paragraph order
+  - Sentence structure throughout
+  - The opening and closing
+  - Any section the feedback identifies as weak
+  - Length — shorter is often better
+
+Output only the refined post. No commentary. No "Here is the refined version:" preamble."""
 
 
-def refine_draft(current_draft: str, refinement_instruction: str) -> str:
+def refine_draft(
+    current_draft: str,
+    refinement_instruction: str,
+    profile: dict = None,
+) -> str:
+    if profile is None:
+        profile = load_profile()
+
+    profile_context = profile_to_context_string(profile)
+    words_to_avoid = ", ".join(profile.get("words_to_avoid", []))
+
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     prompt = REFINE_PROMPT.format(
+        profile_context=profile_context,
+        words_to_avoid=words_to_avoid,
         current_draft=current_draft,
         refinement_instruction=refinement_instruction,
     )
