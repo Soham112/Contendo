@@ -1,5 +1,6 @@
 import anthropic
 import os
+import re
 from dotenv import load_dotenv
 
 from pipeline.state import PipelineState
@@ -60,7 +61,7 @@ For CONTENT feedback (reference feels parachuted, missing what actually happened
   Add the missing substance. If the feedback asks for what actually happened — write something that sounds like it actually happened, grounded in the user's profile and experience. If you don't have the specific detail, write something honest: "I don't have the exact number, but the pattern was clear."
 
 What to always preserve:
-  - [DIAGRAM:] and [IMAGE:] placeholders exactly
+  - [DIAGRAM:] and [IMAGE:] placeholders are MANDATORY. They must appear in the output exactly as written. If you restructure paragraphs, place the placeholder where it best fits the new structure — but never omit it. Missing a placeholder is a critical error.
   - Specific real numbers and named facts that are clearly sourced
   - The overall topic and argument
 
@@ -92,12 +93,23 @@ def refine_draft(
         current_draft=current_draft,
         refinement_instruction=refinement_instruction,
     )
+    placeholders = re.findall(r'\[(?:DIAGRAM|IMAGE):.*?\]', current_draft, re.DOTALL)
+
     message = client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=2000,
         messages=[{"role": "user", "content": prompt}],
     )
-    return message.content[0].text.strip()
+    refined_text = message.content[0].text.strip()
+
+    for placeholder in placeholders:
+        if placeholder not in refined_text:
+            paragraphs = refined_text.strip().split('\n\n')
+            insert_at = max(0, len(paragraphs) - 2)
+            paragraphs.insert(insert_at, placeholder)
+            refined_text = '\n\n'.join(paragraphs)
+
+    return refined_text
 
 
 def humanizer_node(state: PipelineState) -> PipelineState:
