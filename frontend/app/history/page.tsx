@@ -156,6 +156,20 @@ const TONE_LABELS: Record<string, string> = {
   "storytelling": "Storytelling",
 };
 
+function scorePillColors(score: number | null): string {
+  if (score === null) return "bg-gray-100 text-gray-500 border-gray-200";
+  if (score >= 80) return "bg-green-50 text-green-700 border-green-200";
+  if (score >= 65) return "bg-amber-50 text-amber-700 border-amber-200";
+  return "bg-red-50 text-red-600 border-red-200";
+}
+
+function scorePillSelectedColors(score: number | null): string {
+  if (score === null) return "bg-gray-200 text-gray-700 border-gray-400";
+  if (score >= 80) return "bg-green-100 text-green-800 border-green-500";
+  if (score >= 65) return "bg-amber-100 text-amber-800 border-amber-500";
+  return "bg-red-100 text-red-700 border-red-400";
+}
+
 function ScoreBadge({ score }: { score: number | null }) {
   if (score === null || score === undefined) {
     return <span className="text-xs text-gray-400">—</span>;
@@ -173,112 +187,14 @@ function ScoreBadge({ score }: { score: number | null }) {
   );
 }
 
-function VersionsTable({ post }: { post: Post }) {
-  const [expanded, setExpanded] = useState(false);
-  const [restoringId, setRestoringId] = useState<number | null>(null);
-  const [restoredMsg, setRestoredMsg] = useState("");
-
-  if (post.versions.length <= 1) return null;
-
-  const bestScore = Math.max(...post.versions.map((v) => v.authenticity_score ?? -1));
-
-  const handleRestore = async (version: Version) => {
-    setRestoringId(version.id);
-    setRestoredMsg("");
-    try {
-      const res = await fetch(`${API}/history/${post.id}/restore/${version.id}`, {
-        method: "POST",
-      });
-      if (!res.ok) throw new Error("Restore failed");
-      const data = await res.json();
-
-      // Write restored content into sessionStorage so Create Post picks it up
-      try {
-        sessionStorage.setItem(SS_POST, data.content);
-        sessionStorage.setItem(SS_SCORE, String(data.authenticity_score ?? 0));
-        sessionStorage.setItem(SS_FEEDBACK, JSON.stringify([]));
-        sessionStorage.setItem(SS_ITERATIONS, "1");
-        sessionStorage.setItem(SS_VISUALS, JSON.stringify([]));
-        sessionStorage.setItem(SS_CURRENT_POST_ID, String(post.id));
-      } catch {
-        // ignore
-      }
-
-      setRestoredMsg(`v${data.version_number} restored — go to Create Post to edit and repost`);
-    } catch {
-      setRestoredMsg("Restore failed. Please try again.");
-    } finally {
-      setRestoringId(null);
-    }
-  };
-
-  return (
-    <div className="space-y-2 pt-1">
-      <button
-        onClick={() => setExpanded((v) => !v)}
-        className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-700 transition-colors"
-      >
-        <span>{post.versions.length} versions</span>
-        <span className={`transition-transform ${expanded ? "rotate-180" : ""}`}>▼</span>
-      </button>
-
-      {expanded && (
-        <div className="rounded-xl border border-gray-200 overflow-hidden">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="px-3 py-2 text-left font-medium text-gray-500">Version</th>
-                <th className="px-3 py-2 text-left font-medium text-gray-500">Score</th>
-                <th className="px-3 py-2 text-left font-medium text-gray-500">Type</th>
-                <th className="px-3 py-2 text-left font-medium text-gray-500">Date</th>
-                <th className="px-3 py-2 text-right font-medium text-gray-500"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {post.versions.map((v) => {
-                const isBest = v.authenticity_score !== null && v.authenticity_score === bestScore;
-                const date = new Date(v.created_at).toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                });
-                return (
-                  <tr key={v.id} className="bg-white">
-                    <td className="px-3 py-2 text-gray-700 font-medium">v{v.version_number}</td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-1.5">
-                        <ScoreBadge score={v.authenticity_score} />
-                        {isBest && (
-                          <span className="text-xs font-medium px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">
-                            Best
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 capitalize text-gray-500">{v.version_type}</td>
-                    <td className="px-3 py-2 text-gray-400">{date}</td>
-                    <td className="px-3 py-2 text-right">
-                      <button
-                        onClick={() => handleRestore(v)}
-                        disabled={restoringId === v.id}
-                        className="text-xs border border-gray-200 rounded-lg px-2.5 py-1 text-gray-600 hover:border-gray-400 hover:text-gray-900 transition-colors disabled:opacity-50"
-                      >
-                        {restoringId === v.id ? "Restoring…" : "Restore"}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {restoredMsg && (
-            <div className="px-4 py-2.5 border-t border-gray-100 bg-blue-50">
-              <p className="text-xs text-blue-600">{restoredMsg}</p>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
+function bestVersionIndex(versions: Version[]): number {
+  let best = 0;
+  for (let i = 1; i < versions.length; i++) {
+    const a = versions[i].authenticity_score ?? -1;
+    const b = versions[best].authenticity_score ?? -1;
+    if (a > b) best = i;
+  }
+  return best;
 }
 
 function PostCard({
@@ -292,14 +208,29 @@ function PostCard({
   confirmingId: number | null;
   setConfirmingId: (id: number | null) => void;
 }) {
+  const hasVersions = post.versions.length > 1;
+  const defaultIdx = hasVersions ? bestVersionIndex(post.versions) : 0;
+  const [selectedVersionIdx, setSelectedVersionIdx] = useState(defaultIdx);
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [restoredMsg, setRestoredMsg] = useState("");
 
   const isConfirming = confirmingId === post.id;
 
+  // Active version data — falls back to the post itself when no versions loaded
+  const activeVersion = hasVersions ? post.versions[selectedVersionIdx] : null;
+  const activeContent = activeVersion ? activeVersion.content : post.content;
+  const activeScore = activeVersion ? activeVersion.authenticity_score : post.authenticity_score;
+  const activeDiagrams = activeVersion
+    ? (activeVersion.svg_diagrams ?? null)
+    : post.svg_diagrams;
+
+  const bestIdx = hasVersions ? bestVersionIndex(post.versions) : 0;
+
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(post.content);
+    await navigator.clipboard.writeText(activeContent);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -315,6 +246,34 @@ function PostCard({
     }
   };
 
+  const handleRestore = async () => {
+    if (!activeVersion) return;
+    setRestoring(true);
+    setRestoredMsg("");
+    try {
+      const res = await fetch(`${API}/history/${post.id}/restore/${activeVersion.id}`, {
+        method: "POST",
+      });
+      if (!res.ok) throw new Error("Restore failed");
+      const data = await res.json();
+      try {
+        sessionStorage.setItem(SS_POST, data.content);
+        sessionStorage.setItem(SS_SCORE, String(data.authenticity_score ?? 0));
+        sessionStorage.setItem(SS_FEEDBACK, JSON.stringify([]));
+        sessionStorage.setItem(SS_ITERATIONS, "1");
+        sessionStorage.setItem(SS_VISUALS, JSON.stringify([]));
+        sessionStorage.setItem(SS_CURRENT_POST_ID, String(post.id));
+      } catch {
+        // ignore
+      }
+      setRestoredMsg(`v${data.version_number} restored — go to Create Post to edit and repost`);
+    } catch {
+      setRestoredMsg("Restore failed. Please try again.");
+    } finally {
+      setRestoring(false);
+    }
+  };
+
   const date = new Date(post.created_at).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
@@ -323,12 +282,16 @@ function PostCard({
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+      {/* Card header */}
       <div className="px-5 py-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
+            {/* Line 1: topic */}
             <p className="font-semibold text-gray-900 text-sm leading-snug truncate">
               {post.topic}
             </p>
+
+            {/* Line 2: badges + date + version pills */}
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
                 {FORMAT_LABELS[post.format] ?? post.format}
@@ -336,16 +299,38 @@ function PostCard({
               <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
                 {TONE_LABELS[post.tone] ?? post.tone}
               </span>
-              <ScoreBadge score={post.authenticity_score} />
               <span className="text-xs text-gray-400">{date}</span>
+
+              {/* Score badge — only when no version pills */}
+              {!hasVersions && <ScoreBadge score={post.authenticity_score} />}
+
+              {/* Version pills — only when > 1 version */}
+              {hasVersions && post.versions.map((v, i) => {
+                const isSelected = i === selectedVersionIdx;
+                const isBest = i === bestIdx;
+                const baseColors = isSelected
+                  ? scorePillSelectedColors(v.authenticity_score)
+                  : scorePillColors(v.authenticity_score);
+                return (
+                  <button
+                    key={v.id}
+                    onClick={() => setSelectedVersionIdx(i)}
+                    className={`text-xs px-2 py-0.5 rounded-full border font-medium transition-colors ${baseColors}`}
+                  >
+                    v{v.version_number} · {v.authenticity_score ?? "—"}{isBest ? " ★" : ""}
+                  </button>
+                );
+              })}
             </div>
           </div>
-          <div className="flex items-center gap-3 pt-0.5">
+
+          {/* Actions */}
+          <div className="flex items-center gap-3 pt-0.5 shrink-0">
             <button
               onClick={() => setExpanded((v) => !v)}
               className="text-xs text-gray-500 hover:text-gray-900 whitespace-nowrap transition-colors"
             >
-              {expanded ? "Hide" : "See full post"}
+              {expanded ? "Hide" : "See post"}
             </button>
             {!isConfirming && (
               <button
@@ -377,26 +362,49 @@ function PostCard({
         </div>
       </div>
 
+      {/* Expanded content — shows selected version */}
       {expanded && (
         <div className="border-t border-gray-100 px-5 py-4 space-y-4">
+          {hasVersions && (
+            <p className="text-xs text-gray-400">
+              Showing v{post.versions[selectedVersionIdx].version_number}
+              {" · "}
+              {post.versions[selectedVersionIdx].version_type}
+            </p>
+          )}
           <pre className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed font-sans">
-            {post.content}
+            {activeContent}
           </pre>
-          <button
-            onClick={handleCopy}
-            className="text-xs border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:border-gray-400 hover:text-gray-900 transition-colors"
-          >
-            {copied ? "Copied!" : "Copy"}
-          </button>
-          {post.svg_diagrams && post.svg_diagrams.length > 0 && (
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleCopy}
+              className="text-xs border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:border-gray-400 hover:text-gray-900 transition-colors"
+            >
+              {copied ? "Copied!" : "Copy"}
+            </button>
+            {hasVersions && (
+              <button
+                onClick={handleRestore}
+                disabled={restoring}
+                className="text-xs border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:border-gray-400 hover:text-gray-900 transition-colors disabled:opacity-50"
+              >
+                {restoring
+                  ? "Restoring…"
+                  : `Restore v${post.versions[selectedVersionIdx].version_number} to Create Post`}
+              </button>
+            )}
+          </div>
+          {restoredMsg && (
+            <p className="text-xs text-blue-600">{restoredMsg}</p>
+          )}
+          {activeDiagrams && activeDiagrams.length > 0 && (
             <div className="space-y-3 pt-1">
               <p className="text-xs uppercase tracking-widest text-gray-400">Diagrams</p>
-              {post.svg_diagrams.map((d) => (
+              {activeDiagrams.map((d) => (
                 <HistoryDiagramCard key={d.position} diagram={d} />
               ))}
             </div>
           )}
-          <VersionsTable post={post} />
         </div>
       )}
     </div>
