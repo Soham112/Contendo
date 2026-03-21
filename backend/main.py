@@ -109,6 +109,23 @@ def _raise_anthropic_error(e: Exception) -> None:
     raise HTTPException(status_code=500, detail=str(e))
 
 
+def _feedback_to_instructions(feedback_items: list[str]) -> str:
+    """Convert scorer feedback from critique format to action instruction format.
+
+    Prefixes each item with 'ACTION NEEDED:' so Claude treats them as directives
+    rather than observations to acknowledge and lightly adjust around.
+    """
+    if not feedback_items:
+        return "Improve the overall flow and make the voice feel more natural and specific."
+    instructions = []
+    for item in feedback_items:
+        item = item.strip().lstrip("—").strip()
+        if not item:
+            continue
+        instructions.append(f"ACTION NEEDED: {item}")
+    return "\n\n".join(instructions)
+
+
 # --- Routes ---
 
 
@@ -298,8 +315,17 @@ async def refine(req: RefineRequest) -> RefineResponse:
     if not req.refinement_instruction.strip():
         raise HTTPException(status_code=400, detail="refinement_instruction is required")
 
+    processed_instruction = (
+        _feedback_to_instructions(req.refinement_instruction.split(". "))
+        if req.refinement_instruction
+        else ""
+    )
+
     try:
-        refined = refine_draft(req.current_draft, req.refinement_instruction)
+        refined = refine_draft(
+            current_draft=req.current_draft,
+            refinement_instruction=processed_instruction,
+        )
         score, score_feedback = score_text(refined)
     except (InternalServerError, APIStatusError) as e:
         _raise_anthropic_error(e)
