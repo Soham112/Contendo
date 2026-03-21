@@ -847,7 +847,7 @@ export default function CreatePost() {
                   placeholder="Describe what to fix — e.g. Fix the following issues: the hook is too generic. The second paragraph lacks specificity."
                   className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-gray-400 resize-none"
                 />
-                {refineError && <p className="text-xs text-red-500">{refineError}</p>}
+                {refineError && <p className="text-xs text-amber-600">{refineError}</p>}
                 <button
                   onClick={handleRefine}
                   disabled={refineLoading}
