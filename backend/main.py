@@ -15,6 +15,7 @@ load_dotenv()
 from agents.ingestion_agent import ingest_content
 from utils.file_extractor import extract_text_from_file
 from tools.scraper_tool import scrape_url
+from tools.obsidian_tool import get_vault_stats, read_vault
 from agents.vision_agent import extract_from_image
 from agents.ideation_agent import generate_suggestions
 from agents.visual_agent import generate_visuals
@@ -65,6 +66,10 @@ class IngestResponse(BaseModel):
 
 class ScrapeRequest(BaseModel):
     url: str
+
+
+class ObsidianRequest(BaseModel):
+    vault_path: str
 
 
 class GenerateRequest(BaseModel):
@@ -427,3 +432,44 @@ async def stats() -> StatsResponse:
         total_chunks=get_total_chunks(),
         tags=get_all_tags(),
     )
+
+
+@app.post("/obsidian/preview")
+async def obsidian_preview(req: ObsidianRequest) -> dict:
+    try:
+        return get_vault_stats(req.vault_path)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/obsidian/ingest")
+async def obsidian_ingest(req: ObsidianRequest) -> dict:
+    try:
+        notes = list(read_vault(req.vault_path))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    total_chunks = 0
+    all_tags: set[str] = set()
+    processed = 0
+
+    for note in notes:
+        try:
+            result = ingest_content(
+                content=note["content"],
+                source_type="note",
+                source_title=note["filename"],
+            )
+            total_chunks += result["chunks_stored"]
+            all_tags.update(result["tags"])
+            processed += 1
+        except Exception:
+            continue
+
+    return {
+        "total_files_processed": processed,
+        "total_chunks_stored": total_chunks,
+        "total_words_processed": sum(n["word_count"] for n in notes),
+        "skipped_files": len(notes) - processed,
+        "all_tags": sorted(all_tags),
+    }
