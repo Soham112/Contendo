@@ -4,10 +4,28 @@ import { useEffect, useState } from "react";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+const SS_POST = "contentOS_last_post";
+const SS_SCORE = "contentOS_last_score";
+const SS_FEEDBACK = "contentOS_last_feedback";
+const SS_ITERATIONS = "contentOS_last_iterations";
+const SS_VISUALS = "contentOS_last_visuals";
+const SS_CURRENT_POST_ID = "contentOS_current_post_id";
+
 interface Diagram {
   position: number;
   description: string;
   svg_code: string;
+}
+
+interface Version {
+  id: number;
+  post_id: number;
+  version_number: number;
+  content: string;
+  authenticity_score: number | null;
+  version_type: "generated" | "refined";
+  created_at: string;
+  svg_diagrams: Diagram[] | null;
 }
 
 interface Post {
@@ -19,6 +37,7 @@ interface Post {
   content: string;
   authenticity_score: number;
   svg_diagrams: Diagram[] | null;
+  versions: Version[];
 }
 
 function svgToDataURL(svgCode: string): Promise<string> {
@@ -137,7 +156,10 @@ const TONE_LABELS: Record<string, string> = {
   "storytelling": "Storytelling",
 };
 
-function ScoreBadge({ score }: { score: number }) {
+function ScoreBadge({ score }: { score: number | null }) {
+  if (score === null || score === undefined) {
+    return <span className="text-xs text-gray-400">—</span>;
+  }
   const color =
     score >= 75
       ? "bg-green-100 text-green-700"
@@ -148,6 +170,114 @@ function ScoreBadge({ score }: { score: number }) {
     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${color}`}>
       {score}/100
     </span>
+  );
+}
+
+function VersionsTable({ post }: { post: Post }) {
+  const [expanded, setExpanded] = useState(false);
+  const [restoringId, setRestoringId] = useState<number | null>(null);
+  const [restoredMsg, setRestoredMsg] = useState("");
+
+  if (post.versions.length <= 1) return null;
+
+  const bestScore = Math.max(...post.versions.map((v) => v.authenticity_score ?? -1));
+
+  const handleRestore = async (version: Version) => {
+    setRestoringId(version.id);
+    setRestoredMsg("");
+    try {
+      const res = await fetch(`${API}/history/${post.id}/restore/${version.id}`, {
+        method: "POST",
+      });
+      if (!res.ok) throw new Error("Restore failed");
+      const data = await res.json();
+
+      // Write restored content into sessionStorage so Create Post picks it up
+      try {
+        sessionStorage.setItem(SS_POST, data.content);
+        sessionStorage.setItem(SS_SCORE, String(data.authenticity_score ?? 0));
+        sessionStorage.setItem(SS_FEEDBACK, JSON.stringify([]));
+        sessionStorage.setItem(SS_ITERATIONS, "1");
+        sessionStorage.setItem(SS_VISUALS, JSON.stringify([]));
+        sessionStorage.setItem(SS_CURRENT_POST_ID, String(post.id));
+      } catch {
+        // ignore
+      }
+
+      setRestoredMsg(`v${data.version_number} restored — go to Create Post to edit and repost`);
+    } catch {
+      setRestoredMsg("Restore failed. Please try again.");
+    } finally {
+      setRestoringId(null);
+    }
+  };
+
+  return (
+    <div className="space-y-2 pt-1">
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-700 transition-colors"
+      >
+        <span>{post.versions.length} versions</span>
+        <span className={`transition-transform ${expanded ? "rotate-180" : ""}`}>▼</span>
+      </button>
+
+      {expanded && (
+        <div className="rounded-xl border border-gray-200 overflow-hidden">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50">
+                <th className="px-3 py-2 text-left font-medium text-gray-500">Version</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-500">Score</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-500">Type</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-500">Date</th>
+                <th className="px-3 py-2 text-right font-medium text-gray-500"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {post.versions.map((v) => {
+                const isBest = v.authenticity_score !== null && v.authenticity_score === bestScore;
+                const date = new Date(v.created_at).toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                });
+                return (
+                  <tr key={v.id} className="bg-white">
+                    <td className="px-3 py-2 text-gray-700 font-medium">v{v.version_number}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-1.5">
+                        <ScoreBadge score={v.authenticity_score} />
+                        {isBest && (
+                          <span className="text-xs font-medium px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">
+                            Best
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 capitalize text-gray-500">{v.version_type}</td>
+                    <td className="px-3 py-2 text-gray-400">{date}</td>
+                    <td className="px-3 py-2 text-right">
+                      <button
+                        onClick={() => handleRestore(v)}
+                        disabled={restoringId === v.id}
+                        className="text-xs border border-gray-200 rounded-lg px-2.5 py-1 text-gray-600 hover:border-gray-400 hover:text-gray-900 transition-colors disabled:opacity-50"
+                      >
+                        {restoringId === v.id ? "Restoring…" : "Restore"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {restoredMsg && (
+            <div className="px-4 py-2.5 border-t border-gray-100 bg-blue-50">
+              <p className="text-xs text-blue-600">{restoredMsg}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -266,6 +396,7 @@ function PostCard({
               ))}
             </div>
           )}
+          <VersionsTable post={post} />
         </div>
       )}
     </div>
