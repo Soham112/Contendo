@@ -11,17 +11,19 @@ Built for a single user. No auth, no bloat — just a fast loop from raw knowled
 ```mermaid
 flowchart TD
     subgraph UI["Frontend (Next.js 14) — 4 Screens"]
-        S1["Screen 1: Feed Memory\n(Article / YouTube / Image / Note)"]
+        S1["Screen 1: Feed Memory\n(Article / URL / File / YouTube / Image / Note / Obsidian)"]
         S2["Screen 2: Library\n(Source cards, stats, filter/sort)"]
-        S3["Screen 3: Create Post\n(Topic / Format / Tone / Ideas)"]
-        S4["Screen 4: History\n(Saved posts + diagrams)"]
+        S3["Screen 3: Create Post\n(Topic / Format / Tone / Ideas / Refine)"]
+        S4["Screen 4: History\n(Versioned posts, restore, delete, diagrams)"]
     end
 
-    subgraph API["FastAPI Backend — 8 Endpoints"]
-        R1["POST /ingest"]
+    subgraph API["FastAPI Backend — 16 Endpoints"]
+        R1["POST /ingest\nPOST /ingest-file\nPOST /scrape-and-ingest"]
+        R1b["POST /obsidian/preview\nPOST /obsidian/ingest"]
         R2["POST /generate"]
-        R3["POST /log-post"]
-        R4["GET /history"]
+        R2b["POST /refine"]
+        R3["POST /log-post (auto-save)"]
+        R4["GET /history\nPATCH /history/{id}\nDELETE /history/{id}\nPOST /history/{id}/restore/{vid}"]
         R5["GET /library"]
         R6["GET /suggestions"]
         R7["POST /generate-visuals"]
@@ -34,7 +36,7 @@ flowchart TD
         N3["3. draft_node\nClaude generates initial draft"]
         N4["4. humanizer_node\nRemove AI patterns, inject voice"]
         N5["5. scorer_node\nScore 0–100 across 5 dimensions"]
-        N6{"Score ≥ 75\nor iterations ≥ 3?"}
+        N6{"Quality mode?\ndraft/standard → finalize\npolished → check score + iterations"}
         N7["finalize_node"]
     end
 
@@ -46,19 +48,22 @@ flowchart TD
     subgraph Memory["Memory Layer"]
         DB1["ChromaDB\n(vector store — chunks + metadata)"]
         DB2["profile.json\n(voice, style, words to avoid)"]
-        DB3["SQLite posts.db\n(post history + svg_diagrams)"]
+        DB3["SQLite posts.db\n(posts + post_versions tables)"]
     end
 
     S1 --> R1
+    S1 --> R1b
     S1 --> R8
     S2 --> R5
     S3 --> R2
+    S3 --> R2b
+    S3 --> R3
     S3 --> R6
     S3 --> R7
-    S3 --> R3
     S4 --> R4
 
     R1 --> DB1
+    R1b --> DB1
     R2 --> N1
     R3 --> DB3
     R4 --> DB3
@@ -71,8 +76,8 @@ flowchart TD
     N3 --> N4
     N4 --> N5
     N5 --> N6
-    N6 -->|"Yes → finalize"| N7
-    N6 -->|"No → retry"| N4
+    N6 -->|"finalize"| N7
+    N6 -->|"retry (polished mode only)"| N4
     N7 --> DB3
 
     N1 --- DB2
@@ -84,13 +89,13 @@ flowchart TD
 
 ## The Four Screens
 
-**Screen 1 — Feed Memory (`/`):** The user selects an input type (Article/Text, YouTube, Image, or Manual Note), pastes or uploads their content, and clicks "Add to memory." For images, Claude vision extracts the knowledge as text first. For all types, the content is chunked into 500-word overlapping segments, embedded locally with `sentence-transformers`, and upserted into ChromaDB. The response shows how many chunks were stored and what tags were auto-extracted. The YouTube tab shows a textarea for manual paste — auto-fetching was removed after YouTube blocked bot-based transcript retrieval.
+**Screen 1 — Feed Memory (`/`):** The user selects an input type (Article/Text, URL, File, YouTube, Image/Diagram, Note, or Obsidian vault) and adds their content. For **URL**, the backend scrapes the page via Jina Reader and stores it automatically. For **File**, PDF, DOCX, and TXT uploads (up to 10 MB) are accepted — text is extracted server-side. For **Image/Diagram**, Claude vision extracts the knowledge as text first. For **Obsidian**, the user enters their local vault folder path; a preview step shows how many notes and words will be ingested before committing. The YouTube tab shows a textarea for manual paste — auto-fetching was removed after YouTube blocked bot-based transcript retrieval. For all types, content is chunked into 500-word overlapping segments, embedded locally with `sentence-transformers`, and upserted into ChromaDB. The response shows how many chunks were stored and what tags were auto-extracted.
 
 **Screen 2 — Library (`/library`):** Shows everything the user has fed into memory, grouped by source (one card per ingest call, not per chunk). A stats bar shows total sources, total chunks, and unique tag count. Source cards display the type badge (Article/Note/Image/YouTube), title derived from the first 80 characters of the content, date added, chunk count, and tag pills. Filterable by source type, sortable newest/oldest. This gives the user full visibility into what knowledge the system has before generating a post.
 
-**Screen 3 — Create Post (`/create`):** The user enters a topic, picks a format (LinkedIn Post, Medium Article, or Thread), sets a tone (Casual, Technical, or Storytelling), optionally adds context, and clicks "Generate." Before generating, "Get Ideas" runs multi-query diversity sampling across the full knowledge base and returns 8 fresh content suggestions the user can use or dismiss. The backend runs the full LangGraph pipeline — retrieving relevant knowledge, drafting in the user's voice, humanizing, and scoring. The final post appears in an editable textarea alongside an authenticity score (0–100) and specific feedback. "Generate visuals" parses `[DIAGRAM:]` and `[IMAGE:]` placeholders and generates SVGs via Claude. "Save to history" saves the post and any generated diagrams explicitly — nothing is auto-saved. Session state (post, score, visuals) persists in sessionStorage so navigating away and back restores the last session.
+**Screen 3 — Create Post (`/create`):** The user enters a topic, picks a format (LinkedIn Post, Medium Article, or Thread), sets a tone (Casual, Technical, or Storytelling), and optionally adds context. "Get Ideas" runs multi-query diversity sampling across the full knowledge base and returns up to 15 content suggestions — filterable by topic — that persist in the session until dismissed. The backend runs the full LangGraph pipeline — retrieving relevant knowledge, drafting in the user's voice, humanizing, and scoring. Default quality is **standard** (one humanizer pass, one scorer pass); **polished** mode runs up to three humanizer iterations with automatic retry if the score is below 75. The final post appears in an editable textarea alongside an authenticity score (0–100) and specific feedback. "Refine draft" sends targeted instructions to the humanizer for a focused one-pass fix without rerunning the full pipeline. "Generate visuals" parses `[DIAGRAM:]` and `[IMAGE:]` placeholders and generates SVGs via Claude. Posts are **auto-saved** to history immediately after generation — no manual save step required. Session state (post, score, visuals, ideas) persists in sessionStorage so navigating away and back restores the last session.
 
-**Screen 4 — History (`/history`):** All explicitly saved posts, newest first. Each card shows topic, format/tone badges, authenticity score, and date. Clicking "See full post" expands the card to show the full text with a Copy button. If SVG diagrams were saved alongside the post, they are rendered inline in the expanded view with an "Open as PNG" button.
+**Screen 4 — History (`/history`):** All auto-saved posts, newest first. Each card shows topic, format/tone badges, authenticity score, and date. Every generation creates version 1; every refinement creates the next version. Version pills in the card header show the score for each version (color-coded green/amber/red) with the best version starred. Clicking a pill switches the expanded view to that version's content. Any version can be restored to Create Post with one click. Cards can be deleted with a confirmation step. If SVG diagrams were saved alongside the post, they are rendered inline in the expanded view with an "Open as PNG" button.
 
 ---
 
@@ -101,9 +106,9 @@ flowchart TD
 | 1 | `load_profile_node` | Reads `profile.json`, injects user voice and style into state. Also loads all previously posted topics from SQLite to prevent repeated angles. |
 | 2 | `retrieval_node` | Queries ChromaDB for the 8 most semantically relevant chunks; filters out anything below 0.3 cosine similarity |
 | 3 | `draft_node` | Calls Claude to produce an initial draft using the user profile, retrieved chunks, format-specific instructions, and mandatory visual placeholder rules |
-| 4 | `humanizer_node` | Calls Claude to strip AI writing patterns, vary sentence structure, and inject the user's authentic voice |
+| 4 | `humanizer_node` | Calls Claude to strip AI writing patterns, vary sentence structure, and inject the user's authentic voice. Also exposes `refine_draft()` for targeted post-generation edits via `/refine` |
 | 5 | `scorer_node` | Calls Claude to score the draft 0–100 across 5 dimensions; uses 3-attempt JSON parse to handle markdown-wrapped responses |
-| 6 | Conditional | If score ≥ 75 or iterations ≥ 3: finalize. Otherwise: loop back to humanizer |
+| 6 | Conditional | **draft** mode: skip humanizer and scorer entirely, return raw draft. **standard** mode (default): always finalize after one pass. **polished** mode: retry humanizer if score < 75 and iterations < 3. |
 
 ---
 
@@ -119,6 +124,9 @@ flowchart TD
 | Vector DB | ChromaDB | Local persistent storage, simple Python API, no infra needed |
 | Agent orchestration | LangGraph | Stateful graph with conditional edges — perfect for retry loops |
 | Post history | SQLite (sqlite3) | Zero-config, single-file, sufficient for one user |
+| HTTP client | httpx | URL scraping via Jina Reader |
+| PDF extraction | PyMuPDF (fitz) | Fast text extraction from PDFs; detects scanned/image-only files |
+| DOCX extraction | python-docx | Plain text extraction from Word documents |
 | Deployment (frontend) | Vercel | Native Next.js hosting |
 | Deployment (backend) | Railway or Render | Simple Python service hosting |
 
@@ -205,14 +213,14 @@ Note: `profile.json` is gitignored — your personal details never get committed
 │   │   └── history/
 │   │       └── page.tsx              # Screen 4: History (/history)
 │   ├── components/
-│   │   ├── FeedMemory.tsx            # Feed Memory form — input types, submit, feedback
-│   │   └── CreatePost.tsx            # Create Post — topic, format, tone, ideas, visuals, output
+│   │   ├── FeedMemory.tsx            # Feed Memory form — all input types, Obsidian vault flow
+│   │   └── CreatePost.tsx            # Create Post — topic, format, tone, ideas, visuals, refine, output
 │   ├── .env.local                    # Sets NEXT_PUBLIC_API_URL=http://localhost:8000
 │   ├── tailwind.config.ts            # Tailwind config scoped to app/ and components/
 │   └── package.json                  # Next.js 14 + TypeScript + Tailwind
 │
 └── backend/
-    ├── main.py                       # FastAPI app — all 8 routes + CORS config
+    ├── main.py                       # FastAPI app — all API routes + CORS config
     ├── requirements.txt              # All Python dependencies pinned
     ├── .env.example                  # Required env var keys with no values
     ├── agents/
@@ -222,22 +230,25 @@ Note: `profile.json` is gitignored — your personal details never get committed
     │   ├── ideation_agent.py         # Multi-query diversity sampling + idea generation
     │   ├── retrieval_agent.py        # Semantic search node in the LangGraph pipeline
     │   ├── draft_agent.py            # Generates initial draft via Claude
-    │   ├── humanizer_agent.py        # Rewrites draft to remove AI patterns
+    │   ├── humanizer_agent.py        # Rewrites draft to remove AI patterns; exposes refine_draft()
     │   └── scorer_agent.py           # Scores draft 0–100, robust JSON parse with fallback
     ├── pipeline/
     │   ├── state.py                  # TypedDict defining shared LangGraph pipeline state
-    │   └── graph.py                  # LangGraph graph — nodes, edges, conditional retry
+    │   └── graph.py                  # LangGraph graph — nodes, edges, quality-aware routing
     ├── memory/
     │   ├── vector_store.py           # ChromaDB init, upsert, semantic query, get_all_sources
     │   ├── profile_store.py          # profile.json load/save with defaults auto-created
-    │   └── feedback_store.py         # SQLite posts table — log_post, history, topics posted
+    │   └── feedback_store.py         # SQLite posts + post_versions tables — history, versions, restore
     ├── tools/
-    │   └── __init__.py               # Empty — tools directory retained for future use
+    │   ├── scraper_tool.py           # URL scraper via Jina Reader — scrape_url(), clean_scraped_text()
+    │   └── obsidian_tool.py          # Obsidian vault reader — read_vault(), get_vault_stats(), clean_obsidian_markdown()
     ├── utils/
     │   ├── chunker.py                # 500-word chunks with 50-word overlap
-    │   └── formatters.py             # Format + tone instruction strings per output type
+    │   ├── formatters.py             # Format + tone instruction strings per output type
+    │   └── file_extractor.py         # PDF (PyMuPDF), DOCX (python-docx), TXT text extraction
     └── data/
-        └── profile.json              # User voice + style profile (auto-created if missing)
+        ├── profile.template.json     # Committed template — copy to profile.json to get started
+        └── profile.json              # User voice + style profile (gitignored, auto-created if missing)
 ```
 
 ---
