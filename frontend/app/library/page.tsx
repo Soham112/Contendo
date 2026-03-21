@@ -41,9 +41,41 @@ function formatDate(iso: string): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-function SourceCard({ source }: { source: Source }) {
+function SourceCard({
+  source,
+  onDelete,
+}: {
+  source: Source;
+  onDelete: (source_title: string, chunks_removed: number) => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
   const typeLabel = TYPE_LABELS[source.source_type] ?? source.source_type;
   const typeColor = TYPE_COLORS[source.source_type] ?? "bg-gray-100 text-gray-600";
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      const res = await fetch(`${API}/library/source`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_title: source.source_title }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail ?? "Delete failed");
+      }
+      const data = await res.json();
+      onDelete(source.source_title, data.chunks_removed);
+    } catch (e: unknown) {
+      setDeleteError(e instanceof Error ? e.message : "Something went wrong.");
+      setDeleting(false);
+      setConfirming(false);
+    }
+  };
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white shadow-sm px-5 py-4 space-y-3">
@@ -62,7 +94,42 @@ function SourceCard({ source }: { source: Source }) {
             <span className="text-xs text-gray-400">{formatDate(source.ingested_at)}</span>
           </div>
         </div>
+
+        {/* Delete controls */}
+        <div className="shrink-0 flex items-center gap-2">
+          {confirming ? (
+            <>
+              <span className="text-xs text-gray-500">Remove from memory?</span>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="text-xs text-red-600 hover:text-red-700 font-medium disabled:opacity-50 transition-colors"
+              >
+                {deleting ? "Removing…" : "Yes, remove"}
+              </button>
+              <button
+                onClick={() => { setConfirming(false); setDeleteError(""); }}
+                disabled={deleting}
+                className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setConfirming(true)}
+              className="text-xs text-gray-300 hover:text-red-400 transition-colors"
+            >
+              Delete
+            </button>
+          )}
+        </div>
       </div>
+
+      {deleteError && (
+        <p className="text-xs text-red-500">{deleteError}</p>
+      )}
+
       {source.tags.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {source.tags.map((tag) => (
@@ -101,6 +168,11 @@ export default function LibraryPage() {
       .catch(() => setError("Could not load library. Is the backend running?"))
       .finally(() => setLoading(false));
   }, []);
+
+  const handleSourceDeleted = (source_title: string, chunks_removed: number) => {
+    setSources((prev) => prev.filter((s) => s.source_title !== source_title));
+    setTotalChunks((prev) => Math.max(0, prev - chunks_removed));
+  };
 
   const allTags = Array.from(new Set(sources.flatMap((s) => s.tags))).sort();
 
@@ -202,7 +274,11 @@ export default function LibraryPage() {
           {filtered.length > 0 && (
             <div className="space-y-3">
               {filtered.map((source, i) => (
-                <SourceCard key={i} source={source} />
+                <SourceCard
+                  key={i}
+                  source={source}
+                  onDelete={handleSourceDeleted}
+                />
               ))}
             </div>
           )}

@@ -145,6 +145,19 @@ def get_all_tags() -> list[str]:
     return sorted(tag_set)
 
 
+def delete_source(source_title: str) -> int:
+    """Delete all ChromaDB chunks with matching source_title metadata.
+
+    Returns the number of chunks deleted, or 0 if no matching chunks found.
+    """
+    collection = _get_collection()
+    results = collection.get(where={"source_title": source_title})
+    if not results["ids"]:
+        return 0
+    collection.delete(ids=results["ids"])
+    return len(results["ids"])
+
+
 def get_all_sources() -> list[dict]:
     collection = _get_collection()
     if collection.count() == 0:
