@@ -68,6 +68,9 @@ def refine_draft(current_draft: str, refinement_instruction: str) -> str:
 
 
 def humanizer_node(state: PipelineState) -> PipelineState:
+    if state.get("quality") == "draft":
+        return state  # pass raw draft through unchanged
+
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
     profile = state["profile"]

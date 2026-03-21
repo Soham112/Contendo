@@ -8,6 +8,7 @@ class PipelineState(TypedDict, total=False):
     format: str
     tone: str
     context: Optional[str]
+    quality: str  # "draft" | "standard" | "polished" — defaults to "standard" at runtime
 
     # Loaded profile
     profile: dict[str, Any]

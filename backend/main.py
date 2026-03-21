@@ -4,6 +4,7 @@ import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from anthropic import APIStatusError, InternalServerError
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -63,6 +64,7 @@ class GenerateRequest(BaseModel):
     format: str
     tone: str
     context: str = ""
+    quality: str = "standard"
 
 
 class GenerateResponse(BaseModel):
@@ -89,6 +91,19 @@ class LogPostResponse(BaseModel):
 class StatsResponse(BaseModel):
     total_chunks: int
     tags: list[str]
+
+
+# --- Helpers ---
+
+
+def _raise_anthropic_error(e: Exception) -> None:
+    """Convert Anthropic API errors into appropriate HTTP responses."""
+    if isinstance(e, InternalServerError) and "overloaded" in str(e).lower():
+        raise HTTPException(
+            status_code=503,
+            detail="Anthropic API is temporarily overloaded. Wait 30 seconds and try again.",
+        )
+    raise HTTPException(status_code=500, detail=str(e))
 
 
 # --- Routes ---
@@ -121,12 +136,18 @@ async def generate(req: GenerateRequest) -> GenerateResponse:
     if not req.topic.strip():
         raise HTTPException(status_code=400, detail="topic is required")
 
-    result = run_pipeline(
-        topic=req.topic,
-        format=req.format,
-        tone=req.tone,
-        context=req.context,
-    )
+    try:
+        result = run_pipeline(
+            topic=req.topic,
+            format=req.format,
+            tone=req.tone,
+            context=req.context,
+            quality=req.quality,
+        )
+    except (InternalServerError, APIStatusError) as e:
+        _raise_anthropic_error(e)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
     return GenerateResponse(
         post=result["post"],
@@ -229,8 +250,13 @@ async def refine(req: RefineRequest) -> RefineResponse:
     if not req.refinement_instruction.strip():
         raise HTTPException(status_code=400, detail="refinement_instruction is required")
 
-    refined = refine_draft(req.current_draft, req.refinement_instruction)
-    score, score_feedback = score_text(refined)
+    try:
+        refined = refine_draft(req.current_draft, req.refinement_instruction)
+        score, score_feedback = score_text(refined)
+    except (InternalServerError, APIStatusError) as e:
+        _raise_anthropic_error(e)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
     return RefineResponse(
         refined_draft=refined,
@@ -243,7 +269,12 @@ async def refine(req: RefineRequest) -> RefineResponse:
 async def generate_visuals_endpoint(req: GenerateVisualsRequest) -> dict:
     if not req.post_content.strip():
         raise HTTPException(status_code=400, detail="post_content is required")
-    visuals = generate_visuals(req.post_content)
+    try:
+        visuals = generate_visuals(req.post_content)
+    except (InternalServerError, APIStatusError) as e:
+        _raise_anthropic_error(e)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     return {"visuals": visuals}
 
 
