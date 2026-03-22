@@ -9,6 +9,10 @@
   --foreground: #2c2a24;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
