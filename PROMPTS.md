@@ -82,7 +82,7 @@ Return nothing outside the JSON array.
 ```
 
 **Input variables injected:**
-- `count` — number of ideas requested (1–10), injected into both system prompt and user message
+- `count` — number of ideas requested (1–15), injected into both system prompt and user message
 - `profile_context` — string-formatted output of `profile_to_context_string(profile)`
 - `knowledge_section` — up to 30 diverse ChromaDB chunks sampled across 8 queries: 5 broad topic sweeps + 2 random tag queries + 1 oldest-source query to counteract recency bias; numbered and separated by `---`
 - `posted_section` — bullet list of all topics previously saved to feedback_store via `get_all_topics_posted()`
@@ -269,6 +269,8 @@ Rewrite the draft now. Preserve the structure and all factual content — only c
 - `words_to_avoid` — comma-separated list from `profile["words_to_avoid"]`
 - `current_draft` — the current draft string from pipeline state
 
+**Quality-mode bypass:** If `state.get("quality") == "draft"`, `humanizer_node` returns state unchanged with no Claude call. The raw draft agent output passes through unmodified.
+
 **Standalone refinement function — `refine_draft(current_draft, refinement_instruction, profile=None)`:**
 
 Used by `POST /refine` outside the LangGraph pipeline. Uses `REFINE_PROMPT` (separate constant in the same file). If `profile` is not passed, `load_profile()` is called automatically. Profile context is now included identically to the main humanizer prompt — refinement targets the user's specific voice, not generic "better writing".
@@ -300,7 +302,7 @@ For CONTENT feedback (reference feels parachuted, missing what actually happened
   Add the missing substance. If the feedback asks for what actually happened — write something that sounds like it actually happened, grounded in the user's profile and experience. If you don't have the specific detail, write something honest: "I don't have the exact number, but the pattern was clear."
 
 What to always preserve:
-  - [DIAGRAM:] and [IMAGE:] placeholders exactly
+  - [DIAGRAM:] and [IMAGE:] placeholders are MANDATORY. They must appear in the output exactly as written. If you restructure paragraphs, place the placeholder where it best fits the new structure — but never omit it. Missing a placeholder is a critical error.
   - Specific real numbers and named facts that are clearly sourced
   - The overall topic and argument
 
@@ -344,7 +346,8 @@ Score across exactly these 5 dimensions, each out of 20 points (total: 100):
 
 Also identify up to 3 specific sentences that most hurt the score. These are the sentences that most need fixing.
 
-Return ONLY valid JSON in exactly this format, nothing else:
+Return ONLY raw JSON — no markdown, no explanation, no code blocks. The response must start with { and end with }. No text before or after the JSON object.
+
 {
   "total_score": <integer 0-100>,
   "dimension_scores": {
@@ -387,7 +390,15 @@ Three-attempt parse with fallback:
 
 If all three fail: logs raw response, returns `score=50`, `feedback=["Score parsing failed — retry to get fresh evaluation."]`.
 
-**Retry logic (defined in pipeline/graph.py):**
+**Quality modes (defined in pipeline/graph.py `should_retry()` and agent short-circuits):**
+
+| Mode | humanizer_node | scorer_node | Retry loop |
+|------|---------------|-------------|------------|
+| `draft` | Returns state unchanged — no Claude call | Returns `score=0`, `score_feedback=[]` — no Claude call | Never retries; always finalizes |
+| `standard` (default) | Runs normally — one Claude call | Runs normally | Always finalizes after one pass regardless of score |
+| `polished` | Runs normally — one Claude call per iteration | Runs normally | Retries if score < 75 AND iterations < 3; finalizes at 3 iterations or score ≥ 75 |
+
+**Retry logic (polished mode only — defined in pipeline/graph.py):**
 - Score ≥ 75 → finalize
 - Score < 75 AND iterations < 3 → route back to humanizer_node
 - Iterations ≥ 3 → finalize regardless of score (surfaces best attempt)

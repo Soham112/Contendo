@@ -17,14 +17,14 @@ flowchart TD
         S4["Screen 4: History\n(Versioned posts, restore, delete, diagrams)"]
     end
 
-    subgraph API["FastAPI Backend — 16 Endpoints"]
+    subgraph API["FastAPI Backend — 17 Endpoints"]
         R1["POST /ingest\nPOST /ingest-file\nPOST /scrape-and-ingest"]
         R1b["POST /obsidian/preview\nPOST /obsidian/ingest"]
         R2["POST /generate"]
         R2b["POST /refine"]
         R3["POST /log-post (auto-save)"]
         R4["GET /history\nPATCH /history/{id}\nDELETE /history/{id}\nPOST /history/{id}/restore/{vid}"]
-        R5["GET /library"]
+        R5["GET /library\nDELETE /library/source"]
         R6["GET /suggestions"]
         R7["POST /generate-visuals"]
         R8["GET /stats"]

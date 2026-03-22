@@ -138,7 +138,7 @@
   "skipped_files": 12
 }
 ```
-**Notes:** Reads all `.md` files from the vault path and returns stats without ingesting anything. Raises 400 if the path does not exist, is not a directory, or is otherwise invalid. `skipped_files` counts notes shorter than 100 characters after cleaning and files that fail to read. `estimated_chunks` is `total_words // 400`.
+**Notes:** Reads all `.md` files from the vault path and returns stats without ingesting anything. Raises 400 if the path does not exist, is not a directory, or is otherwise invalid. `skipped_files` counts notes shorter than 100 characters after cleaning and files that fail to read. `estimated_chunks` is `max(1, round(total_words / 400))` — always at least 1 when content exists.
 
 ---
 
