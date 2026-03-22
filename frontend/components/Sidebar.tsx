@@ -53,9 +53,9 @@ export default function Sidebar() {
       {/* Logo */}
       <div className="px-5 py-5 border-b border-border">
         <Link href="/welcome" className="flex items-center gap-2 group">
-          <div className="w-6 h-6 rounded bg-amber flex items-center justify-center">
+          <div className="w-6 h-6 rounded bg-[#e8e6e1] flex items-center justify-center">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M2 9.5L4 3l4 5.5M5.5 7h3" stroke="white" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M2 9.5L4 3l4 5.5M5.5 7h3" stroke="#6b6760" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </div>
           <span className="text-sm font-semibold text-text-primary tracking-tight">Contendo</span>
@@ -76,7 +76,7 @@ export default function Sidebar() {
               href={item.href}
               className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-colors ${
                 isActive
-                  ? "bg-amber-light text-amber border border-amber-border font-medium"
+                  ? "bg-hover text-text-primary border-r-2 border-r-text-primary font-medium"
                   : "text-text-secondary hover:text-text-primary hover:bg-hover"
               }`}
             >

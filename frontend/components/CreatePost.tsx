@@ -59,7 +59,7 @@ const FORMAT_BADGE: Record<string, string> = {
 
 function ScoreRing({ score }: { score: number }) {
   const color =
-    score >= 75 ? "text-score-green" : score >= 50 ? "text-score-amber" : "text-score-red";
+    score >= 75 ? "text-score-green" : "text-text-secondary";
   return (
     <div className={`text-4xl font-semibold tabular-nums ${color}`}>
       {score}
@@ -155,7 +155,7 @@ function DiagramCard({ visual }: { visual: Visual }) {
         <div className="flex items-center gap-3">
           <button
             onClick={handleOpen}
-            className="text-xs border border-border rounded-lg px-3 py-1.5 text-text-secondary hover:border-amber hover:text-amber transition-colors"
+            className="text-xs border border-border rounded-lg px-3 py-1.5 text-text-secondary hover:border-text-primary hover:text-text-primary transition-colors"
           >
             Open as PNG
           </button>
@@ -538,7 +538,7 @@ export default function CreatePost() {
         <button
           onClick={handleGetIdeas}
           disabled={suggestionsLoading}
-          className="text-sm border border-border rounded-lg px-4 py-2 text-text-secondary hover:border-amber hover:text-amber transition-colors bg-card disabled:opacity-50"
+          className="text-sm border border-border rounded-lg px-4 py-2 text-text-secondary hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
         >
           {suggestionsLoading ? "Finding angles..." : "Get ideas"}
         </button>
@@ -550,7 +550,7 @@ export default function CreatePost() {
             max={15}
             value={ideaCount}
             onChange={(e) => setIdeaCount(Math.min(15, Math.max(3, Number(e.target.value))))}
-            className="w-14 rounded-lg border border-border bg-card px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-amber text-center transition-colors"
+            className="w-14 rounded-lg border border-border bg-card px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-text-primary text-center transition-colors"
           />
         </div>
         <input
@@ -558,7 +558,7 @@ export default function CreatePost() {
           value={ideaTopic}
           onChange={(e) => setIdeaTopic(e.target.value)}
           placeholder="Focus on a topic (optional) — e.g. 'production ML', 'career lessons'"
-          className="flex-1 min-w-48 rounded-lg border border-border bg-card px-3 py-2 text-xs text-text-primary placeholder:text-text-hint focus:outline-none focus:border-amber transition-colors"
+          className="flex-1 min-w-48 rounded-lg border border-border bg-card px-3 py-2 text-xs text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary transition-colors"
         />
       </div>
 
@@ -634,7 +634,7 @@ export default function CreatePost() {
                     className={`text-xs whitespace-nowrap rounded-lg px-3 py-1.5 transition-colors border ${
                       selectedIdeaIndex === i
                         ? "border-border bg-card text-text-muted"
-                        : "border-amber-border bg-amber-light text-amber hover:bg-amber hover:text-card"
+                        : "border-border bg-card text-text-secondary hover:bg-hover"
                     }`}
                   >
                     {selectedIdeaIndex === i ? "Selected" : "Use this"}
@@ -660,7 +660,7 @@ export default function CreatePost() {
             onChange={(e) => setTopic(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && generate()}
             placeholder="What do you want to write about?"
-            className="w-full rounded-lg border border-border-input bg-card px-4 py-2.5 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-amber transition-colors"
+            className="w-full rounded-lg border border-border-input bg-card px-4 py-2.5 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary transition-colors"
           />
         </div>
 
@@ -676,7 +676,7 @@ export default function CreatePost() {
                 onClick={() => setFormat(f.id)}
                 className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
                   format === f.id
-                    ? "border-amber-border bg-amber-light text-amber"
+                    ? "border-text-primary bg-hover text-text-primary"
                     : "border-border text-text-secondary hover:text-text-primary hover:bg-hover bg-card"
                 }`}
               >
@@ -698,12 +698,12 @@ export default function CreatePost() {
                 onClick={() => setTone(t.id)}
                 className={`flex-1 px-4 py-2.5 rounded-lg text-sm border transition-colors text-left ${
                   tone === t.id
-                    ? "border-amber-border bg-amber-light text-amber"
+                    ? "border-text-primary bg-hover text-text-primary"
                     : "border-border text-text-secondary hover:text-text-primary hover:bg-hover bg-card"
                 }`}
               >
                 <div className="font-medium">{t.label}</div>
-                <div className={`text-xs mt-0.5 ${tone === t.id ? "text-amber opacity-70" : "text-text-hint"}`}>
+                <div className={`text-xs mt-0.5 ${tone === t.id ? "text-text-muted" : "text-text-hint"}`}>
                   {t.description}
                 </div>
               </button>
@@ -722,7 +722,7 @@ export default function CreatePost() {
             onChange={(e) => setContext(e.target.value)}
             placeholder="Specific angle, story, or data point you want included..."
             rows={3}
-            className="w-full rounded-lg border border-border-input bg-card px-4 py-3 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-amber resize-none transition-colors"
+            className="w-full rounded-lg border border-border-input bg-card px-4 py-3 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary resize-none transition-colors"
           />
         </div>
 
@@ -749,11 +749,11 @@ export default function CreatePost() {
 
       {/* Restored session banner */}
       {restored && (
-        <div className="flex items-center justify-between rounded-lg border border-amber-border bg-amber-light px-4 py-2.5">
-          <p className="text-xs text-amber">Restored your last session</p>
+        <div className="flex items-center justify-between rounded-lg border border-border bg-surface px-4 py-2.5">
+          <p className="text-xs text-text-secondary">Restored your last session</p>
           <button
             onClick={() => { clearSession(); setResult(null); setEditedPost(""); setVisuals([]); setVisualsVisible(false); }}
-            className="text-amber opacity-60 hover:opacity-100 text-lg leading-none ml-4"
+            className="text-text-muted hover:text-text-secondary text-lg leading-none ml-4"
             aria-label="Dismiss"
           >
             ×
@@ -772,19 +772,19 @@ export default function CreatePost() {
               value={editedPost}
               onChange={(e) => setEditedPost(e.target.value)}
               rows={16}
-              className="w-full rounded-lg border border-border-input bg-card px-4 py-4 text-sm text-text-primary focus:outline-none focus:border-amber resize-none leading-relaxed transition-colors"
+              className="w-full rounded-lg border border-border-input bg-card px-4 py-4 text-sm text-text-primary focus:outline-none focus:border-text-primary resize-none leading-relaxed transition-colors"
             />
             <div className="flex gap-2">
               <button
                 onClick={handleCopy}
-                className="flex-1 rounded-lg border border-border text-text-secondary font-medium py-2 text-sm hover:border-amber hover:text-amber transition-colors bg-card"
+                className="flex-1 rounded-lg border border-border text-text-secondary font-medium py-2 text-sm hover:border-text-primary hover:text-text-primary transition-colors bg-card"
               >
                 {copied ? "Copied!" : "Copy"}
               </button>
               <button
                 onClick={handleGenerateVisuals}
                 disabled={visualsLoading}
-                className="flex-1 rounded-lg border border-border text-text-secondary font-medium py-2 text-sm hover:border-amber hover:text-amber transition-colors bg-card disabled:opacity-50"
+                className="flex-1 rounded-lg border border-border text-text-secondary font-medium py-2 text-sm hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
               >
                 {visualsLoading ? "Scanning post..." : "Generate visuals"}
               </button>
@@ -845,13 +845,13 @@ export default function CreatePost() {
                   onChange={(e) => setRefineInstruction(e.target.value)}
                   rows={3}
                   placeholder="Describe what to fix — e.g. Fix the following issues: the hook is too generic. The second paragraph lacks specificity."
-                  className="w-full rounded-lg border border-border-input bg-card px-4 py-3 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-amber resize-none transition-colors"
+                  className="w-full rounded-lg border border-border-input bg-card px-4 py-3 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary resize-none transition-colors"
                 />
                 {refineError && <p className="text-xs text-score-red">{refineError}</p>}
                 <button
                   onClick={handleRefine}
                   disabled={refineLoading}
-                  className="rounded-lg border border-border text-text-secondary font-medium px-4 py-2 text-sm hover:border-amber hover:text-amber transition-colors bg-card disabled:opacity-50"
+                  className="rounded-lg border border-border text-text-secondary font-medium px-4 py-2 text-sm hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
                 >
                   {refineLoading ? (
                     <span className="flex items-center gap-2">

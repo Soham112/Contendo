@@ -369,7 +369,7 @@ export default function FeedMemory() {
             onClick={() => handleTabChange(tab.id)}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
               activeTab === tab.id
-                ? "bg-amber-light border-amber-border text-amber"
+                ? "bg-hover border-amber text-text-primary"
                 : "border-border text-text-secondary hover:text-text-primary hover:bg-hover bg-card"
             }`}
           >
@@ -411,7 +411,7 @@ export default function FeedMemory() {
               </div>
             ) : obsidianPhase === "ingesting" ? (
               <div className="rounded-lg border border-border bg-card px-5 py-8 text-center">
-                <div className="inline-block w-4 h-4 border-2 border-border-input border-t-amber rounded-full animate-spin mb-3" />
+                <div className="inline-block w-4 h-4 border-2 border-border-input border-t-text-primary rounded-full animate-spin mb-3" />
                 <p className="text-sm text-text-primary font-medium">{loadingMessage}</p>
                 <p className="text-xs text-text-muted mt-1">Do not close this tab.</p>
               </div>
@@ -425,7 +425,7 @@ export default function FeedMemory() {
                     onChange={(e) => { setVaultPath(e.target.value); setVaultPreview(null); setObsidianPhase("input"); }}
                     onKeyDown={(e) => { if (e.key === "Enter" && obsidianPhase === "input") handleVaultPreview(); }}
                     placeholder="/Users/yourname/Documents/ObsidianVault"
-                    className="w-full rounded-lg border border-border-input bg-card px-4 py-2.5 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-amber transition-colors"
+                    className="w-full rounded-lg border border-border-input bg-card px-4 py-2.5 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary transition-colors"
                   />
                   <p className="text-xs text-text-hint">
                     Open Obsidian → Settings → About to find your vault path.
@@ -447,12 +447,12 @@ export default function FeedMemory() {
                       </p>
                     )}
                     {vaultPreview.total_files > 500 && (
-                      <p className="text-xs text-amber mt-2">
+                      <p className="text-xs text-text-secondary mt-2">
                         Large vault detected. Ingestion may take 2–3 minutes. Do not close this tab.
                       </p>
                     )}
                     {vaultPreview.total_files > 1000 && (
-                      <p className="text-xs text-amber">
+                      <p className="text-xs text-text-secondary">
                         This vault has {vaultPreview.total_files} notes. Consider pointing to a subfolder with your most relevant notes instead.
                       </p>
                     )}
@@ -469,7 +469,7 @@ export default function FeedMemory() {
               onChange={(e) => setUrlInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
               placeholder="https://example.com/article"
-              className="w-full rounded-lg border border-border-input bg-card px-4 py-2.5 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-amber transition-colors"
+              className="w-full rounded-lg border border-border-input bg-card px-4 py-2.5 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary transition-colors"
             />
           </div>
         ) : activeTab === "image" ? (
@@ -477,7 +477,7 @@ export default function FeedMemory() {
             <div
               onClick={() => fileInputRef.current?.click()}
               className={`border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-colors bg-card ${
-                imagePreview ? "border-border" : "border-border hover:border-amber-border"
+                imagePreview ? "border-border" : "border-border hover:border-text-primary"
               }`}
             >
               {imagePreview ? (
@@ -514,8 +514,8 @@ export default function FeedMemory() {
                 onClick={() => docFileInputRef.current?.click()}
                 className={`border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-colors bg-card ${
                   isDragging
-                    ? "border-amber bg-amber-light"
-                    : "border-border hover:border-amber-border"
+                    ? "border-text-primary bg-hover"
+                    : "border-border hover:border-text-primary"
                 }`}
               >
                 <div className="text-text-muted text-sm">
@@ -567,7 +567,7 @@ export default function FeedMemory() {
                 : "Paste article or text content here..."
             }
             rows={12}
-            className="w-full rounded-lg border border-border-input bg-card px-4 py-3 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-amber resize-none transition-colors"
+            className="w-full rounded-lg border border-border-input bg-card px-4 py-3 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary resize-none transition-colors"
           />
         )}
 

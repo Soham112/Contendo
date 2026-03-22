@@ -116,7 +116,7 @@ function HistoryDiagramCard({ diagram }: { diagram: Diagram }) {
         <div className="flex items-center gap-3">
           <button
             onClick={handleOpen}
-            className="text-xs border border-border rounded-lg px-3 py-1.5 text-text-secondary hover:border-amber hover:text-amber transition-colors"
+            className="text-xs border border-border rounded-lg px-3 py-1.5 text-text-secondary hover:border-text-primary hover:text-text-primary transition-colors"
           >
             Open as PNG
           </button>
@@ -157,17 +157,15 @@ const TONE_LABELS: Record<string, string> = {
 };
 
 function scorePillColors(score: number | null): string {
-  if (score === null) return "bg-stat border-border text-text-muted";
+  if (score === null) return "bg-surface border-border text-text-muted";
   if (score >= 80) return "bg-score-green-bg border-score-green text-score-green";
-  if (score >= 65) return "bg-score-amber-bg border-score-amber-border text-score-amber";
-  return "bg-score-red-bg border-score-red text-score-red";
+  return "bg-surface border-border text-text-secondary";
 }
 
 function scorePillSelectedColors(score: number | null): string {
-  if (score === null) return "bg-hover border-border text-text-secondary";
+  if (score === null) return "bg-text-primary border-text-primary text-card";
   if (score >= 80) return "bg-score-green-bg border-score-green text-score-green ring-1 ring-score-green";
-  if (score >= 65) return "bg-score-amber-bg border-score-amber text-score-amber ring-1 ring-score-amber";
-  return "bg-score-red-bg border-score-red text-score-red ring-1 ring-score-red";
+  return "bg-text-primary border-text-primary text-card";
 }
 
 function ScoreBadge({ score }: { score: number | null }) {
@@ -175,11 +173,11 @@ function ScoreBadge({ score }: { score: number | null }) {
     return <span className="text-xs text-text-muted">—</span>;
   }
   const color =
-    score >= 75
+    score >= 80
       ? "bg-score-green-bg text-score-green border-score-green"
-      : score >= 50
-      ? "bg-score-amber-bg text-score-amber border-score-amber-border"
-      : "bg-score-red-bg text-score-red border-score-red";
+      : score >= 60
+      ? "bg-surface text-text-secondary border-border"
+      : "bg-surface text-text-muted border-border";
   return (
     <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${color}`}>
       {score}/100
@@ -375,7 +373,7 @@ function PostCard({
           <div className="flex items-center gap-3">
             <button
               onClick={handleCopy}
-              className="text-xs border border-border rounded-lg px-3 py-1.5 text-text-secondary hover:border-amber hover:text-amber transition-colors"
+              className="text-xs border border-border rounded-lg px-3 py-1.5 text-text-secondary hover:border-text-primary hover:text-text-primary transition-colors"
             >
               {copied ? "Copied!" : "Copy"}
             </button>
@@ -383,7 +381,7 @@ function PostCard({
               <button
                 onClick={handleRestore}
                 disabled={restoring}
-                className="text-xs border border-border rounded-lg px-3 py-1.5 text-text-secondary hover:border-amber hover:text-amber transition-colors disabled:opacity-50"
+                className="text-xs border border-border rounded-lg px-3 py-1.5 text-text-secondary hover:border-text-primary hover:text-text-primary transition-colors disabled:opacity-50"
               >
                 {restoring
                   ? "Restoring…"
@@ -392,7 +390,7 @@ function PostCard({
             )}
           </div>
           {restoredMsg && (
-            <p className="text-xs text-amber">{restoredMsg}</p>
+            <p className="text-xs text-text-secondary">{restoredMsg}</p>
           )}
           {activeDiagrams && activeDiagrams.length > 0 && (
             <div className="space-y-3 pt-1">

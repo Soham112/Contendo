@@ -55,17 +55,15 @@ const TONE_LABELS: Record<string, string> = {
 };
 
 function scorePillColors(score: number | null): string {
-  if (score === null) return "bg-stat border-border text-text-muted";
+  if (score === null) return "bg-surface border-border text-text-muted";
   if (score >= 80) return "bg-score-green-bg border-score-green text-score-green";
-  if (score >= 65) return "bg-score-amber-bg border-score-amber-border text-score-amber";
-  return "bg-score-red-bg border-score-red text-score-red";
+  return "bg-surface border-border text-text-secondary";
 }
 
 function scorePillSelectedColors(score: number | null): string {
-  if (score === null) return "bg-hover border-border text-text-secondary";
+  if (score === null) return "bg-text-primary border-text-primary text-card";
   if (score >= 80) return "bg-score-green-bg border-score-green text-score-green ring-1 ring-score-green";
-  if (score >= 65) return "bg-score-amber-bg border-score-amber text-score-amber ring-1 ring-score-amber";
-  return "bg-score-red-bg border-score-red text-score-red ring-1 ring-score-red";
+  return "bg-text-primary border-text-primary text-card";
 }
 
 function svgToDataURL(svgCode: string): Promise<string> {
@@ -141,7 +139,7 @@ function DiagramCard({ diagram }: { diagram: Diagram }) {
         <div className="flex items-center gap-3">
           <button
             onClick={handleOpen}
-            className="text-xs border border-border rounded-lg px-3 py-1.5 text-text-secondary hover:border-amber hover:text-amber transition-colors"
+            className="text-xs border border-border rounded-lg px-3 py-1.5 text-text-secondary hover:border-text-primary hover:text-text-primary transition-colors"
           >
             Open as PNG
           </button>
@@ -209,7 +207,7 @@ export default function PostDetailPage() {
   if (error || !post) return (
     <div>
       <p className="text-sm text-score-red">{error || "Post not found."}</p>
-      <Link href="/history" className="text-xs text-amber mt-2 inline-block">← Back to History</Link>
+      <Link href="/history" className="text-xs text-text-secondary mt-2 inline-block">← Back to History</Link>
     </div>
   );
 
@@ -269,7 +267,7 @@ export default function PostDetailPage() {
   return (
     <div className="space-y-7">
       {/* Back link */}
-      <Link href="/history" className="text-xs text-text-muted hover:text-amber transition-colors">
+      <Link href="/history" className="text-xs text-text-muted hover:text-text-primary transition-colors">
         ← History
       </Link>
 
@@ -324,7 +322,7 @@ export default function PostDetailPage() {
       <div className="flex flex-wrap items-center gap-3">
         <button
           onClick={handleCopy}
-          className="text-sm border border-border rounded-lg px-4 py-2 text-text-secondary hover:border-amber hover:text-amber transition-colors bg-card"
+          className="text-sm border border-border rounded-lg px-4 py-2 text-text-secondary hover:border-text-primary hover:text-text-primary transition-colors bg-card"
         >
           {copied ? "Copied!" : "Copy"}
         </button>
@@ -332,7 +330,7 @@ export default function PostDetailPage() {
           <button
             onClick={handleRestore}
             disabled={restoring}
-            className="text-sm border border-border rounded-lg px-4 py-2 text-text-secondary hover:border-amber hover:text-amber transition-colors bg-card disabled:opacity-50"
+            className="text-sm border border-border rounded-lg px-4 py-2 text-text-secondary hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
           >
             {restoring ? "Restoring…" : `Restore v${post.versions[selectedVersionIdx].version_number} to Create Post`}
           </button>
@@ -366,7 +364,7 @@ export default function PostDetailPage() {
       </div>
 
       {restoredMsg && (
-        <p className="text-xs text-amber">{restoredMsg}</p>
+        <p className="text-xs text-text-secondary">{restoredMsg}</p>
       )}
 
       {/* Diagrams */}

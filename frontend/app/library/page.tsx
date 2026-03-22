@@ -20,10 +20,10 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 const TYPE_COLORS: Record<string, string> = {
-  article: "bg-stat text-text-secondary border-border",
-  note: "bg-amber-light text-amber border-amber-border",
-  image: "bg-stat text-text-secondary border-border",
-  youtube: "bg-score-red-bg text-score-red border-score-red",
+  article: "bg-hover text-[#5a5855] border-border",
+  note: "bg-hover text-[#5a5855] border-border",
+  image: "bg-hover text-[#5a5855] border-border",
+  youtube: "bg-hover text-[#5a5855] border-border",
 };
 
 type FilterType = "all" | "article" | "note" | "image" | "youtube";
@@ -233,7 +233,7 @@ export default function LibraryPage() {
                   onClick={() => setFilter(tab.id)}
                   className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
                     filter === tab.id
-                      ? "border-amber-border bg-amber-light text-amber"
+                      ? "border-text-primary bg-text-primary text-card"
                       : "border-border text-text-secondary hover:text-text-primary hover:bg-hover bg-card"
                   }`}
                 >
@@ -244,7 +244,7 @@ export default function LibraryPage() {
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as SortOrder)}
-              className="text-xs border border-border rounded-lg px-3 py-1.5 text-text-secondary bg-card focus:outline-none focus:border-amber transition-colors"
+              className="text-xs border border-border rounded-lg px-3 py-1.5 text-text-secondary bg-card focus:outline-none focus:border-text-primary transition-colors"
             >
               <option value="newest">Newest first</option>
               <option value="oldest">Oldest first</option>
