@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import Sidebar from "@/components/Sidebar";
+import AppShell from "@/components/AppShell";
 
 export const metadata: Metadata = {
   title: "Contendo",
@@ -14,11 +14,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-page text-text-primary flex">
-        <Sidebar />
-        <main className="flex-1 min-h-screen overflow-y-auto">
-          <div className="max-w-3xl mx-auto px-8 py-10">{children}</div>
-        </main>
+      <body className="bg-page text-text-primary">
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );

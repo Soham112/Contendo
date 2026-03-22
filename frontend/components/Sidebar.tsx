@@ -52,7 +52,7 @@ export default function Sidebar() {
     <aside className="w-56 shrink-0 h-screen sticky top-0 flex flex-col border-r border-border bg-surface">
       {/* Logo */}
       <div className="px-5 py-5 border-b border-border">
-        <Link href="/" className="flex items-center gap-2 group">
+        <Link href="/welcome" className="flex items-center gap-2 group">
           <div className="w-6 h-6 rounded bg-amber flex items-center justify-center">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M2 9.5L4 3l4 5.5M5.5 7h3" stroke="white" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>

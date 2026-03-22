@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function WelcomePage() {
   return (
     <div style={{ backgroundColor: "#fefcf8", minHeight: "100vh", fontFamily: '"DM Sans", system-ui, sans-serif' }}>
@@ -12,9 +14,9 @@ export default function WelcomePage() {
         justifyContent: "space-between",
       }}>
         {/* Logo */}
-        <div style={{ fontSize: "16px", fontWeight: 500, color: "#2c2a24", letterSpacing: "-0.01em" }}>
+        <Link href="/welcome" style={{ fontSize: "16px", fontWeight: 500, color: "#2c2a24", letterSpacing: "-0.01em", textDecoration: "none" }}>
           Co<span style={{ color: "#b5986a" }}>n</span>tendo
-        </div>
+        </Link>
 
         {/* Center links */}
         <div style={{ display: "flex", gap: "28px", alignItems: "center" }}>
