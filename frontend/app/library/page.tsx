@@ -20,10 +20,10 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 const TYPE_COLORS: Record<string, string> = {
-  article: "bg-blue-50 text-blue-600 border-blue-200",
+  article: "bg-stat text-text-secondary border-border",
   note: "bg-amber-light text-amber border-amber-border",
-  image: "bg-purple-50 text-purple-600 border-purple-200",
-  youtube: "bg-red-50 text-red-500 border-red-200",
+  image: "bg-stat text-text-secondary border-border",
+  youtube: "bg-score-red-bg text-score-red border-score-red",
 };
 
 type FilterType = "all" | "article" | "note" | "image" | "youtube";

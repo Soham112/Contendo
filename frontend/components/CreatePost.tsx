@@ -104,7 +104,7 @@ function DiagramCard({ visual }: { visual: Visual }) {
 
   if (!visual.svg_code) {
     return (
-      <div className="rounded-lg border border-score-red bg-red-50 px-5 py-4">
+      <div className="rounded-lg border border-score-red bg-score-red-bg px-5 py-4">
         <p className="text-sm font-medium text-score-red">
           Diagram generation failed — try regenerating the post
         </p>

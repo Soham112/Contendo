@@ -35,6 +35,7 @@ const config: Config = {
         "score-green-bg": "#f0f7f0",
         "score-amber": "#b5986a",
         "score-red": "#c05a5a",
+        "score-red-bg": "#fdf2f0",
       },
     },
   },
