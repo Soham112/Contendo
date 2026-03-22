@@ -57,15 +57,15 @@ const TONE_LABELS: Record<string, string> = {
 function scorePillColors(score: number | null): string {
   if (score === null) return "bg-stat border-border text-text-muted";
   if (score >= 80) return "bg-score-green-bg border-score-green text-score-green";
-  if (score >= 65) return "bg-amber-light border-amber-border text-amber";
-  return "bg-red-50 border-score-red text-score-red";
+  if (score >= 65) return "bg-score-amber-bg border-score-amber-border text-score-amber";
+  return "bg-score-red-bg border-score-red text-score-red";
 }
 
 function scorePillSelectedColors(score: number | null): string {
   if (score === null) return "bg-hover border-border text-text-secondary";
   if (score >= 80) return "bg-score-green-bg border-score-green text-score-green ring-1 ring-score-green";
-  if (score >= 65) return "bg-amber-light border-amber text-amber ring-1 ring-amber";
-  return "bg-red-50 border-score-red text-score-red ring-1 ring-score-red";
+  if (score >= 65) return "bg-score-amber-bg border-score-amber text-score-amber ring-1 ring-score-amber";
+  return "bg-score-red-bg border-score-red text-score-red ring-1 ring-score-red";
 }
 
 function svgToDataURL(svgCode: string): Promise<string> {
@@ -108,7 +108,7 @@ function DiagramCard({ diagram }: { diagram: Diagram }) {
       const win = window.open();
       if (win) {
         win.document.write(
-          `<html><body style="margin:0;background:#fefcf8;display:flex;justify-content:center;padding:24px">` +
+          `<html><body style="margin:0;background:#fdfcfb;display:flex;justify-content:center;padding:24px">` +
           `<img src="${dataURL}" style="max-width:100%;border-radius:8px" />` +
           `</body></html>`
         );

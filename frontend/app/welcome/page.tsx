@@ -2,11 +2,11 @@ import Link from "next/link";
 
 export default function WelcomePage() {
   return (
-    <div style={{ backgroundColor: "#fefcf8", minHeight: "100vh", fontFamily: '"DM Sans", system-ui, sans-serif' }}>
+    <div style={{ backgroundColor: "#fdfcfb", minHeight: "100vh", fontFamily: '"DM Sans", system-ui, sans-serif' }}>
       {/* Top Navigation */}
       <nav style={{
         height: "56px",
-        backgroundColor: "#fefcf8",
+        backgroundColor: "#fdfcfb",
         borderBottom: "0.5px solid #e8e3da",
         padding: "0 48px",
         display: "flex",
@@ -15,7 +15,7 @@ export default function WelcomePage() {
       }}>
         {/* Logo */}
         <Link href="/welcome" style={{ fontSize: "16px", fontWeight: 500, color: "#2c2a24", letterSpacing: "-0.01em", textDecoration: "none" }}>
-          Co<span style={{ color: "#b5986a" }}>n</span>tendo
+          Contendo
         </Link>
 
         {/* Center links */}
@@ -58,7 +58,7 @@ export default function WelcomePage() {
             href="#"
             style={{
               backgroundColor: "#2c2a24",
-              color: "#faf8f3",
+              color: "#f5f4f1",
               border: "none",
               borderRadius: "8px",
               padding: "9px 18px",
@@ -75,7 +75,7 @@ export default function WelcomePage() {
       </nav>
 
       {/* Main content */}
-      <main style={{ backgroundColor: "#fefcf8", padding: "80px 48px 64px" }}>
+      <main style={{ backgroundColor: "#fdfcfb", padding: "80px 48px 64px" }}>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
           {/* Eyebrow */}
           <p style={{
@@ -83,7 +83,7 @@ export default function WelcomePage() {
             fontWeight: 500,
             letterSpacing: "0.1em",
             textTransform: "uppercase",
-            color: "#b5986a",
+            color: "#6b6760",
             margin: "0 0 20px 0",
           }}>
             LinkedIn content, powered by your knowledge
@@ -100,7 +100,7 @@ export default function WelcomePage() {
             margin: "0 0 20px 0",
           }}>
             Write posts that sound like{" "}
-            <span style={{ fontStyle: "italic", color: "#b5986a", fontWeight: 500 }}>you</span>
+            <span style={{ fontStyle: "italic", color: "#2c2a24", fontWeight: 500 }}>you</span>
             {" "}— not like everyone else
           </h1>
 
@@ -172,7 +172,7 @@ export default function WelcomePage() {
               <div style={{
                 width: "36px",
                 height: "36px",
-                backgroundColor: "#f3efe6",
+                backgroundColor: "#f0eeea",
                 borderRadius: "8px",
                 display: "flex",
                 alignItems: "center",
@@ -202,7 +202,7 @@ export default function WelcomePage() {
               <div style={{
                 width: "36px",
                 height: "36px",
-                backgroundColor: "#f3efe6",
+                backgroundColor: "#f0eeea",
                 borderRadius: "8px",
                 display: "flex",
                 alignItems: "center",
@@ -232,7 +232,7 @@ export default function WelcomePage() {
               <div style={{
                 width: "36px",
                 height: "36px",
-                backgroundColor: "#f3efe6",
+                backgroundColor: "#f0eeea",
                 borderRadius: "8px",
                 display: "flex",
                 alignItems: "center",
@@ -258,7 +258,7 @@ export default function WelcomePage() {
       {/* Footer */}
       <footer style={{
         borderTop: "0.5px solid #e8e3da",
-        backgroundColor: "#faf8f3",
+        backgroundColor: "#f5f4f1",
         padding: "32px 48px",
         display: "flex",
         justifyContent: "space-between",

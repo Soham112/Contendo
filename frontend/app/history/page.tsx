@@ -80,7 +80,7 @@ function HistoryDiagramCard({ diagram }: { diagram: Diagram }) {
       const win = window.open();
       if (win) {
         win.document.write(
-          `<html><body style="margin:0;background:#fefcf8;display:flex;justify-content:center;padding:24px">` +
+          `<html><body style="margin:0;background:#fdfcfb;display:flex;justify-content:center;padding:24px">` +
           `<img src="${dataURL}" style="max-width:100%;border-radius:8px" />` +
           `</body></html>`
         );
@@ -159,14 +159,14 @@ const TONE_LABELS: Record<string, string> = {
 function scorePillColors(score: number | null): string {
   if (score === null) return "bg-stat border-border text-text-muted";
   if (score >= 80) return "bg-score-green-bg border-score-green text-score-green";
-  if (score >= 65) return "bg-amber-light border-amber-border text-amber";
+  if (score >= 65) return "bg-score-amber-bg border-score-amber-border text-score-amber";
   return "bg-score-red-bg border-score-red text-score-red";
 }
 
 function scorePillSelectedColors(score: number | null): string {
   if (score === null) return "bg-hover border-border text-text-secondary";
   if (score >= 80) return "bg-score-green-bg border-score-green text-score-green ring-1 ring-score-green";
-  if (score >= 65) return "bg-amber-light border-amber text-amber ring-1 ring-amber";
+  if (score >= 65) return "bg-score-amber-bg border-score-amber text-score-amber ring-1 ring-score-amber";
   return "bg-score-red-bg border-score-red text-score-red ring-1 ring-score-red";
 }
 
@@ -178,7 +178,7 @@ function ScoreBadge({ score }: { score: number | null }) {
     score >= 75
       ? "bg-score-green-bg text-score-green border-score-green"
       : score >= 50
-      ? "bg-amber-light text-amber border-amber-border"
+      ? "bg-score-amber-bg text-score-amber border-score-amber-border"
       : "bg-score-red-bg text-score-red border-score-red";
   return (
     <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${color}`}>

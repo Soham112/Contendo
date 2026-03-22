@@ -12,11 +12,11 @@ const config: Config = {
       },
       colors: {
         // Backgrounds
-        page: "#fefcf8",
-        surface: "#f7f5f0",
+        page: "#fdfcfb",
+        surface: "#f5f4f1",
         card: "#ffffff",
-        stat: "#f3efe6",
-        hover: "#eee9df",
+        stat: "#f0eeea",
+        hover: "#ebebeb",
         // Borders
         border: "#e2ddd5",
         "border-subtle": "#ede9e1",
@@ -26,14 +26,16 @@ const config: Config = {
         "text-secondary": "#7a786f",
         "text-muted": "#aaa89f",
         "text-hint": "#c9bfb0",
-        // Amber accent
-        amber: "#b5986a",
-        "amber-light": "#fdf8f0",
-        "amber-border": "#e0d4bc",
+        // Accent — charcoal only, no amber
+        amber: "#2c2a24",
+        "amber-light": "#f5f4f1",
+        "amber-border": "#d0cbc2",
         // Score states
         "score-green": "#5a8c5a",
         "score-green-bg": "#f0f7f0",
         "score-amber": "#b5986a",
+        "score-amber-bg": "#fdf8f0",
+        "score-amber-border": "#e0d4bc",
         "score-red": "#c05a5a",
         "score-red-bg": "#fdf2f0",
       },
