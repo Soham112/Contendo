@@ -80,8 +80,8 @@ function HistoryDiagramCard({ diagram }: { diagram: Diagram }) {
       const win = window.open();
       if (win) {
         win.document.write(
-          `<html><body style="margin:0;background:#f5f5f5;display:flex;justify-content:center;padding:24px">` +
-          `<img src="${dataURL}" style="max-width:100%;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,.15)" />` +
+          `<html><body style="margin:0;background:#fefcf8;display:flex;justify-content:center;padding:24px">` +
+          `<img src="${dataURL}" style="max-width:100%;border-radius:8px" />` +
           `</body></html>`
         );
         win.document.close();
@@ -97,11 +97,11 @@ function HistoryDiagramCard({ diagram }: { diagram: Diagram }) {
   };
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-      <div className="px-4 py-2.5 border-b border-gray-100">
-        <p className="text-xs font-medium text-gray-600">
+    <div className="rounded-lg border border-border bg-card overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-border-subtle">
+        <p className="text-xs font-medium text-text-secondary">
           Diagram —{" "}
-          <span className="font-normal text-gray-400">
+          <span className="font-normal text-text-muted">
             {diagram.description.length > 60
               ? diagram.description.slice(0, 60) + "…"
               : diagram.description}
@@ -112,21 +112,21 @@ function HistoryDiagramCard({ diagram }: { diagram: Diagram }) {
         className="p-3 overflow-x-auto"
         dangerouslySetInnerHTML={{ __html: diagram.svg_code }}
       />
-      <div className="px-4 py-2.5 border-t border-gray-100 space-y-2">
+      <div className="px-4 py-2.5 border-t border-border-subtle space-y-2">
         <div className="flex items-center gap-3">
           <button
             onClick={handleOpen}
-            className="text-xs border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:border-gray-400 hover:text-gray-900 transition-colors"
+            className="text-xs border border-border rounded-lg px-3 py-1.5 text-text-secondary hover:border-amber hover:text-amber transition-colors"
           >
             Open as PNG
           </button>
           {pngState === "opened" && (
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-text-muted">
               PNG opened in new tab — right-click and select <strong>Save Image</strong>
             </span>
           )}
           {pngState === "blocked" && (
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-text-muted">
               Popup blocked — right-click the image below to save
             </span>
           )}
@@ -136,7 +136,7 @@ function HistoryDiagramCard({ diagram }: { diagram: Diagram }) {
           <img
             src={fallbackDataURL}
             alt="diagram PNG"
-            className="max-w-full rounded-lg border border-gray-200"
+            className="max-w-full rounded-lg border border-border"
           />
         )}
       </div>
@@ -157,31 +157,31 @@ const TONE_LABELS: Record<string, string> = {
 };
 
 function scorePillColors(score: number | null): string {
-  if (score === null) return "bg-gray-100 text-gray-500 border-gray-200";
-  if (score >= 80) return "bg-green-50 text-green-700 border-green-200";
-  if (score >= 65) return "bg-amber-50 text-amber-700 border-amber-200";
-  return "bg-red-50 text-red-600 border-red-200";
+  if (score === null) return "bg-stat border-border text-text-muted";
+  if (score >= 80) return "bg-score-green-bg border-score-green text-score-green";
+  if (score >= 65) return "bg-amber-light border-amber-border text-amber";
+  return "bg-red-50 border-score-red text-score-red";
 }
 
 function scorePillSelectedColors(score: number | null): string {
-  if (score === null) return "bg-gray-200 text-gray-700 border-gray-400";
-  if (score >= 80) return "bg-green-100 text-green-800 border-green-500";
-  if (score >= 65) return "bg-amber-100 text-amber-800 border-amber-500";
-  return "bg-red-100 text-red-700 border-red-400";
+  if (score === null) return "bg-hover border-border text-text-secondary";
+  if (score >= 80) return "bg-score-green-bg border-score-green text-score-green ring-1 ring-score-green";
+  if (score >= 65) return "bg-amber-light border-amber text-amber ring-1 ring-amber";
+  return "bg-red-50 border-score-red text-score-red ring-1 ring-score-red";
 }
 
 function ScoreBadge({ score }: { score: number | null }) {
   if (score === null || score === undefined) {
-    return <span className="text-xs text-gray-400">—</span>;
+    return <span className="text-xs text-text-muted">—</span>;
   }
   const color =
     score >= 75
-      ? "bg-green-100 text-green-700"
+      ? "bg-score-green-bg text-score-green border-score-green"
       : score >= 50
-      ? "bg-amber-100 text-amber-700"
-      : "bg-red-100 text-red-600";
+      ? "bg-amber-light text-amber border-amber-border"
+      : "bg-red-50 text-score-red border-score-red";
   return (
-    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${color}`}>
+    <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${color}`}>
       {score}/100
     </span>
   );
@@ -219,7 +219,6 @@ function PostCard({
 
   const isConfirming = confirmingId === post.id;
 
-  // Active version data — falls back to the post itself when no versions loaded
   const activeVersion = hasVersions ? post.versions[selectedVersionIdx] : null;
   const activeContent = activeVersion ? activeVersion.content : post.content;
   const activeScore = activeVersion ? activeVersion.authenticity_score : post.authenticity_score;
@@ -281,30 +280,28 @@ function PostCard({
   });
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+    <div className="rounded-lg border border-border bg-card overflow-hidden">
       {/* Card header */}
       <div className="px-5 py-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
-            {/* Line 1: topic */}
-            <p className="font-semibold text-gray-900 text-sm leading-snug truncate">
+            {/* Topic */}
+            <p className="font-medium text-text-primary text-sm leading-snug truncate">
               {post.topic}
             </p>
 
-            {/* Line 2: badges + date + version pills */}
+            {/* Badges + date + version pills */}
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+              <span className="text-xs px-2 py-0.5 rounded-full bg-stat border border-border text-text-muted">
                 {FORMAT_LABELS[post.format] ?? post.format}
               </span>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+              <span className="text-xs px-2 py-0.5 rounded-full bg-stat border border-border text-text-muted">
                 {TONE_LABELS[post.tone] ?? post.tone}
               </span>
-              <span className="text-xs text-gray-400">{date}</span>
+              <span className="text-xs text-text-hint">{date}</span>
 
-              {/* Score badge — only when no version pills */}
               {!hasVersions && <ScoreBadge score={post.authenticity_score} />}
 
-              {/* Version pills — only when > 1 version */}
               {hasVersions && post.versions.map((v, i) => {
                 const isSelected = i === selectedVersionIdx;
                 const isBest = i === bestIdx;
@@ -328,31 +325,31 @@ function PostCard({
           <div className="flex items-center gap-3 pt-0.5 shrink-0">
             <button
               onClick={() => setExpanded((v) => !v)}
-              className="text-xs text-gray-500 hover:text-gray-900 whitespace-nowrap transition-colors"
+              className="text-xs text-text-secondary hover:text-text-primary whitespace-nowrap transition-colors"
             >
               {expanded ? "Hide" : "See post"}
             </button>
             {!isConfirming && (
               <button
                 onClick={() => setConfirmingId(post.id)}
-                className="text-xs text-gray-400 hover:text-red-500 whitespace-nowrap transition-colors"
+                className="text-xs text-text-hint hover:text-score-red whitespace-nowrap transition-colors"
               >
                 Delete
               </button>
             )}
             {isConfirming && (
               <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500 whitespace-nowrap">Delete this post?</span>
+                <span className="text-xs text-text-muted whitespace-nowrap">Delete this post?</span>
                 <button
                   onClick={handleDelete}
                   disabled={deleting}
-                  className="text-xs text-white bg-red-500 hover:bg-red-600 rounded-lg px-2.5 py-1 whitespace-nowrap transition-colors disabled:opacity-50"
+                  className="text-xs text-card bg-score-red hover:opacity-80 rounded-lg px-2.5 py-1 whitespace-nowrap transition-opacity disabled:opacity-50"
                 >
                   {deleting ? "Deleting..." : "Yes, delete"}
                 </button>
                 <button
                   onClick={() => setConfirmingId(null)}
-                  className="text-xs text-gray-500 hover:text-gray-900 border border-gray-200 rounded-lg px-2.5 py-1 whitespace-nowrap transition-colors"
+                  className="text-xs text-text-secondary hover:text-text-primary border border-border rounded-lg px-2.5 py-1 whitespace-nowrap transition-colors"
                 >
                   Cancel
                 </button>
@@ -362,23 +359,23 @@ function PostCard({
         </div>
       </div>
 
-      {/* Expanded content — shows selected version */}
+      {/* Expanded content */}
       {expanded && (
-        <div className="border-t border-gray-100 px-5 py-4 space-y-4">
+        <div className="border-t border-border-subtle px-5 py-4 space-y-4">
           {hasVersions && (
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-text-muted">
               Showing v{post.versions[selectedVersionIdx].version_number}
               {" · "}
               {post.versions[selectedVersionIdx].version_type}
             </p>
           )}
-          <pre className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed font-sans">
+          <pre className="text-sm text-text-primary whitespace-pre-wrap leading-relaxed font-sans">
             {activeContent}
           </pre>
           <div className="flex items-center gap-3">
             <button
               onClick={handleCopy}
-              className="text-xs border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:border-gray-400 hover:text-gray-900 transition-colors"
+              className="text-xs border border-border rounded-lg px-3 py-1.5 text-text-secondary hover:border-amber hover:text-amber transition-colors"
             >
               {copied ? "Copied!" : "Copy"}
             </button>
@@ -386,7 +383,7 @@ function PostCard({
               <button
                 onClick={handleRestore}
                 disabled={restoring}
-                className="text-xs border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:border-gray-400 hover:text-gray-900 transition-colors disabled:opacity-50"
+                className="text-xs border border-border rounded-lg px-3 py-1.5 text-text-secondary hover:border-amber hover:text-amber transition-colors disabled:opacity-50"
               >
                 {restoring
                   ? "Restoring…"
@@ -395,11 +392,11 @@ function PostCard({
             )}
           </div>
           {restoredMsg && (
-            <p className="text-xs text-blue-600">{restoredMsg}</p>
+            <p className="text-xs text-amber">{restoredMsg}</p>
           )}
           {activeDiagrams && activeDiagrams.length > 0 && (
             <div className="space-y-3 pt-1">
-              <p className="text-xs uppercase tracking-widest text-gray-400">Diagrams</p>
+              <p className="text-xs font-medium uppercase tracking-widest text-text-hint">Diagrams</p>
               {activeDiagrams.map((d) => (
                 <HistoryDiagramCard key={d.position} diagram={d} />
               ))}
@@ -434,33 +431,33 @@ export default function HistoryPage() {
   }, []);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-7">
       <div>
-        <h1 className="text-2xl font-semibold text-gray-900">History</h1>
-        <p className="mt-1 text-gray-500 text-sm">
+        <h1 className="text-xl font-semibold text-text-primary">History</h1>
+        <p className="mt-1 text-text-secondary text-sm">
           Auto-saved posts. Newest first.
         </p>
       </div>
 
       {loading && (
-        <p className="text-sm text-gray-400">Loading...</p>
+        <p className="text-sm text-text-muted">Loading...</p>
       )}
 
       {error && (
-        <p className="text-sm text-red-500">{error}</p>
+        <p className="text-sm text-score-red">{error}</p>
       )}
 
       {!loading && !error && posts.length === 0 && (
-        <div className="rounded-xl border border-gray-200 bg-white px-6 py-12 text-center">
-          <p className="text-gray-400 text-sm">No posts yet.</p>
-          <p className="text-gray-400 text-xs mt-1">
+        <div className="rounded-lg border border-border bg-card px-6 py-12 text-center">
+          <p className="text-text-muted text-sm">No posts yet.</p>
+          <p className="text-text-hint text-xs mt-1">
             Posts are auto-saved when you generate. They will appear here.
           </p>
         </div>
       )}
 
       {!loading && posts.length > 0 && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {posts.map((post) => (
             <PostCard
               key={post.id}

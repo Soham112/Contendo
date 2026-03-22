@@ -328,33 +328,33 @@ export default function FeedMemory() {
   const currentTab = TABS.find((t) => t.id === activeTab)!;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-7">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-semibold text-gray-900">Feed Memory</h1>
-        <p className="mt-1 text-gray-500 text-sm">
+        <h1 className="text-xl font-semibold text-text-primary">Feed Memory</h1>
+        <p className="mt-1 text-text-secondary text-sm">
           Add knowledge to your memory store. It will be chunked, embedded, and made available when you generate posts.
         </p>
       </div>
 
       {/* Stats bar */}
       {stats && (
-        <div className="rounded-xl border border-gray-200 bg-white px-5 py-4 flex items-center justify-between shadow-sm">
-          <span className="text-sm text-gray-500">
-            <span className="text-gray-900 font-medium">{stats.total_chunks}</span> chunks in memory
+        <div className="rounded-lg border border-border bg-stat px-4 py-3 flex items-center justify-between">
+          <span className="text-sm text-text-secondary">
+            <span className="text-text-primary font-medium">{stats.total_chunks}</span> chunks in memory
           </span>
           {stats.tags.length > 0 && (
             <div className="flex flex-wrap gap-1.5 justify-end max-w-xs">
               {stats.tags.slice(0, 8).map((tag) => (
                 <span
                   key={tag}
-                  className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600"
+                  className="text-xs px-2 py-0.5 rounded-full bg-surface border border-border text-text-muted"
                 >
                   {tag}
                 </span>
               ))}
               {stats.tags.length > 8 && (
-                <span className="text-xs text-gray-400">+{stats.tags.length - 8} more</span>
+                <span className="text-xs text-text-hint">+{stats.tags.length - 8} more</span>
               )}
             </div>
           )}
@@ -362,15 +362,15 @@ export default function FeedMemory() {
       )}
 
       {/* Tab selector */}
-      <div className="flex gap-1 rounded-lg bg-gray-100 p-1 border border-gray-200">
+      <div className="flex flex-wrap gap-1.5">
         {TABS.map((tab) => (
           <button
             key={tab.id}
             onClick={() => handleTabChange(tab.id)}
-            className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
               activeTab === tab.id
-                ? "bg-white text-gray-900 shadow-sm"
-                : "text-gray-500 hover:text-gray-700"
+                ? "bg-amber-light border-amber-border text-amber"
+                : "border-border text-text-secondary hover:text-text-primary hover:bg-hover bg-card"
             }`}
           >
             {tab.label}
@@ -379,80 +379,80 @@ export default function FeedMemory() {
       </div>
 
       {/* Description */}
-      <p className="text-sm text-gray-400 -mt-4">{currentTab.description}</p>
+      <p className="text-xs text-text-muted -mt-3">{currentTab.description}</p>
 
       {/* Input area */}
       <div className="space-y-4">
         {activeTab === "obsidian" ? (
           <div className="space-y-4">
             {obsidianPhase === "done" && obsidianResult ? (
-              <div className="rounded-xl border border-green-200 bg-green-50 px-5 py-4">
-                <p className="text-sm font-medium text-green-700">
+              <div className="rounded-lg border border-score-green bg-score-green-bg px-5 py-4">
+                <p className="text-sm font-medium text-score-green">
                   {obsidianResult.total_files_processed} notes ingested
                 </p>
-                <p className="text-xs text-green-600 mt-0.5">
+                <p className="text-xs text-score-green mt-0.5 opacity-80">
                   {obsidianResult.total_chunks_stored} chunks stored · {obsidianResult.total_words_processed.toLocaleString()} words processed
                 </p>
                 {obsidianResult.all_tags.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {obsidianResult.all_tags.slice(0, 10).map((tag) => (
-                      <span key={tag} className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                      <span key={tag} className="text-xs px-2 py-0.5 rounded-full border border-score-green bg-score-green-bg text-score-green">
                         {tag}
                       </span>
                     ))}
                     {obsidianResult.all_tags.length > 10 && (
-                      <span className="text-xs text-green-600">+{obsidianResult.all_tags.length - 10} more</span>
+                      <span className="text-xs text-score-green opacity-70">+{obsidianResult.all_tags.length - 10} more</span>
                     )}
                   </div>
                 )}
-                <p className="text-xs text-gray-500 mt-3">
+                <p className="text-xs text-text-muted mt-3">
                   Your Obsidian notes are now part of your knowledge base. Go to Create Post to generate content from them.
                 </p>
               </div>
             ) : obsidianPhase === "ingesting" ? (
-              <div className="rounded-xl border border-gray-200 bg-white px-5 py-8 text-center">
-                <div className="inline-block w-5 h-5 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin mb-3" />
-                <p className="text-sm text-gray-700 font-medium">{loadingMessage}</p>
-                <p className="text-xs text-gray-400 mt-1">Do not close this tab.</p>
+              <div className="rounded-lg border border-border bg-card px-5 py-8 text-center">
+                <div className="inline-block w-4 h-4 border-2 border-border-input border-t-amber rounded-full animate-spin mb-3" />
+                <p className="text-sm text-text-primary font-medium">{loadingMessage}</p>
+                <p className="text-xs text-text-muted mt-1">Do not close this tab.</p>
               </div>
             ) : (
               <>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-600">Obsidian vault folder path</label>
+                  <label className="text-xs font-medium text-text-secondary">Obsidian vault folder path</label>
                   <input
                     type="text"
                     value={vaultPath}
                     onChange={(e) => { setVaultPath(e.target.value); setVaultPreview(null); setObsidianPhase("input"); }}
                     onKeyDown={(e) => { if (e.key === "Enter" && obsidianPhase === "input") handleVaultPreview(); }}
                     placeholder="/Users/yourname/Documents/ObsidianVault"
-                    className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-gray-400 shadow-sm"
+                    className="w-full rounded-lg border border-border-input bg-card px-4 py-2.5 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-amber transition-colors"
                   />
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs text-text-hint">
                     Open Obsidian → Settings → About to find your vault path.
                   </p>
                 </div>
 
                 {vaultPreview && obsidianPhase === "preview" && (
-                  <div className="rounded-xl border border-gray-200 bg-white px-5 py-4 space-y-1">
-                    <p className="text-sm font-semibold text-gray-800">{vaultPreview.vault_name}</p>
-                    <p className="text-sm text-gray-600">
+                  <div className="rounded-lg border border-border bg-stat px-5 py-4 space-y-1">
+                    <p className="text-sm font-semibold text-text-primary">{vaultPreview.vault_name}</p>
+                    <p className="text-sm text-text-secondary">
                       {vaultPreview.total_files} notes · {vaultPreview.total_words.toLocaleString()} words
                     </p>
-                    <p className="text-xs text-gray-400">
+                    <p className="text-xs text-text-muted">
                       Estimated {vaultPreview.estimated_chunks} chunks to store
                     </p>
                     {vaultPreview.skipped_files > 0 && (
-                      <p className="text-xs text-gray-400">
+                      <p className="text-xs text-text-muted">
                         {vaultPreview.skipped_files} short notes will be skipped
                       </p>
                     )}
                     {vaultPreview.total_files > 500 && (
-                      <p className="text-xs text-amber-600 mt-2">
+                      <p className="text-xs text-amber mt-2">
                         Large vault detected. Ingestion may take 2–3 minutes. Do not close this tab.
                       </p>
                     )}
                     {vaultPreview.total_files > 1000 && (
-                      <p className="text-xs text-amber-600">
+                      <p className="text-xs text-amber">
                         This vault has {vaultPreview.total_files} notes. Consider pointing to a subfolder with your most relevant notes instead.
                       </p>
                     )}
@@ -469,14 +469,16 @@ export default function FeedMemory() {
               onChange={(e) => setUrlInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
               placeholder="https://example.com/article"
-              className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-gray-400 shadow-sm"
+              className="w-full rounded-lg border border-border-input bg-card px-4 py-2.5 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-amber transition-colors"
             />
           </div>
         ) : activeTab === "image" ? (
           <div className="space-y-4">
             <div
               onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-gray-200 rounded-xl p-10 text-center cursor-pointer hover:border-gray-400 transition-colors bg-white"
+              className={`border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-colors bg-card ${
+                imagePreview ? "border-border" : "border-border hover:border-amber-border"
+              }`}
             >
               {imagePreview ? (
                 <img
@@ -485,9 +487,9 @@ export default function FeedMemory() {
                   className="max-h-64 mx-auto rounded-lg object-contain"
                 />
               ) : (
-                <div className="text-gray-400 text-sm">
-                  <p className="text-lg mb-1 text-gray-500">Click to upload</p>
-                  <p>PNG, JPG, or WEBP</p>
+                <div className="text-text-muted text-sm">
+                  <p className="text-base mb-1 text-text-secondary">Click to upload</p>
+                  <p className="text-xs">PNG, JPG, or WEBP</p>
                 </div>
               )}
             </div>
@@ -499,7 +501,7 @@ export default function FeedMemory() {
               className="hidden"
             />
             {imageFile && (
-              <p className="text-xs text-gray-400">{imageFile.name}</p>
+              <p className="text-xs text-text-muted">{imageFile.name}</p>
             )}
           </div>
         ) : activeTab === "file" ? (
@@ -510,36 +512,36 @@ export default function FeedMemory() {
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 onClick={() => docFileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-colors bg-white ${
+                className={`border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-colors bg-card ${
                   isDragging
-                    ? "border-gray-500 bg-gray-50"
-                    : "border-gray-200 hover:border-gray-400"
+                    ? "border-amber bg-amber-light"
+                    : "border-border hover:border-amber-border"
                 }`}
               >
-                <div className="text-gray-400 text-sm">
-                  <p className="text-lg mb-1 text-gray-500">
+                <div className="text-text-muted text-sm">
+                  <p className="text-base mb-1 text-text-secondary">
                     {isDragging ? "Drop file here" : "Click or drag a file here"}
                   </p>
-                  <p>PDF, DOCX, or TXT · max 10 MB</p>
+                  <p className="text-xs">PDF, DOCX, or TXT · max 10 MB</p>
                 </div>
               </div>
             ) : (
-              <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 flex items-center justify-between gap-4">
+              <div className="rounded-lg border border-border bg-card px-4 py-3 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3 min-w-0">
-                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 shrink-0">
+                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-stat border border-border text-text-secondary shrink-0">
                     {FILE_TYPE_LABELS[uploadedFile.type] ??
                       uploadedFile.name.split(".").pop()?.toUpperCase() ??
                       "FILE"}
                   </span>
-                  <span className="text-sm text-gray-700 truncate">{uploadedFile.name}</span>
-                  <span className="text-xs text-gray-400 shrink-0">{formatBytes(uploadedFile.size)}</span>
+                  <span className="text-sm text-text-primary truncate">{uploadedFile.name}</span>
+                  <span className="text-xs text-text-muted shrink-0">{formatBytes(uploadedFile.size)}</span>
                 </div>
                 <button
                   onClick={() => {
                     setUploadedFile(null);
                     if (docFileInputRef.current) docFileInputRef.current.value = "";
                   }}
-                  className="text-xs text-gray-400 hover:text-red-500 shrink-0 transition-colors"
+                  className="text-xs text-text-muted hover:text-score-red shrink-0 transition-colors"
                 >
                   Remove
                 </button>
@@ -565,15 +567,15 @@ export default function FeedMemory() {
                 : "Paste article or text content here..."
             }
             rows={12}
-            className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-gray-400 resize-none shadow-sm"
+            className="w-full rounded-lg border border-border-input bg-card px-4 py-3 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-amber resize-none transition-colors"
           />
         )}
 
         {error && (
           <div>
-            <p className="text-sm text-red-500">{error}</p>
+            <p className="text-sm text-score-red">{error}</p>
             {activeTab === "url" && (
-              <p className="text-xs text-gray-400 mt-1">
+              <p className="text-xs text-text-muted mt-1">
                 You can paste the text manually in the Article / Text tab instead.
               </p>
             )}
@@ -581,16 +583,16 @@ export default function FeedMemory() {
         )}
 
         {result && (
-          <div className="rounded-xl border border-green-200 bg-green-50 px-5 py-4">
+          <div className="rounded-lg border border-score-green bg-score-green-bg px-5 py-4">
             {result.title ? (
-              <p className="text-sm font-medium text-green-700">Scraped and stored: {result.title}</p>
+              <p className="text-sm font-medium text-score-green">Scraped and stored: {result.title}</p>
             ) : (
-              <p className="text-sm font-medium text-green-700">
+              <p className="text-sm font-medium text-score-green">
                 Stored {result.chunks_stored} chunk{result.chunks_stored !== 1 ? "s" : ""}
               </p>
             )}
             {result.word_count != null && (
-              <p className="text-xs text-green-600 mt-0.5">
+              <p className="text-xs text-score-green mt-0.5 opacity-80">
                 {result.word_count} words → {result.chunks_stored} chunks
               </p>
             )}
@@ -599,7 +601,7 @@ export default function FeedMemory() {
                 {result.tags.map((tag) => (
                   <span
                     key={tag}
-                    className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700"
+                    className="text-xs px-2 py-0.5 rounded-full border border-score-green bg-score-green-bg text-score-green"
                   >
                     {tag}
                   </span>
@@ -613,7 +615,7 @@ export default function FeedMemory() {
           obsidianPhase === "done" ? (
             <button
               onClick={() => { setObsidianPhase("input"); setVaultPreview(null); setObsidianResult(null); setVaultPath(""); setError(""); }}
-              className="w-full rounded-xl border border-gray-200 bg-white text-gray-700 font-medium py-3 text-sm hover:bg-gray-50 transition-colors"
+              className="w-full rounded-lg border border-border bg-card text-text-secondary font-medium py-2.5 text-sm hover:bg-hover transition-colors"
             >
               Add another vault
             </button>
@@ -622,14 +624,14 @@ export default function FeedMemory() {
               <button
                 onClick={handleVaultIngest}
                 disabled={loading}
-                className="flex-1 rounded-xl bg-gray-900 text-white font-medium py-3 text-sm hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex-1 rounded-lg bg-text-primary text-card font-medium py-2.5 text-sm hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
               >
                 Ingest all notes
               </button>
               <button
                 onClick={() => { setObsidianPhase("input"); setVaultPreview(null); setError(""); }}
                 disabled={loading}
-                className="px-5 rounded-xl border border-gray-200 bg-white text-gray-600 font-medium py-3 text-sm hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                className="px-5 rounded-lg border border-border bg-card text-text-secondary font-medium py-2.5 text-sm hover:bg-hover disabled:opacity-50 transition-colors"
               >
                 Cancel
               </button>
@@ -638,7 +640,7 @@ export default function FeedMemory() {
             <button
               onClick={handleVaultPreview}
               disabled={loading}
-              className="w-full rounded-xl bg-gray-900 text-white font-medium py-3 text-sm hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="w-full rounded-lg bg-text-primary text-card font-medium py-2.5 text-sm hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
             >
               {loading ? "Scanning vault…" : "Preview vault"}
             </button>
@@ -647,7 +649,7 @@ export default function FeedMemory() {
           <button
             onClick={handleSubmit}
             disabled={loading}
-            className="w-full rounded-xl bg-gray-900 text-white font-medium py-3 text-sm hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full rounded-lg bg-text-primary text-card font-medium py-2.5 text-sm hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
           >
             {loading
               ? activeTab === "url"
