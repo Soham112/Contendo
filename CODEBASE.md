@@ -42,14 +42,19 @@
 | `backend/data/posts.db` | SQLite post history (gitignored) |
 | `backend/venv/` | Python virtual environment (gitignored) |
 | **Frontend** | |
-| `frontend/app/layout.tsx` | Root layout — nav bar with links to all four screens |
+| `frontend/app/layout.tsx` | Root layout — mounts AppShell which renders Sidebar for app routes; /welcome bypasses sidebar |
 | `frontend/app/page.tsx` | Screen 1: Feed Memory (default route `/`) |
 | `frontend/app/library/page.tsx` | Screen 2: Library (`/library`) — source cards, stats bar, filter/sort |
 | `frontend/app/create/page.tsx` | Screen 3: Create Post (`/create`) |
-| `frontend/app/history/page.tsx` | Screen 4: Post History (`/history`) — cards, expandable content, copy |
-| `frontend/app/globals.css` | Global styles — Tailwind directives, dark background, Inter font |
+| `frontend/app/ideas/page.tsx` | Screen 4: Get Ideas (`/ideas`) — standalone ideas screen with topic filter, count picker, save-for-later; ideas persisted in localStorage |
+| `frontend/app/history/page.tsx` | Screen 5: Post History (`/history`) — expandable post cards, version pills, restore, delete, diagram rendering |
+| `frontend/app/history/[id]/page.tsx` | Post detail page (`/history/[id]`) — full-page view of a single post with version picker, restore, delete, diagram rendering |
+| `frontend/app/welcome/page.tsx` | Landing page (`/welcome`) — marketing page with its own top nav; AppShell sidebar is suppressed for this route |
+| `frontend/app/globals.css` | Global styles — Tailwind directives, warm cream palette |
+| `frontend/components/AppShell.tsx` | Layout wrapper — renders Sidebar for all app routes; returns children unwrapped for `/welcome` |
+| `frontend/components/Sidebar.tsx` | Left sidebar navigation — logo, five nav items (Feed Memory, Library, Create Post, Get Ideas, History), user row at bottom |
 | `frontend/components/FeedMemory.tsx` | Feed Memory form — tabs (Article/Text, URL, File, YouTube, Image, Note, Obsidian), URL scraping, textarea, file upload with drag-and-drop, image upload, Obsidian vault preview/ingest flow, result display |
-| `frontend/components/CreatePost.tsx` | Create Post form — topic, format, tone, output + score display |
+| `frontend/components/CreatePost.tsx` | Create Post — 4-state UI (empty, loading, generated-stacked, generated-split); settings drawer for regeneration; topic header above post box; "View authenticity analysis" toggle; split-screen analysis panel |
 | `frontend/.env.local` | Sets `NEXT_PUBLIC_API_URL=http://localhost:8000` |
 | `frontend/tailwind.config.ts` | Tailwind config scoped to app/ and components/ |
 | `frontend/package.json` | Next.js 14 app with TypeScript + Tailwind |
@@ -554,8 +559,18 @@
 | Ideation agent uses multi-query diversity sampling | 8 queries (5 broad + 2 random tags + 1 oldest source) prevent recency bias; chunk cap raised to 30; diversity rules added to system prompt |
 | Default idea count is 8 | Raised from 5 — more ideas needed to span different knowledge base topics after diversity sampling |
 | Refinements update the existing history entry in place | After `/refine`, frontend calls `PATCH /history/{post_id}` with new content + score. After visuals generation, calls `PATCH` with `svg_diagrams`. No new history rows are created — one entry per generation session. |
-| Score and feedback hidden by default | Score ring, iterations, feedback, and refine section are collapsed behind a "Show authenticity analysis" toggle. Post textarea and action buttons are always visible. Preference stored in `contentOS_show_analysis` sessionStorage. Scorer still runs every time — this is display only. |
-| Ideas persist in sessionStorage until dismissed | `contentOS_last_ideas` stores the ideas array; panel is restored on mount if key exists. Panel stays open after "Use this" (idea gets a checkmark). Cleared only by explicit X dismiss, Regenerate, or restored-session dismiss. |
+| Score and feedback hidden by default | Score ring, iterations, feedback, and refine section are collapsed behind a "View authenticity analysis" toggle. Post textarea and action buttons are always visible. Preference stored in `contentOS_show_analysis` sessionStorage. Scorer still runs every time — this is display only. |
+| Ideas persist in sessionStorage until dismissed | `contentOS_last_ideas` stores the ideas array on Create Post; panel is restored on mount if key exists. Panel stays open after "Use this" (idea gets a checkmark). Cleared only by explicit X dismiss, Regenerate, or restored-session dismiss. |
+| Top navigation replaced with left sidebar | `AppShell` renders `Sidebar` (a 224px fixed-width left sidebar) for all app routes. The `/welcome` route bypasses AppShell entirely and renders its own top nav. The root layout no longer contains any nav elements directly. |
+| Get Ideas moved to dedicated screen `/ideas` | The Get Ideas feature has its own page at `/ideas` (not just a panel on Create Post). The sidebar links to it. Ideas state (generated ideas, topic, count) is persisted in localStorage under `contendo_ideas`, `contendo_ideas_topic`, and `contendo_ideas_count` keys. |
+| Saved ideas persisted in localStorage under `contendo_saved_ideas` | Users can save individual ideas for later using a "Save for later" button. Saved ideas persist across sessions in localStorage and appear in a "SAVED" subsection below the generated ideas list. |
+| `contentOS_prefill_format` sessionStorage key pre-fills Create Post from Ideas screen | When the user clicks "Use this" on an idea in `/ideas`, the idea title is written to `contentOS_last_topic` and the format is written to `contentOS_prefill_format` in sessionStorage. Create Post reads both on mount and then removes `contentOS_prefill_format` to prevent stale pre-fills. |
+| Post content box uses flex:1 / min-height:0 in split layout | In split-screen mode, the post textarea container is `flex: 1; min-height: 0` inside a flex column. This allows the box to fill remaining vertical space while the topic header and action row remain fixed-height rows. Without `min-height: 0`, the textarea would overflow its flex container. |
+| Split-screen analysis layout breaks out of max-width container | When analysis is open on wide viewports (`>= 900px`), CreatePost applies `position: fixed; left: 14rem; right: 0; top: 0; bottom: 0` to escape the parent `max-w-3xl` constraint and use the full available viewport width beside the sidebar. The standard stacked layout is used on narrow viewports or when analysis is closed. |
+| Landing page at `/welcome` has its own layout | `frontend/app/welcome/page.tsx` renders a complete standalone page (top nav, hero, feature cards, how-it-works section, footer) using its own inline nav — not the shared Sidebar. `AppShell` detects `pathname === "/welcome"` and renders `{children}` directly without the sidebar wrapper. |
+| Settings drawer for regeneration replaces inline form | After a post is generated, the topic/format/tone/context inputs are hidden. Clicking "Regenerate" opens a right-side drawer (`SettingsDrawer`) where the user edits settings and confirms. This keeps the post content area clean and uncluttered after generation. |
+| Topic displayed above post content box after generation | In both split and stacked layouts, after generation the current topic is shown as a small `TOPIC` label + value line above the post textarea. This is display-only; topic changes go through the settings drawer. |
+| Post detail page at `/history/[id]` | Individual posts have a dedicated full-page view accessible via the dynamic route `/history/[id]`. The page fetches from `GET /history`, finds the matching post by id, and renders the full content with version picker, restore, delete, and diagrams — same features as the expanded card in `/history` but with more space. |
 | User can delete posts from History | `DELETE /history/{post_id}` removes the SQLite row; frontend filters the card from state without a page reload. |
 | `/refine` does not run the full pipeline | Refinement is a targeted one-pass fix: `refine_draft()` + `score_text()` only. No retrieval, no draft agent, no retry loop — running the full pipeline would discard the user's manual edits |
 | `score_text()` extracted from `scorer_node` | Scoring logic lives in exactly one place (`scorer_agent.py`); both the LangGraph pipeline (`scorer_node`) and the standalone `/refine` endpoint call `score_text()` internally — no duplication |
@@ -586,7 +601,6 @@
 
 - User authentication (single user only for now — no auth layer)
 - Profile editing screen (profile.json must be edited manually)
-- Dedicated brainstorm / ideas screen (the Get Ideas panel on Create Post exists, but there is no standalone ideas-management screen)
 - Vercel and Railway/Render deployment config files
 - YouTube transcript auto-fetching (removed — manual paste only)
 - Tag filtering in Library (can't filter ChromaDB chunks by tag in the UI — only source-type filter exists)

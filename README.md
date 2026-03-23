@@ -10,11 +10,15 @@ Built for a single user. No auth, no bloat — just a fast loop from raw knowled
 
 ```mermaid
 flowchart TD
-    subgraph UI["Frontend (Next.js 14) — 4 Screens"]
-        S1["Screen 1: Feed Memory\n(Article / URL / File / YouTube / Image / Note / Obsidian)"]
-        S2["Screen 2: Library\n(Source cards, stats, filter/sort)"]
-        S3["Screen 3: Create Post\n(Topic / Format / Tone / Ideas / Refine)"]
-        S4["Screen 4: History\n(Versioned posts, restore, delete, diagrams)"]
+    subgraph UI["Frontend (Next.js 14) — 5 Screens + Landing Page"]
+        NAV["Left Sidebar (Sidebar.tsx)\nFeed Memory / Library / Create Post / Get Ideas / History"]
+        S1["Screen 1: Feed Memory (/)\n(Article / URL / File / YouTube / Image / Note / Obsidian)"]
+        S2["Screen 2: Library (/library)\n(Source cards, stats, filter/sort)"]
+        S3["Screen 3: Create Post (/create)\n(Settings drawer / Split-screen analysis / Topic header)"]
+        S4["Screen 4: Get Ideas (/ideas)\n(Topic filter / Save for later / Use this → prefill Create Post)"]
+        S5["Screen 5: History (/history)\n(Versioned posts, restore, delete, diagrams)"]
+        S5b["Post Detail (/history/[id])\n(Full-page post view, version picker, restore)"]
+        S6["Landing Page (/welcome)\n(Own top nav, bypasses sidebar)"]
     end
 
     subgraph API["FastAPI Backend — 17 Endpoints"]
@@ -51,6 +55,12 @@ flowchart TD
         DB3["SQLite posts.db\n(posts + post_versions tables)"]
     end
 
+    NAV --> S1
+    NAV --> S2
+    NAV --> S3
+    NAV --> S4
+    NAV --> S5
+    S5 --> S5b
     S1 --> R1
     S1 --> R1b
     S1 --> R8
@@ -58,9 +68,10 @@ flowchart TD
     S3 --> R2
     S3 --> R2b
     S3 --> R3
-    S3 --> R6
     S3 --> R7
-    S4 --> R4
+    S4 --> R6
+    S5 --> R4
+    S5b --> R4
 
     R1 --> DB1
     R1b --> DB1
@@ -87,15 +98,19 @@ flowchart TD
 
 ---
 
-## The Four Screens
+## The Five Screens
+
+Navigation across all five screens is handled by a persistent left sidebar (`Sidebar.tsx`), rendered by `AppShell.tsx` for every route except `/welcome`. The landing page at `/welcome` has its own top nav and bypasses the sidebar entirely.
 
 **Screen 1 — Feed Memory (`/`):** The user selects an input type (Article/Text, URL, File, YouTube, Image/Diagram, Note, or Obsidian vault) and adds their content. For **URL**, the backend scrapes the page via Jina Reader and stores it automatically. For **File**, PDF, DOCX, and TXT uploads (up to 10 MB) are accepted — text is extracted server-side. For **Image/Diagram**, Claude vision extracts the knowledge as text first. For **Obsidian**, the user enters their local vault folder path; a preview step shows how many notes and words will be ingested before committing. The YouTube tab shows a textarea for manual paste — auto-fetching was removed after YouTube blocked bot-based transcript retrieval. For all types, content is chunked into 500-word overlapping segments, embedded locally with `sentence-transformers`, and upserted into ChromaDB. The response shows how many chunks were stored and what tags were auto-extracted.
 
 **Screen 2 — Library (`/library`):** Shows everything the user has fed into memory, grouped by source (one card per ingest call, not per chunk). A stats bar shows total sources, total chunks, and unique tag count. Source cards display the type badge (Article/Note/Image/YouTube), title derived from the first 80 characters of the content, date added, chunk count, and tag pills. Filterable by source type, sortable newest/oldest. This gives the user full visibility into what knowledge the system has before generating a post.
 
-**Screen 3 — Create Post (`/create`):** The user enters a topic, picks a format (LinkedIn Post, Medium Article, or Thread), sets a tone (Casual, Technical, or Storytelling), and optionally adds context. "Get Ideas" runs multi-query diversity sampling across the full knowledge base and returns up to 15 content suggestions — filterable by topic — that persist in the session until dismissed. The backend runs the full LangGraph pipeline — retrieving relevant knowledge, drafting in the user's voice, humanizing, and scoring. Default quality is **standard** (one humanizer pass, one scorer pass); **polished** mode runs up to three humanizer iterations with automatic retry if the score is below 75. The final post appears in an editable textarea alongside an authenticity score (0–100) and specific feedback. "Refine draft" sends targeted instructions to the humanizer for a focused one-pass fix without rerunning the full pipeline. "Generate visuals" parses `[DIAGRAM:]` and `[IMAGE:]` placeholders and generates SVGs via Claude. Posts are **auto-saved** to history immediately after generation — no manual save step required. Session state (post, score, visuals, ideas) persists in sessionStorage so navigating away and back restores the last session.
+**Screen 3 — Create Post (`/create`):** The user enters a topic, picks a format and tone, and clicks Generate. Before generation, all settings are shown inline. After generation, the settings form is replaced by the generated post in an editable textarea, with a small topic header displayed above the post. A "View authenticity analysis" toggle reveals the score panel; when open on wide viewports (≥ 900px), the layout switches to a fixed split screen — post on the left, score and refine controls on the right — escaping the normal max-width container to use the full viewport beside the sidebar. The settings drawer (opened via "Regenerate") lets the user edit topic/format/tone/context and re-run without losing the current post. "Generate visuals" parses `[DIAGRAM:]` and `[IMAGE:]` placeholders and generates SVGs via Claude. Posts are **auto-saved** to history immediately after generation — no manual save step required. Session state (post, score, visuals, ideas) persists in sessionStorage so navigating away and back restores the last session.
 
-**Screen 4 — History (`/history`):** All auto-saved posts, newest first. Each card shows topic, format/tone badges, authenticity score, and date. Every generation creates version 1; every refinement creates the next version. Version pills in the card header show the score for each version (color-coded green/amber/red) with the best version starred. Clicking a pill switches the expanded view to that version's content. Any version can be restored to Create Post with one click. Cards can be deleted with a confirmation step. If SVG diagrams were saved alongside the post, they are rendered inline in the expanded view with an "Open as PNG" button.
+**Screen 4 — Get Ideas (`/ideas`):** A dedicated brainstorm screen. The user optionally enters a topic focus and picks how many ideas to generate (3–15). The ideation agent runs multi-query diversity sampling across the knowledge base and returns content suggestions. Ideas generated in a session persist in localStorage (`contendo_ideas`) and are restored on page revisit. Individual ideas can be saved for later (`contendo_saved_ideas` localStorage key); saved ideas appear in a "SAVED" subsection. Clicking "Use this" writes the idea title to `contentOS_last_topic` and the format to `contentOS_prefill_format` in sessionStorage, then redirects to Create Post where both are pre-filled.
+
+**Screen 5 — History (`/history`):** All auto-saved posts, newest first. Each card shows topic, format/tone badges, authenticity score, and date. Every generation creates version 1; every refinement creates the next version. Version pills in the card header show the score for each version (color-coded green/amber/red) with the best version starred. Clicking a pill switches the expanded view to that version's content. Any version can be restored to Create Post with one click. Cards can be deleted with a confirmation step. If SVG diagrams were saved alongside the post, they are rendered inline in the expanded view with an "Open as PNG" button. Individual posts also have a dedicated full-page detail view at `/history/[id]`.
 
 ---
 
@@ -118,6 +133,7 @@ flowchart TD
 |-------|------|-----|
 | Frontend | Next.js 14 (App Router) | File-based routing, RSC-ready, deploys instantly to Vercel |
 | Styling | TailwindCSS | Utility-first, zero config, great with Next.js |
+| Font | DM Sans (Google Fonts) | Loaded via `@import` in `globals.css`; applied to `body`; warm, readable sans-serif |
 | Backend | FastAPI (Python 3.11) | Async, typed, auto-docs, fast iteration |
 | LLM | claude-sonnet-4-6 (Anthropic) | Best balance of quality and speed for generation tasks |
 | Embeddings | sentence-transformers (all-MiniLM-L6-v2) | Local, no API key, good semantic quality for retrieval |
@@ -203,18 +219,26 @@ Note: `profile.json` is gitignored — your personal details never get committed
 │
 ├── frontend/
 │   ├── app/
-│   │   ├── layout.tsx                # Root layout — nav bar for all four screens
-│   │   ├── globals.css               # Global styles — Tailwind directives, light theme
+│   │   ├── layout.tsx                # Root layout — mounts AppShell (sidebar + main content area)
+│   │   ├── globals.css               # Global styles — Tailwind directives, warm cream palette
 │   │   ├── page.tsx                  # Screen 1: Feed Memory (/)
 │   │   ├── library/
 │   │   │   └── page.tsx              # Screen 2: Library (/library)
 │   │   ├── create/
 │   │   │   └── page.tsx              # Screen 3: Create Post (/create)
-│   │   └── history/
-│   │       └── page.tsx              # Screen 4: History (/history)
+│   │   ├── ideas/
+│   │   │   └── page.tsx              # Screen 4: Get Ideas (/ideas)
+│   │   ├── history/
+│   │   │   ├── page.tsx              # Screen 5: History (/history)
+│   │   │   └── [id]/
+│   │   │       └── page.tsx          # Post detail (/history/[id])
+│   │   └── welcome/
+│   │       └── page.tsx              # Landing page (/welcome) — own top nav, no sidebar
 │   ├── components/
+│   │   ├── AppShell.tsx              # Layout wrapper — sidebar for app routes, passthrough for /welcome
+│   │   ├── Sidebar.tsx               # Left sidebar — logo, five nav items, user row
 │   │   ├── FeedMemory.tsx            # Feed Memory form — all input types, Obsidian vault flow
-│   │   └── CreatePost.tsx            # Create Post — topic, format, tone, ideas, visuals, refine, output
+│   │   └── CreatePost.tsx            # Create Post — 4-state UI, settings drawer, split-screen analysis
 │   ├── .env.local                    # Sets NEXT_PUBLIC_API_URL=http://localhost:8000
 │   ├── tailwind.config.ts            # Tailwind config scoped to app/ and components/
 │   └── package.json                  # Next.js 14 + TypeScript + Tailwind

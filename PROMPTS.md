@@ -4,6 +4,8 @@
 > When any prompt needs to be tuned, update this file first, then update the
 > corresponding agent file to match. The two must never be out of sync.
 
+> **Verification note (2026-03-22):** All backend agent files (`ideation_agent.py`, `ingestion_agent.py`, `vision_agent.py`, `visual_agent.py`, `retrieval_agent.py`, `draft_agent.py`, `humanizer_agent.py`, `scorer_agent.py`) were reviewed and confirmed unchanged during the UI rebuild (feature/ui-redesign branch). All prompts in this file remain in sync with the agent implementations.
+
 ---
 
 ### Visual Agent — agents/visual_agent.py
