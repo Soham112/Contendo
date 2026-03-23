@@ -10,6 +10,9 @@ const SS_VISUALS = "contentOS_last_visuals";
 const SS_IDEAS = "contentOS_last_ideas";
 const SS_SHOW_ANALYSIS = "contentOS_show_analysis";
 const SS_CURRENT_POST_ID = "contentOS_current_post_id";
+const SS_TOPIC = "contentOS_last_topic_meta";
+const SS_FORMAT = "contentOS_last_format_meta";
+const SS_TONE = "contentOS_last_tone_meta";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -57,16 +60,7 @@ const FORMAT_BADGE: Record<string, string> = {
   "thread": "Thread",
 };
 
-function ScoreRing({ score }: { score: number }) {
-  const color =
-    score >= 75 ? "text-green-600" : score >= 50 ? "text-yellow-600" : "text-red-500";
-  return (
-    <div className={`text-4xl font-bold tabular-nums ${color}`}>
-      {score}
-      <span className="text-lg text-gray-400 font-normal">/100</span>
-    </div>
-  );
-}
+// ─── SVG / Visual helpers ─────────────────────────────────────────────────────
 
 function svgToDataURL(svgCode: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -104,11 +98,11 @@ function DiagramCard({ visual }: { visual: Visual }) {
 
   if (!visual.svg_code) {
     return (
-      <div className="rounded-xl border border-red-200 bg-red-50 px-5 py-4">
-        <p className="text-sm font-medium text-red-600">
+      <div className="rounded-lg border border-score-red bg-score-red-bg px-5 py-4">
+        <p className="text-sm font-medium text-score-red">
           Diagram generation failed — try regenerating the post
         </p>
-        <p className="text-xs text-red-400 mt-1">{visual.description}</p>
+        <p className="text-xs text-score-red opacity-70 mt-1">{visual.description}</p>
       </div>
     );
   }
@@ -119,8 +113,8 @@ function DiagramCard({ visual }: { visual: Visual }) {
       const win = window.open();
       if (win) {
         win.document.write(
-          `<html><body style="margin:0;background:#f5f5f5;display:flex;justify-content:center;padding:24px">` +
-          `<img src="${dataURL}" style="max-width:100%;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,.15)" />` +
+          `<html><body style="margin:0;background:#fdfcfb;display:flex;justify-content:center;padding:24px">` +
+          `<img src="${dataURL}" style="max-width:100%;border-radius:8px" />` +
           `</body></html>`
         );
         win.document.close();
@@ -136,47 +130,40 @@ function DiagramCard({ visual }: { visual: Visual }) {
   };
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-      <div className="px-5 py-3 border-b border-gray-100">
-        <p className="text-sm font-medium text-gray-700">
+    <div className="rounded-lg border border-border bg-card overflow-hidden">
+      <div className="px-5 py-3 border-b border-border-subtle">
+        <p className="text-sm font-medium text-text-secondary">
           Diagram —{" "}
-          <span className="font-normal text-gray-500">
+          <span className="font-normal text-text-muted">
             {visual.description.length > 60
               ? visual.description.slice(0, 60) + "…"
               : visual.description}
           </span>
         </p>
       </div>
-      <div
-        className="p-4 overflow-x-auto"
-        dangerouslySetInnerHTML={{ __html: visual.svg_code }}
-      />
-      <div className="px-5 py-3 border-t border-gray-100 space-y-2">
+      <div className="p-4 overflow-x-auto" dangerouslySetInnerHTML={{ __html: visual.svg_code }} />
+      <div className="px-5 py-3 border-t border-border-subtle space-y-2">
         <div className="flex items-center gap-3">
           <button
             onClick={handleOpen}
-            className="text-xs border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 hover:border-gray-400 hover:text-gray-900 transition-colors"
+            className="text-xs border border-border rounded-lg px-3 py-1.5 text-text-secondary hover:border-text-primary hover:text-text-primary transition-colors"
           >
             Open as PNG
           </button>
           {pngState === "opened" && (
-            <span className="text-xs text-gray-500">
-              PNG opened in new tab — right-click the image and select <strong>Save Image</strong> to download
+            <span className="text-xs text-text-muted">
+              PNG opened in new tab — right-click and <strong>Save Image</strong>
             </span>
           )}
           {pngState === "blocked" && (
-            <span className="text-xs text-gray-500">
-              Popup blocked — right-click the image below and select <strong>Save Image</strong>
+            <span className="text-xs text-text-muted">
+              Popup blocked — right-click the image below and <strong>Save Image</strong>
             </span>
           )}
         </div>
         {pngState === "blocked" && fallbackDataURL && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={fallbackDataURL}
-            alt="diagram PNG"
-            className="max-w-full rounded-lg border border-gray-200"
-          />
+          <img src={fallbackDataURL} alt="diagram PNG" className="max-w-full rounded-lg border border-border" />
         )}
       </div>
     </div>
@@ -185,14 +172,153 @@ function DiagramCard({ visual }: { visual: Visual }) {
 
 function ImageReminderCard({ visual }: { visual: Visual }) {
   return (
-    <div className="rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 px-5 py-4 space-y-1">
-      <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">
+    <div className="rounded-lg border-2 border-dashed border-border bg-surface px-5 py-4 space-y-1">
+      <p className="text-xs font-semibold uppercase tracking-widest text-text-hint">
         Add your own visual
       </p>
-      <p className="text-sm text-gray-500 leading-relaxed">{visual.reminder_text}</p>
+      <p className="text-sm text-text-muted leading-relaxed">{visual.reminder_text}</p>
     </div>
   );
 }
+
+// ─── Settings Drawer ──────────────────────────────────────────────────────────
+
+interface DrawerProps {
+  initialTopic: string;
+  initialFormat: Format;
+  initialTone: Tone;
+  initialContext: string;
+  onCancel: () => void;
+  onRegenerate: (overrides: { topic: string; format: Format; tone: Tone; context: string }) => void;
+}
+
+function SettingsDrawer({ initialTopic, initialFormat, initialTone, initialContext, onCancel, onRegenerate }: DrawerProps) {
+  const [dTopic, setDTopic] = useState(initialTopic);
+  const [dFormat, setDFormat] = useState<Format>(initialFormat);
+  const [dTone, setDTone] = useState<Tone>(initialTone);
+  const [dContext, setDContext] = useState(initialContext);
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/10 z-40"
+        onClick={onCancel}
+      />
+      {/* Drawer panel */}
+      <div className="fixed top-0 right-0 h-full w-80 bg-page border-l border-border z-50 flex flex-col shadow-lg">
+        {/* Header */}
+        <div
+          style={{ borderBottom: "0.5px solid #e8e3da", height: "52px" }}
+          className="flex items-center justify-between px-5 shrink-0"
+        >
+          <p className="text-sm font-medium text-text-primary">Regenerate settings</p>
+          <button
+            onClick={onCancel}
+            className="text-text-muted hover:text-text-primary transition-colors text-xl leading-none"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-5 py-6 space-y-5">
+          {/* Topic */}
+          <div>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">Topic</label>
+            <input
+              type="text"
+              value={dTopic}
+              onChange={(e) => setDTopic(e.target.value)}
+              placeholder="What do you want to write about?"
+              className="w-full rounded-lg border border-border-input bg-card px-3 py-2.5 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary transition-colors"
+            />
+          </div>
+
+          {/* Format */}
+          <div>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">Format</label>
+            <div className="space-y-1.5">
+              {FORMATS.map((f) => (
+                <button
+                  key={f.id}
+                  onClick={() => setDFormat(f.id)}
+                  className={`w-full px-3 py-2 rounded-lg text-sm text-left border transition-colors ${
+                    dFormat === f.id
+                      ? "border-text-primary bg-hover text-text-primary font-medium"
+                      : "border-border text-text-secondary hover:bg-hover bg-card"
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Tone */}
+          <div>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">Tone</label>
+            <div className="space-y-1.5">
+              {TONES.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setDTone(t.id)}
+                  className={`w-full px-3 py-2.5 rounded-lg text-sm text-left border transition-colors ${
+                    dTone === t.id
+                      ? "border-text-primary bg-hover text-text-primary"
+                      : "border-border text-text-secondary hover:bg-hover bg-card"
+                  }`}
+                >
+                  <div className={`font-medium ${dTone === t.id ? "" : ""}`}>{t.label}</div>
+                  <div className={`text-xs mt-0.5 ${dTone === t.id ? "text-text-muted" : "text-text-hint"}`}>
+                    {t.description}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Context */}
+          <div>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">
+              Additional context{" "}
+              <span className="font-normal text-text-hint">(optional)</span>
+            </label>
+            <textarea
+              value={dContext}
+              onChange={(e) => setDContext(e.target.value)}
+              placeholder="Specific angle, story, or data point..."
+              rows={3}
+              className="w-full rounded-lg border border-border-input bg-card px-3 py-2.5 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary resize-none transition-colors"
+            />
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div
+          style={{ borderTop: "0.5px solid #e8e3da" }}
+          className="px-5 py-4 flex gap-2 shrink-0"
+        >
+          <button
+            onClick={onCancel}
+            className="flex-1 rounded-lg border border-border text-text-secondary text-sm py-2 hover:border-text-primary hover:text-text-primary transition-colors bg-card"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onRegenerate({ topic: dTopic, format: dFormat, tone: dTone, context: dContext })}
+            className="flex-1 rounded-lg bg-text-primary text-card text-sm font-medium py-2 hover:opacity-90 transition-opacity"
+          >
+            Regenerate
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function CreatePost() {
   const [topic, setTopic] = useState("");
@@ -220,14 +346,24 @@ export default function CreatePost() {
   const [refineLoading, setRefineLoading] = useState(false);
   const [refineError, setRefineError] = useState("");
 
-  const [showAnalysis, setShowAnalysis] = useState(false);
+  const [analysisOpen, setAnalysisOpen] = useState(false);
+  const [isWide, setIsWide] = useState(true);
   const [currentPostId, setCurrentPostId] = useState<number | null>(null);
-
   const [restored, setRestored] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const topicRef = useRef<HTMLInputElement>(null);
+  const analysisRef = useRef<HTMLDivElement>(null);
 
-  // Restore session from sessionStorage on mount
+  // Responsive width detection
+  useEffect(() => {
+    const check = () => setIsWide(window.innerWidth >= 900);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+
+  // Restore session on mount
   useEffect(() => {
     try {
       const savedPost = sessionStorage.getItem(SS_POST);
@@ -253,6 +389,13 @@ export default function CreatePost() {
           setVisuals(parsedVisuals);
           setVisualsVisible(parsedVisuals.length > 0);
         }
+        // Restore topic/format/tone so history saves correctly after restore
+        const savedTopic = sessionStorage.getItem(SS_TOPIC);
+        const savedFormat = sessionStorage.getItem(SS_FORMAT);
+        const savedTone = sessionStorage.getItem(SS_TONE);
+        if (savedTopic) setTopic(savedTopic);
+        if (savedFormat) setFormat(savedFormat as Format);
+        if (savedTone) setTone(savedTone as Tone);
         setRestored(true);
       }
 
@@ -265,18 +408,25 @@ export default function CreatePost() {
       }
 
       if (savedShowAnalysis !== null) {
-        setShowAnalysis(savedShowAnalysis === "true");
+        setAnalysisOpen(savedShowAnalysis === "true");
       }
 
       if (savedPostId) {
         setCurrentPostId(Number(savedPostId));
       }
+
+      // Check for prefill from Ideas screen
+      const prefillTopic = sessionStorage.getItem("contentOS_last_topic");
+      const prefillFormat = sessionStorage.getItem("contentOS_prefill_format");
+      if (prefillTopic) setTopic(prefillTopic);
+      if (prefillFormat) setFormat(prefillFormat as Format);
+      sessionStorage.removeItem("contentOS_prefill_format");
     } catch {
       // corrupt sessionStorage — ignore
     }
   }, []);
 
-  // Persist session to sessionStorage whenever result or visuals change
+  // Persist session whenever result or visuals change
   useEffect(() => {
     if (!result) return;
     try {
@@ -285,22 +435,36 @@ export default function CreatePost() {
       sessionStorage.setItem(SS_FEEDBACK, JSON.stringify(result.score_feedback));
       sessionStorage.setItem(SS_ITERATIONS, String(result.iterations));
       sessionStorage.setItem(SS_VISUALS, JSON.stringify(visuals));
-    } catch {
-      // sessionStorage full or unavailable — ignore
-    }
-  }, [result, editedPost, visuals]);
-
-  // Persist showAnalysis preference
-  useEffect(() => {
-    try {
-      sessionStorage.setItem(SS_SHOW_ANALYSIS, String(showAnalysis));
+      sessionStorage.setItem(SS_TOPIC, topic);
+      sessionStorage.setItem(SS_FORMAT, format);
+      sessionStorage.setItem(SS_TONE, tone);
     } catch {
       // ignore
     }
-  }, [showAnalysis]);
+  }, [result, editedPost, visuals, topic, format, tone]);
+
+  // Persist analysisOpen preference
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(SS_SHOW_ANALYSIS, String(analysisOpen));
+    } catch {
+      // ignore
+    }
+  }, [analysisOpen]);
+
+  // Pre-fill refinement instruction from latest feedback
+  useEffect(() => {
+    if (!result || result.score_feedback.length === 0) return;
+    const items = result.score_feedback.slice(0, 3);
+    setRefineInstruction(
+      "Fix the following issues: " +
+      items.map((f) => f.trim().replace(/\.+$/, "")).join(". ") +
+      "."
+    );
+  }, [result]);
 
   const clearSession = () => {
-    [SS_POST, SS_SCORE, SS_FEEDBACK, SS_ITERATIONS, SS_VISUALS, SS_IDEAS, SS_CURRENT_POST_ID].forEach((k) =>
+    [SS_POST, SS_SCORE, SS_FEEDBACK, SS_ITERATIONS, SS_VISUALS, SS_IDEAS, SS_CURRENT_POST_ID, SS_TOPIC, SS_FORMAT, SS_TONE].forEach((k) =>
       sessionStorage.removeItem(k)
     );
     setRestored(false);
@@ -309,13 +473,6 @@ export default function CreatePost() {
     setSuggestionsVisible(false);
     setSelectedIdeaIndex(null);
   };
-
-  // Pre-fill refinement instruction from latest feedback
-  useEffect(() => {
-    if (!result || result.score_feedback.length === 0) return;
-    const items = result.score_feedback.slice(0, 3);
-    setRefineInstruction("Fix the following issues: " + items.map((f) => f.trim().replace(/\.+$/, "")).join(". ") + ".");
-  }, [result]);
 
   const autoSavePost = async (data: GenerateResult, postContent: string) => {
     try {
@@ -341,7 +498,7 @@ export default function CreatePost() {
         // ignore
       }
     } catch {
-      // auto-save failure is non-critical — silently ignore
+      // auto-save failure is non-critical
     }
   };
 
@@ -365,11 +522,59 @@ export default function CreatePost() {
     }
   };
 
-  const handleRefine = async () => {
-    if (!refineInstruction.trim()) {
-      setRefineError("Refinement instruction is required.");
+  const generate = async (overrides?: {
+    topic?: string;
+    format?: Format;
+    tone?: Tone;
+    context?: string;
+  }) => {
+    const t = overrides?.topic ?? topic;
+    const f = overrides?.format ?? format;
+    const tn = overrides?.tone ?? tone;
+    const ctx = overrides?.context ?? context;
+
+    if (!t.trim()) {
+      setError("Topic is required.");
       return;
     }
+    setError("");
+    setLoading(true);
+    setResult(null);
+    setVisuals([]);
+    setVisualsVisible(false);
+    setAnalysisOpen(false);
+    clearSession();
+
+    // Apply overrides to main state
+    if (overrides?.topic !== undefined) setTopic(overrides.topic);
+    if (overrides?.format !== undefined) setFormat(overrides.format);
+    if (overrides?.tone !== undefined) setTone(overrides.tone);
+    if (overrides?.context !== undefined) setContext(overrides.context);
+
+    try {
+      const res = await fetch(`${API}/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic: t, format: f, tone: tn, context: ctx }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail ?? "Generation failed");
+      }
+
+      const data: GenerateResult = await res.json();
+      setResult(data);
+      setEditedPost(data.post);
+      await autoSavePost(data, data.post);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRefineWith = async (instruction: string) => {
     setRefineError("");
     setRefineLoading(true);
     try {
@@ -378,7 +583,7 @@ export default function CreatePost() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           current_draft: editedPost,
-          refinement_instruction: refineInstruction,
+          refinement_instruction: instruction,
         }),
       });
       if (!res.ok) {
@@ -392,7 +597,6 @@ export default function CreatePost() {
         prev ? { ...prev, score: data.score, score_feedback: data.score_feedback } : prev
       );
 
-      // Explicitly persist to sessionStorage
       try {
         sessionStorage.setItem(SS_POST, data.refined_draft);
         sessionStorage.setItem(SS_SCORE, String(data.score));
@@ -401,8 +605,8 @@ export default function CreatePost() {
         // ignore
       }
 
-      // Update history entry in place
       await patchHistory({ content: data.refined_draft, authenticity_score: data.score });
+      setRefineInstruction("");
     } catch (e: unknown) {
       setRefineError(e instanceof Error ? e.message : "Something went wrong.");
     } finally {
@@ -410,41 +614,20 @@ export default function CreatePost() {
     }
   };
 
-  const generate = async () => {
-    if (!topic.trim()) {
-      setError("Topic is required.");
+  const handleRefine = async () => {
+    if (!refineInstruction.trim()) {
+      setRefineError("Refinement instruction is required.");
       return;
     }
-    setError("");
-    setLoading(true);
-    setResult(null);
-    setVisuals([]);
-    setVisualsVisible(false);
-    clearSession();
+    await handleRefineWith(refineInstruction);
+  };
 
-    try {
-      const res = await fetch(`${API}/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic, format, tone, context }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail ?? "Generation failed");
-      }
-
-      const data: GenerateResult = await res.json();
-      setResult(data);
-      setEditedPost(data.post);
-
-      // Auto-save immediately after generation
-      await autoSavePost(data, data.post);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Something went wrong.");
-    } finally {
-      setLoading(false);
-    }
+  const handleApplyFeedback = async () => {
+    if (!result || result.score_feedback.length === 0) return;
+    const instruction =
+      result.score_feedback.map((f) => f.trim().replace(/\.+$/, "")).join(". ") + ".";
+    setRefineInstruction(instruction);
+    await handleRefineWith(instruction);
   };
 
   const handleCopy = async () => {
@@ -457,6 +640,16 @@ export default function CreatePost() {
     setVisualsLoading(true);
     setVisualsVisible(true);
     setVisuals([]);
+    setAnalysisOpen(false);
+
+    // Ensure a history entry exists before generating visuals
+    const existingPostId = currentPostId ?? (() => {
+      try { return Number(sessionStorage.getItem(SS_CURRENT_POST_ID)) || null; } catch { return null; }
+    })();
+    if (!existingPostId && result) {
+      await autoSavePost(result, editedPost);
+    }
+
     try {
       const res = await fetch(`${API}/generate-visuals`, {
         method: "POST",
@@ -468,7 +661,6 @@ export default function CreatePost() {
       const newVisuals: Visual[] = data.visuals ?? [];
       setVisuals(newVisuals);
 
-      // Patch history entry with generated diagrams
       const diagrams = newVisuals
         .filter((v) => v.type === "diagram" && v.svg_code)
         .map((v) => ({ position: v.position, description: v.description, svg_code: v.svg_code }));
@@ -523,390 +715,706 @@ export default function CreatePost() {
     try { sessionStorage.removeItem(SS_IDEAS); } catch { /* ignore */ }
   };
 
-  return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900">Create Post</h1>
-        <p className="mt-1 text-gray-500 text-sm">
-          Generate content in your voice, grounded in your knowledge base.
-        </p>
+  const handleDrawerRegenerate = (overrides: { topic: string; format: Format; tone: Tone; context: string }) => {
+    setDrawerOpen(false);
+    generate(overrides);
+  };
+
+  // ─── Derived state ────────────────────────────────────────────────────────
+
+  const postGenerated = !!result;
+  const splitActive = postGenerated && analysisOpen && isWide && !visualsVisible;
+
+  const scoreColor = result
+    ? result.score >= 80 ? "#5a8c5a" : result.score >= 60 ? "#2c2a24" : "#7a786f"
+    : "#7a786f";
+  const scoreStatus = result
+    ? result.score >= 80
+      ? "Good"
+      : result.score >= 60
+        ? "Needs work"
+        : "Needs revision"
+    : "";
+
+  // ─── Analysis panel content (reused in split right panel and stacked mobile) ─
+
+  const analysisPanelContent = result ? (
+    <div ref={analysisRef}>
+
+      {/* Score header row */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
+        <div>
+          <span style={{ fontSize: 40, fontWeight: 500, color: scoreColor, lineHeight: 1, display: "block" }}>
+            {result.score}
+          </span>
+          <p style={{ fontSize: 12, color: "#aaa89f", marginTop: 4 }}>out of 100</p>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <p style={{ fontSize: 13, fontWeight: 500, color: "#2c2a24" }}>{scoreStatus}</p>
+          <p style={{ fontSize: 11, color: "#aaa89f", marginTop: 3 }}>
+            {result.iterations} humanizer pass{result.iterations !== 1 ? "es" : ""}
+          </p>
+        </div>
       </div>
 
-      {/* Get ideas row */}
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          onClick={handleGetIdeas}
-          disabled={suggestionsLoading}
-          className="text-sm border border-gray-200 rounded-xl px-4 py-2 text-gray-600 hover:border-gray-400 hover:text-gray-900 transition-colors bg-white disabled:opacity-50"
-        >
-          {suggestionsLoading ? "Finding angles..." : "Get ideas"}
-        </button>
-        <div className="flex items-center gap-1.5">
-          <label className="text-xs text-gray-400">How many?</label>
-          <input
-            type="number"
-            min={3}
-            max={15}
-            value={ideaCount}
-            onChange={(e) => setIdeaCount(Math.min(15, Math.max(3, Number(e.target.value))))}
-            className="w-14 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-700 focus:outline-none focus:border-gray-400 text-center"
-          />
-        </div>
-        <input
-          type="text"
-          value={ideaTopic}
-          onChange={(e) => setIdeaTopic(e.target.value)}
-          placeholder="Focus on a topic (optional) — e.g. 'production ML', 'career lessons'"
-          className="flex-1 min-w-48 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none focus:border-gray-400"
+      {/* Progress bar */}
+      <div
+        style={{
+          width: "100%",
+          height: 4,
+          borderRadius: 20,
+          background: "#e2ddd5",
+          marginBottom: 24,
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            width: `${result.score}%`,
+            height: "100%",
+            borderRadius: 20,
+            background: scoreColor,
+            transition: "width 0.7s",
+          }}
         />
       </div>
 
-      {/* Suggestions panel */}
-      {suggestionsVisible && (
-        <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
-            <div>
-              <p className="text-sm font-medium text-gray-700">
-                {suggestionsLoading ? "Loading..." : `${suggestions.length} idea${suggestions.length !== 1 ? "s" : ""} from your memory`}
-              </p>
-              {!suggestionsLoading && (
-                <p className="text-xs text-gray-400 mt-0.5">
-                  {ideaTopic.trim() ? `Focused on: ${ideaTopic.trim()}` : "Ideas drawn from your full knowledge base"}
-                </p>
-              )}
-            </div>
-            <div className="flex items-center gap-3">
-              {!suggestionsLoading && (
-                <button
-                  onClick={handleGetIdeas}
-                  className="text-xs text-gray-500 hover:text-gray-900 border border-gray-200 rounded-lg px-2.5 py-1 transition-colors"
-                >
-                  Refresh
-                </button>
-              )}
-              <button
-                onClick={handleDismissIdeas}
-                className="text-gray-400 hover:text-gray-700 transition-colors text-lg leading-none"
+      {/* Divider before feedback */}
+      <div style={{ borderTop: "0.5px solid #e8e3da", marginBottom: 20 }} />
+
+      {/* What to fix */}
+      {result.score_feedback.length > 0 && (
+        <>
+          <p
+            style={{
+              fontSize: 10.5,
+              fontWeight: 500,
+              textTransform: "uppercase",
+              letterSpacing: "0.07em",
+              color: "#aaa89f",
+              marginBottom: 14,
+            }}
+          >
+            WHAT TO FIX
+          </p>
+          <div>
+            {result.score_feedback.map((f, i) => (
+              <div
+                key={i}
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  padding: "10px 0",
+                  borderBottom:
+                    i < result.score_feedback.length - 1 ? "0.5px solid #ede9e1" : "none",
+                }}
               >
-                ×
-              </button>
-            </div>
+                <span style={{ color: "#aaa89f", flexShrink: 0, fontSize: 13, marginTop: 1 }}>—</span>
+                <p style={{ fontSize: 13.5, lineHeight: 1.65, color: "#7a786f" }}>{f}</p>
+              </div>
+            ))}
           </div>
-
-          {suggestionsLoading && (
-            <div className="px-5 py-6 text-sm text-gray-400">Thinking...</div>
-          )}
-
-          {!suggestionsLoading && suggestions.length === 0 && (
-            <div className="px-5 py-6 text-sm text-gray-400">
-              No suggestions returned. Try adding more content to your memory first.
-            </div>
-          )}
-
-          {!suggestionsLoading && suggestions.length > 0 && (
-            <div className="divide-y divide-gray-100">
-              {suggestions.map((s, i) => (
-                <div
-                  key={i}
-                  className={`px-5 py-4 flex items-start justify-between gap-4 transition-colors ${
-                    selectedIdeaIndex === i ? "bg-gray-50" : ""
-                  }`}
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      {selectedIdeaIndex === i && (
-                        <span className="text-green-600 text-xs font-medium">✓</span>
-                      )}
-                      <p className="text-sm font-semibold text-gray-900 leading-snug">
-                        {s.title}
-                      </p>
-                    </div>
-                    <div className="mt-1 flex items-center gap-2">
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
-                        {FORMAT_BADGE[s.format] ?? s.format}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-xs text-gray-500 leading-relaxed">{s.angle}</p>
-                  </div>
-                  <button
-                    onClick={() => handleUseSuggestion(s, i)}
-                    className={`text-xs whitespace-nowrap rounded-lg px-3 py-1.5 transition-colors border ${
-                      selectedIdeaIndex === i
-                        ? "border-gray-300 bg-white text-gray-500"
-                        : "border-gray-900 bg-gray-900 text-white hover:bg-gray-700"
-                    }`}
-                  >
-                    {selectedIdeaIndex === i ? "Selected" : "Use this"}
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        </>
       )}
 
-      {/* Form */}
-      <div className="space-y-6">
-        {/* Topic */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Topic
-          </label>
-          <input
-            ref={topicRef}
-            type="text"
-            value={topic}
-            onChange={(e) => setTopic(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && generate()}
-            placeholder="What do you want to write about?"
-            className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-gray-400 shadow-sm"
-          />
-        </div>
+      {/* Divider before refine */}
+      <div style={{ borderTop: "0.5px solid #e8e3da", marginTop: 4, marginBottom: 20 }} />
 
-        {/* Format */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Format
-          </label>
-          <div className="flex gap-2">
-            {FORMATS.map((f) => (
-              <button
-                key={f.id}
-                onClick={() => setFormat(f.id)}
-                className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border transition-colors ${
-                  format === f.id
-                    ? "border-gray-900 bg-gray-900 text-white"
-                    : "border-gray-200 text-gray-500 hover:text-gray-800 hover:border-gray-400 bg-white"
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Tone */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Tone
-          </label>
-          <div className="flex gap-2">
-            {TONES.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setTone(t.id)}
-                className={`flex-1 px-4 py-2.5 rounded-xl text-sm border transition-colors text-left ${
-                  tone === t.id
-                    ? "border-gray-900 bg-gray-900 text-white"
-                    : "border-gray-200 text-gray-500 hover:text-gray-800 hover:border-gray-400 bg-white"
-                }`}
-              >
-                <div className="font-medium">{t.label}</div>
-                <div className={`text-xs mt-0.5 ${tone === t.id ? "text-white/60" : "text-gray-400"}`}>
-                  {t.description}
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Optional context */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Additional context{" "}
-            <span className="font-normal text-gray-400">(optional)</span>
-          </label>
-          <textarea
-            value={context}
-            onChange={(e) => setContext(e.target.value)}
-            placeholder="Specific angle, story, or data point you want included..."
-            rows={3}
-            className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-gray-400 resize-none shadow-sm"
-          />
-        </div>
-
-        {error && <p className="text-sm text-red-500">{error}</p>}
-
+      {/* Refine box */}
+      <p
+        style={{
+          fontSize: 10.5,
+          fontWeight: 500,
+          textTransform: "uppercase",
+          color: "#aaa89f",
+          letterSpacing: "0.07em",
+          marginBottom: 12,
+        }}
+      >
+        REFINE DRAFT
+      </p>
+      <textarea
+        value={refineInstruction}
+        onChange={(e) => setRefineInstruction(e.target.value)}
+        placeholder="Describe what to fix — or leave blank to auto-apply the feedback above..."
+        style={{
+          width: "100%",
+          minHeight: 90,
+          fontSize: 13,
+          lineHeight: 1.6,
+          border: "0.5px solid #e2ddd5",
+          borderRadius: 8,
+          padding: "12px 14px",
+          resize: "vertical",
+          fontFamily: "inherit",
+          background: "#ffffff",
+          color: "#2c2a24",
+          outline: "none",
+          boxSizing: "border-box",
+          marginBottom: 12,
+        }}
+      />
+      {refineError && (
+        <p style={{ fontSize: 12, color: "#c05a5a", marginTop: -8, marginBottom: 8 }}>{refineError}</p>
+      )}
+      <div style={{ display: "flex", gap: 8 }}>
         <button
-          onClick={generate}
-          disabled={loading}
-          className="w-full rounded-xl bg-gray-900 text-white font-medium py-3 text-sm hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          onClick={handleApplyFeedback}
+          disabled={refineLoading}
+          style={{
+            flex: 1,
+            borderRadius: 8,
+            background: "#2c2a24",
+            color: "#ffffff",
+            fontSize: 13,
+            fontWeight: 500,
+            padding: "11px 0",
+            border: "none",
+            cursor: refineLoading ? "not-allowed" : "pointer",
+            opacity: refineLoading ? 0.6 : 1,
+            transition: "opacity 0.15s",
+          }}
         >
-          {loading ? (
-            <span className="flex items-center justify-center gap-2">
-              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-              </svg>
-              Generating...
-            </span>
-          ) : (
-            "Generate"
-          )}
+          {refineLoading ? "Refining…" : "Apply feedback"}
+        </button>
+        <button
+          onClick={handleRefine}
+          disabled={refineLoading}
+          style={{
+            flex: 1,
+            borderRadius: 8,
+            border: "0.5px solid #e2ddd5",
+            background: "#ffffff",
+            color: "#7a786f",
+            fontSize: 13,
+            fontWeight: 500,
+            padding: "11px 0",
+            cursor: refineLoading ? "not-allowed" : "pointer",
+            opacity: refineLoading ? 0.6 : 1,
+            transition: "opacity 0.15s",
+          }}
+        >
+          Refine with note
         </button>
       </div>
+    </div>
+  ) : null;
 
-      {/* Restored session banner */}
-      {restored && (
-        <div className="flex items-center justify-between rounded-xl border border-blue-100 bg-blue-50 px-4 py-2.5">
-          <p className="text-xs text-blue-600">Restored your last session</p>
-          <button
-            onClick={() => { clearSession(); setResult(null); setEditedPost(""); setVisuals([]); setVisualsVisible(false); }}
-            className="text-blue-400 hover:text-blue-700 text-lg leading-none ml-4"
-            aria-label="Dismiss"
-          >
-            ×
-          </button>
+  // ─── Render ───────────────────────────────────────────────────────────────
+
+  return (
+    <div
+      className={splitActive ? "" : "-mx-8 -mt-10 -mb-10 bg-page flex flex-col"}
+      style={
+        splitActive
+          ? {
+              position: "fixed",
+              top: 0,
+              left: "14rem",
+              right: 0,
+              bottom: 0,
+              display: "flex",
+              flexDirection: "column",
+              background: "#fdfcfb",
+              zIndex: 10,
+            }
+          : { minHeight: "100vh" }
+      }
+    >
+
+      {/* Topbar */}
+      <div
+        style={{ borderBottom: "0.5px solid #e8e3da", height: "52px" }}
+        className="flex items-center px-8 bg-page shrink-0"
+      >
+        <div className="flex items-baseline gap-3">
+          <span className="text-sm font-medium text-text-primary">Create Post</span>
+          <span className="text-xs text-text-muted">
+            {loading
+              ? "Generating your draft…"
+              : !postGenerated
+                ? "Set up your post"
+                : "Review and refine"}
+          </span>
         </div>
-      )}
+      </div>
 
-      {/* Result */}
-      {result && (
-        <div className="space-y-6 pt-2 border-t border-gray-200">
+      {/* ── Split layout (wide viewport, post generated, analysis open) ─────── */}
+      {splitActive ? (
+        <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
-          {/* Editable post */}
-          <div className="space-y-3">
-            <p className="text-xs uppercase tracking-widest text-gray-400">Post</p>
-            <textarea
-              value={editedPost}
-              onChange={(e) => setEditedPost(e.target.value)}
-              rows={16}
-              className="w-full rounded-xl border border-gray-200 bg-white px-4 py-4 text-sm text-gray-800 focus:outline-none focus:border-gray-400 resize-none leading-relaxed shadow-sm"
-            />
-            <div className="flex gap-3">
+          {/* Left panel — post */}
+          <div
+            style={{
+              flex: 1,
+              minWidth: 0,
+              overflow: "hidden",
+              padding: "32px 40px",
+              borderRight: "0.5px solid #e8e3da",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            {/* Topic header */}
+            {topic && (
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 12, flexShrink: 0 }}>
+                <span style={{ fontSize: 10.5, fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase", color: "#aaa89f", flexShrink: 0 }}>
+                  TOPIC
+                </span>
+                <span style={{ fontSize: 14, fontWeight: 500, color: "#2c2a24", lineHeight: 1.4 }}>
+                  {topic}
+                </span>
+              </div>
+            )}
+
+            {/* Post box — fills remaining space */}
+            <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+              <div
+                className="rounded-xl border border-border-input bg-card"
+                style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "28px 32px" }}
+              >
+                <textarea
+                  value={editedPost}
+                  onChange={(e) => setEditedPost(e.target.value)}
+                  className="w-full h-full resize-none outline-none bg-transparent"
+                  style={{ fontSize: 15, lineHeight: 1.9, color: "#2c2a24", fontFamily: "inherit", border: "none", display: "block" }}
+                />
+              </div>
+            </div>
+
+            {/* Action row */}
+            <div className="flex gap-2 flex-shrink-0 mt-3">
+              {(
+                [
+                  { label: copied ? "Copied!" : "Copy", onClick: handleCopy, disabled: false },
+                  { label: "Generate visuals", onClick: handleGenerateVisuals, disabled: visualsLoading },
+                  { label: "Regenerate", onClick: () => generate(), disabled: loading },
+                  { label: "Hide analysis", onClick: () => setAnalysisOpen(false), disabled: false },
+                ] as { label: string; onClick: () => void; disabled: boolean }[]
+              ).map(({ label, onClick, disabled }) => (
+                <button
+                  key={label}
+                  onClick={onClick}
+                  disabled={disabled}
+                  className="flex-1 rounded-lg border border-border text-text-secondary font-medium hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
+                  style={{ padding: "10px 18px", fontSize: 13 }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <p className="text-xs text-text-hint flex-shrink-0 mt-2">Auto-saved to history</p>
+          </div>
+
+          {/* Right panel — analysis */}
+          <div
+            style={{
+              width: 480,
+              flexShrink: 0,
+              overflowY: "auto",
+              padding: "28px 36px",
+              background: "#fdfcfb",
+            }}
+          >
+            {analysisPanelContent}
+          </div>
+        </div>
+
+      ) : postGenerated && !loading && !visualsVisible ? (
+        // ── Full-height writing surface (single column, post state) ─────────
+        <div style={{ height: "calc(100vh - 52px)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div style={{ maxWidth: 780, margin: "0 auto", width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: "24px 32px" }}>
+
+            {/* Restored session banner */}
+            {restored && (
+              <div className="flex items-center justify-between rounded-lg border border-border bg-surface px-4 py-2.5" style={{ flexShrink: 0, marginBottom: 12 }}>
+                <p className="text-xs text-text-secondary">Restored your last session</p>
+                <button
+                  onClick={() => {
+                    clearSession();
+                    setResult(null);
+                    setEditedPost("");
+                    setVisuals([]);
+                    setVisualsVisible(false);
+                    setAnalysisOpen(false);
+                  }}
+                  className="text-text-muted hover:text-text-secondary text-xl leading-none ml-4"
+                  aria-label="Dismiss"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+
+            {/* Post meta row */}
+            <div className="flex items-center justify-between" style={{ flexShrink: 0, marginBottom: 12 }}>
+              <div className="flex items-center gap-2">
+                <span className="text-xs px-2 py-0.5 rounded-full bg-stat border border-border text-text-muted">
+                  {FORMAT_BADGE[format] ?? format}
+                </span>
+                <span className="text-xs text-text-muted capitalize">{tone}</span>
+              </div>
+              <button
+                onClick={() => { setResult(null); setEditedPost(""); setAnalysisOpen(false); }}
+                className="text-xs text-text-muted hover:text-text-secondary transition-colors"
+              >
+                ← Start over
+              </button>
+            </div>
+
+            {/* Topic header */}
+            {topic && (
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 12, flexShrink: 0 }}>
+                <span style={{ fontSize: 10.5, fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase", color: "#aaa89f", flexShrink: 0 }}>TOPIC</span>
+                <span style={{ fontSize: 14, fontWeight: 500, color: "#2c2a24", lineHeight: 1.4 }}>{topic}</span>
+              </div>
+            )}
+
+            {/* Post box — fills all remaining space */}
+            <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+              <div
+                className="rounded-xl border border-border-input bg-card"
+                style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "28px 32px" }}
+              >
+                <textarea
+                  value={editedPost}
+                  onChange={(e) => setEditedPost(e.target.value)}
+                  className="w-full h-full resize-none outline-none bg-transparent"
+                  style={{ fontSize: 15, lineHeight: 1.95, color: "#2c2a24", fontFamily: "inherit", border: "none", display: "block" }}
+                />
+              </div>
+            </div>
+
+            {/* Action row */}
+            <div className="flex gap-2 flex-wrap" style={{ flexShrink: 0, marginTop: 12 }}>
               <button
                 onClick={handleCopy}
-                className="flex-1 rounded-xl border border-gray-200 text-gray-600 font-medium py-2.5 text-sm hover:border-gray-400 hover:text-gray-900 transition-colors bg-white"
+                className="flex-1 rounded-lg border border-border text-text-secondary font-medium hover:border-text-primary hover:text-text-primary transition-colors bg-card"
+                style={{ padding: "10px 18px", fontSize: 13 }}
               >
                 {copied ? "Copied!" : "Copy"}
               </button>
               <button
                 onClick={handleGenerateVisuals}
                 disabled={visualsLoading}
-                className="flex-1 rounded-xl border border-gray-200 text-gray-600 font-medium py-2.5 text-sm hover:border-gray-400 hover:text-gray-900 transition-colors bg-white disabled:opacity-50"
+                className="flex-1 rounded-lg border border-border text-text-secondary font-medium hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
+                style={{ padding: "10px 18px", fontSize: 13 }}
               >
-                {visualsLoading ? "Scanning post..." : "Generate visuals"}
+                Generate visuals
               </button>
               <button
-                onClick={generate}
+                onClick={() => generate()}
                 disabled={loading}
-                className="flex-1 rounded-xl bg-gray-900 text-white font-medium py-2.5 text-sm hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                className="flex-1 rounded-lg border border-border text-text-secondary font-medium hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
+                style={{ padding: "10px 18px", fontSize: 13 }}
               >
                 Regenerate
               </button>
+              <button
+                onClick={() => {
+                  setAnalysisOpen(true);
+                  if (!isWide) {
+                    setTimeout(() => analysisRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+                  }
+                }}
+                className="flex-1 rounded-lg border border-border text-text-secondary font-medium hover:border-text-primary hover:text-text-primary transition-colors bg-card"
+                style={{ padding: "10px 18px", fontSize: 13 }}
+              >
+                View authenticity analysis
+              </button>
             </div>
-            <p className="text-xs text-gray-400">Auto-saved to history</p>
-          </div>
 
-          {/* Analysis toggle */}
-          <div>
-            <button
-              onClick={() => setShowAnalysis((v) => !v)}
-              className="text-xs text-gray-400 hover:text-gray-700 transition-colors underline underline-offset-2"
-            >
-              {showAnalysis ? "Hide authenticity analysis" : "Show authenticity analysis"}
-            </button>
-          </div>
+            <p className="text-xs text-text-hint" style={{ flexShrink: 0, marginTop: 8 }}>Auto-saved to history</p>
 
-          {/* Analysis section — hidden by default */}
-          {showAnalysis && (
-            <>
-              {/* Score + feedback */}
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-widest text-gray-400 mb-2">
-                    Authenticity score
-                  </p>
-                  <ScoreRing score={result.score} />
-                  <p className="text-xs text-gray-400 mt-1">
-                    {result.iterations} humanizer iteration{result.iterations !== 1 ? "s" : ""}
-                  </p>
-                </div>
-                {result.score_feedback.length > 0 && (
-                  <div className="max-w-xs space-y-1">
-                    <p className="text-xs uppercase tracking-widest text-gray-400 mb-2">
-                      Feedback
+            {/* Analysis stacked below post (narrow viewport only) */}
+            {analysisOpen && !isWide && (
+              <div
+                ref={analysisRef}
+                style={{ marginTop: 24, paddingTop: 24, borderTop: "0.5px solid #e8e3da", flexShrink: 0 }}
+              >
+                {analysisPanelContent}
+              </div>
+            )}
+
+          </div>
+        </div>
+
+      ) : (
+        // ── Scrollable column (configure / spinner / visuals) ────────────────
+        <div className="flex-1 overflow-y-auto">
+          <div style={{ maxWidth: 780, margin: "0 auto", padding: "32px 40px" }}>
+
+            {/* Restored session banner */}
+            {restored && !loading && (
+              <div className="flex items-center justify-between rounded-lg border border-border bg-surface px-4 py-2.5 mb-6">
+                <p className="text-xs text-text-secondary">Restored your last session</p>
+                <button
+                  onClick={() => {
+                    clearSession();
+                    setResult(null);
+                    setEditedPost("");
+                    setVisuals([]);
+                    setVisualsVisible(false);
+                    setAnalysisOpen(false);
+                  }}
+                  className="text-text-muted hover:text-text-secondary text-xl leading-none ml-4"
+                  aria-label="Dismiss"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+
+            {/* Ideas panel */}
+            {suggestionsVisible && (
+              <div className="rounded-lg border border-border bg-card overflow-hidden mb-6">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-border-subtle">
+                  <div>
+                    <p className="text-sm font-medium text-text-primary">
+                      {suggestionsLoading
+                        ? "Finding ideas…"
+                        : `${suggestions.length} idea${suggestions.length !== 1 ? "s" : ""} from your memory`}
                     </p>
-                    {result.score_feedback.slice(0, 4).map((f, i) => (
-                      <p key={i} className="text-xs text-gray-500 leading-relaxed">
-                        — {f}
+                    {!suggestionsLoading && (
+                      <p className="text-xs text-text-muted mt-0.5">
+                        {ideaTopic.trim()
+                          ? `Focused on: ${ideaTopic.trim()}`
+                          : "Ideas drawn from your full knowledge base"}
                       </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {!suggestionsLoading && (
+                      <button
+                        onClick={handleGetIdeas}
+                        className="text-xs text-text-secondary hover:text-text-primary border border-border rounded-lg px-2.5 py-1 transition-colors"
+                      >
+                        Refresh
+                      </button>
+                    )}
+                    <button
+                      onClick={handleDismissIdeas}
+                      className="text-text-muted hover:text-text-primary transition-colors text-xl leading-none"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+
+                {suggestionsLoading && (
+                  <div className="px-5 py-6 text-sm text-text-muted">Thinking…</div>
+                )}
+
+                {!suggestionsLoading && suggestions.length === 0 && (
+                  <div className="px-5 py-6 text-sm text-text-muted">
+                    No suggestions returned. Try adding more content to your memory first.
+                  </div>
+                )}
+
+                {!suggestionsLoading && suggestions.length > 0 && (
+                  <div className="divide-y divide-border-subtle">
+                    {suggestions.map((s, i) => (
+                      <div
+                        key={i}
+                        className={`px-5 py-4 flex items-start justify-between gap-4 transition-colors ${
+                          selectedIdeaIndex === i ? "bg-stat" : ""
+                        }`}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            {selectedIdeaIndex === i && (
+                              <span className="text-score-green text-xs font-medium">✓</span>
+                            )}
+                            <p className="text-sm font-medium text-text-primary leading-snug">{s.title}</p>
+                          </div>
+                          <div className="mt-1 flex items-center gap-2">
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-stat border border-border text-text-muted">
+                              {FORMAT_BADGE[s.format] ?? s.format}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs text-text-muted leading-relaxed">{s.angle}</p>
+                        </div>
+                        <button
+                          onClick={() => handleUseSuggestion(s, i)}
+                          className={`text-xs whitespace-nowrap rounded-lg px-3 py-1.5 transition-colors border flex-shrink-0 ${
+                            selectedIdeaIndex === i
+                              ? "border-border bg-card text-text-muted"
+                              : "border-border bg-card text-text-secondary hover:bg-hover"
+                          }`}
+                        >
+                          {selectedIdeaIndex === i ? "Selected" : "Use this"}
+                        </button>
+                      </div>
                     ))}
                   </div>
                 )}
               </div>
+            )}
 
-              {/* Refine section */}
-              <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-5 space-y-3">
-                <p className="text-xs uppercase tracking-widest text-gray-400">Refine draft</p>
-                <textarea
-                  value={refineInstruction}
-                  onChange={(e) => setRefineInstruction(e.target.value)}
-                  rows={3}
-                  placeholder="Describe what to fix — e.g. Fix the following issues: the hook is too generic. The second paragraph lacks specificity."
-                  className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-gray-400 resize-none"
-                />
-                {refineError && <p className="text-xs text-amber-600">{refineError}</p>}
+            {/* ── Configure form ──────────────────────────────────────────── */}
+            {!postGenerated && !loading && (
+              <div className="space-y-5">
+                {/* Topic */}
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1.5">Topic</label>
+                  <input
+                    ref={topicRef}
+                    type="text"
+                    value={topic}
+                    onChange={(e) => setTopic(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && generate()}
+                    placeholder="What do you want to write about?"
+                    className="w-full rounded-lg border border-border-input bg-card px-4 py-2.5 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary transition-colors"
+                  />
+                </div>
+
+                {/* Format */}
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1.5">Format</label>
+                  <div className="flex gap-2">
+                    {FORMATS.map((f) => (
+                      <button
+                        key={f.id}
+                        onClick={() => setFormat(f.id)}
+                        className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                          format === f.id
+                            ? "border-text-primary bg-hover text-text-primary"
+                            : "border-border text-text-secondary hover:text-text-primary hover:bg-hover bg-card"
+                        }`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Tone */}
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1.5">Tone</label>
+                  <div className="flex gap-2">
+                    {TONES.map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => setTone(t.id)}
+                        className={`flex-1 px-4 py-2.5 rounded-lg text-sm border transition-colors text-left ${
+                          tone === t.id
+                            ? "border-text-primary bg-hover text-text-primary"
+                            : "border-border text-text-secondary hover:text-text-primary hover:bg-hover bg-card"
+                        }`}
+                      >
+                        <div className="font-medium">{t.label}</div>
+                        <div className={`text-xs mt-0.5 ${tone === t.id ? "text-text-muted" : "text-text-hint"}`}>
+                          {t.description}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Context */}
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1.5">
+                    Additional context{" "}
+                    <span className="font-normal text-text-hint">(optional)</span>
+                  </label>
+                  <textarea
+                    value={context}
+                    onChange={(e) => setContext(e.target.value)}
+                    placeholder="Specific angle, story, or data point you want included…"
+                    rows={3}
+                    className="w-full rounded-lg border border-border-input bg-card px-4 py-3 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary resize-none transition-colors"
+                  />
+                </div>
+
+                {error && <p className="text-sm text-score-red">{error}</p>}
+
                 <button
-                  onClick={handleRefine}
-                  disabled={refineLoading}
-                  className="rounded-xl border border-gray-200 text-gray-600 font-medium px-4 py-2 text-sm hover:border-gray-400 hover:text-gray-900 transition-colors bg-white disabled:opacity-50"
+                  onClick={() => generate()}
+                  disabled={loading}
+                  className="w-full rounded-lg bg-text-primary text-card font-medium py-2.5 text-sm hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
                 >
-                  {refineLoading ? (
-                    <span className="flex items-center gap-2">
-                      <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                      </svg>
-                      Refining...
-                    </span>
-                  ) : (
-                    "Refine draft"
-                  )}
+                  Generate
                 </button>
               </div>
-            </>
-          )}
+            )}
 
-          {/* Visuals panel */}
-          {visualsVisible && (
-            <div className="space-y-4 pt-2">
-              <p className="text-xs uppercase tracking-widest text-gray-400">Visuals</p>
-
-              {visualsLoading && (
-                <p className="text-sm text-gray-400">
-                  Scanning post for visual opportunities...
-                </p>
-              )}
-
-              {!visualsLoading && visuals.length === 0 && (
-                <div className="rounded-xl border border-gray-200 bg-white px-5 py-4">
-                  <p className="text-sm text-gray-400">
-                    No visual placeholders found. Add{" "}
-                    <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">
-                      [DIAGRAM: description]
-                    </code>{" "}
-                    or{" "}
-                    <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">
-                      [IMAGE: description]
-                    </code>{" "}
-                    to your post and try again.
+            {/* ── Generating spinner ──────────────────────────────────────── */}
+            {loading && (
+              <div className="flex flex-col items-center justify-center py-20 gap-5 text-center">
+                <div className="w-10 h-10 rounded-full border-2 border-border border-t-text-primary animate-spin" />
+                <div>
+                  <p className="text-sm font-medium text-text-primary">Generating your draft</p>
+                  <p className="text-xs text-text-muted mt-1">
+                    Retrieving from memory, composing in your voice, running humanizer pass…
                   </p>
                 </div>
-              )}
+              </div>
+            )}
 
-              {!visualsLoading &&
-                visuals.map((v, i) =>
-                  v.type === "diagram" ? (
-                    <DiagramCard key={i} visual={v} />
-                  ) : (
-                    <ImageReminderCard key={i} visual={v} />
-                  )
+            {/* ── Visuals ─────────────────────────────────────────────────── */}
+            {postGenerated && !loading && visualsVisible && (
+              <div className="space-y-5">
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={() => setVisualsVisible(false)}
+                    className="text-xs text-text-muted hover:text-text-secondary transition-colors"
+                  >
+                    ← Back to post
+                  </button>
+                  <button
+                    onClick={handleGenerateVisuals}
+                    disabled={visualsLoading}
+                    className="text-xs border border-border rounded-lg px-3 py-1.5 text-text-secondary hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
+                  >
+                    {visualsLoading ? "Scanning…" : "Regenerate visuals"}
+                  </button>
+                </div>
+
+                {visualsLoading && (
+                  <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+                    <div className="w-8 h-8 rounded-full border-2 border-border border-t-text-primary animate-spin" />
+                    <p className="text-sm text-text-muted">Scanning post for visual opportunities…</p>
+                  </div>
                 )}
-            </div>
-          )}
+
+                {!visualsLoading && visuals.length === 0 && (
+                  <div className="rounded-lg border border-border bg-card px-5 py-5">
+                    <p className="text-sm text-text-muted leading-relaxed">
+                      No visual placeholders found. Add{" "}
+                      <code className="text-xs bg-stat px-1 py-0.5 rounded">[DIAGRAM: description]</code>
+                      {" "}or{" "}
+                      <code className="text-xs bg-stat px-1 py-0.5 rounded">[IMAGE: description]</code>
+                      {" "}to your post and try again.
+                    </p>
+                  </div>
+                )}
+
+                {!visualsLoading &&
+                  visuals.map((v, i) =>
+                    v.type === "diagram" ? (
+                      <DiagramCard key={i} visual={v} />
+                    ) : (
+                      <ImageReminderCard key={i} visual={v} />
+                    )
+                  )}
+              </div>
+            )}
+
+          </div>
         </div>
+      )}
+
+      {/* Settings drawer */}
+      {drawerOpen && (
+        <SettingsDrawer
+          initialTopic={topic}
+          initialFormat={format}
+          initialTone={tone}
+          initialContext={context}
+          onCancel={() => setDrawerOpen(false)}
+          onRegenerate={handleDrawerRegenerate}
+        />
       )}
     </div>
   );
