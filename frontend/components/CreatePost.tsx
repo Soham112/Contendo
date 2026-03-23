@@ -57,103 +57,6 @@ const FORMAT_BADGE: Record<string, string> = {
   "thread": "Thread",
 };
 
-type ScreenState = "configure" | "generating" | "review" | "analyse" | "visuals";
-
-function getScreenState(
-  loading: boolean,
-  result: GenerateResult | null,
-  showAnalysis: boolean,
-  visualsVisible: boolean
-): ScreenState {
-  if (loading) return "generating";
-  if (!result) return "configure";
-  if (showAnalysis) return "analyse";
-  if (visualsVisible) return "visuals";
-  return "review";
-}
-
-function getStep(state: ScreenState): number {
-  switch (state) {
-    case "configure": return 1;
-    case "generating": return 2;
-    case "review":
-    case "visuals": return 3;
-    case "analyse": return 4;
-  }
-}
-
-// ─── Step Indicator ──────────────────────────────────────────────────────────
-
-const STEP_LABELS = ["Configure", "Generate", "Review post", "Analyse"];
-
-function StepIndicator({ currentStep }: { currentStep: number }) {
-  return (
-    <div
-      style={{ borderBottom: "0.5px solid #e8e3da", height: "40px" }}
-      className="flex items-center px-8 bg-page shrink-0"
-    >
-      <div className="flex items-center">
-        {STEP_LABELS.map((label, i) => {
-          const step = i + 1;
-          const isDone = step < currentStep;
-          const isActive = step === currentStep;
-          return (
-            <div key={i} className="flex items-center">
-              <div className={`flex items-center gap-1.5 transition-opacity ${
-                isActive ? "opacity-100" : isDone ? "opacity-70" : "opacity-30"
-              }`}>
-                <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-medium leading-none flex-shrink-0 ${
-                  isDone || isActive
-                    ? "bg-text-primary text-card"
-                    : "bg-stat border border-border text-text-muted"
-                }`}>
-                  {isDone ? (
-                    <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
-                      <path d="M1.5 4L3.5 6L6.5 2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  ) : step}
-                </div>
-                <span className={`text-xs ${isActive ? "text-text-primary font-medium" : "text-text-muted"}`}>
-                  {label}
-                </span>
-              </div>
-              {i < STEP_LABELS.length - 1 && (
-                <div className="w-8 h-px bg-border mx-2" />
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ─── Score Bar ───────────────────────────────────────────────────────────────
-
-function ScoreBar({ score }: { score: number }) {
-  const barColor = score >= 75 ? "bg-score-green" : score >= 55 ? "bg-score-amber" : "bg-score-red";
-  const textColor = score >= 75 ? "text-score-green" : "text-text-secondary";
-  return (
-    <div>
-      <div className="flex items-baseline justify-between mb-2">
-        <span className="text-xs font-medium text-text-secondary uppercase tracking-widest">
-          Authenticity score
-        </span>
-        <span className={`text-2xl font-semibold tabular-nums ${textColor}`}>
-          {score}
-          <span className="text-sm font-normal text-text-muted">/100</span>
-        </span>
-      </div>
-      <div className="h-1.5 rounded-full bg-stat">
-        <div
-          className={`h-full rounded-full ${barColor} transition-all duration-700`}
-          style={{ width: `${score}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
 // ─── SVG / Visual helpers ─────────────────────────────────────────────────────
 
 function svgToDataURL(svgCode: string): Promise<string> {
@@ -440,15 +343,22 @@ export default function CreatePost() {
   const [refineLoading, setRefineLoading] = useState(false);
   const [refineError, setRefineError] = useState("");
 
-  const [showAnalysis, setShowAnalysis] = useState(false);
+  const [analysisOpen, setAnalysisOpen] = useState(false);
+  const [isWide, setIsWide] = useState(true);
   const [currentPostId, setCurrentPostId] = useState<number | null>(null);
   const [restored, setRestored] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const topicRef = useRef<HTMLInputElement>(null);
+  const analysisRef = useRef<HTMLDivElement>(null);
 
-  const screenState = getScreenState(loading, result, showAnalysis, visualsVisible);
-  const currentStep = getStep(screenState);
+  // Responsive width detection
+  useEffect(() => {
+    const check = () => setIsWide(window.innerWidth >= 900);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   // Restore session on mount
   useEffect(() => {
@@ -488,7 +398,7 @@ export default function CreatePost() {
       }
 
       if (savedShowAnalysis !== null) {
-        setShowAnalysis(savedShowAnalysis === "true");
+        setAnalysisOpen(savedShowAnalysis === "true");
       }
 
       if (savedPostId) {
@@ -520,14 +430,14 @@ export default function CreatePost() {
     }
   }, [result, editedPost, visuals]);
 
-  // Persist showAnalysis preference
+  // Persist analysisOpen preference
   useEffect(() => {
     try {
-      sessionStorage.setItem(SS_SHOW_ANALYSIS, String(showAnalysis));
+      sessionStorage.setItem(SS_SHOW_ANALYSIS, String(analysisOpen));
     } catch {
       // ignore
     }
-  }, [showAnalysis]);
+  }, [analysisOpen]);
 
   // Pre-fill refinement instruction from latest feedback
   useEffect(() => {
@@ -619,7 +529,7 @@ export default function CreatePost() {
     setResult(null);
     setVisuals([]);
     setVisualsVisible(false);
-    setShowAnalysis(false);
+    setAnalysisOpen(false);
     clearSession();
 
     // Apply overrides to main state
@@ -651,11 +561,7 @@ export default function CreatePost() {
     }
   };
 
-  const handleRefine = async () => {
-    if (!refineInstruction.trim()) {
-      setRefineError("Refinement instruction is required.");
-      return;
-    }
+  const handleRefineWith = async (instruction: string) => {
     setRefineError("");
     setRefineLoading(true);
     try {
@@ -664,7 +570,7 @@ export default function CreatePost() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           current_draft: editedPost,
-          refinement_instruction: refineInstruction,
+          refinement_instruction: instruction,
         }),
       });
       if (!res.ok) {
@@ -687,11 +593,28 @@ export default function CreatePost() {
       }
 
       await patchHistory({ content: data.refined_draft, authenticity_score: data.score });
+      setRefineInstruction("");
     } catch (e: unknown) {
       setRefineError(e instanceof Error ? e.message : "Something went wrong.");
     } finally {
       setRefineLoading(false);
     }
+  };
+
+  const handleRefine = async () => {
+    if (!refineInstruction.trim()) {
+      setRefineError("Refinement instruction is required.");
+      return;
+    }
+    await handleRefineWith(refineInstruction);
+  };
+
+  const handleApplyFeedback = async () => {
+    if (!result || result.score_feedback.length === 0) return;
+    const instruction =
+      result.score_feedback.map((f) => f.trim().replace(/\.+$/, "")).join(". ") + ".";
+    setRefineInstruction(instruction);
+    await handleRefineWith(instruction);
   };
 
   const handleCopy = async () => {
@@ -704,7 +627,7 @@ export default function CreatePost() {
     setVisualsLoading(true);
     setVisualsVisible(true);
     setVisuals([]);
-    setShowAnalysis(false);
+    setAnalysisOpen(false);
     try {
       const res = await fetch(`${API}/generate-visuals`, {
         method: "POST",
@@ -775,429 +698,658 @@ export default function CreatePost() {
     generate(overrides);
   };
 
+  // ─── Derived state ────────────────────────────────────────────────────────
+
+  const postGenerated = !!result;
+  const splitActive = postGenerated && analysisOpen && isWide && !visualsVisible;
+
+  const scoreColor = result
+    ? result.score >= 80 ? "#5a8c5a" : result.score >= 60 ? "#2c2a24" : "#7a786f"
+    : "#7a786f";
+  const scoreStatus = result
+    ? result.score >= 80
+      ? "Good — ready to publish"
+      : result.score >= 60
+        ? "Needs work"
+        : "Significant revision needed"
+    : "";
+
+  // ─── Topic header (displayed above the post box) ──────────────────────────
+
+  const topicHeader = topic ? (
+    <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
+      <span
+        style={{
+          fontSize: 10.5,
+          fontWeight: 500,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          color: "#aaa89f",
+          flexShrink: 0,
+        }}
+      >
+        TOPIC
+      </span>
+      <span
+        style={{
+          fontSize: 14,
+          fontWeight: 500,
+          color: "#2c2a24",
+          lineHeight: 1.4,
+        }}
+      >
+        {topic}
+      </span>
+    </div>
+  ) : null;
+
+  // ─── Analysis panel content (reused in split right panel and stacked mobile) ─
+
+  const analysisPanelContent = result ? (
+    <div ref={analysisRef}>
+      {/* Score section */}
+      <div style={{ paddingBottom: 16, borderBottom: "0.5px solid #e8e3da" }}>
+        <span style={{ fontSize: 32, fontWeight: 500, color: scoreColor, display: "block" }}>
+          {result.score}
+        </span>
+        <p style={{ fontSize: 11, color: "#aaa89f", marginTop: 2 }}>out of 100</p>
+        <div
+          style={{
+            width: "100%",
+            height: 5,
+            borderRadius: 20,
+            background: "#f0eeea",
+            marginTop: 12,
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              width: `${result.score}%`,
+              height: "100%",
+              borderRadius: 20,
+              background: scoreColor,
+              transition: "width 0.7s",
+            }}
+          />
+        </div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginTop: 6,
+          }}
+        >
+          <p style={{ fontSize: 12, color: "#aaa89f" }}>{scoreStatus}</p>
+          <p style={{ fontSize: 11, color: "#aaa89f" }}>
+            {result.iterations} humanizer pass{result.iterations !== 1 ? "es" : ""}
+          </p>
+        </div>
+      </div>
+
+      {/* What to fix */}
+      {result.score_feedback.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <p
+            style={{
+              fontSize: 10.5,
+              fontWeight: 500,
+              textTransform: "uppercase",
+              letterSpacing: "0.07em",
+              color: "#aaa89f",
+              marginBottom: 8,
+            }}
+          >
+            WHAT TO FIX
+          </p>
+          <div>
+            {result.score_feedback.map((f, i) => (
+              <div
+                key={i}
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  padding: "8px 0",
+                  borderBottom:
+                    i < result.score_feedback.length - 1 ? "0.5px solid #ede9e1" : "none",
+                }}
+              >
+                <span style={{ color: "#aaa89f", flexShrink: 0, fontSize: 13 }}>—</span>
+                <p style={{ fontSize: 13, lineHeight: 1.55, color: "#7a786f" }}>{f}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Refine box */}
+      <div style={{ marginTop: 20, borderTop: "0.5px solid #e8e3da", paddingTop: 20 }}>
+        <p
+          style={{
+            fontSize: 10.5,
+            fontWeight: 500,
+            textTransform: "uppercase",
+            color: "#aaa89f",
+            letterSpacing: "0.07em",
+            marginBottom: 10,
+          }}
+        >
+          REFINE DRAFT
+        </p>
+        <textarea
+          value={refineInstruction}
+          onChange={(e) => setRefineInstruction(e.target.value)}
+          placeholder="Describe what to fix — or leave blank to auto-apply the feedback above..."
+          style={{
+            width: "100%",
+            minHeight: 80,
+            fontSize: 13,
+            border: "0.5px solid #e2ddd5",
+            borderRadius: 8,
+            padding: "10px 14px",
+            resize: "vertical",
+            fontFamily: "inherit",
+            background: "#ffffff",
+            color: "#2c2a24",
+            outline: "none",
+            boxSizing: "border-box",
+          }}
+        />
+        {refineError && (
+          <p style={{ fontSize: 12, color: "#c05a5a", marginTop: 4 }}>{refineError}</p>
+        )}
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <button
+            onClick={handleApplyFeedback}
+            disabled={refineLoading}
+            style={{
+              flex: 1,
+              borderRadius: 8,
+              background: "#2c2a24",
+              color: "#ffffff",
+              fontSize: 13,
+              fontWeight: 500,
+              padding: "9px 0",
+              border: "none",
+              cursor: refineLoading ? "not-allowed" : "pointer",
+              opacity: refineLoading ? 0.6 : 1,
+              transition: "opacity 0.15s",
+            }}
+          >
+            {refineLoading ? "Refining…" : "Apply feedback"}
+          </button>
+          <button
+            onClick={handleRefine}
+            disabled={refineLoading}
+            style={{
+              flex: 1,
+              borderRadius: 8,
+              border: "0.5px solid #e2ddd5",
+              background: "#ffffff",
+              color: "#7a786f",
+              fontSize: 13,
+              fontWeight: 500,
+              padding: "9px 0",
+              cursor: refineLoading ? "not-allowed" : "pointer",
+              opacity: refineLoading ? 0.6 : 1,
+              transition: "opacity 0.15s",
+            }}
+          >
+            Refine with note
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="-mx-8 -mt-10 -mb-10 relative min-h-screen bg-page flex flex-col">
+    <div className="-mx-8 -mt-10 -mb-10 relative bg-page flex flex-col" style={{ minHeight: "100vh" }}>
 
-      {/* Top bar */}
+      {/* Topbar */}
       <div
         style={{ borderBottom: "0.5px solid #e8e3da", height: "52px" }}
-        className="flex items-center justify-between px-8 bg-page shrink-0"
+        className="flex items-center px-8 bg-page shrink-0"
       >
         <div className="flex items-baseline gap-3">
           <span className="text-sm font-medium text-text-primary">Create Post</span>
           <span className="text-xs text-text-muted">
-            {screenState === "configure" && "Set up your post"}
-            {screenState === "generating" && "Generating your draft…"}
-            {screenState === "review" && "Review and refine"}
-            {screenState === "analyse" && "Authenticity analysis"}
-            {screenState === "visuals" && "Visual assets"}
+            {loading
+              ? "Generating your draft…"
+              : !postGenerated
+                ? "Set up your post"
+                : "Review and refine"}
           </span>
         </div>
       </div>
 
-      {/* Step indicator */}
-      <StepIndicator currentStep={currentStep} />
+      {/* ── Split layout (wide viewport, post generated, analysis open) ─────── */}
+      {splitActive ? (
+        <div style={{ display: "flex", height: "calc(100vh - 52px)", overflow: "hidden" }}>
 
-      {/* Page content */}
-      <div className="flex-1 px-8 py-8">
-        <div className="max-w-[660px] mx-auto space-y-6">
+          {/* Left panel — post */}
+          <div
+            style={{
+              flex: 1,
+              overflowY: "auto",
+              padding: "28px 32px",
+              borderRight: "0.5px solid #e8e3da",
+            }}
+          >
+            {topicHeader}
 
-          {/* Restored session banner */}
-          {restored && screenState !== "generating" && (
-            <div className="flex items-center justify-between rounded-lg border border-border bg-surface px-4 py-2.5">
-              <p className="text-xs text-text-secondary">Restored your last session</p>
+            <textarea
+              value={editedPost}
+              onChange={(e) => setEditedPost(e.target.value)}
+              className="w-full rounded-xl border border-border-input bg-card focus:outline-none focus:border-text-primary resize-none transition-colors"
+              style={{
+                fontSize: 14.5,
+                lineHeight: 1.9,
+                padding: "24px 28px",
+                minHeight: 300,
+                display: "block",
+              }}
+            />
+
+            {/* Action row */}
+            <div className="flex gap-2 mt-4">
               <button
-                onClick={() => {
-                  clearSession();
-                  setResult(null);
-                  setEditedPost("");
-                  setVisuals([]);
-                  setVisualsVisible(false);
-                  setShowAnalysis(false);
-                }}
-                className="text-text-muted hover:text-text-secondary text-xl leading-none ml-4"
-                aria-label="Dismiss"
+                onClick={handleCopy}
+                className="flex-1 rounded-lg border border-border text-text-secondary font-medium py-2 text-sm hover:border-text-primary hover:text-text-primary transition-colors bg-card"
               >
-                ×
+                {copied ? "Copied!" : "Copy"}
               </button>
-            </div>
-          )}
-
-          {/* Ideas panel */}
-          {suggestionsVisible && (
-            <div className="rounded-lg border border-border bg-card overflow-hidden">
-              <div className="flex items-center justify-between px-5 py-3 border-b border-border-subtle">
-                <div>
-                  <p className="text-sm font-medium text-text-primary">
-                    {suggestionsLoading
-                      ? "Finding ideas…"
-                      : `${suggestions.length} idea${suggestions.length !== 1 ? "s" : ""} from your memory`}
-                  </p>
-                  {!suggestionsLoading && (
-                    <p className="text-xs text-text-muted mt-0.5">
-                      {ideaTopic.trim()
-                        ? `Focused on: ${ideaTopic.trim()}`
-                        : "Ideas drawn from your full knowledge base"}
-                    </p>
-                  )}
-                </div>
-                <div className="flex items-center gap-3">
-                  {!suggestionsLoading && (
-                    <button
-                      onClick={handleGetIdeas}
-                      className="text-xs text-text-secondary hover:text-text-primary border border-border rounded-lg px-2.5 py-1 transition-colors"
-                    >
-                      Refresh
-                    </button>
-                  )}
-                  <button
-                    onClick={handleDismissIdeas}
-                    className="text-text-muted hover:text-text-primary transition-colors text-xl leading-none"
-                  >
-                    ×
-                  </button>
-                </div>
-              </div>
-
-              {suggestionsLoading && (
-                <div className="px-5 py-6 text-sm text-text-muted">Thinking…</div>
-              )}
-
-              {!suggestionsLoading && suggestions.length === 0 && (
-                <div className="px-5 py-6 text-sm text-text-muted">
-                  No suggestions returned. Try adding more content to your memory first.
-                </div>
-              )}
-
-              {!suggestionsLoading && suggestions.length > 0 && (
-                <div className="divide-y divide-border-subtle">
-                  {suggestions.map((s, i) => (
-                    <div
-                      key={i}
-                      className={`px-5 py-4 flex items-start justify-between gap-4 transition-colors ${
-                        selectedIdeaIndex === i ? "bg-stat" : ""
-                      }`}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          {selectedIdeaIndex === i && (
-                            <span className="text-score-green text-xs font-medium">✓</span>
-                          )}
-                          <p className="text-sm font-medium text-text-primary leading-snug">{s.title}</p>
-                        </div>
-                        <div className="mt-1 flex items-center gap-2">
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-stat border border-border text-text-muted">
-                            {FORMAT_BADGE[s.format] ?? s.format}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-xs text-text-muted leading-relaxed">{s.angle}</p>
-                      </div>
-                      <button
-                        onClick={() => handleUseSuggestion(s, i)}
-                        className={`text-xs whitespace-nowrap rounded-lg px-3 py-1.5 transition-colors border flex-shrink-0 ${
-                          selectedIdeaIndex === i
-                            ? "border-border bg-card text-text-muted"
-                            : "border-border bg-card text-text-secondary hover:bg-hover"
-                        }`}
-                      >
-                        {selectedIdeaIndex === i ? "Selected" : "Use this"}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── State 1: Configure ─────────────────────────────────────────── */}
-          {screenState === "configure" && (
-            <div className="space-y-5">
-              {/* Topic */}
-              <div>
-                <label className="block text-xs font-medium text-text-secondary mb-1.5">Topic</label>
-                <input
-                  ref={topicRef}
-                  type="text"
-                  value={topic}
-                  onChange={(e) => setTopic(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && generate()}
-                  placeholder="What do you want to write about?"
-                  className="w-full rounded-lg border border-border-input bg-card px-4 py-2.5 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary transition-colors"
-                />
-              </div>
-
-              {/* Format */}
-              <div>
-                <label className="block text-xs font-medium text-text-secondary mb-1.5">Format</label>
-                <div className="flex gap-2">
-                  {FORMATS.map((f) => (
-                    <button
-                      key={f.id}
-                      onClick={() => setFormat(f.id)}
-                      className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                        format === f.id
-                          ? "border-text-primary bg-hover text-text-primary"
-                          : "border-border text-text-secondary hover:text-text-primary hover:bg-hover bg-card"
-                      }`}
-                    >
-                      {f.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Tone */}
-              <div>
-                <label className="block text-xs font-medium text-text-secondary mb-1.5">Tone</label>
-                <div className="flex gap-2">
-                  {TONES.map((t) => (
-                    <button
-                      key={t.id}
-                      onClick={() => setTone(t.id)}
-                      className={`flex-1 px-4 py-2.5 rounded-lg text-sm border transition-colors text-left ${
-                        tone === t.id
-                          ? "border-text-primary bg-hover text-text-primary"
-                          : "border-border text-text-secondary hover:text-text-primary hover:bg-hover bg-card"
-                      }`}
-                    >
-                      <div className="font-medium">{t.label}</div>
-                      <div className={`text-xs mt-0.5 ${tone === t.id ? "text-text-muted" : "text-text-hint"}`}>
-                        {t.description}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Context */}
-              <div>
-                <label className="block text-xs font-medium text-text-secondary mb-1.5">
-                  Additional context{" "}
-                  <span className="font-normal text-text-hint">(optional)</span>
-                </label>
-                <textarea
-                  value={context}
-                  onChange={(e) => setContext(e.target.value)}
-                  placeholder="Specific angle, story, or data point you want included…"
-                  rows={3}
-                  className="w-full rounded-lg border border-border-input bg-card px-4 py-3 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary resize-none transition-colors"
-                />
-              </div>
-
-              {error && <p className="text-sm text-score-red">{error}</p>}
-
+              <button
+                onClick={handleGenerateVisuals}
+                disabled={visualsLoading}
+                className="flex-1 rounded-lg border border-border text-text-secondary font-medium py-2 text-sm hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
+              >
+                Generate visuals
+              </button>
               <button
                 onClick={() => generate()}
                 disabled={loading}
-                className="w-full rounded-lg bg-text-primary text-card font-medium py-2.5 text-sm hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+                className="flex-1 rounded-lg border border-border text-text-secondary font-medium py-2 text-sm hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
               >
-                Generate
+                Regenerate
               </button>
-            </div>
-          )}
-
-          {/* ── State 2: Generating ────────────────────────────────────────── */}
-          {screenState === "generating" && (
-            <div className="flex flex-col items-center justify-center py-20 gap-5 text-center">
-              <div className="w-10 h-10 rounded-full border-2 border-border border-t-text-primary animate-spin" />
-              <div>
-                <p className="text-sm font-medium text-text-primary">Generating your draft</p>
-                <p className="text-xs text-text-muted mt-1">
-                  Retrieving from memory, composing in your voice, running humanizer pass…
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* ── State 3: Review post ───────────────────────────────────────── */}
-          {screenState === "review" && result && (
-            <div className="space-y-4">
-              {/* Post meta */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-stat border border-border text-text-muted">
-                    {FORMAT_BADGE[format] ?? format}
-                  </span>
-                  <span className="text-xs text-text-muted capitalize">{tone}</span>
-                </div>
-                <button
-                  onClick={() => { setResult(null); setEditedPost(""); setShowAnalysis(false); }}
-                  className="text-xs text-text-muted hover:text-text-secondary transition-colors"
-                >
-                  ← Start over
-                </button>
-              </div>
-
-              {/* Editable textarea */}
-              <textarea
-                value={editedPost}
-                onChange={(e) => setEditedPost(e.target.value)}
-                rows={18}
-                className="w-full rounded-lg border border-border-input bg-card px-4 py-4 text-sm text-text-primary focus:outline-none focus:border-text-primary resize-none leading-relaxed transition-colors"
-              />
-
-              {/* Action buttons */}
-              <div className="flex gap-2">
-                <button
-                  onClick={handleCopy}
-                  className="flex-1 rounded-lg border border-border text-text-secondary font-medium py-2 text-sm hover:border-text-primary hover:text-text-primary transition-colors bg-card"
-                >
-                  {copied ? "Copied!" : "Copy"}
-                </button>
-                <button
-                  onClick={handleGenerateVisuals}
-                  disabled={visualsLoading}
-                  className="flex-1 rounded-lg border border-border text-text-secondary font-medium py-2 text-sm hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
-                >
-                  Visuals
-                </button>
-                <button
-                  onClick={() => setDrawerOpen(true)}
-                  className="flex-1 rounded-lg border border-border text-text-secondary font-medium py-2 text-sm hover:border-text-primary hover:text-text-primary transition-colors bg-card"
-                >
-                  Settings
-                </button>
-                <button
-                  onClick={() => generate()}
-                  disabled={loading}
-                  className="flex-1 rounded-lg bg-text-primary text-card font-medium py-2 text-sm hover:opacity-90 disabled:opacity-50 transition-opacity"
-                >
-                  Regenerate
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-text-hint">Auto-saved to history</p>
-                <button
-                  onClick={() => setShowAnalysis(true)}
-                  className="text-xs text-text-muted hover:text-text-secondary transition-colors underline underline-offset-2"
-                >
-                  View authenticity analysis →
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* ── State 4: Analyse ──────────────────────────────────────────── */}
-          {screenState === "analyse" && result && (
-            <div className="space-y-6">
-              {/* Back link */}
               <button
-                onClick={() => setShowAnalysis(false)}
-                className="text-xs text-text-muted hover:text-text-secondary transition-colors"
+                onClick={() => setAnalysisOpen(false)}
+                className="flex-1 rounded-lg border border-border text-text-secondary font-medium py-2 text-sm hover:border-text-primary hover:text-text-primary transition-colors bg-card"
               >
-                ← Back to post
+                Hide analysis
               </button>
+            </div>
 
-              {/* Score bar */}
-              <div className="rounded-lg border border-border bg-card px-5 py-5">
-                <ScoreBar score={result.score} />
-                <p className="text-xs text-text-muted mt-3">
-                  {result.iterations} humanizer iteration{result.iterations !== 1 ? "s" : ""}
-                </p>
+            <p className="text-xs text-text-hint mt-3">Auto-saved to history</p>
+          </div>
+
+          {/* Right panel — analysis */}
+          <div
+            style={{
+              width: 420,
+              flexShrink: 0,
+              overflowY: "auto",
+              padding: "24px 28px",
+              background: "#fdfcfb",
+            }}
+          >
+            {analysisPanelContent}
+          </div>
+        </div>
+
+      ) : (
+        // ── Single column ───────────────────────────────────────────────────
+        <div className="flex-1 overflow-y-auto">
+          <div style={{ maxWidth: 660, margin: "0 auto", padding: "28px 40px" }}>
+
+            {/* Restored session banner */}
+            {restored && !loading && (
+              <div className="flex items-center justify-between rounded-lg border border-border bg-surface px-4 py-2.5 mb-6">
+                <p className="text-xs text-text-secondary">Restored your last session</p>
+                <button
+                  onClick={() => {
+                    clearSession();
+                    setResult(null);
+                    setEditedPost("");
+                    setVisuals([]);
+                    setVisualsVisible(false);
+                    setAnalysisOpen(false);
+                  }}
+                  className="text-text-muted hover:text-text-secondary text-xl leading-none ml-4"
+                  aria-label="Dismiss"
+                >
+                  ×
+                </button>
               </div>
+            )}
 
-              {/* Feedback */}
-              {result.score_feedback.length > 0 && (
-                <div className="rounded-lg border border-border bg-card px-5 py-5 space-y-3">
-                  <p className="text-xs font-medium uppercase tracking-widest text-text-hint">Feedback</p>
-                  <div className="space-y-2">
-                    {result.score_feedback.map((f, i) => (
-                      <div key={i} className="flex items-start gap-2.5">
-                        <span className="text-text-hint text-xs mt-0.5 flex-shrink-0">—</span>
-                        <p className="text-sm text-text-secondary leading-relaxed">{f}</p>
+            {/* Ideas panel */}
+            {suggestionsVisible && (
+              <div className="rounded-lg border border-border bg-card overflow-hidden mb-6">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-border-subtle">
+                  <div>
+                    <p className="text-sm font-medium text-text-primary">
+                      {suggestionsLoading
+                        ? "Finding ideas…"
+                        : `${suggestions.length} idea${suggestions.length !== 1 ? "s" : ""} from your memory`}
+                    </p>
+                    {!suggestionsLoading && (
+                      <p className="text-xs text-text-muted mt-0.5">
+                        {ideaTopic.trim()
+                          ? `Focused on: ${ideaTopic.trim()}`
+                          : "Ideas drawn from your full knowledge base"}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {!suggestionsLoading && (
+                      <button
+                        onClick={handleGetIdeas}
+                        className="text-xs text-text-secondary hover:text-text-primary border border-border rounded-lg px-2.5 py-1 transition-colors"
+                      >
+                        Refresh
+                      </button>
+                    )}
+                    <button
+                      onClick={handleDismissIdeas}
+                      className="text-text-muted hover:text-text-primary transition-colors text-xl leading-none"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+
+                {suggestionsLoading && (
+                  <div className="px-5 py-6 text-sm text-text-muted">Thinking…</div>
+                )}
+
+                {!suggestionsLoading && suggestions.length === 0 && (
+                  <div className="px-5 py-6 text-sm text-text-muted">
+                    No suggestions returned. Try adding more content to your memory first.
+                  </div>
+                )}
+
+                {!suggestionsLoading && suggestions.length > 0 && (
+                  <div className="divide-y divide-border-subtle">
+                    {suggestions.map((s, i) => (
+                      <div
+                        key={i}
+                        className={`px-5 py-4 flex items-start justify-between gap-4 transition-colors ${
+                          selectedIdeaIndex === i ? "bg-stat" : ""
+                        }`}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            {selectedIdeaIndex === i && (
+                              <span className="text-score-green text-xs font-medium">✓</span>
+                            )}
+                            <p className="text-sm font-medium text-text-primary leading-snug">{s.title}</p>
+                          </div>
+                          <div className="mt-1 flex items-center gap-2">
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-stat border border-border text-text-muted">
+                              {FORMAT_BADGE[s.format] ?? s.format}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs text-text-muted leading-relaxed">{s.angle}</p>
+                        </div>
+                        <button
+                          onClick={() => handleUseSuggestion(s, i)}
+                          className={`text-xs whitespace-nowrap rounded-lg px-3 py-1.5 transition-colors border flex-shrink-0 ${
+                            selectedIdeaIndex === i
+                              ? "border-border bg-card text-text-muted"
+                              : "border-border bg-card text-text-secondary hover:bg-hover"
+                          }`}
+                        >
+                          {selectedIdeaIndex === i ? "Selected" : "Use this"}
+                        </button>
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
+            )}
 
-              {/* Refine */}
-              <div className="rounded-lg border border-border bg-stat px-5 py-5 space-y-3">
-                <p className="text-xs font-medium uppercase tracking-widest text-text-hint">Refine draft</p>
-                <textarea
-                  value={refineInstruction}
-                  onChange={(e) => setRefineInstruction(e.target.value)}
-                  rows={3}
-                  placeholder="Describe what to fix — e.g. make the hook more specific, add a concrete data point in paragraph 2."
-                  className="w-full rounded-lg border border-border-input bg-card px-4 py-3 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary resize-none transition-colors"
-                />
-                {refineError && <p className="text-xs text-score-red">{refineError}</p>}
+            {/* ── Configure form ──────────────────────────────────────────── */}
+            {!postGenerated && !loading && (
+              <div className="space-y-5">
+                {/* Topic */}
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1.5">Topic</label>
+                  <input
+                    ref={topicRef}
+                    type="text"
+                    value={topic}
+                    onChange={(e) => setTopic(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && generate()}
+                    placeholder="What do you want to write about?"
+                    className="w-full rounded-lg border border-border-input bg-card px-4 py-2.5 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary transition-colors"
+                  />
+                </div>
+
+                {/* Format */}
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1.5">Format</label>
+                  <div className="flex gap-2">
+                    {FORMATS.map((f) => (
+                      <button
+                        key={f.id}
+                        onClick={() => setFormat(f.id)}
+                        className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                          format === f.id
+                            ? "border-text-primary bg-hover text-text-primary"
+                            : "border-border text-text-secondary hover:text-text-primary hover:bg-hover bg-card"
+                        }`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Tone */}
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1.5">Tone</label>
+                  <div className="flex gap-2">
+                    {TONES.map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => setTone(t.id)}
+                        className={`flex-1 px-4 py-2.5 rounded-lg text-sm border transition-colors text-left ${
+                          tone === t.id
+                            ? "border-text-primary bg-hover text-text-primary"
+                            : "border-border text-text-secondary hover:text-text-primary hover:bg-hover bg-card"
+                        }`}
+                      >
+                        <div className="font-medium">{t.label}</div>
+                        <div className={`text-xs mt-0.5 ${tone === t.id ? "text-text-muted" : "text-text-hint"}`}>
+                          {t.description}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Context */}
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1.5">
+                    Additional context{" "}
+                    <span className="font-normal text-text-hint">(optional)</span>
+                  </label>
+                  <textarea
+                    value={context}
+                    onChange={(e) => setContext(e.target.value)}
+                    placeholder="Specific angle, story, or data point you want included…"
+                    rows={3}
+                    className="w-full rounded-lg border border-border-input bg-card px-4 py-3 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary resize-none transition-colors"
+                  />
+                </div>
+
+                {error && <p className="text-sm text-score-red">{error}</p>}
+
                 <button
-                  onClick={handleRefine}
-                  disabled={refineLoading}
-                  className="rounded-lg border border-border text-text-secondary font-medium px-4 py-2 text-sm hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
+                  onClick={() => generate()}
+                  disabled={loading}
+                  className="w-full rounded-lg bg-text-primary text-card font-medium py-2.5 text-sm hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
                 >
-                  {refineLoading ? (
-                    <span className="flex items-center gap-2">
-                      <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                      </svg>
-                      Refining…
-                    </span>
-                  ) : (
-                    "Refine draft"
-                  )}
+                  Generate
                 </button>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* ── State 5: Visuals ──────────────────────────────────────────── */}
-          {screenState === "visuals" && (
-            <div className="space-y-5">
-              {/* Back link */}
-              <div className="flex items-center justify-between">
-                <button
-                  onClick={() => setVisualsVisible(false)}
-                  className="text-xs text-text-muted hover:text-text-secondary transition-colors"
-                >
-                  ← Back to post
-                </button>
-                <button
-                  onClick={handleGenerateVisuals}
-                  disabled={visualsLoading}
-                  className="text-xs border border-border rounded-lg px-3 py-1.5 text-text-secondary hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
-                >
-                  {visualsLoading ? "Scanning…" : "Regenerate visuals"}
-                </button>
-              </div>
-
-              {visualsLoading && (
-                <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-                  <div className="w-8 h-8 rounded-full border-2 border-border border-t-text-primary animate-spin" />
-                  <p className="text-sm text-text-muted">Scanning post for visual opportunities…</p>
-                </div>
-              )}
-
-              {!visualsLoading && visuals.length === 0 && (
-                <div className="rounded-lg border border-border bg-card px-5 py-5">
-                  <p className="text-sm text-text-muted leading-relaxed">
-                    No visual placeholders found. Add{" "}
-                    <code className="text-xs bg-stat px-1 py-0.5 rounded">[DIAGRAM: description]</code>
-                    {" "}or{" "}
-                    <code className="text-xs bg-stat px-1 py-0.5 rounded">[IMAGE: description]</code>
-                    {" "}to your post and try again.
+            {/* ── Generating spinner ──────────────────────────────────────── */}
+            {loading && (
+              <div className="flex flex-col items-center justify-center py-20 gap-5 text-center">
+                <div className="w-10 h-10 rounded-full border-2 border-border border-t-text-primary animate-spin" />
+                <div>
+                  <p className="text-sm font-medium text-text-primary">Generating your draft</p>
+                  <p className="text-xs text-text-muted mt-1">
+                    Retrieving from memory, composing in your voice, running humanizer pass…
                   </p>
                 </div>
-              )}
+              </div>
+            )}
 
-              {!visualsLoading &&
-                visuals.map((v, i) =>
-                  v.type === "diagram" ? (
-                    <DiagramCard key={i} visual={v} />
-                  ) : (
-                    <ImageReminderCard key={i} visual={v} />
-                  )
+            {/* ── Post content (single column, no split) ──────────────────── */}
+            {postGenerated && !loading && !visualsVisible && (
+              <div className="space-y-4">
+                {/* Post meta row */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-stat border border-border text-text-muted">
+                      {FORMAT_BADGE[format] ?? format}
+                    </span>
+                    <span className="text-xs text-text-muted capitalize">{tone}</span>
+                  </div>
+                  <button
+                    onClick={() => { setResult(null); setEditedPost(""); setAnalysisOpen(false); }}
+                    className="text-xs text-text-muted hover:text-text-secondary transition-colors"
+                  >
+                    ← Start over
+                  </button>
+                </div>
+
+                {topicHeader}
+
+                {/* Editable post */}
+                <textarea
+                  value={editedPost}
+                  onChange={(e) => setEditedPost(e.target.value)}
+                  className="w-full rounded-xl border border-border-input bg-card focus:outline-none focus:border-text-primary resize-none transition-colors"
+                  style={{
+                    fontSize: 14.5,
+                    lineHeight: 1.9,
+                    padding: "24px 28px",
+                    minHeight: 300,
+                  }}
+                />
+
+                {/* Action row */}
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    onClick={handleCopy}
+                    className="flex-1 rounded-lg border border-border text-text-secondary font-medium py-2 text-sm hover:border-text-primary hover:text-text-primary transition-colors bg-card"
+                  >
+                    {copied ? "Copied!" : "Copy"}
+                  </button>
+                  <button
+                    onClick={handleGenerateVisuals}
+                    disabled={visualsLoading}
+                    className="flex-1 rounded-lg border border-border text-text-secondary font-medium py-2 text-sm hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
+                  >
+                    Generate visuals
+                  </button>
+                  <button
+                    onClick={() => generate()}
+                    disabled={loading}
+                    className="flex-1 rounded-lg bg-text-primary text-card font-medium py-2 text-sm hover:opacity-90 disabled:opacity-50 transition-opacity"
+                  >
+                    Regenerate
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAnalysisOpen(true);
+                      if (!isWide) {
+                        setTimeout(() => analysisRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+                      }
+                    }}
+                    className="flex-1 rounded-lg border border-border text-text-secondary font-medium py-2 text-sm hover:border-text-primary hover:text-text-primary transition-colors bg-card"
+                  >
+                    View authenticity analysis
+                  </button>
+                </div>
+
+                <p className="text-xs text-text-hint">Auto-saved to history</p>
+
+                {/* Analysis stacked below post (narrow viewport only) */}
+                {analysisOpen && !isWide && (
+                  <div
+                    style={{
+                      marginTop: 24,
+                      paddingTop: 24,
+                      borderTop: "0.5px solid #e8e3da",
+                    }}
+                  >
+                    {analysisPanelContent}
+                  </div>
                 )}
-            </div>
-          )}
+              </div>
+            )}
 
+            {/* ── Visuals ─────────────────────────────────────────────────── */}
+            {postGenerated && !loading && visualsVisible && (
+              <div className="space-y-5">
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={() => setVisualsVisible(false)}
+                    className="text-xs text-text-muted hover:text-text-secondary transition-colors"
+                  >
+                    ← Back to post
+                  </button>
+                  <button
+                    onClick={handleGenerateVisuals}
+                    disabled={visualsLoading}
+                    className="text-xs border border-border rounded-lg px-3 py-1.5 text-text-secondary hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
+                  >
+                    {visualsLoading ? "Scanning…" : "Regenerate visuals"}
+                  </button>
+                </div>
+
+                {visualsLoading && (
+                  <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+                    <div className="w-8 h-8 rounded-full border-2 border-border border-t-text-primary animate-spin" />
+                    <p className="text-sm text-text-muted">Scanning post for visual opportunities…</p>
+                  </div>
+                )}
+
+                {!visualsLoading && visuals.length === 0 && (
+                  <div className="rounded-lg border border-border bg-card px-5 py-5">
+                    <p className="text-sm text-text-muted leading-relaxed">
+                      No visual placeholders found. Add{" "}
+                      <code className="text-xs bg-stat px-1 py-0.5 rounded">[DIAGRAM: description]</code>
+                      {" "}or{" "}
+                      <code className="text-xs bg-stat px-1 py-0.5 rounded">[IMAGE: description]</code>
+                      {" "}to your post and try again.
+                    </p>
+                  </div>
+                )}
+
+                {!visualsLoading &&
+                  visuals.map((v, i) =>
+                    v.type === "diagram" ? (
+                      <DiagramCard key={i} visual={v} />
+                    ) : (
+                      <ImageReminderCard key={i} visual={v} />
+                    )
+                  )}
+              </div>
+            )}
+
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Settings drawer */}
       {drawerOpen && (
