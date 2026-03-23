@@ -494,6 +494,13 @@ export default function CreatePost() {
       if (savedPostId) {
         setCurrentPostId(Number(savedPostId));
       }
+
+      // Check for prefill from Ideas screen
+      const prefillTopic = sessionStorage.getItem("contentOS_last_topic");
+      const prefillFormat = sessionStorage.getItem("contentOS_prefill_format");
+      if (prefillTopic) setTopic(prefillTopic);
+      if (prefillFormat) setFormat(prefillFormat as Format);
+      sessionStorage.removeItem("contentOS_prefill_format");
     } catch {
       // corrupt sessionStorage — ignore
     }
@@ -787,33 +794,6 @@ export default function CreatePost() {
             {screenState === "analyse" && "Authenticity analysis"}
             {screenState === "visuals" && "Visual assets"}
           </span>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* Ideas controls — always accessible */}
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={ideaTopic}
-              onChange={(e) => setIdeaTopic(e.target.value)}
-              placeholder="Topic focus (optional)"
-              className="w-44 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary transition-colors"
-            />
-            <input
-              type="number"
-              min={3}
-              max={15}
-              value={ideaCount}
-              onChange={(e) => setIdeaCount(Math.min(15, Math.max(3, Number(e.target.value))))}
-              className="w-12 rounded-lg border border-border bg-card px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-text-primary text-center transition-colors"
-            />
-          </div>
-          <button
-            onClick={handleGetIdeas}
-            disabled={suggestionsLoading}
-            className="text-xs border border-border rounded-lg px-3 py-1.5 text-text-secondary hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
-          >
-            {suggestionsLoading ? "Finding…" : "+ Get ideas"}
-          </button>
         </div>
       </div>
 
