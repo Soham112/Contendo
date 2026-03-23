@@ -10,6 +10,9 @@ const SS_VISUALS = "contentOS_last_visuals";
 const SS_IDEAS = "contentOS_last_ideas";
 const SS_SHOW_ANALYSIS = "contentOS_show_analysis";
 const SS_CURRENT_POST_ID = "contentOS_current_post_id";
+const SS_TOPIC = "contentOS_last_topic_meta";
+const SS_FORMAT = "contentOS_last_format_meta";
+const SS_TONE = "contentOS_last_tone_meta";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -386,6 +389,13 @@ export default function CreatePost() {
           setVisuals(parsedVisuals);
           setVisualsVisible(parsedVisuals.length > 0);
         }
+        // Restore topic/format/tone so history saves correctly after restore
+        const savedTopic = sessionStorage.getItem(SS_TOPIC);
+        const savedFormat = sessionStorage.getItem(SS_FORMAT);
+        const savedTone = sessionStorage.getItem(SS_TONE);
+        if (savedTopic) setTopic(savedTopic);
+        if (savedFormat) setFormat(savedFormat as Format);
+        if (savedTone) setTone(savedTone as Tone);
         setRestored(true);
       }
 
@@ -425,10 +435,13 @@ export default function CreatePost() {
       sessionStorage.setItem(SS_FEEDBACK, JSON.stringify(result.score_feedback));
       sessionStorage.setItem(SS_ITERATIONS, String(result.iterations));
       sessionStorage.setItem(SS_VISUALS, JSON.stringify(visuals));
+      sessionStorage.setItem(SS_TOPIC, topic);
+      sessionStorage.setItem(SS_FORMAT, format);
+      sessionStorage.setItem(SS_TONE, tone);
     } catch {
       // ignore
     }
-  }, [result, editedPost, visuals]);
+  }, [result, editedPost, visuals, topic, format, tone]);
 
   // Persist analysisOpen preference
   useEffect(() => {
@@ -451,7 +464,7 @@ export default function CreatePost() {
   }, [result]);
 
   const clearSession = () => {
-    [SS_POST, SS_SCORE, SS_FEEDBACK, SS_ITERATIONS, SS_VISUALS, SS_IDEAS, SS_CURRENT_POST_ID].forEach((k) =>
+    [SS_POST, SS_SCORE, SS_FEEDBACK, SS_ITERATIONS, SS_VISUALS, SS_IDEAS, SS_CURRENT_POST_ID, SS_TOPIC, SS_FORMAT, SS_TONE].forEach((k) =>
       sessionStorage.removeItem(k)
     );
     setRestored(false);
@@ -628,6 +641,15 @@ export default function CreatePost() {
     setVisualsVisible(true);
     setVisuals([]);
     setAnalysisOpen(false);
+
+    // Ensure a history entry exists before generating visuals
+    const existingPostId = currentPostId ?? (() => {
+      try { return Number(sessionStorage.getItem(SS_CURRENT_POST_ID)) || null; } catch { return null; }
+    })();
+    if (!existingPostId && result) {
+      await autoSavePost(result, editedPost);
+    }
+
     try {
       const res = await fetch(`${API}/generate-visuals`, {
         method: "POST",
@@ -713,35 +735,6 @@ export default function CreatePost() {
         ? "Needs work"
         : "Needs revision"
     : "";
-
-  // ─── Topic header (displayed above the post box) ──────────────────────────
-
-  const topicHeader = topic ? (
-    <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
-      <span
-        style={{
-          fontSize: 10.5,
-          fontWeight: 500,
-          letterSpacing: "0.08em",
-          textTransform: "uppercase",
-          color: "#aaa89f",
-          flexShrink: 0,
-        }}
-      >
-        TOPIC
-      </span>
-      <span
-        style={{
-          fontSize: 14,
-          fontWeight: 500,
-          color: "#2c2a24",
-          lineHeight: 1.4,
-        }}
-      >
-        {topic}
-      </span>
-    </div>
-  ) : null;
 
   // ─── Analysis panel content (reused in split right panel and stacked mobile) ─
 
@@ -955,39 +948,42 @@ export default function CreatePost() {
             style={{
               flex: 1,
               minWidth: 0,
-              overflowY: "auto",
+              overflow: "hidden",
               padding: "32px 40px",
               borderRight: "0.5px solid #e8e3da",
+              display: "flex",
+              flexDirection: "column",
             }}
           >
-            <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 16 }}>
-              {topic && (
-                <>
-                  <span style={{ fontSize: 10.5, fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase", color: "#aaa89f", flexShrink: 0 }}>
-                    TOPIC
-                  </span>
-                  <span style={{ fontSize: 14, fontWeight: 500, color: "#2c2a24", lineHeight: 1.4 }}>
-                    {topic}
-                  </span>
-                </>
-              )}
+            {/* Topic header */}
+            {topic && (
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 12, flexShrink: 0 }}>
+                <span style={{ fontSize: 10.5, fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase", color: "#aaa89f", flexShrink: 0 }}>
+                  TOPIC
+                </span>
+                <span style={{ fontSize: 14, fontWeight: 500, color: "#2c2a24", lineHeight: 1.4 }}>
+                  {topic}
+                </span>
+              </div>
+            )}
+
+            {/* Post box — fills remaining space */}
+            <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+              <div
+                className="rounded-xl border border-border-input bg-card"
+                style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "28px 32px" }}
+              >
+                <textarea
+                  value={editedPost}
+                  onChange={(e) => setEditedPost(e.target.value)}
+                  className="w-full h-full resize-none outline-none bg-transparent"
+                  style={{ fontSize: 15, lineHeight: 1.9, color: "#2c2a24", fontFamily: "inherit", border: "none", display: "block" }}
+                />
+              </div>
             </div>
 
-            <textarea
-              value={editedPost}
-              onChange={(e) => setEditedPost(e.target.value)}
-              className="w-full rounded-xl border border-border-input bg-card focus:outline-none resize-none transition-colors"
-              style={{
-                fontSize: 15,
-                lineHeight: 1.95,
-                padding: "28px 32px",
-                minHeight: 400,
-                display: "block",
-              }}
-            />
-
             {/* Action row */}
-            <div className="flex gap-2 mt-4">
+            <div className="flex gap-2 flex-shrink-0 mt-3">
               {(
                 [
                   { label: copied ? "Copied!" : "Copy", onClick: handleCopy, disabled: false },
@@ -1008,7 +1004,7 @@ export default function CreatePost() {
               ))}
             </div>
 
-            <p className="text-xs text-text-hint mt-3">Auto-saved to history</p>
+            <p className="text-xs text-text-hint flex-shrink-0 mt-2">Auto-saved to history</p>
           </div>
 
           {/* Right panel — analysis */}
@@ -1025,10 +1021,129 @@ export default function CreatePost() {
           </div>
         </div>
 
+      ) : postGenerated && !loading && !visualsVisible ? (
+        // ── Full-height writing surface (single column, post state) ─────────
+        <div style={{ height: "calc(100vh - 52px)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div style={{ maxWidth: 780, margin: "0 auto", width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: "24px 32px" }}>
+
+            {/* Restored session banner */}
+            {restored && (
+              <div className="flex items-center justify-between rounded-lg border border-border bg-surface px-4 py-2.5" style={{ flexShrink: 0, marginBottom: 12 }}>
+                <p className="text-xs text-text-secondary">Restored your last session</p>
+                <button
+                  onClick={() => {
+                    clearSession();
+                    setResult(null);
+                    setEditedPost("");
+                    setVisuals([]);
+                    setVisualsVisible(false);
+                    setAnalysisOpen(false);
+                  }}
+                  className="text-text-muted hover:text-text-secondary text-xl leading-none ml-4"
+                  aria-label="Dismiss"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+
+            {/* Post meta row */}
+            <div className="flex items-center justify-between" style={{ flexShrink: 0, marginBottom: 12 }}>
+              <div className="flex items-center gap-2">
+                <span className="text-xs px-2 py-0.5 rounded-full bg-stat border border-border text-text-muted">
+                  {FORMAT_BADGE[format] ?? format}
+                </span>
+                <span className="text-xs text-text-muted capitalize">{tone}</span>
+              </div>
+              <button
+                onClick={() => { setResult(null); setEditedPost(""); setAnalysisOpen(false); }}
+                className="text-xs text-text-muted hover:text-text-secondary transition-colors"
+              >
+                ← Start over
+              </button>
+            </div>
+
+            {/* Topic header */}
+            {topic && (
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 12, flexShrink: 0 }}>
+                <span style={{ fontSize: 10.5, fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase", color: "#aaa89f", flexShrink: 0 }}>TOPIC</span>
+                <span style={{ fontSize: 14, fontWeight: 500, color: "#2c2a24", lineHeight: 1.4 }}>{topic}</span>
+              </div>
+            )}
+
+            {/* Post box — fills all remaining space */}
+            <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+              <div
+                className="rounded-xl border border-border-input bg-card"
+                style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "28px 32px" }}
+              >
+                <textarea
+                  value={editedPost}
+                  onChange={(e) => setEditedPost(e.target.value)}
+                  className="w-full h-full resize-none outline-none bg-transparent"
+                  style={{ fontSize: 15, lineHeight: 1.95, color: "#2c2a24", fontFamily: "inherit", border: "none", display: "block" }}
+                />
+              </div>
+            </div>
+
+            {/* Action row */}
+            <div className="flex gap-2 flex-wrap" style={{ flexShrink: 0, marginTop: 12 }}>
+              <button
+                onClick={handleCopy}
+                className="flex-1 rounded-lg border border-border text-text-secondary font-medium hover:border-text-primary hover:text-text-primary transition-colors bg-card"
+                style={{ padding: "10px 18px", fontSize: 13 }}
+              >
+                {copied ? "Copied!" : "Copy"}
+              </button>
+              <button
+                onClick={handleGenerateVisuals}
+                disabled={visualsLoading}
+                className="flex-1 rounded-lg border border-border text-text-secondary font-medium hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
+                style={{ padding: "10px 18px", fontSize: 13 }}
+              >
+                Generate visuals
+              </button>
+              <button
+                onClick={() => generate()}
+                disabled={loading}
+                className="flex-1 rounded-lg border border-border text-text-secondary font-medium hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
+                style={{ padding: "10px 18px", fontSize: 13 }}
+              >
+                Regenerate
+              </button>
+              <button
+                onClick={() => {
+                  setAnalysisOpen(true);
+                  if (!isWide) {
+                    setTimeout(() => analysisRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+                  }
+                }}
+                className="flex-1 rounded-lg border border-border text-text-secondary font-medium hover:border-text-primary hover:text-text-primary transition-colors bg-card"
+                style={{ padding: "10px 18px", fontSize: 13 }}
+              >
+                View authenticity analysis
+              </button>
+            </div>
+
+            <p className="text-xs text-text-hint" style={{ flexShrink: 0, marginTop: 8 }}>Auto-saved to history</p>
+
+            {/* Analysis stacked below post (narrow viewport only) */}
+            {analysisOpen && !isWide && (
+              <div
+                ref={analysisRef}
+                style={{ marginTop: 24, paddingTop: 24, borderTop: "0.5px solid #e8e3da", flexShrink: 0 }}
+              >
+                {analysisPanelContent}
+              </div>
+            )}
+
+          </div>
+        </div>
+
       ) : (
-        // ── Single column ───────────────────────────────────────────────────
+        // ── Scrollable column (configure / spinner / visuals) ────────────────
         <div className="flex-1 overflow-y-auto">
-          <div style={{ maxWidth: 700, margin: "0 auto", padding: "32px 40px" }}>
+          <div style={{ maxWidth: 780, margin: "0 auto", padding: "32px 40px" }}>
 
             {/* Restored session banner */}
             {restored && !loading && (
@@ -1234,96 +1349,6 @@ export default function CreatePost() {
                     Retrieving from memory, composing in your voice, running humanizer pass…
                   </p>
                 </div>
-              </div>
-            )}
-
-            {/* ── Post content (single column, no split) ──────────────────── */}
-            {postGenerated && !loading && !visualsVisible && (
-              <div className="space-y-4">
-                {/* Post meta row */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-stat border border-border text-text-muted">
-                      {FORMAT_BADGE[format] ?? format}
-                    </span>
-                    <span className="text-xs text-text-muted capitalize">{tone}</span>
-                  </div>
-                  <button
-                    onClick={() => { setResult(null); setEditedPost(""); setAnalysisOpen(false); }}
-                    className="text-xs text-text-muted hover:text-text-secondary transition-colors"
-                  >
-                    ← Start over
-                  </button>
-                </div>
-
-                {topicHeader}
-
-                {/* Editable post */}
-                <textarea
-                  value={editedPost}
-                  onChange={(e) => setEditedPost(e.target.value)}
-                  className="w-full rounded-xl border border-border-input bg-card focus:outline-none resize-none transition-colors"
-                  style={{
-                    fontSize: 15,
-                    lineHeight: 1.95,
-                    padding: "28px 32px",
-                    minHeight: 300,
-                  }}
-                />
-
-                {/* Action row */}
-                <div className="flex gap-2 flex-wrap mt-4">
-                  <button
-                    onClick={handleCopy}
-                    className="flex-1 rounded-lg border border-border text-text-secondary font-medium hover:border-text-primary hover:text-text-primary transition-colors bg-card"
-                    style={{ padding: "10px 18px", fontSize: 13 }}
-                  >
-                    {copied ? "Copied!" : "Copy"}
-                  </button>
-                  <button
-                    onClick={handleGenerateVisuals}
-                    disabled={visualsLoading}
-                    className="flex-1 rounded-lg border border-border text-text-secondary font-medium hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
-                    style={{ padding: "10px 18px", fontSize: 13 }}
-                  >
-                    Generate visuals
-                  </button>
-                  <button
-                    onClick={() => generate()}
-                    disabled={loading}
-                    className="flex-1 rounded-lg border border-border text-text-secondary font-medium hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
-                    style={{ padding: "10px 18px", fontSize: 13 }}
-                  >
-                    Regenerate
-                  </button>
-                  <button
-                    onClick={() => {
-                      setAnalysisOpen(true);
-                      if (!isWide) {
-                        setTimeout(() => analysisRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
-                      }
-                    }}
-                    className="flex-1 rounded-lg border border-border text-text-secondary font-medium hover:border-text-primary hover:text-text-primary transition-colors bg-card"
-                    style={{ padding: "10px 18px", fontSize: 13 }}
-                  >
-                    View authenticity analysis
-                  </button>
-                </div>
-
-                <p className="text-xs text-text-hint">Auto-saved to history</p>
-
-                {/* Analysis stacked below post (narrow viewport only) */}
-                {analysisOpen && !isWide && (
-                  <div
-                    style={{
-                      marginTop: 24,
-                      paddingTop: 24,
-                      borderTop: "0.5px solid #e8e3da",
-                    }}
-                  >
-                    {analysisPanelContent}
-                  </div>
-                )}
               </div>
             )}
 
