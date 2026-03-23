@@ -708,10 +708,10 @@ export default function CreatePost() {
     : "#7a786f";
   const scoreStatus = result
     ? result.score >= 80
-      ? "Good — ready to publish"
+      ? "Good"
       : result.score >= 60
         ? "Needs work"
-        : "Significant revision needed"
+        : "Needs revision"
     : "";
 
   // ─── Topic header (displayed above the post box) ──────────────────────────
@@ -747,50 +747,51 @@ export default function CreatePost() {
 
   const analysisPanelContent = result ? (
     <div ref={analysisRef}>
-      {/* Score section */}
-      <div style={{ paddingBottom: 16, borderBottom: "0.5px solid #e8e3da" }}>
-        <span style={{ fontSize: 32, fontWeight: 500, color: scoreColor, display: "block" }}>
-          {result.score}
-        </span>
-        <p style={{ fontSize: 11, color: "#aaa89f", marginTop: 2 }}>out of 100</p>
-        <div
-          style={{
-            width: "100%",
-            height: 5,
-            borderRadius: 20,
-            background: "#f0eeea",
-            marginTop: 12,
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              width: `${result.score}%`,
-              height: "100%",
-              borderRadius: 20,
-              background: scoreColor,
-              transition: "width 0.7s",
-            }}
-          />
+
+      {/* Score header row */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
+        <div>
+          <span style={{ fontSize: 40, fontWeight: 500, color: scoreColor, lineHeight: 1, display: "block" }}>
+            {result.score}
+          </span>
+          <p style={{ fontSize: 12, color: "#aaa89f", marginTop: 4 }}>out of 100</p>
         </div>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginTop: 6,
-          }}
-        >
-          <p style={{ fontSize: 12, color: "#aaa89f" }}>{scoreStatus}</p>
-          <p style={{ fontSize: 11, color: "#aaa89f" }}>
+        <div style={{ textAlign: "right" }}>
+          <p style={{ fontSize: 13, fontWeight: 500, color: "#2c2a24" }}>{scoreStatus}</p>
+          <p style={{ fontSize: 11, color: "#aaa89f", marginTop: 3 }}>
             {result.iterations} humanizer pass{result.iterations !== 1 ? "es" : ""}
           </p>
         </div>
       </div>
 
+      {/* Progress bar */}
+      <div
+        style={{
+          width: "100%",
+          height: 4,
+          borderRadius: 20,
+          background: "#e2ddd5",
+          marginBottom: 24,
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            width: `${result.score}%`,
+            height: "100%",
+            borderRadius: 20,
+            background: scoreColor,
+            transition: "width 0.7s",
+          }}
+        />
+      </div>
+
+      {/* Divider before feedback */}
+      <div style={{ borderTop: "0.5px solid #e8e3da", marginBottom: 20 }} />
+
       {/* What to fix */}
       {result.score_feedback.length > 0 && (
-        <div style={{ marginTop: 16 }}>
+        <>
           <p
             style={{
               fontSize: 10.5,
@@ -798,7 +799,7 @@ export default function CreatePost() {
               textTransform: "uppercase",
               letterSpacing: "0.07em",
               color: "#aaa89f",
-              marginBottom: 8,
+              marginBottom: 14,
             }}
           >
             WHAT TO FIX
@@ -809,96 +810,99 @@ export default function CreatePost() {
                 key={i}
                 style={{
                   display: "flex",
-                  gap: 8,
-                  padding: "8px 0",
+                  gap: 10,
+                  padding: "10px 0",
                   borderBottom:
                     i < result.score_feedback.length - 1 ? "0.5px solid #ede9e1" : "none",
                 }}
               >
-                <span style={{ color: "#aaa89f", flexShrink: 0, fontSize: 13 }}>—</span>
-                <p style={{ fontSize: 13, lineHeight: 1.55, color: "#7a786f" }}>{f}</p>
+                <span style={{ color: "#aaa89f", flexShrink: 0, fontSize: 13, marginTop: 1 }}>—</span>
+                <p style={{ fontSize: 13.5, lineHeight: 1.65, color: "#7a786f" }}>{f}</p>
               </div>
             ))}
           </div>
-        </div>
+        </>
       )}
 
+      {/* Divider before refine */}
+      <div style={{ borderTop: "0.5px solid #e8e3da", marginTop: 4, marginBottom: 20 }} />
+
       {/* Refine box */}
-      <div style={{ marginTop: 20, borderTop: "0.5px solid #e8e3da", paddingTop: 20 }}>
-        <p
+      <p
+        style={{
+          fontSize: 10.5,
+          fontWeight: 500,
+          textTransform: "uppercase",
+          color: "#aaa89f",
+          letterSpacing: "0.07em",
+          marginBottom: 12,
+        }}
+      >
+        REFINE DRAFT
+      </p>
+      <textarea
+        value={refineInstruction}
+        onChange={(e) => setRefineInstruction(e.target.value)}
+        placeholder="Describe what to fix — or leave blank to auto-apply the feedback above..."
+        style={{
+          width: "100%",
+          minHeight: 90,
+          fontSize: 13,
+          lineHeight: 1.6,
+          border: "0.5px solid #e2ddd5",
+          borderRadius: 8,
+          padding: "12px 14px",
+          resize: "vertical",
+          fontFamily: "inherit",
+          background: "#ffffff",
+          color: "#2c2a24",
+          outline: "none",
+          boxSizing: "border-box",
+          marginBottom: 12,
+        }}
+      />
+      {refineError && (
+        <p style={{ fontSize: 12, color: "#c05a5a", marginTop: -8, marginBottom: 8 }}>{refineError}</p>
+      )}
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          onClick={handleApplyFeedback}
+          disabled={refineLoading}
           style={{
-            fontSize: 10.5,
+            flex: 1,
+            borderRadius: 8,
+            background: "#2c2a24",
+            color: "#ffffff",
+            fontSize: 13,
             fontWeight: 500,
-            textTransform: "uppercase",
-            color: "#aaa89f",
-            letterSpacing: "0.07em",
-            marginBottom: 10,
+            padding: "11px 0",
+            border: "none",
+            cursor: refineLoading ? "not-allowed" : "pointer",
+            opacity: refineLoading ? 0.6 : 1,
+            transition: "opacity 0.15s",
           }}
         >
-          REFINE DRAFT
-        </p>
-        <textarea
-          value={refineInstruction}
-          onChange={(e) => setRefineInstruction(e.target.value)}
-          placeholder="Describe what to fix — or leave blank to auto-apply the feedback above..."
+          {refineLoading ? "Refining…" : "Apply feedback"}
+        </button>
+        <button
+          onClick={handleRefine}
+          disabled={refineLoading}
           style={{
-            width: "100%",
-            minHeight: 80,
-            fontSize: 13,
-            border: "0.5px solid #e2ddd5",
+            flex: 1,
             borderRadius: 8,
-            padding: "10px 14px",
-            resize: "vertical",
-            fontFamily: "inherit",
+            border: "0.5px solid #e2ddd5",
             background: "#ffffff",
-            color: "#2c2a24",
-            outline: "none",
-            boxSizing: "border-box",
+            color: "#7a786f",
+            fontSize: 13,
+            fontWeight: 500,
+            padding: "11px 0",
+            cursor: refineLoading ? "not-allowed" : "pointer",
+            opacity: refineLoading ? 0.6 : 1,
+            transition: "opacity 0.15s",
           }}
-        />
-        {refineError && (
-          <p style={{ fontSize: 12, color: "#c05a5a", marginTop: 4 }}>{refineError}</p>
-        )}
-        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-          <button
-            onClick={handleApplyFeedback}
-            disabled={refineLoading}
-            style={{
-              flex: 1,
-              borderRadius: 8,
-              background: "#2c2a24",
-              color: "#ffffff",
-              fontSize: 13,
-              fontWeight: 500,
-              padding: "9px 0",
-              border: "none",
-              cursor: refineLoading ? "not-allowed" : "pointer",
-              opacity: refineLoading ? 0.6 : 1,
-              transition: "opacity 0.15s",
-            }}
-          >
-            {refineLoading ? "Refining…" : "Apply feedback"}
-          </button>
-          <button
-            onClick={handleRefine}
-            disabled={refineLoading}
-            style={{
-              flex: 1,
-              borderRadius: 8,
-              border: "0.5px solid #e2ddd5",
-              background: "#ffffff",
-              color: "#7a786f",
-              fontSize: 13,
-              fontWeight: 500,
-              padding: "9px 0",
-              cursor: refineLoading ? "not-allowed" : "pointer",
-              opacity: refineLoading ? 0.6 : 1,
-              transition: "opacity 0.15s",
-            }}
-          >
-            Refine with note
-          </button>
-        </div>
+        >
+          Refine with note
+        </button>
       </div>
     </div>
   ) : null;
@@ -906,7 +910,24 @@ export default function CreatePost() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="-mx-8 -mt-10 -mb-10 relative bg-page flex flex-col" style={{ minHeight: "100vh" }}>
+    <div
+      className={splitActive ? "" : "-mx-8 -mt-10 -mb-10 bg-page flex flex-col"}
+      style={
+        splitActive
+          ? {
+              position: "fixed",
+              top: 0,
+              left: "14rem",
+              right: 0,
+              bottom: 0,
+              display: "flex",
+              flexDirection: "column",
+              background: "#fdfcfb",
+              zIndex: 10,
+            }
+          : { minHeight: "100vh" }
+      }
+    >
 
       {/* Topbar */}
       <div
@@ -927,60 +948,64 @@ export default function CreatePost() {
 
       {/* ── Split layout (wide viewport, post generated, analysis open) ─────── */}
       {splitActive ? (
-        <div style={{ display: "flex", height: "calc(100vh - 52px)", overflow: "hidden" }}>
+        <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
           {/* Left panel — post */}
           <div
             style={{
               flex: 1,
+              minWidth: 0,
               overflowY: "auto",
-              padding: "28px 32px",
+              padding: "32px 40px",
               borderRight: "0.5px solid #e8e3da",
             }}
           >
-            {topicHeader}
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 16 }}>
+              {topic && (
+                <>
+                  <span style={{ fontSize: 10.5, fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase", color: "#aaa89f", flexShrink: 0 }}>
+                    TOPIC
+                  </span>
+                  <span style={{ fontSize: 14, fontWeight: 500, color: "#2c2a24", lineHeight: 1.4 }}>
+                    {topic}
+                  </span>
+                </>
+              )}
+            </div>
 
             <textarea
               value={editedPost}
               onChange={(e) => setEditedPost(e.target.value)}
-              className="w-full rounded-xl border border-border-input bg-card focus:outline-none focus:border-text-primary resize-none transition-colors"
+              className="w-full rounded-xl border border-border-input bg-card focus:outline-none resize-none transition-colors"
               style={{
-                fontSize: 14.5,
-                lineHeight: 1.9,
-                padding: "24px 28px",
-                minHeight: 300,
+                fontSize: 15,
+                lineHeight: 1.95,
+                padding: "28px 32px",
+                minHeight: 400,
                 display: "block",
               }}
             />
 
             {/* Action row */}
             <div className="flex gap-2 mt-4">
-              <button
-                onClick={handleCopy}
-                className="flex-1 rounded-lg border border-border text-text-secondary font-medium py-2 text-sm hover:border-text-primary hover:text-text-primary transition-colors bg-card"
-              >
-                {copied ? "Copied!" : "Copy"}
-              </button>
-              <button
-                onClick={handleGenerateVisuals}
-                disabled={visualsLoading}
-                className="flex-1 rounded-lg border border-border text-text-secondary font-medium py-2 text-sm hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
-              >
-                Generate visuals
-              </button>
-              <button
-                onClick={() => generate()}
-                disabled={loading}
-                className="flex-1 rounded-lg border border-border text-text-secondary font-medium py-2 text-sm hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
-              >
-                Regenerate
-              </button>
-              <button
-                onClick={() => setAnalysisOpen(false)}
-                className="flex-1 rounded-lg border border-border text-text-secondary font-medium py-2 text-sm hover:border-text-primary hover:text-text-primary transition-colors bg-card"
-              >
-                Hide analysis
-              </button>
+              {(
+                [
+                  { label: copied ? "Copied!" : "Copy", onClick: handleCopy, disabled: false },
+                  { label: "Generate visuals", onClick: handleGenerateVisuals, disabled: visualsLoading },
+                  { label: "Regenerate", onClick: () => generate(), disabled: loading },
+                  { label: "Hide analysis", onClick: () => setAnalysisOpen(false), disabled: false },
+                ] as { label: string; onClick: () => void; disabled: boolean }[]
+              ).map(({ label, onClick, disabled }) => (
+                <button
+                  key={label}
+                  onClick={onClick}
+                  disabled={disabled}
+                  className="flex-1 rounded-lg border border-border text-text-secondary font-medium hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
+                  style={{ padding: "10px 18px", fontSize: 13 }}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
 
             <p className="text-xs text-text-hint mt-3">Auto-saved to history</p>
@@ -989,10 +1014,10 @@ export default function CreatePost() {
           {/* Right panel — analysis */}
           <div
             style={{
-              width: 420,
+              width: 480,
               flexShrink: 0,
               overflowY: "auto",
-              padding: "24px 28px",
+              padding: "28px 36px",
               background: "#fdfcfb",
             }}
           >
@@ -1003,7 +1028,7 @@ export default function CreatePost() {
       ) : (
         // ── Single column ───────────────────────────────────────────────────
         <div className="flex-1 overflow-y-auto">
-          <div style={{ maxWidth: 660, margin: "0 auto", padding: "28px 40px" }}>
+          <div style={{ maxWidth: 700, margin: "0 auto", padding: "32px 40px" }}>
 
             {/* Restored session banner */}
             {restored && !loading && (
@@ -1237,34 +1262,37 @@ export default function CreatePost() {
                 <textarea
                   value={editedPost}
                   onChange={(e) => setEditedPost(e.target.value)}
-                  className="w-full rounded-xl border border-border-input bg-card focus:outline-none focus:border-text-primary resize-none transition-colors"
+                  className="w-full rounded-xl border border-border-input bg-card focus:outline-none resize-none transition-colors"
                   style={{
-                    fontSize: 14.5,
-                    lineHeight: 1.9,
-                    padding: "24px 28px",
+                    fontSize: 15,
+                    lineHeight: 1.95,
+                    padding: "28px 32px",
                     minHeight: 300,
                   }}
                 />
 
                 {/* Action row */}
-                <div className="flex gap-2 flex-wrap">
+                <div className="flex gap-2 flex-wrap mt-4">
                   <button
                     onClick={handleCopy}
-                    className="flex-1 rounded-lg border border-border text-text-secondary font-medium py-2 text-sm hover:border-text-primary hover:text-text-primary transition-colors bg-card"
+                    className="flex-1 rounded-lg border border-border text-text-secondary font-medium hover:border-text-primary hover:text-text-primary transition-colors bg-card"
+                    style={{ padding: "10px 18px", fontSize: 13 }}
                   >
                     {copied ? "Copied!" : "Copy"}
                   </button>
                   <button
                     onClick={handleGenerateVisuals}
                     disabled={visualsLoading}
-                    className="flex-1 rounded-lg border border-border text-text-secondary font-medium py-2 text-sm hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
+                    className="flex-1 rounded-lg border border-border text-text-secondary font-medium hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
+                    style={{ padding: "10px 18px", fontSize: 13 }}
                   >
                     Generate visuals
                   </button>
                   <button
                     onClick={() => generate()}
                     disabled={loading}
-                    className="flex-1 rounded-lg bg-text-primary text-card font-medium py-2 text-sm hover:opacity-90 disabled:opacity-50 transition-opacity"
+                    className="flex-1 rounded-lg border border-border text-text-secondary font-medium hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
+                    style={{ padding: "10px 18px", fontSize: 13 }}
                   >
                     Regenerate
                   </button>
@@ -1275,7 +1303,8 @@ export default function CreatePost() {
                         setTimeout(() => analysisRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
                       }
                     }}
-                    className="flex-1 rounded-lg border border-border text-text-secondary font-medium py-2 text-sm hover:border-text-primary hover:text-text-primary transition-colors bg-card"
+                    className="flex-1 rounded-lg border border-border text-text-secondary font-medium hover:border-text-primary hover:text-text-primary transition-colors bg-card"
+                    style={{ padding: "10px 18px", fontSize: 13 }}
                   >
                     View authenticity analysis
                   </button>
