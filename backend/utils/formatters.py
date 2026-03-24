@@ -1,3 +1,72 @@
+def get_archetype_instructions(archetype: str) -> str:
+    """Return a detailed structural prompt block for the given archetype key."""
+    archetype = archetype.lower().strip()
+
+    instructions = {
+        "incident_report": (
+            "Structure: Hook → Problem → Insight → Lesson → Action → Honesty.\n"
+            "Use case: Technical failures, production stories, build retrospectives.\n"
+            "LinkedIn: 200–350 words. Keep every section lean — the HONESTY section must never feel optimistic or resolved.\n"
+            "Thread: one tweet per section (6 tweets minimum).\n"
+            "Article: expand the Problem and Insight sections with data, logs, or code snippets.\n"
+            "Diagrams are encouraged when comparing before/after architecture or visualising a failure point."
+        ),
+        "contrarian_take": (
+            "Structure: Bold falsifiable claim → Steel-man the consensus → 2–3 pieces of concrete evidence → "
+            "Honest nuance where the consensus is right → Clear final position, no hedge.\n"
+            "The opening claim must be specific enough that a reader can disagree with it.\n"
+            "Steel-manning must be genuine — acknowledge the strongest version of the opposing view.\n"
+            "LinkedIn: 200–350 words.\n"
+            "No diagram unless directly comparing two things side by side."
+        ),
+        "personal_story": (
+            "Structure: Specific moment in time → What you expected → What actually happened → "
+            "What it revealed → One line that generalises.\n"
+            "The post must start with a person, not a system or concept.\n"
+            "The 'specific moment' must be dated or located — give it a when or a where.\n"
+            "The generalising line at the end should not moralize — state what you now know, not what others should do.\n"
+            "LinkedIn: 150–300 words.\n"
+            "No diagram."
+        ),
+        "teach_me_something": (
+            "Structure: Surprising premise → Core concept explained through one concrete analogy → "
+            "Why this matters beyond the obvious → One thing to try or watch for.\n"
+            "The analogy is the load-bearing element — if the analogy is weak, the post fails.\n"
+            "The 'surprising premise' must be something the target reader does not already know.\n"
+            "LinkedIn: 200–400 words.\n"
+            "Diagram or image is recommended when it can make the analogy visual — only include if it genuinely adds clarity."
+        ),
+        "list_that_isnt": (
+            "Structure: Opens like a listicle, then subverts it — one item gets most of the space, "
+            "or the last item contradicts the others.\n"
+            "Works only when the writer has a genuine opinion about which item matters most.\n"
+            "The subversion must be earned — the reader should feel surprised, not tricked.\n"
+            "LinkedIn: 150–300 words.\n"
+            "No diagram."
+        ),
+        "prediction_bet": (
+            "Structure: What I think is about to happen → Why most people don't see it yet "
+            "(the specific signal) → What I'm doing about it → How you'll know if I'm wrong.\n"
+            "The 'specific signal' is the hardest and most important part — it must be something observable, not vague.\n"
+            "The last section must state a concrete falsifiability condition — what would prove this prediction wrong.\n"
+            "Stakes the writer's credibility explicitly.\n"
+            "LinkedIn: 200–350 words.\n"
+            "Diagram only if visualising a trend line or timeline — skip otherwise."
+        ),
+        "before_after": (
+            "Structure: State before → The thing that changed it (decision, tool, or realisation) → "
+            "State after → What you'd tell yourself before.\n"
+            "Compact, chronological, personal — no detours.\n"
+            "The 'thing that changed it' must be specific: name the tool, the conversation, the moment, or the number.\n"
+            "The 'what you'd tell yourself before' must be honest, not inspirational.\n"
+            "LinkedIn: 150–280 words.\n"
+            "No diagram unless comparing tools or architectures directly."
+        ),
+    }
+
+    return instructions.get(archetype, instructions["incident_report"])
+
+
 def get_format_instructions(format_type: str, tone: str) -> str:
     format_type = format_type.lower().strip()
     tone = tone.lower().strip()

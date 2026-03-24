@@ -184,28 +184,8 @@ Topic: {topic}
 Write the draft now. Do not add any preamble or explanation — output only the post content itself.
 
 ---
-POST STRUCTURE (for story-driven and technical posts):
-
-Strong posts follow this arc — not every section needs to be long, but all six should be present:
-
-1. HOOK — one or two lines maximum. A specific moment, number, or surprising fact. Never a question. Never "I am excited to share."
-   Example: "Spent 3 weeks building a RAG pipeline. A college student broke it in 4 minutes."
-
-2. PROBLEM — what actually happened, specifically. Real details, real numbers, real sequence of events. Not "we had challenges" but exactly what broke and how.
-
-3. INSIGHT — the non-obvious realization. What the failure revealed about the system, the assumption, or the architecture. This is the line people share.
-   Example: "The architecture itself was the vulnerability."
-
-4. LESSON — where the insight came from. A reference, an experience, a conversation that reframed the problem. Must connect back to the author's actual experience — not a parachuted statistic.
-   Example: "Reading how Stripe Radar treats every incoming document as potentially adversarial is what reframed the problem for us."
-
-5. ACTION — what was actually built or changed as a result. Specific. Not "we improved our pipeline" but what specifically was added, removed, or redesigned. Include one friction point — a tradeoff made, latency added, something that broke first.
-   Example: "The first thing we added wasn't a better model. It was a pre-ingestion classifier. It added 40ms to every ingest call. Worth it."
-
-6. HONESTY — what is still unsolved, still uncertain, or still a constraint. Never end with a poll question or engagement bait. End with what you still do not know or what you had to accept as a permanent limitation.
-   Example: "The pipeline still does not catch everything. Semantic similarity is blind to intent. That is not a bug we fixed — it is a constraint we designed around."
-
-Not every post needs this structure — short opinion posts and personal stories follow their own shape. Apply this arc to technical posts and incident stories.
+POST STRUCTURE — write this post as a {archetype_name}:
+{archetype_instructions}
 ---
 
 ---
@@ -228,6 +208,25 @@ Never force a diagram into opinion pieces or short punchy posts where the words 
 - `topic` — the generation topic
 - `context_section` — optional context string prefixed with "Additional context:", or empty string
 - `posted_topics_section` — bullet list of all previously saved topics from `feedback_store.get_all_topics_posted()`, prefixed with "Topics you have already written about — do not repeat these angles, find a fresh perspective:"; empty string if no posts saved yet
+- `archetype_name` — human-readable archetype name (e.g. "Incident Report / Retrospective"), resolved from the inferred archetype key
+- `archetype_instructions` — structural prompt block for the inferred archetype, returned by `get_archetype_instructions()` in `utils/formatters.py`
+
+### POST STRUCTURE (Dynamic — Archetype System)
+
+The structure block is no longer hardcoded. `infer_archetype(topic, context, tone)` in `draft_agent.py` selects one of 7 archetypes based on pattern-matching. The archetype key is stored in pipeline state and returned in the API response.
+
+**Archetypes:**
+| Key | Human Name | Use case |
+|-----|-----------|----------|
+| incident_report | Incident Report / Retrospective | Failures, bugs, production stories |
+| contrarian_take | Contrarian Take | Unpopular opinions, pushing back on consensus |
+| personal_story | Personal Story | Specific moments, revelations, decisions |
+| teach_me_something | Teach Me Something | Concept explanations, analogies, how-it-works |
+| list_that_isnt | List That Isn't | Subverted listicles with genuine opinion |
+| prediction_bet | Prediction / Bet | Forward-looking claims with credibility at stake |
+| before_after | Before & After | Chronological change stories |
+
+The full structural instructions for each archetype live in `backend/utils/formatters.py → get_archetype_instructions()`.
 
 ---
 

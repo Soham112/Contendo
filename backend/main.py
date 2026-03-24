@@ -89,6 +89,7 @@ class GenerateResponse(BaseModel):
     score: int
     score_feedback: list[str]
     iterations: int
+    archetype: str = ""
 
 
 class LogPostRequest(BaseModel):
@@ -98,6 +99,7 @@ class LogPostRequest(BaseModel):
     content: str
     authenticity_score: int
     svg_diagrams: list | None = None
+    archetype: str = ""
 
 
 class LogPostResponse(BaseModel):
@@ -188,6 +190,7 @@ async def generate(req: GenerateRequest) -> GenerateResponse:
         score=result["score"],
         score_feedback=result["score_feedback"],
         iterations=result["iterations"],
+        archetype=result.get("archetype", ""),
     )
 
 
@@ -202,6 +205,7 @@ async def log_post_endpoint(req: LogPostRequest) -> LogPostResponse:
         content=req.content,
         authenticity_score=req.authenticity_score,
         svg_diagrams=json.dumps(req.svg_diagrams) if req.svg_diagrams is not None else None,
+        archetype=req.archetype,
     )
     add_version(
         post_id=post_id,

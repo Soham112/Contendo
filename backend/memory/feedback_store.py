@@ -23,11 +23,16 @@ def init_db() -> None:
             format            TEXT NOT NULL,
             tone              TEXT NOT NULL,
             content           TEXT NOT NULL,
-            authenticity_score INTEGER NOT NULL
+            authenticity_score INTEGER NOT NULL,
+            archetype         TEXT DEFAULT ''
         )
     """)
     try:
         conn.execute("ALTER TABLE posts ADD COLUMN svg_diagrams TEXT")
+    except Exception:
+        pass  # column already exists
+    try:
+        conn.execute("ALTER TABLE posts ADD COLUMN archetype TEXT DEFAULT ''")
     except Exception:
         pass  # column already exists
     conn.execute("""
@@ -54,14 +59,15 @@ def log_post(
     content: str,
     authenticity_score: int,
     svg_diagrams: str | None = None,
+    archetype: str = "",
 ) -> int:
     conn = _connect()
     cursor = conn.execute(
         """
-        INSERT INTO posts (topic, format, tone, content, authenticity_score, svg_diagrams)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO posts (topic, format, tone, content, authenticity_score, svg_diagrams, archetype)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (topic, format, tone, content, authenticity_score, svg_diagrams),
+        (topic, format, tone, content, authenticity_score, svg_diagrams, archetype),
     )
     post_id = cursor.lastrowid
     conn.commit()

@@ -34,7 +34,7 @@
 | `backend/tools/obsidian_tool.py` | Obsidian vault reader — `read_vault()` yields cleaned note dicts, `get_vault_stats()` for preview, `clean_obsidian_markdown()` strips wikilinks/frontmatter/Dataview |
 | `backend/tools/__init__.py` | Empty — tools directory retained for future use |
 | `backend/utils/chunker.py` | 500-word chunks with 50-word overlap |
-| `backend/utils/formatters.py` | Format + tone instruction strings per output type |
+| `backend/utils/formatters.py` | Format + tone instruction strings per output type; `get_archetype_instructions()` returns structural prompt block for each of 7 post archetypes |
 | `backend/utils/file_extractor.py` | Extracts plain text from PDF (PyMuPDF), DOCX (python-docx), and TXT files; raises ValueError on unsupported types, scanned PDFs, password-protected PDFs, and empty files |
 | `backend/data/profile.json` | User voice and style profile — **gitignored**, never committed. Copy from `profile.template.json` to create. |
 | `backend/data/profile.template.json` | Committed template with placeholder values — starting point for new users |
@@ -516,6 +516,7 @@
 | `content` | TEXT | Current best post text — updated by refinement and restore |
 | `authenticity_score` | INTEGER | Score of current content (0–100) |
 | `svg_diagrams` | TEXT | JSON array of `{position, description, svg_code}` objects; NULL if no diagrams |
+| `archetype` | TEXT | Post archetype key inferred at generation time (e.g. `"incident_report"`); default empty string |
 
 **Table:** `post_versions`
 
@@ -593,6 +594,8 @@
 | Post versioning uses a parent + child table design | The `posts` table is the parent record (one row per generation session); `post_versions` stores every historical version. Every generation creates v1; every refinement creates the next version. SVG diagram updates do not create new versions — `update_latest_version_svg()` stamps diagrams onto the current version row in place. |
 | Best version tracked by highest authenticity_score | `get_best_version()` orders by `authenticity_score DESC, version_number DESC` so ties go to the latest version. The History UI highlights the best version with a green "Best" badge. |
 | Restore writes to sessionStorage, not a new PATCH | Restoring a version calls `POST /history/{post_id}/restore/{version_id}`, which updates the `posts` row. The frontend then writes the restored content to `contentOS_last_post` and related keys so Create Post picks it up immediately without an extra fetch. |
+| Post archetypes system — 7 structural patterns inferred from topic/tone | `infer_archetype()` in `draft_agent.py` pattern-matches the topic + context against 7 archetype keys (`incident_report`, `contrarian_take`, `personal_story`, `teach_me_something`, `list_that_isnt`, `prediction_bet`, `before_after`). The archetype key is stored in pipeline state, returned in the `/generate` response, and saved to the `posts` SQLite table. Structural instructions are injected into the draft prompt via `get_archetype_instructions()` in `formatters.py`. |
+| `infer_archetype()` is pattern-matched, not LLM-called | Deterministic regex matching — no Claude call, no latency added. Falls back to `incident_report` when nothing matches. Tone-based fallbacks: `storytelling` → `personal_story`, `technical` → `incident_report`. |
 
 ---
 

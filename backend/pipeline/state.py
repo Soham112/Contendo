@@ -22,6 +22,7 @@ class PipelineState(TypedDict, total=False):
     # Generation state
     current_draft: str
     iterations: int
+    archetype: str  # inferred post archetype key, e.g. "incident_report"
 
     # Scoring
     score: int

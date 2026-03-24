@@ -1,12 +1,88 @@
 import anthropic
 import os
+import re
 from dotenv import load_dotenv
 
 from pipeline.state import PipelineState
-from utils.formatters import get_format_instructions
+from utils.formatters import get_format_instructions, get_archetype_instructions
 from memory.profile_store import profile_to_context_string
 
 load_dotenv()
+
+
+_ARCHETYPE_HUMAN_NAMES = {
+    "incident_report": "Incident Report / Retrospective",
+    "contrarian_take": "Contrarian Take",
+    "personal_story": "Personal Story",
+    "teach_me_something": "Teach Me Something",
+    "list_that_isnt": "List That Isn't",
+    "prediction_bet": "Prediction / Bet",
+    "before_after": "Before & After",
+}
+
+
+def infer_archetype(topic: str, context: str, tone: str) -> str:
+    """Pattern-match topic and tone to one of 7 post archetypes. Never calls Claude."""
+    text = (topic + " " + context).lower()
+
+    # incident_report
+    if re.search(
+        r"\b(mistake|failed|broke|outage|incident|wrong|bug|postmortem|production)\b",
+        text,
+    ):
+        return "incident_report"
+
+    # contrarian_take
+    if re.search(
+        r"(why \S+ is overrated|unpopular opinion|everyone is wrong|actually bad|"
+        r"stop using|disagree|overrated|overhyped)",
+        text,
+    ):
+        return "contrarian_take"
+
+    # personal_story
+    if re.search(
+        r"^(the day i|when i decided|i quit|i left|i joined|i got|the moment)",
+        text.strip(),
+    ):
+        return "personal_story"
+
+    # teach_me_something
+    if re.search(
+        r"\b(how \S+ works|what is|understanding|explained|introduction to|guide to|basics of)\b",
+        text,
+    ):
+        return "teach_me_something"
+
+    # list_that_isnt — digit followed by space then qualifying noun
+    if re.search(
+        r"\d\s+(things|lessons|reasons|mistakes|ways|tips|steps)\b",
+        text,
+    ):
+        return "list_that_isnt"
+
+    # prediction_bet
+    if re.search(
+        r"\b(future|prediction|what'?s coming|by 202|will happen|next year|trend|bet)\b",
+        text,
+    ):
+        return "prediction_bet"
+
+    # before_after
+    if re.search(
+        r"\b(before|after|switching from|i used to|moved from|replaced|migrated)\b",
+        text,
+    ):
+        return "before_after"
+
+    # tone-based fallbacks
+    tone_lower = tone.lower().strip()
+    if tone_lower == "storytelling":
+        return "personal_story"
+    if tone_lower == "technical":
+        return "incident_report"
+
+    return "incident_report"
 
 SYSTEM_PROMPT = """You are a ghostwriter. You write content that sounds exactly like the person described in the user profile below — not like an AI assistant, not generically "professional", but like this specific person.
 
@@ -27,28 +103,8 @@ Topic: {topic}
 Write the draft now. Do not add any preamble or explanation — output only the post content itself.
 
 ---
-POST STRUCTURE (for story-driven and technical posts):
-
-Strong posts follow this arc — not every section needs to be long, but all six should be present:
-
-1. HOOK — one or two lines maximum. A specific moment, number, or surprising fact. Never a question. Never "I am excited to share."
-   Example: "Spent 3 weeks building a RAG pipeline. A college student broke it in 4 minutes."
-
-2. PROBLEM — what actually happened, specifically. Real details, real numbers, real sequence of events. Not "we had challenges" but exactly what broke and how.
-
-3. INSIGHT — the non-obvious realization. What the failure revealed about the system, the assumption, or the architecture. This is the line people share.
-   Example: "The architecture itself was the vulnerability."
-
-4. LESSON — where the insight came from. A reference, an experience, a conversation that reframed the problem. Must connect back to the author's actual experience — not a parachuted statistic.
-   Example: "Reading how Stripe Radar treats every incoming document as potentially adversarial is what reframed the problem for us."
-
-5. ACTION — what was actually built or changed as a result. Specific. Not "we improved our pipeline" but what specifically was added, removed, or redesigned. Include one friction point — a tradeoff made, latency added, something that broke first.
-   Example: "The first thing we added wasn't a better model. It was a pre-ingestion classifier. It added 40ms to every ingest call. Worth it."
-
-6. HONESTY — what is still unsolved, still uncertain, or still a constraint. Never end with a poll question or engagement bait. End with what you still do not know or what you had to accept as a permanent limitation.
-   Example: "The pipeline still does not catch everything. Semantic similarity is blind to intent. That is not a bug we fixed — it is a constraint we designed around."
-
-Not every post needs this structure — short opinion posts and personal stories follow their own shape. Apply this arc to technical posts and incident stories.
+POST STRUCTURE — write this post as a {archetype_name}:
+{archetype_instructions}
 ---
 
 ---
@@ -66,6 +122,16 @@ Never force a diagram into opinion pieces or short punchy posts where the words 
 
 def draft_node(state: PipelineState) -> PipelineState:
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+
+    # Infer archetype from topic/context/tone — no Claude call, deterministic
+    archetype = infer_archetype(
+        topic=state.get("topic", ""),
+        context=state.get("context", ""),
+        tone=state.get("tone", ""),
+    )
+    state["archetype"] = archetype
+    archetype_name = _ARCHETYPE_HUMAN_NAMES.get(archetype, archetype)
+    archetype_instructions = get_archetype_instructions(archetype)
 
     profile = state["profile"]
     profile_context = profile_to_context_string(profile)
@@ -98,6 +164,8 @@ def draft_node(state: PipelineState) -> PipelineState:
         topic=state["topic"],
         context_section=context_section,
         posted_topics_section=posted_topics_section,
+        archetype_name=archetype_name,
+        archetype_instructions=archetype_instructions,
     )
 
     message = client.messages.create(
