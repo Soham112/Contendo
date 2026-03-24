@@ -1,6 +1,5 @@
 import anthropic
 import os
-import re
 from dotenv import load_dotenv
 
 from pipeline.state import PipelineState
@@ -22,67 +21,45 @@ _ARCHETYPE_HUMAN_NAMES = {
 
 
 def infer_archetype(topic: str, context: str, tone: str) -> str:
-    """Pattern-match topic and tone to one of 7 post archetypes. Never calls Claude."""
-    text = (topic + " " + context).lower()
+    """Use Claude Haiku to infer the best archetype. Falls back to incident_report on failure."""
+    prompt = f"""You are a content strategist. Given a post topic, tone, and \
+optional context, choose the single best archetype for how this post should \
+be written.
 
-    # incident_report
-    if re.search(
-        r"\b(mistake|failed|broke|outage|incident|wrong|bug|postmortem|production)\b",
-        text,
-    ):
+Topic: {topic}
+Tone: {tone}
+Context: {context or "none"}
+
+Choose exactly one archetype from this list:
+- incident_report: technical failures, production stories, build retrospectives, mistakes made
+- contrarian_take: disagreeing with consensus, unpopular opinions, overrated tools or practices
+- personal_story: career moments, personal pivots, human experiences, emotional journeys
+- teach_me_something: explaining a concept, analogy-driven education, how something works
+- list_that_isnt: observations or lessons that work as a subverted list format
+- prediction_bet: forward-looking takes, what is coming, industry bets
+- before_after: transformation stories, switching tools, decisions that changed everything
+
+Think about what this topic is REALLY about, not just the keywords. \
+"My experience with Kubernetes after 2 years" is personal_story not before_after. \
+"The thing about LLMs nobody talks about" is contrarian_take not incident_report.
+
+Return ONLY the archetype key, nothing else. No explanation."""
+
+    try:
+        client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+        message = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=20,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        result = message.content[0].text.strip().lower()
+        valid = {
+            "incident_report", "contrarian_take", "personal_story",
+            "teach_me_something", "list_that_isnt", "prediction_bet", "before_after"
+        }
+        return result if result in valid else "incident_report"
+    except Exception:
         return "incident_report"
-
-    # contrarian_take
-    if re.search(
-        r"(why \S+ is overrated|unpopular opinion|everyone is wrong|actually bad|"
-        r"stop using|disagree|overrated|overhyped)",
-        text,
-    ):
-        return "contrarian_take"
-
-    # personal_story
-    if re.search(
-        r"^(the day i|when i decided|i quit|i left|i joined|i got|the moment)",
-        text.strip(),
-    ):
-        return "personal_story"
-
-    # teach_me_something
-    if re.search(
-        r"\b(how \S+ works|what is|understanding|explained|introduction to|guide to|basics of)\b",
-        text,
-    ):
-        return "teach_me_something"
-
-    # list_that_isnt — digit followed by space then qualifying noun
-    if re.search(
-        r"\d\s+(things|lessons|reasons|mistakes|ways|tips|steps)\b",
-        text,
-    ):
-        return "list_that_isnt"
-
-    # prediction_bet
-    if re.search(
-        r"\b(future|prediction|what'?s coming|by 202|will happen|next year|trend|bet)\b",
-        text,
-    ):
-        return "prediction_bet"
-
-    # before_after
-    if re.search(
-        r"\b(before|after|switching from|i used to|moved from|replaced|migrated)\b",
-        text,
-    ):
-        return "before_after"
-
-    # tone-based fallbacks
-    tone_lower = tone.lower().strip()
-    if tone_lower == "storytelling":
-        return "personal_story"
-    if tone_lower == "technical":
-        return "incident_report"
-
-    return "incident_report"
 
 SYSTEM_PROMPT = """You are a ghostwriter. You write content that sounds exactly like the person described in the user profile below — not like an AI assistant, not generically "professional", but like this specific person.
 

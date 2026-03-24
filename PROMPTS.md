@@ -213,7 +213,7 @@ Never force a diagram into opinion pieces or short punchy posts where the words 
 
 ### POST STRUCTURE (Dynamic — Archetype System)
 
-The structure block is no longer hardcoded. `infer_archetype(topic, context, tone)` in `draft_agent.py` selects one of 7 archetypes based on pattern-matching. The archetype key is stored in pipeline state and returned in the API response.
+The structure block is no longer hardcoded. `infer_archetype(topic, context, tone)` in `draft_agent.py` calls Claude Haiku (`claude-haiku-4-5-20251001`, `max_tokens=20`) to semantically classify the topic into one of 7 archetypes. Haiku is used because it understands intent beyond keyword matching — e.g. "My experience with Kubernetes after 2 years" is correctly classified as `personal_story`, not `before_after`. Fallback chain: valid archetype key returned → use it; invalid/unrecognised key → `incident_report`; any exception → `incident_report`. The archetype key is stored in pipeline state and returned in the API response.
 
 **Archetypes:**
 | Key | Human Name | Use case |
