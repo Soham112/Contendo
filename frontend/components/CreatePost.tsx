@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useToast } from "@/components/ui/ToastProvider";
 
 const SS_POST = "contentOS_last_post";
 const SS_SCORE = "contentOS_last_score";
@@ -113,7 +114,7 @@ function DiagramCard({ visual }: { visual: Visual }) {
       const win = window.open();
       if (win) {
         win.document.write(
-          `<html><body style="margin:0;background:#fdfcfb;display:flex;justify-content:center;padding:24px">` +
+          `<html><body style="margin:0;background:#faf9f7;display:flex;justify-content:center;padding:24px">` +
           `<img src="${dataURL}" style="max-width:100%;border-radius:8px" />` +
           `</body></html>`
         );
@@ -209,7 +210,7 @@ function SettingsDrawer({ initialTopic, initialFormat, initialTone, initialConte
       <div className="fixed top-0 right-0 h-full w-80 bg-page border-l border-border z-50 flex flex-col shadow-lg">
         {/* Header */}
         <div
-          style={{ borderBottom: "0.5px solid #e8e3da", height: "52px" }}
+          style={{ borderBottom: "0.5px solid #e0dcd3", height: "52px" }}
           className="flex items-center justify-between px-5 shrink-0"
         >
           <p className="text-sm font-medium text-text-primary">Regenerate settings</p>
@@ -232,7 +233,7 @@ function SettingsDrawer({ initialTopic, initialFormat, initialTone, initialConte
               value={dTopic}
               onChange={(e) => setDTopic(e.target.value)}
               placeholder="What do you want to write about?"
-              className="w-full rounded-lg border border-border-input bg-card px-3 py-2.5 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary transition-colors"
+              className="w-full rounded-xl border border-border-subtle bg-card px-4 py-3 text-sm font-medium text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary shadow-sm focus-within:shadow-md focus-within:border-border transition-all duration-200"
             />
           </div>
 
@@ -246,7 +247,7 @@ function SettingsDrawer({ initialTopic, initialFormat, initialTone, initialConte
                   onClick={() => setDFormat(f.id)}
                   className={`w-full px-3 py-2 rounded-lg text-sm text-left border transition-colors ${
                     dFormat === f.id
-                      ? "border-text-primary bg-hover text-text-primary font-medium"
+                      ? "border-text-primary bg-surface text-text-primary shadow-sm ring-1 ring-text-primary ring-opacity-10 font-medium"
                       : "border-border text-text-secondary hover:bg-hover bg-card"
                   }`}
                 >
@@ -266,7 +267,7 @@ function SettingsDrawer({ initialTopic, initialFormat, initialTone, initialConte
                   onClick={() => setDTone(t.id)}
                   className={`w-full px-3 py-2.5 rounded-lg text-sm text-left border transition-colors ${
                     dTone === t.id
-                      ? "border-text-primary bg-hover text-text-primary"
+                      ? "border-text-primary bg-surface text-text-primary shadow-sm ring-1 ring-text-primary ring-opacity-10"
                       : "border-border text-text-secondary hover:bg-hover bg-card"
                   }`}
                 >
@@ -290,14 +291,14 @@ function SettingsDrawer({ initialTopic, initialFormat, initialTone, initialConte
               onChange={(e) => setDContext(e.target.value)}
               placeholder="Specific angle, story, or data point..."
               rows={3}
-              className="w-full rounded-lg border border-border-input bg-card px-3 py-2.5 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary resize-none transition-colors"
+              className="w-full rounded-xl border border-border-subtle bg-card px-4 py-3 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary resize-none shadow-sm focus-within:shadow-md focus-within:border-border transition-all duration-200"
             />
           </div>
         </div>
 
         {/* Footer */}
         <div
-          style={{ borderTop: "0.5px solid #e8e3da" }}
+          style={{ borderTop: "0.5px solid #e0dcd3" }}
           className="px-5 py-4 flex gap-2 shrink-0"
         >
           <button
@@ -341,6 +342,25 @@ export default function CreatePost() {
   const [visuals, setVisuals] = useState<Visual[]>([]);
   const [visualsLoading, setVisualsLoading] = useState(false);
   const [visualsVisible, setVisualsVisible] = useState(false);
+
+  const { showToast } = useToast();
+  const [lastSaved, setLastSaved] = useState<number | null>(null);
+  const [saveStatusText, setSaveStatusText] = useState("");
+
+  useEffect(() => {
+    if (!lastSaved) {
+      setSaveStatusText("");
+      return;
+    }
+    const update = () => {
+      const diff = Math.floor((Date.now() - lastSaved) / 1000);
+      if (diff < 60) setSaveStatusText("Saved just now");
+      else setSaveStatusText(`Saved ${Math.floor(diff / 60)}m ago`);
+    };
+    update();
+    const interval = setInterval(update, 10000);
+    return () => clearInterval(interval);
+  }, [lastSaved]);
 
   const [refineInstruction, setRefineInstruction] = useState("");
   const [refineLoading, setRefineLoading] = useState(false);
@@ -387,7 +407,6 @@ export default function CreatePost() {
         if (savedVisuals) {
           const parsedVisuals: Visual[] = JSON.parse(savedVisuals);
           setVisuals(parsedVisuals);
-          setVisualsVisible(parsedVisuals.length > 0);
         }
         // Restore topic/format/tone so history saves correctly after restore
         const savedTopic = sessionStorage.getItem(SS_TOPIC);
@@ -492,6 +511,7 @@ export default function CreatePost() {
       const saved = await res.json();
       const postId: number = saved.post_id;
       setCurrentPostId(postId);
+      setLastSaved(Date.now());
       try {
         sessionStorage.setItem(SS_CURRENT_POST_ID, String(postId));
       } catch {
@@ -517,6 +537,7 @@ export default function CreatePost() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(fields),
       });
+      setLastSaved(Date.now());
     } catch {
       // patch failure is non-critical
     }
@@ -633,6 +654,7 @@ export default function CreatePost() {
   const handleCopy = async () => {
     await navigator.clipboard.writeText(editedPost);
     setCopied(true);
+    showToast("Post copied to clipboard", "success");
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -726,8 +748,8 @@ export default function CreatePost() {
   const splitActive = postGenerated && analysisOpen && isWide && !visualsVisible;
 
   const scoreColor = result
-    ? result.score >= 80 ? "#5a8c5a" : result.score >= 60 ? "#2c2a24" : "#7a786f"
-    : "#7a786f";
+    ? result.score >= 80 ? "#4a7a4a" : result.score >= 60 ? "#1a1918" : "#6b6862"
+    : "#6b6862";
   const scoreStatus = result
     ? result.score >= 80
       ? "Good"
@@ -747,11 +769,11 @@ export default function CreatePost() {
           <span style={{ fontSize: 40, fontWeight: 500, color: scoreColor, lineHeight: 1, display: "block" }}>
             {result.score}
           </span>
-          <p style={{ fontSize: 12, color: "#aaa89f", marginTop: 4 }}>out of 100</p>
+          <p style={{ fontSize: 12, color: "#969288", marginTop: 4 }}>out of 100</p>
         </div>
         <div style={{ textAlign: "right" }}>
-          <p style={{ fontSize: 13, fontWeight: 500, color: "#2c2a24" }}>{scoreStatus}</p>
-          <p style={{ fontSize: 11, color: "#aaa89f", marginTop: 3 }}>
+          <p style={{ fontSize: 13, fontWeight: 500, color: "#1a1918" }}>{scoreStatus}</p>
+          <p style={{ fontSize: 11, color: "#969288", marginTop: 3 }}>
             {result.iterations} humanizer pass{result.iterations !== 1 ? "es" : ""}
           </p>
         </div>
@@ -763,7 +785,7 @@ export default function CreatePost() {
           width: "100%",
           height: 4,
           borderRadius: 20,
-          background: "#e2ddd5",
+          background: "#e0dcd3",
           marginBottom: 24,
           overflow: "hidden",
         }}
@@ -780,7 +802,7 @@ export default function CreatePost() {
       </div>
 
       {/* Divider before feedback */}
-      <div style={{ borderTop: "0.5px solid #e8e3da", marginBottom: 20 }} />
+      <div style={{ borderTop: "0.5px solid #e0dcd3", marginBottom: 20 }} />
 
       {/* What to fix */}
       {result.score_feedback.length > 0 && (
@@ -791,7 +813,7 @@ export default function CreatePost() {
               fontWeight: 500,
               textTransform: "uppercase",
               letterSpacing: "0.07em",
-              color: "#aaa89f",
+              color: "#969288",
               marginBottom: 14,
             }}
           >
@@ -806,11 +828,11 @@ export default function CreatePost() {
                   gap: 10,
                   padding: "10px 0",
                   borderBottom:
-                    i < result.score_feedback.length - 1 ? "0.5px solid #ede9e1" : "none",
+                    i < result.score_feedback.length - 1 ? "0.5px solid #ebe7df" : "none",
                 }}
               >
-                <span style={{ color: "#aaa89f", flexShrink: 0, fontSize: 13, marginTop: 1 }}>—</span>
-                <p style={{ fontSize: 13.5, lineHeight: 1.65, color: "#7a786f" }}>{f}</p>
+                <span style={{ color: "#969288", flexShrink: 0, fontSize: 13, marginTop: 1 }}>—</span>
+                <p style={{ fontSize: 13.5, lineHeight: 1.65, color: "#6b6862" }}>{f}</p>
               </div>
             ))}
           </div>
@@ -818,7 +840,7 @@ export default function CreatePost() {
       )}
 
       {/* Divider before refine */}
-      <div style={{ borderTop: "0.5px solid #e8e3da", marginTop: 4, marginBottom: 20 }} />
+      <div style={{ borderTop: "0.5px solid #e0dcd3", marginTop: 4, marginBottom: 20 }} />
 
       {/* Refine box */}
       <p
@@ -826,7 +848,7 @@ export default function CreatePost() {
           fontSize: 10.5,
           fontWeight: 500,
           textTransform: "uppercase",
-          color: "#aaa89f",
+          color: "#969288",
           letterSpacing: "0.07em",
           marginBottom: 12,
         }}
@@ -842,20 +864,20 @@ export default function CreatePost() {
           minHeight: 90,
           fontSize: 13,
           lineHeight: 1.6,
-          border: "0.5px solid #e2ddd5",
+          border: "0.5px solid #e0dcd3",
           borderRadius: 8,
           padding: "12px 14px",
           resize: "vertical",
           fontFamily: "inherit",
           background: "#ffffff",
-          color: "#2c2a24",
+          color: "#1a1918",
           outline: "none",
           boxSizing: "border-box",
           marginBottom: 12,
         }}
       />
       {refineError && (
-        <p style={{ fontSize: 12, color: "#c05a5a", marginTop: -8, marginBottom: 8 }}>{refineError}</p>
+        <p style={{ fontSize: 12, color: "#b34e4e", marginTop: -8, marginBottom: 8 }}>{refineError}</p>
       )}
       <div style={{ display: "flex", gap: 8 }}>
         <button
@@ -864,7 +886,7 @@ export default function CreatePost() {
           style={{
             flex: 1,
             borderRadius: 8,
-            background: "#2c2a24",
+            background: "#1a1918",
             color: "#ffffff",
             fontSize: 13,
             fontWeight: 500,
@@ -883,9 +905,9 @@ export default function CreatePost() {
           style={{
             flex: 1,
             borderRadius: 8,
-            border: "0.5px solid #e2ddd5",
+            border: "0.5px solid #e0dcd3",
             background: "#ffffff",
-            color: "#7a786f",
+            color: "#6b6862",
             fontSize: 13,
             fontWeight: 500,
             padding: "11px 0",
@@ -915,7 +937,7 @@ export default function CreatePost() {
               bottom: 0,
               display: "flex",
               flexDirection: "column",
-              background: "#fdfcfb",
+              background: "#faf9f7",
               zIndex: 10,
             }
           : { minHeight: "100vh" }
@@ -924,7 +946,7 @@ export default function CreatePost() {
 
       {/* Topbar */}
       <div
-        style={{ borderBottom: "0.5px solid #e8e3da", height: "52px" }}
+        style={{ borderBottom: "0.5px solid #e0dcd3", height: "52px" }}
         className="flex items-center px-8 bg-page shrink-0"
       >
         <div className="flex items-baseline gap-3">
@@ -950,7 +972,7 @@ export default function CreatePost() {
               minWidth: 0,
               overflow: "hidden",
               padding: "32px 40px",
-              borderRight: "0.5px solid #e8e3da",
+              borderRight: "0.5px solid #e0dcd3",
               display: "flex",
               flexDirection: "column",
             }}
@@ -958,10 +980,10 @@ export default function CreatePost() {
             {/* Topic header */}
             {topic && (
               <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 12, flexShrink: 0 }}>
-                <span style={{ fontSize: 10.5, fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase", color: "#aaa89f", flexShrink: 0 }}>
+                <span style={{ fontSize: 10.5, fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase", color: "#969288", flexShrink: 0 }}>
                   TOPIC
                 </span>
-                <span style={{ fontSize: 14, fontWeight: 500, color: "#2c2a24", lineHeight: 1.4 }}>
+                <span style={{ fontSize: 14, fontWeight: 500, color: "#1a1918", lineHeight: 1.4 }}>
                   {topic}
                 </span>
               </div>
@@ -970,14 +992,14 @@ export default function CreatePost() {
             {/* Post box — fills remaining space */}
             <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
               <div
-                className="rounded-xl border border-border-input bg-card"
-                style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "28px 32px" }}
+                className="rounded-2xl border border-border-subtle bg-card shadow-card focus-within:shadow-card-hover focus-within:border-border transition-all duration-300"
+                style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "32px 36px" }}
               >
                 <textarea
                   value={editedPost}
                   onChange={(e) => setEditedPost(e.target.value)}
                   className="w-full h-full resize-none outline-none bg-transparent"
-                  style={{ fontSize: 15, lineHeight: 1.9, color: "#2c2a24", fontFamily: "inherit", border: "none", display: "block" }}
+                  style={{ fontSize: 16, lineHeight: 1.8, color: "#1a1918", fontFamily: "inherit", border: "none", display: "block" }}
                 />
               </div>
             </div>
@@ -987,7 +1009,7 @@ export default function CreatePost() {
               {(
                 [
                   { label: copied ? "Copied!" : "Copy", onClick: handleCopy, disabled: false },
-                  { label: "Generate visuals", onClick: handleGenerateVisuals, disabled: visualsLoading },
+                  { label: visuals.length > 0 ? "View visuals" : "Generate visuals", onClick: visuals.length > 0 ? () => { setVisualsVisible(true); setAnalysisOpen(false); } : handleGenerateVisuals, disabled: visualsLoading },
                   { label: "Regenerate", onClick: () => generate(), disabled: loading },
                   { label: "Hide analysis", onClick: () => setAnalysisOpen(false), disabled: false },
                 ] as { label: string; onClick: () => void; disabled: boolean }[]
@@ -996,7 +1018,7 @@ export default function CreatePost() {
                   key={label}
                   onClick={onClick}
                   disabled={disabled}
-                  className="flex-1 rounded-lg border border-border text-text-secondary font-medium hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
+                  className="flex-1 rounded-xl border border-border-subtle text-text-secondary font-semibold hover:border-border hover:text-text-primary hover:shadow-card transition-all duration-200 bg-card disabled:opacity-50"
                   style={{ padding: "10px 18px", fontSize: 13 }}
                 >
                   {label}
@@ -1004,7 +1026,7 @@ export default function CreatePost() {
               ))}
             </div>
 
-            <p className="text-xs text-text-hint flex-shrink-0 mt-2">Auto-saved to history</p>
+            <p className="text-xs text-text-hint flex-shrink-0 mt-2">{lastSaved ? saveStatusText : "Auto-saved to history"}</p>
           </div>
 
           {/* Right panel — analysis */}
@@ -1014,7 +1036,7 @@ export default function CreatePost() {
               flexShrink: 0,
               overflowY: "auto",
               padding: "28px 36px",
-              background: "#fdfcfb",
+              background: "#faf9f7",
             }}
           >
             {analysisPanelContent}
@@ -1066,22 +1088,22 @@ export default function CreatePost() {
             {/* Topic header */}
             {topic && (
               <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 12, flexShrink: 0 }}>
-                <span style={{ fontSize: 10.5, fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase", color: "#aaa89f", flexShrink: 0 }}>TOPIC</span>
-                <span style={{ fontSize: 14, fontWeight: 500, color: "#2c2a24", lineHeight: 1.4 }}>{topic}</span>
+                <span style={{ fontSize: 10.5, fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase", color: "#969288", flexShrink: 0 }}>TOPIC</span>
+                <span style={{ fontSize: 14, fontWeight: 500, color: "#1a1918", lineHeight: 1.4 }}>{topic}</span>
               </div>
             )}
 
             {/* Post box — fills all remaining space */}
             <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
               <div
-                className="rounded-xl border border-border-input bg-card"
-                style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "28px 32px" }}
+                className="rounded-2xl border border-border-subtle bg-card shadow-card focus-within:shadow-card-hover focus-within:border-border transition-all duration-300"
+                style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "32px 36px" }}
               >
                 <textarea
                   value={editedPost}
                   onChange={(e) => setEditedPost(e.target.value)}
                   className="w-full h-full resize-none outline-none bg-transparent"
-                  style={{ fontSize: 15, lineHeight: 1.95, color: "#2c2a24", fontFamily: "inherit", border: "none", display: "block" }}
+                  style={{ fontSize: 16, lineHeight: 1.8, color: "#1a1918", fontFamily: "inherit", border: "none", display: "block" }}
                 />
               </div>
             </div>
@@ -1096,17 +1118,17 @@ export default function CreatePost() {
                 {copied ? "Copied!" : "Copy"}
               </button>
               <button
-                onClick={handleGenerateVisuals}
+                onClick={visuals.length > 0 ? () => { setVisualsVisible(true); setAnalysisOpen(false); } : handleGenerateVisuals}
                 disabled={visualsLoading}
-                className="flex-1 rounded-lg border border-border text-text-secondary font-medium hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
+                className="flex-1 rounded-xl border border-border-subtle text-text-secondary font-semibold hover:border-border hover:text-text-primary hover:shadow-card transition-all duration-200 bg-card disabled:opacity-50"
                 style={{ padding: "10px 18px", fontSize: 13 }}
               >
-                Generate visuals
+                {visuals.length > 0 ? "View visuals" : "Generate visuals"}
               </button>
               <button
                 onClick={() => generate()}
                 disabled={loading}
-                className="flex-1 rounded-lg border border-border text-text-secondary font-medium hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
+                className="flex-1 rounded-xl border border-border-subtle text-text-secondary font-semibold hover:border-border hover:text-text-primary hover:shadow-card transition-all duration-200 bg-card disabled:opacity-50"
                 style={{ padding: "10px 18px", fontSize: 13 }}
               >
                 Regenerate
@@ -1125,13 +1147,13 @@ export default function CreatePost() {
               </button>
             </div>
 
-            <p className="text-xs text-text-hint" style={{ flexShrink: 0, marginTop: 8 }}>Auto-saved to history</p>
+            <p className="text-xs text-text-hint" style={{ flexShrink: 0, marginTop: 8 }}>{lastSaved ? saveStatusText : "Auto-saved to history"}</p>
 
             {/* Analysis stacked below post (narrow viewport only) */}
             {analysisOpen && !isWide && (
               <div
                 ref={analysisRef}
-                style={{ marginTop: 24, paddingTop: 24, borderTop: "0.5px solid #e8e3da", flexShrink: 0 }}
+                style={{ marginTop: 24, paddingTop: 24, borderTop: "0.5px solid #e0dcd3", flexShrink: 0 }}
               >
                 {analysisPanelContent}
               </div>
@@ -1265,7 +1287,7 @@ export default function CreatePost() {
                     onChange={(e) => setTopic(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && generate()}
                     placeholder="What do you want to write about?"
-                    className="w-full rounded-lg border border-border-input bg-card px-4 py-2.5 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary transition-colors"
+                    className="w-full rounded-xl border border-border-subtle bg-card px-4 py-3 text-[15px] font-medium text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary shadow-sm focus-within:shadow-md focus-within:border-border transition-all duration-200"
                   />
                 </div>
 
@@ -1277,10 +1299,10 @@ export default function CreatePost() {
                       <button
                         key={f.id}
                         onClick={() => setFormat(f.id)}
-                        className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                        className={`flex-1 px-4 py-2.5 rounded-xl text-[14px] font-semibold border transition-all duration-200 ${
                           format === f.id
-                            ? "border-text-primary bg-hover text-text-primary"
-                            : "border-border text-text-secondary hover:text-text-primary hover:bg-hover bg-card"
+                            ? "border-text-primary bg-surface text-text-primary shadow-sm ring-1 ring-text-primary ring-opacity-10"
+                            : "border-border-subtle text-text-secondary hover:text-text-primary hover:bg-surface hover:border-border bg-card shadow-sm"
                         }`}
                       >
                         {f.label}
@@ -1297,10 +1319,10 @@ export default function CreatePost() {
                       <button
                         key={t.id}
                         onClick={() => setTone(t.id)}
-                        className={`flex-1 px-4 py-2.5 rounded-lg text-sm border transition-colors text-left ${
+                        className={`flex-1 px-4 py-3 rounded-xl text-sm border transition-all duration-200 text-left ${
                           tone === t.id
-                            ? "border-text-primary bg-hover text-text-primary"
-                            : "border-border text-text-secondary hover:text-text-primary hover:bg-hover bg-card"
+                            ? "border-text-primary bg-surface text-text-primary shadow-sm ring-1 ring-text-primary ring-opacity-10"
+                            : "border-border-subtle text-text-secondary hover:text-text-primary hover:bg-surface hover:border-border bg-card shadow-sm"
                         }`}
                       >
                         <div className="font-medium">{t.label}</div>
@@ -1323,7 +1345,7 @@ export default function CreatePost() {
                     onChange={(e) => setContext(e.target.value)}
                     placeholder="Specific angle, story, or data point you want included…"
                     rows={3}
-                    className="w-full rounded-lg border border-border-input bg-card px-4 py-3 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary resize-none transition-colors"
+                    className="w-full rounded-xl border border-border-subtle bg-card px-4 py-3 text-[15px] text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary resize-none shadow-sm focus-within:shadow-md focus-within:border-border transition-all duration-200"
                   />
                 </div>
 
@@ -1332,7 +1354,7 @@ export default function CreatePost() {
                 <button
                   onClick={() => generate()}
                   disabled={loading}
-                  className="w-full rounded-lg bg-text-primary text-card font-medium py-2.5 text-sm hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+                  className="w-full rounded-xl bg-amber text-white font-bold tracking-wide py-3.5 text-[15px] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed shadow-float hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-200"
                 >
                   Generate
                 </button>

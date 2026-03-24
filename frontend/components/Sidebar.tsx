@@ -59,21 +59,21 @@ export default function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-56 shrink-0 h-screen sticky top-0 flex flex-col border-r border-border bg-surface">
+    <aside className="w-[240px] shrink-0 h-screen sticky top-0 flex flex-col border-r border-border bg-page">
       {/* Logo */}
-      <div className="px-5 py-5 border-b border-border">
-        <Link href="/welcome" className="flex items-center gap-2 group">
-          <div className="w-6 h-6 rounded bg-[#e8e6e1] flex items-center justify-center">
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M2 9.5L4 3l4 5.5M5.5 7h3" stroke="#6b6760" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+      <div className="px-6 py-6 border-b border-border">
+        <Link href="/welcome" className="flex items-center gap-2.5 group">
+          <div className="w-7 h-7 rounded-md bg-[#e5e3db] flex items-center justify-center transition-colors group-hover:bg-[#dcdcd1]">
+            <svg width="14" height="14" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M2 9.5L4 3l4 5.5M5.5 7h3" stroke="#1a1918" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </div>
-          <span className="text-sm font-semibold text-text-primary tracking-tight">Contendo</span>
+          <span className="text-[15px] font-bold text-text-primary tracking-tight">Contendo</span>
         </Link>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+      <nav className="flex-1 px-4 py-5 space-y-1 overflow-y-auto">
         {NAV_ITEMS.map((item) => {
           const isActive =
             item.href === "/"
@@ -84,13 +84,15 @@ export default function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm transition-colors ${
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-[14px] transition-all duration-200 ${
                 isActive
-                  ? "bg-hover text-text-primary border-r-2 border-r-text-primary font-medium"
-                  : "text-text-secondary hover:text-text-primary hover:bg-hover"
+                  ? "bg-card text-text-primary font-semibold shadow-card border border-border-subtle"
+                  : "text-text-secondary hover:text-text-primary hover:bg-surface border border-transparent font-medium"
               }`}
             >
-              <span className="shrink-0">{item.icon}</span>
+              <span className={`shrink-0 ${isActive ? "text-text-primary" : "text-text-muted"}`}>
+                {item.icon}
+              </span>
               {item.label}
             </Link>
           );
@@ -98,15 +100,15 @@ export default function Sidebar() {
       </nav>
 
       {/* Bottom user row */}
-      <div className="px-4 py-4 border-t border-border">
-        <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-full bg-stat border border-border flex items-center justify-center shrink-0">
+      <div className="px-5 py-5 border-t border-border bg-page">
+        <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-surface transition-colors cursor-pointer border border-transparent hover:border-border-subtle">
+          <div className="w-8 h-8 rounded-full bg-stat border border-border-input flex items-center justify-center shrink-0">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="7" cy="5" r="2.5" stroke="#aaa89f" strokeWidth="1.3"/>
-              <path d="M2 12c0-2.5 2.24-4.5 5-4.5s5 2 5 4.5" stroke="#aaa89f" strokeWidth="1.3" strokeLinecap="round"/>
+              <circle cx="7" cy="5" r="2.5" stroke="#6b6862" strokeWidth="1.5"/>
+              <path d="M2 12c0-2.5 2.24-4.5 5-4.5s5 2 5 4.5" stroke="#6b6862" strokeWidth="1.5" strokeLinecap="round"/>
             </svg>
           </div>
-          <span className="text-xs text-text-muted">My workspace</span>
+          <span className="text-sm font-medium text-text-secondary">My workspace</span>
         </div>
       </div>
     </aside>

@@ -5,8 +5,8 @@
 @tailwind utilities;
 
 :root {
-  --background: #fdfcfb;
-  --foreground: #2c2a24;
+  --background: #faf9f7;
+  --foreground: #1a1918;
 }
 
 html {
@@ -20,17 +20,36 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Thin scrollbar */
+/* Sleek scrollbar */
 ::-webkit-scrollbar {
-  width: 4px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #e2ddd5;
-  border-radius: 2px;
+  background: #d6d1c7;
+  border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #c9bfb0;
+  background: #bfbbae;
 }
+
+/* Global focus states */
+*:focus-visible {
+  outline: 2px solid #1a1918;
+  outline-offset: 2px;
+}
+
+@keyframes toast-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+

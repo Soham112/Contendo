@@ -106,7 +106,7 @@ function DiagramCard({ diagram }: { diagram: Diagram }) {
       const win = window.open();
       if (win) {
         win.document.write(
-          `<html><body style="margin:0;background:#fdfcfb;display:flex;justify-content:center;padding:24px">` +
+          `<html><body style="margin:0;background:#faf9f7;display:flex;justify-content:center;padding:24px">` +
           `<img src="${dataURL}" style="max-width:100%;border-radius:8px" />` +
           `</body></html>`
         );
