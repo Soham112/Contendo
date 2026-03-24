@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useToast } from "@/components/ui/ToastProvider";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -80,7 +81,7 @@ function HistoryDiagramCard({ diagram }: { diagram: Diagram }) {
       const win = window.open();
       if (win) {
         win.document.write(
-          `<html><body style="margin:0;background:#fdfcfb;display:flex;justify-content:center;padding:24px">` +
+          `<html><body style="margin:0;background:#faf9f7;display:flex;justify-content:center;padding:24px">` +
           `<img src="${dataURL}" style="max-width:100%;border-radius:8px" />` +
           `</body></html>`
         );
@@ -97,7 +98,7 @@ function HistoryDiagramCard({ diagram }: { diagram: Diagram }) {
   };
 
   return (
-    <div className="rounded-lg border border-border bg-card overflow-hidden">
+    <div className="rounded-xl border border-border-subtle bg-card overflow-hidden shadow-sm hover:shadow-card transition-all duration-200">
       <div className="px-4 py-2.5 border-b border-border-subtle">
         <p className="text-xs font-medium text-text-secondary">
           Diagram —{" "}
@@ -214,6 +215,7 @@ function PostCard({
   const [deleting, setDeleting] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [restoredMsg, setRestoredMsg] = useState("");
+  const { showToast } = useToast();
 
   const isConfirming = confirmingId === post.id;
 
@@ -229,6 +231,7 @@ function PostCard({
   const handleCopy = async () => {
     await navigator.clipboard.writeText(activeContent);
     setCopied(true);
+    showToast("Post content copied", "success");
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -237,9 +240,11 @@ function PostCard({
     try {
       await fetch(`${API}/history/${post.id}`, { method: "DELETE" });
       onDelete(post.id);
+      showToast("Post deleted from history", "success");
     } catch {
       setDeleting(false);
       setConfirmingId(null);
+      showToast("Failed to delete post", "error");
     }
   };
 
@@ -264,8 +269,10 @@ function PostCard({
         // ignore
       }
       setRestoredMsg(`v${data.version_number} restored — go to Create Post to edit and repost`);
+      showToast(`v${data.version_number} restored to Create Post`, "info");
     } catch {
       setRestoredMsg("Restore failed. Please try again.");
+      showToast("Restore failed", "error");
     } finally {
       setRestoring(false);
     }
@@ -278,7 +285,7 @@ function PostCard({
   });
 
   return (
-    <div className="rounded-lg border border-border bg-card overflow-hidden">
+    <div className="rounded-xl border border-border-subtle bg-card overflow-hidden shadow-sm hover:shadow-card transition-all duration-200">
       {/* Card header */}
       <div className="px-5 py-4">
         <div className="flex items-start justify-between gap-4">
@@ -411,6 +418,7 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
 
   const handleDeletePost = (id: number) => {
     setPosts((prev) => prev.filter((p) => p.id !== id));
@@ -428,13 +436,33 @@ export default function HistoryPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  const filteredPosts = posts.filter(p => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return p.topic.toLowerCase().includes(q) || p.content.toLowerCase().includes(q);
+  });
+
   return (
     <div className="space-y-7">
-      <div>
-        <h1 className="text-xl font-semibold text-text-primary">History</h1>
-        <p className="mt-1 text-text-secondary text-sm">
-          Auto-saved posts. Newest first.
-        </p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-text-primary">History</h1>
+          <p className="mt-1 text-text-secondary text-sm">
+            Auto-saved posts. Newest first.
+          </p>
+        </div>
+
+        {/* Search */}
+        <div className="relative w-full md:w-[320px] shrink-0">
+          <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-hint" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input
+            type="text"
+            placeholder="Search topic or content..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 text-[14px] bg-card border border-border-subtle rounded-xl focus:outline-none focus:border-text-primary shadow-sm focus:shadow-md transition-all text-text-primary placeholder:text-text-hint"
+          />
+        </div>
       </div>
 
       {loading && (
@@ -446,17 +474,23 @@ export default function HistoryPage() {
       )}
 
       {!loading && !error && posts.length === 0 && (
-        <div className="rounded-lg border border-border bg-card px-6 py-12 text-center">
-          <p className="text-text-muted text-sm">No posts yet.</p>
-          <p className="text-text-hint text-xs mt-1">
+        <div className="rounded-xl border border-border-subtle shadow-sm bg-card px-6 py-12 text-center">
+          <p className="text-text-muted text-[15px] font-medium">No posts yet.</p>
+          <p className="text-text-hint text-[14px] mt-1">
             Posts are auto-saved when you generate. They will appear here.
           </p>
         </div>
       )}
 
-      {!loading && posts.length > 0 && (
+      {!loading && posts.length > 0 && filteredPosts.length === 0 && (
+        <div className="rounded-xl border border-border-subtle shadow-sm bg-card px-6 py-12 text-center">
+          <p className="text-text-muted text-[15px] font-medium">No posts matching your search.</p>
+        </div>
+      )}
+
+      {!loading && filteredPosts.length > 0 && (
         <div className="space-y-3">
-          {posts.map((post) => (
+          {filteredPosts.map((post) => (
             <PostCard
               key={post.id}
               post={post}

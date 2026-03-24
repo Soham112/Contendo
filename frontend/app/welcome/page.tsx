@@ -3,360 +3,177 @@ import Link from "next/link";
 const STEPS = [
   {
     title: "Feed your knowledge",
-    description:
-      "Paste articles, YouTube transcripts, PDFs, or raw notes into Contendo. The system chunks and embeds everything into a personal vector memory store — searchable by meaning, not just keywords.",
+    description: "Paste articles, YouTube transcripts, PDFs, or raw notes into Contendo. The system chunks and embeds everything into a personal vector memory store — searchable by meaning, not just keywords.",
   },
   {
     title: "Set up your voice profile",
-    description:
-      "Fill in your profile once: your role, your opinions, phrases you use, words you avoid, and a few writing samples. This is what separates posts that sound like you from posts that sound like ChatGPT.",
+    description: "Fill in your profile once: your role, your opinions, phrases you use, words you avoid, and a few writing samples. This is what separates posts that sound like you from posts that sound like ChatGPT.",
   },
   {
     title: "Generate a draft",
-    description:
-      "Pick a topic, format, and tone. Contendo retrieves the most relevant chunks from your memory, feeds them into the draft alongside your voice profile, then runs a humanizer pass to strip AI patterns.",
+    description: "Pick a topic, format, and tone. Contendo retrieves the most relevant chunks from your memory, feeds them into the draft alongside your voice profile, then runs a humanizer pass to strip AI patterns.",
   },
   {
     title: "Score, refine, publish",
-    description:
-      "Every post gets an authenticity score across 5 dimensions. If anything scores low, one click sends targeted feedback to the refiner — which fixes exactly what's flagged, nothing else.",
+    description: "Every post gets an authenticity score across 5 dimensions. If anything scores low, one click sends targeted feedback to the refiner — which fixes exactly what's flagged, nothing else.",
   },
 ];
 
 export default function WelcomePage() {
   return (
-    <div style={{ backgroundColor: "#fdfcfb", minHeight: "100vh", fontFamily: '"DM Sans", system-ui, sans-serif' }}>
+    <div className="min-h-screen bg-page flex flex-col font-sans">
       {/* Top Navigation */}
-      <nav style={{
-        height: "56px",
-        backgroundColor: "#fdfcfb",
-        borderBottom: "0.5px solid #e8e3da",
-        padding: "0 48px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-      }}>
-        {/* Logo */}
-        <Link href="/welcome" style={{ fontSize: "16px", fontWeight: 500, color: "#2c2a24", letterSpacing: "-0.01em", textDecoration: "none" }}>
+      <nav className="h-16 px-6 md:px-12 flex items-center justify-between border-b border-border bg-page/80 backdrop-blur-md sticky top-0 z-50">
+        <Link href="/welcome" className="flex items-center gap-2.5 text-base font-bold text-text-primary tracking-tight">
+          <div className="w-6 h-6 rounded-md bg-[#e5e3db] flex items-center justify-center">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M2 9.5L4 3l4 5.5M5.5 7h3" stroke="#1a1918" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
           Contendo
         </Link>
 
         {/* Center links */}
-        <div style={{ display: "flex", gap: "28px", alignItems: "center" }}>
-          <a href="#features" style={{ fontSize: "13.5px", color: "#7a786f", textDecoration: "none", cursor: "pointer" }}>Features</a>
-          <a href="#how-it-works" style={{ fontSize: "13.5px", color: "#7a786f", textDecoration: "none", cursor: "pointer" }}>How it works</a>
-          <a href="#" style={{ fontSize: "13.5px", color: "#7a786f", textDecoration: "none", cursor: "pointer" }}>Pricing</a>
+        <div className="hidden md:flex items-center gap-8 h-full">
+          {/* Features Dropdown */}
+          <div className="relative group h-full flex items-center">
+            <button className="text-sm font-medium text-text-secondary group-hover:text-text-primary transition-colors flex items-center gap-1.5 h-full cursor-pointer focus:outline-none">
+              Features
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-60 group-hover:rotate-180 transition-transform duration-200">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </button>
+            <div className="absolute top-[calc(100%-12px)] left-1/2 -translate-x-1/2 w-44 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 pt-3 z-50">
+              <div className="bg-card border border-border-subtle flex flex-col rounded-xl shadow-float overflow-hidden py-1.5">
+                <Link href="/" className="px-4 py-2.5 text-[14px] text-text-secondary hover:text-text-primary hover:bg-hover transition-colors font-medium text-center">
+                  Feed Memory
+                </Link>
+                <Link href="/library" className="px-4 py-2.5 text-[14px] text-text-secondary hover:text-text-primary hover:bg-hover transition-colors font-medium border-t border-border-subtle text-center">
+                  Library
+                </Link>
+                <Link href="/create" className="px-4 py-2.5 text-[14px] text-text-secondary hover:text-text-primary hover:bg-hover transition-colors font-medium border-t border-border-subtle text-center">
+                  Create Post
+                </Link>
+                <Link href="/ideas" className="px-4 py-2.5 text-[14px] text-text-secondary hover:text-text-primary hover:bg-hover transition-colors font-medium border-t border-border-subtle text-center">
+                  Get Ideas
+                </Link>
+                <Link href="/history" className="px-4 py-2.5 text-[14px] text-text-secondary hover:text-text-primary hover:bg-hover transition-colors font-medium border-t border-border-subtle text-center">
+                  History
+                </Link>
+              </div>
+            </div>
+          </div>
+          
+          <a href="#how-it-works" className="text-sm font-medium text-text-secondary hover:text-text-primary transition-colors flex items-center h-full">How it works</a>
+          <a href="#" className="text-sm font-medium text-text-secondary hover:text-text-primary transition-colors flex items-center h-full">Pricing</a>
         </div>
 
         {/* Right buttons */}
-        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-          <Link
-            href="/"
-            style={{
-              border: "0.5px solid #c8c3b8",
-              borderRadius: "8px",
-              padding: "9px 18px",
-              fontSize: "13px",
-              color: "#4a4843",
-              backgroundColor: "transparent",
-              textDecoration: "none",
-              cursor: "pointer",
-              display: "inline-block",
-            }}
-          >
+        <div className="flex items-center gap-3">
+          <Link href="/" className="px-4 py-2 text-sm font-medium text-text-secondary border border-border-input rounded-lg hover:bg-surface hover:text-text-primary transition-colors hidden sm:block">
             Log in
           </Link>
-          <Link
-            href="/"
-            style={{
-              backgroundColor: "#2c2a24",
-              color: "#f5f4f1",
-              border: "none",
-              borderRadius: "8px",
-              padding: "9px 18px",
-              fontSize: "13px",
-              fontWeight: 500,
-              textDecoration: "none",
-              cursor: "pointer",
-              display: "inline-block",
-            }}
-          >
+          <Link href="/" className="px-5 py-2 text-sm font-semibold text-white bg-amber rounded-lg hover:opacity-90 transition-opacity shadow-sm">
             Get started free
           </Link>
         </div>
       </nav>
 
       {/* Main content */}
-      <main style={{ backgroundColor: "#fdfcfb", padding: "80px 48px 0" }}>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
+      <main className="flex-1 px-6 md:px-12 pt-28 pb-16">
+        <div className="flex flex-col items-center text-center max-w-4xl mx-auto">
           {/* Eyebrow */}
-          <p style={{
-            fontSize: "11.5px",
-            fontWeight: 500,
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            color: "#6b6760",
-            margin: "0 0 20px 0",
-          }}>
-            LinkedIn content, powered by your knowledge
-          </p>
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface border border-border-subtle mb-8">
+            <span className="w-1.5 h-1.5 rounded-full bg-text-primary opacity-80" />
+            <p className="text-[11px] font-semibold tracking-widest uppercase text-text-secondary">
+              Powered by your knowledge
+            </p>
+          </div>
 
           {/* H1 */}
-          <h1 style={{
-            fontSize: "42px",
-            fontWeight: 500,
-            color: "#2c2a24",
-            lineHeight: 1.18,
-            letterSpacing: "-0.02em",
-            maxWidth: "640px",
-            margin: "0 0 20px 0",
-          }}>
-            Write posts that sound like{" "}
-            <span style={{ fontStyle: "italic", color: "#2c2a24", fontWeight: 500 }}>you</span>
-            {" "}— not like everyone else
+          <h1 className="text-5xl md:text-[56px] font-bold text-text-primary leading-[1.12] tracking-tight mb-6 max-w-3xl text-balance">
+            Write posts that sound like <span className="italic font-medium text-text-primary">you</span> — not like everyone else
           </h1>
 
           {/* Subheadline */}
-          <p style={{
-            fontSize: "15px",
-            color: "#8a8880",
-            lineHeight: 1.65,
-            maxWidth: "480px",
-            margin: "0 0 40px 0",
-          }}>
+          <p className="text-lg md:text-[19px] text-text-secondary leading-relaxed max-w-2xl mb-12 text-balance font-medium">
             Contendo learns your knowledge base, your voice, and your style. Then it writes content that actually sounds like you wrote it.
           </p>
 
           {/* CTA buttons */}
-          <div style={{ display: "flex", gap: "12px", justifyContent: "center", marginBottom: "64px" }}>
-            <Link
-              href="/"
-              style={{
-                border: "1.5px solid #2c2a24",
-                borderRadius: "10px",
-                padding: "14px 28px",
-                fontSize: "14px",
-                fontWeight: 500,
-                color: "#2c2a24",
-                backgroundColor: "transparent",
-                textDecoration: "none",
-                cursor: "pointer",
-                display: "inline-block",
-              }}
-            >
+          <div className="flex flex-col sm:flex-row items-center gap-4 mb-28 w-full sm:w-auto">
+            <Link href="/" className="w-full sm:w-auto px-8 py-4 text-[15px] font-semibold text-white bg-amber rounded-xl hover:opacity-90 transition-all shadow-float hover:shadow-card-hover hover:-translate-y-0.5">
               Start writing for free
             </Link>
-            <a
-              href="#how-it-works"
-              style={{
-                border: "0.5px solid #d0c2b8",
-                borderRadius: "10px",
-                padding: "14px 28px",
-                fontSize: "14px",
-                color: "#5a5855",
-                backgroundColor: "transparent",
-                textDecoration: "none",
-                cursor: "pointer",
-                display: "inline-block",
-              }}
-            >
+            <a href="#how-it-works" className="w-full sm:w-auto px-8 py-4 text-[15px] font-semibold text-text-primary bg-surface border border-border-input rounded-xl hover:bg-hover hover:border-border transition-colors">
               See how it works
             </a>
           </div>
 
           {/* Feature cards */}
-          <div
-            id="features"
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(3, 1fr)",
-              gap: "16px",
-              maxWidth: "780px",
-              width: "100%",
-              margin: "0 auto",
-              paddingBottom: "80px",
-            }}
-          >
-            {/* Card 1 — Feed your knowledge */}
-            <div style={{
-              backgroundColor: "#ffffff",
-              border: "0.5px solid #e8e3da",
-              borderRadius: "12px",
-              padding: "24px",
-              textAlign: "left",
-            }}>
-              <div style={{
-                width: "36px",
-                height: "36px",
-                backgroundColor: "#f0eeea",
-                borderRadius: "8px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                marginBottom: "16px",
-              }}>
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <rect x="8" y="1.5" width="7.5" height="7.5" rx="0.8" transform="rotate(45 8 1.5)" stroke="#6b6760" strokeWidth="1.2"/>
+          <div id="features" className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
+            {/* Card 1 */}
+            <div className="text-left p-8 bg-card rounded-2xl border border-border-subtle shadow-card hover:shadow-card-hover transition-all duration-300">
+              <div className="w-11 h-11 rounded-xl bg-surface border border-border-subtle flex items-center justify-center mb-6">
+                <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
+                  <rect x="8" y="1.5" width="7.5" height="7.5" rx="1.5" transform="rotate(45 8 1.5)" stroke="#1a1918" strokeWidth="1.5"/>
                 </svg>
               </div>
-              <p style={{ fontSize: "13.5px", fontWeight: 500, color: "#2c2a24", margin: "0 0 8px 0" }}>
-                Feed your knowledge
-              </p>
-              <p style={{ fontSize: "12.5px", color: "#9a9890", lineHeight: 1.6, margin: 0 }}>
-                Articles, notes, YouTube videos, PDFs — anything you&apos;ve read becomes fuel for your posts.
-              </p>
+              <h3 className="text-[17px] font-bold text-text-primary mb-3">Feed your knowledge</h3>
+              <p className="text-[15px] text-text-secondary leading-relaxed">Articles, notes, YouTube videos, PDFs — anything you've read becomes fuel for your posts.</p>
             </div>
 
-            {/* Card 2 — Generate in your voice */}
-            <div style={{
-              backgroundColor: "#ffffff",
-              border: "0.5px solid #e8e3da",
-              borderRadius: "12px",
-              padding: "24px",
-              textAlign: "left",
-            }}>
-              <div style={{
-                width: "36px",
-                height: "36px",
-                backgroundColor: "#f0eeea",
-                borderRadius: "8px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                marginBottom: "16px",
-              }}>
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path d="M8 1.5L9.4 6.6L14.5 8L9.4 9.4L8 14.5L6.6 9.4L1.5 8L6.6 6.6L8 1.5Z" stroke="#6b6760" strokeWidth="1.2" strokeLinejoin="round"/>
+            {/* Card 2 */}
+            <div className="text-left p-8 bg-card rounded-2xl border border-border-subtle shadow-card hover:shadow-card-hover transition-all duration-300">
+              <div className="w-11 h-11 rounded-xl bg-surface border border-border-subtle flex items-center justify-center mb-6">
+                <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
+                  <path d="M8 1.5L9.4 6.6L14.5 8L9.4 9.4L8 14.5L6.6 9.4L1.5 8L6.6 6.6L8 1.5Z" stroke="#1a1918" strokeWidth="1.5" strokeLinejoin="round"/>
                 </svg>
               </div>
-              <p style={{ fontSize: "13.5px", fontWeight: 500, color: "#2c2a24", margin: "0 0 8px 0" }}>
-                Generate in your voice
-              </p>
-              <p style={{ fontSize: "12.5px", color: "#9a9890", lineHeight: 1.6, margin: 0 }}>
-                The AI learns your writing style, your opinions, and your phrases — then drafts in your exact voice.
-              </p>
+              <h3 className="text-[17px] font-bold text-text-primary mb-3">Generate in your voice</h3>
+              <p className="text-[15px] text-text-secondary leading-relaxed">The AI learns your writing style, your opinions, and your phrases — then drafts in your exact voice.</p>
             </div>
 
-            {/* Card 3 — Score and refine */}
-            <div style={{
-              backgroundColor: "#ffffff",
-              border: "0.5px solid #e8e3da",
-              borderRadius: "12px",
-              padding: "24px",
-              textAlign: "left",
-            }}>
-              <div style={{
-                width: "36px",
-                height: "36px",
-                backgroundColor: "#f0eeea",
-                borderRadius: "8px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                marginBottom: "16px",
-              }}>
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <circle cx="8" cy="8" r="5.5" stroke="#6b6760" strokeWidth="1.2"/>
-                  <path d="M8 5V8.2L10 10" stroke="#6b6760" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+            {/* Card 3 */}
+            <div className="text-left p-8 bg-card rounded-2xl border border-border-subtle shadow-card hover:shadow-card-hover transition-all duration-300">
+              <div className="w-11 h-11 rounded-xl bg-surface border border-border-subtle flex items-center justify-center mb-6">
+                <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="8" r="5.5" stroke="#1a1918" strokeWidth="1.5"/>
+                  <path d="M8 5V8.2L10 10" stroke="#1a1918" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </div>
-              <p style={{ fontSize: "13.5px", fontWeight: 500, color: "#2c2a24", margin: "0 0 8px 0" }}>
-                Score and refine
-              </p>
-              <p style={{ fontSize: "12.5px", color: "#9a9890", lineHeight: 1.6, margin: 0 }}>
-                Every post gets an authenticity score. One-click refinement fixes what the AI flags before you publish.
-              </p>
+              <h3 className="text-[17px] font-bold text-text-primary mb-3">Score and refine</h3>
+              <p className="text-[15px] text-text-secondary leading-relaxed">Every post gets an authenticity score. One-click refinement fixes what the AI flags before you publish.</p>
             </div>
           </div>
         </div>
       </main>
 
       {/* How it works */}
-      <section
-        id="how-it-works"
-        style={{
-          borderTop: "0.5px solid #e8e3da",
-          backgroundColor: "#fdfcfb",
-          padding: "80px 48px",
-        }}
-      >
-        <div style={{ maxWidth: "760px", margin: "0 auto" }}>
-          {/* Section header */}
-          <div style={{ textAlign: "center", marginBottom: "56px" }}>
-            <p style={{
-              fontSize: "11px",
-              fontWeight: 500,
-              letterSpacing: "0.1em",
-              textTransform: "uppercase",
-              color: "#9a9890",
-              margin: "0 0 14px 0",
-            }}>
-              How it works
-            </p>
-            <h2 style={{
-              fontSize: "28px",
-              fontWeight: 500,
-              color: "#2c2a24",
-              letterSpacing: "-0.01em",
-              margin: "0 0 12px 0",
-            }}>
-              From raw knowledge to published post in minutes
-            </h2>
-            <p style={{ fontSize: "14px", color: "#8a8880", margin: 0 }}>
-              Four steps. No templates. No generic output.
-            </p>
+      <section id="how-it-works" className="bg-surface border-y border-border py-28 px-6 md:px-12">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-20">
+            <h2 className="text-3xl md:text-[34px] font-bold text-text-primary tracking-tight mb-4">From raw knowledge to published post</h2>
+            <p className="text-[17px] font-medium text-text-secondary">Four steps. No templates. No generic output.</p>
           </div>
 
-          {/* Steps */}
-          <div style={{ maxWidth: "600px", margin: "0 auto" }}>
+          <div className="max-w-[680px] mx-auto space-y-12">
             {STEPS.map((step, i) => (
-              <div
-                key={i}
-                style={{
-                  display: "flex",
-                  gap: "24px",
-                  alignItems: "flex-start",
-                  marginBottom: i < STEPS.length - 1 ? "40px" : 0,
-                  position: "relative",
-                }}
-              >
-                {/* Step number */}
-                <div style={{ position: "relative", flexShrink: 0 }}>
-                  <div style={{
-                    width: "32px",
-                    height: "32px",
-                    backgroundColor: "#2c2a24",
-                    borderRadius: "50%",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: "12px",
-                    fontWeight: 500,
-                    color: "#ffffff",
-                  }}>
+              <div key={i} className="flex gap-7 relative group">
+                {/* Number */}
+                <div className="relative shrink-0 z-10 pt-1">
+                  <div className="w-10 h-10 rounded-full bg-card border border-border shadow-sm flex items-center justify-center text-[15px] font-bold text-text-primary group-hover:border-text-primary transition-colors">
                     {i + 1}
                   </div>
-                  {/* Connector line */}
+                  {/* Line */}
                   {i < STEPS.length - 1 && (
-                    <div style={{
-                      position: "absolute",
-                      left: "15px",
-                      top: "32px",
-                      width: "1px",
-                      height: "40px",
-                      backgroundColor: "#e2ddd5",
-                    }} />
+                    <div className="absolute top-[52px] left-1/2 -ml-[1px] h-[calc(100%+16px)] w-[2px] bg-border" />
                   )}
                 </div>
-
-                {/* Step content */}
-                <div style={{ paddingTop: "4px" }}>
-                  <p style={{ fontSize: "15px", fontWeight: 500, color: "#2c2a24", margin: "0 0 6px 0" }}>
-                    {step.title}
-                  </p>
-                  <p style={{ fontSize: "13.5px", color: "#8a8880", lineHeight: 1.65, margin: 0 }}>
-                    {step.description}
-                  </p>
+                {/* Content */}
+                <div className="pt-2 pb-6">
+                  <h3 className="text-[19px] font-bold text-text-primary mb-2.5">{step.title}</h3>
+                  <p className="text-text-secondary leading-relaxed text-[16px] max-w-xl">{step.description}</p>
                 </div>
               </div>
             ))}
@@ -365,20 +182,11 @@ export default function WelcomePage() {
       </section>
 
       {/* Footer */}
-      <footer style={{
-        borderTop: "0.5px solid #e8e3da",
-        backgroundColor: "#f5f4f1",
-        padding: "32px 48px",
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-      }}>
-        <p style={{ fontSize: "13px", color: "#9a9890", margin: 0 }}>
-          © 2026 Contendo. Built for creators who think in public.
-        </p>
-        <div style={{ display: "flex", gap: "20px" }}>
-          <a href="#" style={{ fontSize: "13px", color: "#9a9890", textDecoration: "none", cursor: "pointer" }}>Privacy</a>
-          <a href="#" style={{ fontSize: "13px", color: "#9a9890", textDecoration: "none", cursor: "pointer" }}>Terms</a>
+      <footer className="bg-page py-10 px-6 md:px-12 flex flex-col sm:flex-row items-center justify-between gap-6 border-t border-border">
+        <p className="text-[14px] font-medium text-text-muted">© 2026 Contendo. Built for creators who think in public.</p>
+        <div className="flex items-center gap-8">
+          <a href="#" className="text-[14px] font-medium text-text-muted hover:text-text-primary transition-colors">Privacy</a>
+          <a href="#" className="text-[14px] font-medium text-text-muted hover:text-text-primary transition-colors">Terms</a>
         </div>
       </footer>
     </div>

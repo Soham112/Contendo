@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useToast } from "@/components/ui/ToastProvider";
 import { useRouter } from "next/navigation";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -54,14 +55,14 @@ function IdeaCard({
     <div
       style={{
         background: "#ffffff",
-        border: "0.5px solid #e2ddd5",
+        border: "0.5px solid #e0dcd3",
         borderRadius: 10,
         padding: "18px 20px",
         display: "flex",
         justifyContent: "space-between",
         alignItems: "flex-start",
         gap: 20,
-        borderLeft: showLeftBorder ? "2px solid #2c2a24" : undefined,
+        borderLeft: showLeftBorder ? "2px solid #1a1918" : undefined,
       }}
     >
       {/* Left side */}
@@ -70,7 +71,7 @@ function IdeaCard({
           style={{
             fontSize: 14,
             fontWeight: 500,
-            color: "#2c2a24",
+            color: "#1a1918",
             lineHeight: 1.45,
             marginBottom: 6,
           }}
@@ -80,7 +81,7 @@ function IdeaCard({
         <p
           style={{
             fontSize: 13,
-            color: "#7a786f",
+            color: "#6b6862",
             lineHeight: 1.6,
             marginBottom: 10,
           }}
@@ -93,9 +94,9 @@ function IdeaCard({
               fontSize: 11,
               borderRadius: 20,
               padding: "3px 10px",
-              background: "#f0eeea",
-              border: "0.5px solid #e2ddd5",
-              color: "#7a786f",
+              background: "#eeebe3",
+              border: "0.5px solid #e0dcd3",
+              color: "#6b6862",
             }}
           >
             {FORMAT_LABELS[idea.format] ?? idea.format}
@@ -103,7 +104,7 @@ function IdeaCard({
           <span
             style={{
               fontSize: 12,
-              color: "#aaa89f",
+              color: "#969288",
               fontStyle: "italic",
               lineHeight: 1.5,
             }}
@@ -126,7 +127,7 @@ function IdeaCard({
         <button
           onClick={onUseThis}
           style={{
-            background: "#2c2a24",
+            background: "#1a1918",
             color: "#ffffff",
             padding: "8px 18px",
             fontSize: 13,
@@ -148,7 +149,7 @@ function IdeaCard({
             border: "none",
             cursor: "pointer",
             fontSize: 12,
-            color: isSaved ? "#2c2a24" : "#aaa89f",
+            color: isSaved ? "#1a1918" : "#969288",
             padding: 0,
           }}
         >
@@ -172,6 +173,7 @@ export default function IdeasPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [clearConfirm, setClearConfirm] = useState(false);
+  const { showToast } = useToast();
 
   // Restore from localStorage on mount
   useEffect(() => {
@@ -204,11 +206,13 @@ export default function IdeasPage() {
       const data = await res.json();
       const newIdeas: Idea[] = data.suggestions ?? [];
       setIdeas(newIdeas);
+      showToast(`Generated ${newIdeas.length} ideas`, "success");
       lsSet(LS_IDEAS, JSON.stringify(newIdeas));
       lsSet(LS_TOPIC, topic);
       lsSet(LS_COUNT, String(count));
     } catch {
       setError("Couldn't load ideas — check that the backend is running and try again.");
+      showToast("Failed to generate ideas", "error");
     } finally {
       setLoading(false);
     }
@@ -220,6 +224,7 @@ export default function IdeasPage() {
     lsSet(LS_SAVED, JSON.stringify(updated));
     setSavedIdeas(updated);
     setSavedTitles(new Set(updated.map((i) => i.title)));
+    showToast("Idea saved to pinned list", "success");
   };
 
   const handleUnsave = (idea: Idea) => {
@@ -227,6 +232,7 @@ export default function IdeasPage() {
     lsSet(LS_SAVED, JSON.stringify(updated));
     setSavedIdeas(updated);
     setSavedTitles(new Set(updated.map((i) => i.title)));
+    showToast("Idea removed from pinned list", "info");
   };
 
   const handleClearAll = () => {
@@ -250,11 +256,11 @@ export default function IdeasPage() {
     <div className="-mx-8 -mt-10 -mb-10 min-h-screen bg-page flex flex-col">
       {/* Topbar */}
       <div
-        style={{ borderBottom: "0.5px solid #e8e3da", height: "52px" }}
+        style={{ borderBottom: "0.5px solid #e0dcd3", height: "52px" }}
         className="flex items-center px-8 bg-page shrink-0"
       >
         <div className="flex items-baseline gap-3">
-          <span className="text-sm font-medium text-text-primary">Get ideas</span>
+          <span className="text-[15px] font-semibold text-text-primary tracking-tight">Get ideas</span>
           <span className="text-xs text-text-muted">Find your next post topic</span>
         </div>
       </div>
@@ -273,7 +279,7 @@ export default function IdeasPage() {
               onKeyDown={(e) => e.key === "Enter" && !loading && handleGenerate()}
               placeholder="Any topic in mind? — e.g. 'production ML', 'RAG systems'  (optional)"
               style={{ fontSize: 14, flex: 1 }}
-              className="rounded-lg border border-border-input bg-card px-4 py-3 text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary transition-colors"
+              className="rounded-xl border border-border-subtle bg-card px-4 py-3.5 text-[15px] font-medium text-text-primary shadow-sm focus-within:shadow-md focus-within:border-border transition-all duration-200 placeholder:text-text-hint outline-none"
             />
 
             {/* Counter */}
@@ -290,7 +296,7 @@ export default function IdeasPage() {
                   setCount(Math.min(15, Math.max(3, Number(e.target.value))))
                 }
                 style={{ width: 80 }}
-                className="rounded-lg border border-border-input bg-card px-3 py-3 text-sm text-text-primary focus:outline-none focus:border-text-primary text-center transition-colors"
+                className="rounded-xl border border-border-subtle shadow-sm focus:shadow-md focus:border-border transition-all duration-200 bg-card px-3 py-3.5 text-[15px] font-medium text-text-primary outline-none text-center"
               />
             </div>
 
@@ -299,7 +305,7 @@ export default function IdeasPage() {
               onClick={handleGenerate}
               disabled={loading}
               style={{ fontSize: 13.5 }}
-              className="rounded-lg bg-text-primary text-card px-5 py-3 font-medium transition-opacity hover:opacity-90 disabled:opacity-60 whitespace-nowrap"
+              className="rounded-xl bg-amber text-white shadow-float hover:shadow-card-hover hover:-translate-y-0.5 px-6 py-3.5 font-bold tracking-wide transition-all duration-200 disabled:opacity-60 whitespace-nowrap"
             >
               {loading ? "Generating..." : "Generate ideas"}
             </button>

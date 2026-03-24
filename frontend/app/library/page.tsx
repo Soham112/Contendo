@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useToast } from "@/components/ui/ToastProvider";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -20,10 +21,10 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 const TYPE_COLORS: Record<string, string> = {
-  article: "bg-hover text-[#5a5855] border-border",
-  note: "bg-hover text-[#5a5855] border-border",
-  image: "bg-hover text-[#5a5855] border-border",
-  youtube: "bg-hover text-[#5a5855] border-border",
+  article: "bg-hover text-[#6b6862] border-border",
+  note: "bg-hover text-[#6b6862] border-border",
+  image: "bg-hover text-[#6b6862] border-border",
+  youtube: "bg-hover text-[#6b6862] border-border",
 };
 
 type FilterType = "all" | "article" | "note" | "image" | "youtube";
@@ -52,6 +53,8 @@ function SourceCard({
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
 
+  const { showToast } = useToast();
+
   const typeLabel = TYPE_LABELS[source.source_type] ?? source.source_type;
   const typeColor = TYPE_COLORS[source.source_type] ?? "bg-stat border-border text-text-muted";
 
@@ -70,18 +73,21 @@ function SourceCard({
       }
       const data = await res.json();
       onDelete(source.source_title, data.chunks_removed);
+      showToast("Source removed from memory", "success");
     } catch (e: unknown) {
       setDeleteError(e instanceof Error ? e.message : "Something went wrong.");
-      setDeleting(false);
+      showToast("Failed to remove source", "error");
       setConfirming(false);
+    } finally {
+      setDeleting(false);
     }
   };
 
   return (
-    <div className="rounded-lg border border-border bg-card px-5 py-4 space-y-3">
+    <div className="rounded-xl border border-border-subtle bg-card px-5 py-5 space-y-3 shadow-sm hover:shadow-card transition-all duration-200">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-text-primary leading-snug">
+          <p className="text-[15px] font-semibold text-text-primary leading-snug">
             {source.source_title || "Untitled"}
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -154,6 +160,7 @@ export default function LibraryPage() {
 
   const [filter, setFilter] = useState<FilterType>("all");
   const [sort, setSort] = useState<SortOrder>("newest");
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     fetch(`${API}/library`)
@@ -178,6 +185,14 @@ export default function LibraryPage() {
 
   const filtered = sources
     .filter((s) => filter === "all" || s.source_type === filter)
+    .filter((s) => {
+      if (!search.trim()) return true;
+      const q = search.toLowerCase();
+      return (
+        s.source_title.toLowerCase().includes(q) ||
+        s.tags.some((t) => t.toLowerCase().includes(q))
+      );
+    })
     .sort((a, b) => {
       const aT = a.ingested_at || "";
       const bT = b.ingested_at || "";
@@ -196,7 +211,7 @@ export default function LibraryPage() {
     <div className="space-y-7">
       {/* Header */}
       <div>
-        <h1 className="text-xl font-semibold text-text-primary">Library</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-text-primary">Library</h1>
         <p className="mt-1 text-text-secondary text-sm">
           Everything you have fed into memory.
         </p>
@@ -216,7 +231,7 @@ export default function LibraryPage() {
             ].map(({ label, value }) => (
               <div
                 key={label}
-                className="rounded-lg border border-border bg-stat px-4 py-4 text-center"
+                className="rounded-xl border border-border-subtle bg-card shadow-sm px-5 py-5 text-center"
               >
                 <p className="text-2xl font-semibold text-text-primary tabular-nums">{value}</p>
                 <p className="text-xs text-text-muted mt-1">{label}</p>
@@ -225,8 +240,21 @@ export default function LibraryPage() {
           </div>
 
           {/* Filter + sort bar */}
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div className="flex gap-1.5">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            {/* Search */}
+            <div className="relative w-full md:w-[320px] shrink-0">
+              <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-hint" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              <input
+                type="text"
+                placeholder="Search titles or tags..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 text-[14px] bg-card border border-border-subtle rounded-xl focus:outline-none focus:border-text-primary shadow-sm focus:shadow-md transition-all text-text-primary placeholder:text-text-hint"
+              />
+            </div>
+
+            <div className="flex items-center justify-between w-full md:w-auto overflow-x-auto pb-2 md:pb-0 gap-4 shrink-0">
+              <div className="flex gap-1.5 shrink-0">
               {FILTER_TABS.map((tab) => (
                 <button
                   key={tab.id}
@@ -250,8 +278,9 @@ export default function LibraryPage() {
               <option value="oldest">Oldest first</option>
             </select>
           </div>
+        </div>
 
-          {/* Empty state */}
+        {/* Empty state */}
           {sources.length === 0 && (
             <div className="rounded-lg border border-border bg-card px-6 py-12 text-center">
               <p className="text-text-muted text-sm">Your library is empty.</p>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useToast } from "@/components/ui/ToastProvider";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -99,6 +100,7 @@ export default function FeedMemory() {
   const [stats, setStats] = useState<Stats | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const docFileInputRef = useRef<HTMLInputElement>(null);
+  const { showToast } = useToast();
 
   const fetchStats = async () => {
     try {
@@ -310,6 +312,7 @@ export default function FeedMemory() {
 
       const data = await res.json();
       setResult(data);
+      showToast(`Ingested successfully! Added ${data.chunks_added ?? 0} chunks.`, "success");
       setContent("");
       setUrlInput("");
       setImageFile(null);
@@ -331,7 +334,7 @@ export default function FeedMemory() {
     <div className="space-y-7">
       {/* Header */}
       <div>
-        <h1 className="text-xl font-semibold text-text-primary">Feed Memory</h1>
+        <h1 className="text-2xl font-bold text-text-primary tracking-tight">Feed Memory</h1>
         <p className="mt-1 text-text-secondary text-sm">
           Add knowledge to your memory store. It will be chunked, embedded, and made available when you generate posts.
         </p>
@@ -370,7 +373,7 @@ export default function FeedMemory() {
             className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
               activeTab === tab.id
                 ? "bg-hover border-amber text-text-primary"
-                : "border-border text-text-secondary hover:text-text-primary hover:bg-hover bg-card"
+                : "border-border-subtle text-text-secondary hover:text-text-primary hover:bg-surface hover:border-border bg-card shadow-sm"
             }`}
           >
             {tab.label}
@@ -425,7 +428,7 @@ export default function FeedMemory() {
                     onChange={(e) => { setVaultPath(e.target.value); setVaultPreview(null); setObsidianPhase("input"); }}
                     onKeyDown={(e) => { if (e.key === "Enter" && obsidianPhase === "input") handleVaultPreview(); }}
                     placeholder="/Users/yourname/Documents/ObsidianVault"
-                    className="w-full rounded-lg border border-border-input bg-card px-4 py-2.5 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary transition-colors"
+                    className="w-full rounded-xl border border-border-subtle bg-card px-4 py-3 text-[15px] font-medium text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary shadow-sm focus-within:shadow-md focus-within:border-border transition-all duration-200"
                   />
                   <p className="text-xs text-text-hint">
                     Open Obsidian → Settings → About to find your vault path.
@@ -469,7 +472,7 @@ export default function FeedMemory() {
               onChange={(e) => setUrlInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
               placeholder="https://example.com/article"
-              className="w-full rounded-lg border border-border-input bg-card px-4 py-2.5 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary transition-colors"
+              className="w-full rounded-xl border border-border-subtle bg-card px-4 py-3 text-[15px] font-medium text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary shadow-sm focus-within:shadow-md focus-within:border-border transition-all duration-200"
             />
           </div>
         ) : activeTab === "image" ? (
@@ -567,7 +570,7 @@ export default function FeedMemory() {
                 : "Paste article or text content here..."
             }
             rows={12}
-            className="w-full rounded-lg border border-border-input bg-card px-4 py-3 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary resize-none transition-colors"
+            className="w-full rounded-xl border border-border-subtle bg-card px-4 py-3 text-[15px] text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary resize-none shadow-sm focus-within:shadow-md focus-within:border-border transition-all duration-200"
           />
         )}
 
@@ -624,7 +627,7 @@ export default function FeedMemory() {
               <button
                 onClick={handleVaultIngest}
                 disabled={loading}
-                className="flex-1 rounded-lg bg-text-primary text-card font-medium py-2.5 text-sm hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+                className="flex-1 rounded-xl bg-amber text-white font-bold tracking-wide py-3.5 text-[15px] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed shadow-float hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-200"
               >
                 Ingest all notes
               </button>
@@ -640,7 +643,7 @@ export default function FeedMemory() {
             <button
               onClick={handleVaultPreview}
               disabled={loading}
-              className="w-full rounded-lg bg-text-primary text-card font-medium py-2.5 text-sm hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+              className="w-full rounded-xl bg-amber text-white font-bold tracking-wide py-3.5 text-[15px] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed shadow-float hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-200"
             >
               {loading ? "Scanning vault…" : "Preview vault"}
             </button>
@@ -649,7 +652,7 @@ export default function FeedMemory() {
           <button
             onClick={handleSubmit}
             disabled={loading}
-            className="w-full rounded-lg bg-text-primary text-card font-medium py-2.5 text-sm hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+            className="w-full rounded-xl bg-amber text-white font-bold tracking-wide py-3.5 text-[15px] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed shadow-float hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-200"
           >
             {loading
               ? activeTab === "url"
