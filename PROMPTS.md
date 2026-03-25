@@ -184,28 +184,27 @@ Topic: {topic}
 Write the draft now. Do not add any preamble or explanation — output only the post content itself.
 
 ---
-POST STRUCTURE (for story-driven and technical posts):
+POST STRUCTURE — write this post as a {archetype_name}:
+{archetype_instructions}
+---
 
-Strong posts follow this arc — not every section needs to be long, but all six should be present:
+---
+SOURCE ATTRIBUTION RULES (mandatory):
+Chunks in the knowledge base are labelled with their source_type:
+- [source_type: note] — content the user wrote themselves. You may attribute
+  this to their direct personal experience.
+- [source_type: article] or [source_type: youtube] — content they read or
+  watched. These are external ideas. Do NOT attribute them to personal
+  experience. Never write "I did X" or "at [company] I saw X" based on
+  these chunks. Instead frame them as: "I've been reading about X",
+  "there's research showing X", "X is documented in how Stripe does Y".
+- [source_type: image] — treat same as article. External reference only.
 
-1. HOOK — one or two lines maximum. A specific moment, number, or surprising fact. Never a question. Never "I am excited to share."
-   Example: "Spent 3 weeks building a RAG pipeline. A college student broke it in 4 minutes."
-
-2. PROBLEM — what actually happened, specifically. Real details, real numbers, real sequence of events. Not "we had challenges" but exactly what broke and how.
-
-3. INSIGHT — the non-obvious realization. What the failure revealed about the system, the assumption, or the architecture. This is the line people share.
-   Example: "The architecture itself was the vulnerability."
-
-4. LESSON — where the insight came from. A reference, an experience, a conversation that reframed the problem. Must connect back to the author's actual experience — not a parachuted statistic.
-   Example: "Reading how Stripe Radar treats every incoming document as potentially adversarial is what reframed the problem for us."
-
-5. ACTION — what was actually built or changed as a result. Specific. Not "we improved our pipeline" but what specifically was added, removed, or redesigned. Include one friction point — a tradeoff made, latency added, something that broke first.
-   Example: "The first thing we added wasn't a better model. It was a pre-ingestion classifier. It added 40ms to every ingest call. Worth it."
-
-6. HONESTY — what is still unsolved, still uncertain, or still a constraint. Never end with a poll question or engagement bait. End with what you still do not know or what you had to accept as a permanent limitation.
-   Example: "The pipeline still does not catch everything. Semantic similarity is blind to intent. That is not a bug we fixed — it is a constraint we designed around."
-
-Not every post needs this structure — short opinion posts and personal stories follow their own shape. Apply this arc to technical posts and incident stories.
+The user profile and writing samples are always personal — attribute freely.
+Never fabricate a personal experience by combining the user's employer or
+role (from their profile) with a technical detail from an article chunk.
+This is the most important rule in this prompt. Violating it causes the
+user to publish false claims about their own experience.
 ---
 
 ---
@@ -224,10 +223,29 @@ Never force a diagram into opinion pieces or short punchy posts where the words 
 **Input variables injected:**
 - `profile_context` — string-formatted output of `profile_to_context_string(profile)`, containing name, role, voice descriptors, writing rules, topics of expertise, words to avoid
 - `format_instructions` — output of `get_format_instructions(format, tone)` from `utils/formatters.py`
-- `retrieved_chunks` — numbered list of retrieved ChromaDB chunks, separated by `---`; falls back to "No relevant knowledge base entries found." if empty
+- `retrieved_chunks` — numbered list of retrieved ChromaDB chunks, separated by `---`; each chunk is prefixed with `[source_type: X]` to distinguish personal notes from external articles — used by the draft agent for attribution (see SOURCE ATTRIBUTION RULES below); falls back to "No relevant knowledge base entries found." if empty
 - `topic` — the generation topic
 - `context_section` — optional context string prefixed with "Additional context:", or empty string
 - `posted_topics_section` — bullet list of all previously saved topics from `feedback_store.get_all_topics_posted()`, prefixed with "Topics you have already written about — do not repeat these angles, find a fresh perspective:"; empty string if no posts saved yet
+- `archetype_name` — human-readable archetype name (e.g. "Incident Report / Retrospective"), resolved from the inferred archetype key
+- `archetype_instructions` — structural prompt block for the inferred archetype, returned by `get_archetype_instructions()` in `utils/formatters.py`
+
+### POST STRUCTURE (Dynamic — Archetype System)
+
+The structure block is no longer hardcoded. `infer_archetype(topic, context, tone)` in `draft_agent.py` calls Claude Haiku (`claude-haiku-4-5-20251001`, `max_tokens=20`) to semantically classify the topic into one of 7 archetypes. Haiku is used because it understands intent beyond keyword matching — e.g. "My experience with Kubernetes after 2 years" is correctly classified as `personal_story`, not `before_after`. Fallback chain: valid archetype key returned → use it; invalid/unrecognised key → `incident_report`; any exception → `incident_report`. The archetype key is stored in pipeline state and returned in the API response.
+
+**Archetypes:**
+| Key | Human Name | Use case |
+|-----|-----------|----------|
+| incident_report | Incident Report / Retrospective | Failures, bugs, production stories |
+| contrarian_take | Contrarian Take | Unpopular opinions, pushing back on consensus |
+| personal_story | Personal Story | Specific moments, revelations, decisions |
+| teach_me_something | Teach Me Something | Concept explanations, analogies, how-it-works |
+| list_that_isnt | List That Isn't | Subverted listicles with genuine opinion |
+| prediction_bet | Prediction / Bet | Forward-looking claims with credibility at stake |
+| before_after | Before & After | Chronological change stories |
+
+The full structural instructions for each archetype live in `backend/utils/formatters.py → get_archetype_instructions()`.
 
 ---
 

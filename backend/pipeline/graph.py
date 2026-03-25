@@ -15,6 +15,7 @@ MAX_ITERATIONS = 3
 def load_profile_node(state: PipelineState) -> PipelineState:
     state["profile"] = load_profile()
     state["iterations"] = 0
+    state["archetype"] = state.get("archetype", "")
     state["posted_topics"] = get_all_topics_posted()
     return state
 
@@ -76,6 +77,7 @@ def run_pipeline(topic: str, format: str, tone: str, context: str = "", quality:
         "context": context,
         "quality": quality,
         "iterations": 0,
+        "archetype": "",
     }
 
     result = pipeline.invoke(initial_state)
@@ -85,4 +87,5 @@ def run_pipeline(topic: str, format: str, tone: str, context: str = "", quality:
         "score": result.get("score", 0),
         "score_feedback": result.get("score_feedback", []),
         "iterations": result.get("iterations", 1),
+        "archetype": result.get("archetype", ""),
     }
