@@ -19,15 +19,15 @@
 | `backend/.env.example` | Required env var keys with no values |
 | `backend/agents/ideation_agent.py` | Generates N content ideas from ChromaDB sample, profile, and posted topic history |
 | `backend/agents/visual_agent.py` | Parses [DIAGRAM:] and [IMAGE:] placeholders from post; calls Claude to generate SVG for diagrams; returns reminder text for images |
-| `backend/agents/ingestion_agent.py` | Chunks content, extracts tags via Claude, upserts to ChromaDB |
+| `backend/agents/ingestion_agent.py` | Chunks content, extracts tags via Claude, upserts to ChromaDB; accepts `user_id: str = "default"` and passes it through to `upsert_chunks()` |
 | `backend/agents/vision_agent.py` | Sends base64 images to Claude vision, returns extracted text |
-| `backend/agents/retrieval_agent.py` | Semantic search node in the LangGraph pipeline; prefixes each retrieved chunk with `[source_type: X]` so the draft agent can distinguish personal notes from external articles |
+| `backend/agents/retrieval_agent.py` | Semantic search node in the LangGraph pipeline; reads `user_id` from pipeline state to query the correct per-user ChromaDB collection; prefixes each retrieved chunk with `[source_type: X]` so the draft agent can distinguish personal notes from external articles |
 | `backend/agents/draft_agent.py` | Calls Claude Haiku via `infer_archetype()` to classify the topic into one of 7 post archetypes, then generates the initial draft via Claude Sonnet |
 | `backend/agents/humanizer_agent.py` | Rewrites draft to remove AI patterns, inject human voice |
 | `backend/agents/scorer_agent.py` | Scores draft 0–100 across 5 dimensions, returns flagged sentences |
-| `backend/pipeline/state.py` | TypedDict schema for shared LangGraph pipeline state; includes `archetype` field for the inferred post archetype key |
+| `backend/pipeline/state.py` | TypedDict schema for shared LangGraph pipeline state; includes `archetype` field for the inferred post archetype key and `user_id` field for ChromaDB collection namespacing |
 | `backend/pipeline/graph.py` | LangGraph graph definition — nodes, edges, conditional retry loop |
-| `backend/memory/vector_store.py` | ChromaDB init, upsert, semantic query, stats, delete_source |
+| `backend/memory/vector_store.py` | ChromaDB init, upsert, semantic query, stats, delete_source; collections are namespaced per user as `contendo_{user_id}` — all public functions accept `user_id: str = "default"` |
 | `backend/memory/profile_store.py` | profile.json read/write, defaults, profile-to-string formatter |
 | `backend/memory/feedback_store.py` | SQLite posts and post_versions tables — log_post, get_recent_posts, get_all_topics_posted, add_version, get_versions, get_best_version, update_latest_version_svg |
 | `backend/tools/scraper_tool.py` | URL scraper using Jina Reader — `is_valid_url()`, `clean_scraped_text()`, `scrape_url()` |
@@ -88,9 +88,9 @@
 ### retrieval_node (retrieval_agent.py)
 | | |
 |---|---|
-| **Reads from state** | `topic`, `context` |
+| **Reads from state** | `topic`, `context`, `user_id` (defaults to `"default"` if absent) |
 | **Writes to state** | `retrieved_chunks: list[str]` |
-| **Side effects** | Queries ChromaDB, filters below 0.3 cosine similarity |
+| **Side effects** | Queries the `contendo_{user_id}` ChromaDB collection; filters below 0.3 cosine similarity |
 
 ### draft_node (draft_agent.py)
 | | |
@@ -598,6 +598,7 @@
 | Restore writes to sessionStorage, not a new PATCH | Restoring a version calls `POST /history/{post_id}/restore/{version_id}`, which updates the `posts` row. The frontend then writes the restored content to `contentOS_last_post` and related keys so Create Post picks it up immediately without an extra fetch. |
 | Post archetypes system — 7 structural patterns inferred from topic/tone | `infer_archetype()` in `draft_agent.py` uses Claude Haiku to semantically classify the topic + context into one of 7 archetype keys (`incident_report`, `contrarian_take`, `personal_story`, `teach_me_something`, `list_that_isnt`, `prediction_bet`, `before_after`). The archetype key is stored in pipeline state, returned in the `/generate` response, and saved to the `posts` SQLite table. Structural instructions are injected into the draft prompt via `get_archetype_instructions()` in `formatters.py`. |
 | `infer_archetype()` uses Claude Haiku, not regex | Haiku (`claude-haiku-4-5-20251001`, `max_tokens=20`) classifies the topic semantically — understands intent beyond keyword matching (e.g. "after 2 years" doesn't incorrectly trigger `before_after`). Fallback chain: valid key → use it; invalid/empty key → `incident_report`; any exception → `incident_report`. |
+| ChromaDB collections namespaced per user as `contendo_{user_id}` | Data isolation layer that auth will sit on top of. The default single-user collection is `contendo_default` — existing single-user deployments are unaffected. All `vector_store.py` functions accept `user_id: str = "default"`. All call sites in `main.py` currently pass `user_id="default"` (hardcoded). When Clerk auth is added, `"default"` is replaced with the JWT-extracted user ID at each endpoint — no changes to `vector_store.py` or the pipeline internals required. Existing data in the old `"contendo"` collection is not auto-migrated; the single user must re-ingest. |
 | Chunks prefixed with `[source_type: X]` before reaching draft agent | `retrieval_node` prepends `[source_type: article]`, `[source_type: note]`, `[source_type: youtube]`, or `[source_type: image]` to each chunk string. Preserves attribution metadata without changing the `list[str]` schema of `retrieved_chunks` in `PipelineState`. The draft agent's SOURCE ATTRIBUTION RULES use this label to distinguish content the user personally wrote (notes — attributable to direct experience) from content they read or watched (articles, youtube, images — must be framed as external references, never as first-person claims). Prevents the fabrication of personal experiences by combining the user's employer/role from their profile with technical details from external chunks. Missing or `"unknown"` source_type defaults to `"article"` as the safe assumption. |
 
 ---

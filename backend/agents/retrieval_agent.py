@@ -12,7 +12,7 @@ def retrieval_node(state: PipelineState) -> PipelineState:
     if context:
         query = f"{topic}. {context}"
 
-    chunks = query_similar(query, top_k=8)
+    chunks = query_similar(query, top_k=8, user_id=state.get("user_id", "default"))
 
     retrieved_texts = []
     for chunk in chunks:

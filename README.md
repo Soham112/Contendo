@@ -260,7 +260,7 @@ Note: `profile.json` is gitignored — your personal details never get committed
     │   ├── state.py                  # TypedDict defining shared LangGraph pipeline state
     │   └── graph.py                  # LangGraph graph — nodes, edges, quality-aware routing
     ├── memory/
-    │   ├── vector_store.py           # ChromaDB init, upsert, semantic query, get_all_sources
+    │   ├── vector_store.py           # ChromaDB init, upsert, semantic query, get_all_sources; per-user collections namespaced as contendo_{user_id}
     │   ├── profile_store.py          # profile.json load/save with defaults auto-created
     │   └── feedback_store.py         # SQLite posts + post_versions tables — history, versions, restore
     ├── tools/

@@ -8,12 +8,10 @@ from chromadb.config import Settings
 from sentence_transformers import SentenceTransformer
 
 CHROMA_PATH = Path(__file__).parent.parent / "data" / "chroma_db"
-COLLECTION_NAME = "contendo"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 RELEVANCE_THRESHOLD = 0.3
 
 _client: Optional[chromadb.PersistentClient] = None
-_collection = None
 _embedder: Optional[SentenceTransformer] = None
 
 
@@ -28,15 +26,19 @@ def _get_client() -> chromadb.PersistentClient:
     return _client
 
 
-def _get_collection():
-    global _collection
-    if _collection is None:
-        client = _get_client()
-        _collection = client.get_or_create_collection(
-            name=COLLECTION_NAME,
-            metadata={"hnsw:space": "cosine"},
-        )
-    return _collection
+def get_collection(user_id: str = "default"):
+    """Return (or create) the ChromaDB collection for the given user.
+
+    Collection name pattern: contendo_{user_id}
+    The default single-user collection is contendo_default.
+    When auth is added, user_id becomes the JWT-extracted user ID.
+    """
+    client = _get_client()
+    collection_name = f"contendo_{user_id}"
+    return client.get_or_create_collection(
+        name=collection_name,
+        metadata={"hnsw:space": "cosine"},
+    )
 
 
 def _get_embedder() -> SentenceTransformer:
@@ -58,8 +60,9 @@ def upsert_chunks(
     source_id: Optional[str] = None,
     source_title: str = "",
     ingested_at: str = "",
+    user_id: str = "default",
 ) -> int:
-    collection = _get_collection()
+    collection = get_collection(user_id)
     if not chunks:
         return 0
 
@@ -90,8 +93,8 @@ def upsert_chunks(
     return total
 
 
-def query_similar(query: str, top_k: int = 8) -> list[dict]:
-    collection = _get_collection()
+def query_similar(query: str, top_k: int = 8, user_id: str = "default") -> list[dict]:
+    collection = get_collection(user_id)
     if collection.count() == 0:
         return []
 
@@ -124,13 +127,13 @@ def query_similar(query: str, top_k: int = 8) -> list[dict]:
     return chunks
 
 
-def get_total_chunks() -> int:
-    collection = _get_collection()
+def get_total_chunks(user_id: str = "default") -> int:
+    collection = get_collection(user_id)
     return collection.count()
 
 
-def get_all_tags() -> list[str]:
-    collection = _get_collection()
+def get_all_tags(user_id: str = "default") -> list[str]:
+    collection = get_collection(user_id)
     if collection.count() == 0:
         return []
     results = collection.get(include=["metadatas"])
@@ -145,12 +148,12 @@ def get_all_tags() -> list[str]:
     return sorted(tag_set)
 
 
-def delete_source(source_title: str) -> int:
+def delete_source(source_title: str, user_id: str = "default") -> int:
     """Delete all ChromaDB chunks with matching source_title metadata.
 
     Returns the number of chunks deleted, or 0 if no matching chunks found.
     """
-    collection = _get_collection()
+    collection = get_collection(user_id)
     results = collection.get(where={"source_title": source_title})
     if not results["ids"]:
         return 0
@@ -158,8 +161,8 @@ def delete_source(source_title: str) -> int:
     return len(results["ids"])
 
 
-def get_all_sources() -> list[dict]:
-    collection = _get_collection()
+def get_all_sources(user_id: str = "default") -> list[dict]:
+    collection = get_collection(user_id)
     if collection.count() == 0:
         return []
 

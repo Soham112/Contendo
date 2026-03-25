@@ -48,7 +48,7 @@ def _extract_tags(text: str) -> list[str]:
     return [t.strip().strip('"[]').lower() for t in raw.split(",") if t.strip()]
 
 
-def ingest_content(content: str, source_type: str, source_title: str | None = None) -> dict:
+def ingest_content(content: str, source_type: str, source_title: str | None = None, user_id: str = "default") -> dict:
     chunks = chunk_text(content)
     if not chunks:
         return {"chunks_stored": 0, "tags": []}
@@ -68,6 +68,7 @@ def ingest_content(content: str, source_type: str, source_title: str | None = No
         tags=tags,
         source_title=source_title,
         ingested_at=ingested_at,
+        user_id=user_id,
     )
 
     return {"chunks_stored": stored, "tags": tags}
