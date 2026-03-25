@@ -9,6 +9,7 @@ class PipelineState(TypedDict, total=False):
     tone: str
     context: Optional[str]
     quality: str  # "draft" | "standard" | "polished" — defaults to "standard" at runtime
+    user_id: str  # ChromaDB collection namespace — defaults to "default"; replaced with real user ID when auth is added
 
     # Loaded profile
     profile: dict[str, Any]

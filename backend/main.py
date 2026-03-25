@@ -82,6 +82,7 @@ class GenerateRequest(BaseModel):
     tone: str
     context: str = ""
     quality: str = "standard"
+    user_id: str = "default"
 
 
 class GenerateResponse(BaseModel):
@@ -158,11 +159,11 @@ async def ingest(req: IngestRequest) -> IngestResponse:
             elif "image/webp" in header:
                 media_type = "image/webp"
         extracted_text = extract_from_image(req.raw_image, media_type=media_type)
-        result = ingest_content(extracted_text, source_type="image")
+        result = ingest_content(extracted_text, source_type="image", user_id="default")
     else:
         if not req.content or not req.content.strip():
             raise HTTPException(status_code=400, detail="content is required")
-        result = ingest_content(req.content, source_type=req.source_type)
+        result = ingest_content(req.content, source_type=req.source_type, user_id="default")
 
     return IngestResponse(chunks_stored=result["chunks_stored"], tags=result["tags"])
 
@@ -179,6 +180,7 @@ async def generate(req: GenerateRequest) -> GenerateResponse:
             tone=req.tone,
             context=req.context,
             quality=req.quality,
+            user_id=req.user_id,
         )
     except (InternalServerError, APIStatusError) as e:
         _raise_anthropic_error(e)
@@ -231,10 +233,10 @@ async def history() -> dict:
 
 @app.get("/library")
 async def library() -> dict:
-    sources = get_all_sources()
+    sources = get_all_sources(user_id="default")
     return {
         "sources": sources,
-        "total_chunks": get_total_chunks(),
+        "total_chunks": get_total_chunks(user_id="default"),
         "total_sources": len(sources),
     }
 
@@ -408,6 +410,7 @@ async def scrape_and_ingest(req: ScrapeRequest) -> dict:
         content=scraped["content"],
         source_type="article",
         source_title=scraped["title"],
+        user_id="default",
     )
     return {
         "chunks_stored": result["chunks_stored"],
@@ -430,15 +433,15 @@ async def ingest_file(file: UploadFile = File(...)) -> IngestResponse:
         raise HTTPException(status_code=422, detail=str(e))
 
     source_title = _title_from_text(text, file.filename or "")
-    result = ingest_content(text, source_type="article", source_title=source_title)
+    result = ingest_content(text, source_type="article", source_title=source_title, user_id="default")
     return IngestResponse(chunks_stored=result["chunks_stored"], tags=result["tags"])
 
 
 @app.get("/stats", response_model=StatsResponse)
 async def stats() -> StatsResponse:
     return StatsResponse(
-        total_chunks=get_total_chunks(),
-        tags=get_all_tags(),
+        total_chunks=get_total_chunks(user_id="default"),
+        tags=get_all_tags(user_id="default"),
     )
 
 
@@ -467,6 +470,7 @@ async def obsidian_ingest(req: ObsidianRequest) -> dict:
                 content=note["content"],
                 source_type="note",
                 source_title=note["filename"],
+                user_id="default",
             )
             total_chunks += result["chunks_stored"]
             all_tags.update(result["tags"])
@@ -485,7 +489,7 @@ async def obsidian_ingest(req: ObsidianRequest) -> dict:
 
 @app.delete("/library/source")
 async def delete_library_source(req: DeleteSourceRequest) -> dict:
-    chunks_removed = delete_source(req.source_title)
+    chunks_removed = delete_source(req.source_title, user_id="default")
     if chunks_removed == 0:
         raise HTTPException(
             status_code=404,
