@@ -37,7 +37,7 @@ flowchart TD
     subgraph Pipeline["LangGraph Pipeline"]
         N1["1. load_profile_node\nLoad profile + posted topics"]
         N2["2. retrieval_node\nSemantic search ChromaDB"]
-        N3["3. draft_node\nClaude generates initial draft"]
+        N3["3. draft_node\nInfer archetype (Claude Haiku) → generate initial draft (Claude Sonnet)"]
         N4["4. humanizer_node\nRemove AI patterns, inject voice"]
         N5["5. scorer_node\nScore 0–100 across 5 dimensions"]
         N6{"Quality mode?\ndraft/standard → finalize\npolished → check score + iterations"}
@@ -119,8 +119,8 @@ Navigation across all five screens is handled by a persistent left sidebar (`Sid
 | Step | Agent | Job |
 |------|-------|-----|
 | 1 | `load_profile_node` | Reads `profile.json`, injects user voice and style into state. Also loads all previously posted topics from SQLite to prevent repeated angles. |
-| 2 | `retrieval_node` | Queries ChromaDB for the 8 most semantically relevant chunks; filters out anything below 0.3 cosine similarity |
-| 3 | `draft_node` | Calls Claude to produce an initial draft using the user profile, retrieved chunks, format-specific instructions, and mandatory visual placeholder rules |
+| 2 | `retrieval_node` | Queries ChromaDB for the 8 most semantically relevant chunks; filters out anything below 0.3 cosine similarity; prefixes each chunk with `[source_type: X]` so the draft agent can distinguish the user's personal notes from external articles, YouTube, and images |
+| 3 | `draft_node` | First calls Claude Haiku (`infer_archetype()`) to semantically classify the topic into one of 7 post archetypes. Then calls Claude Sonnet to produce an initial draft using the user profile, retrieved chunks, format-specific instructions, archetype structural rules, and mandatory visual placeholder rules |
 | 4 | `humanizer_node` | Calls Claude to strip AI writing patterns, vary sentence structure, and inject the user's authentic voice. Also exposes `refine_draft()` for targeted post-generation edits via `/refine` |
 | 5 | `scorer_node` | Calls Claude to score the draft 0–100 across 5 dimensions; uses 3-attempt JSON parse to handle markdown-wrapped responses |
 | 6 | Conditional | **draft** mode: skip humanizer and scorer entirely, return raw draft. **standard** mode (default): always finalize after one pass. **polished** mode: retry humanizer if score < 75 and iterations < 3. |

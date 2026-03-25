@@ -21,11 +21,11 @@
 | `backend/agents/visual_agent.py` | Parses [DIAGRAM:] and [IMAGE:] placeholders from post; calls Claude to generate SVG for diagrams; returns reminder text for images |
 | `backend/agents/ingestion_agent.py` | Chunks content, extracts tags via Claude, upserts to ChromaDB |
 | `backend/agents/vision_agent.py` | Sends base64 images to Claude vision, returns extracted text |
-| `backend/agents/retrieval_agent.py` | Semantic search node in the LangGraph pipeline |
-| `backend/agents/draft_agent.py` | Generates initial post draft via Claude |
+| `backend/agents/retrieval_agent.py` | Semantic search node in the LangGraph pipeline; prefixes each retrieved chunk with `[source_type: X]` so the draft agent can distinguish personal notes from external articles |
+| `backend/agents/draft_agent.py` | Calls Claude Haiku via `infer_archetype()` to classify the topic into one of 7 post archetypes, then generates the initial draft via Claude Sonnet |
 | `backend/agents/humanizer_agent.py` | Rewrites draft to remove AI patterns, inject human voice |
 | `backend/agents/scorer_agent.py` | Scores draft 0–100 across 5 dimensions, returns flagged sentences |
-| `backend/pipeline/state.py` | TypedDict schema for shared LangGraph pipeline state |
+| `backend/pipeline/state.py` | TypedDict schema for shared LangGraph pipeline state; includes `archetype` field for the inferred post archetype key |
 | `backend/pipeline/graph.py` | LangGraph graph definition — nodes, edges, conditional retry loop |
 | `backend/memory/vector_store.py` | ChromaDB init, upsert, semantic query, stats, delete_source |
 | `backend/memory/profile_store.py` | profile.json read/write, defaults, profile-to-string formatter |
@@ -96,8 +96,8 @@
 | | |
 |---|---|
 | **Reads from state** | `profile`, `retrieved_chunks`, `topic`, `format`, `tone`, `context` |
-| **Writes to state** | `current_draft: str` |
-| **Side effects** | 1 Claude API call |
+| **Writes to state** | `current_draft: str`, `archetype: str` (inferred archetype key, e.g. `"incident_report"`) |
+| **Side effects** | 2 Claude API calls: Haiku (`claude-haiku-4-5-20251001`) for `infer_archetype()`, then Sonnet (`claude-sonnet-4-6`) for the draft |
 
 ### humanizer_node (humanizer_agent.py)
 | | |
@@ -234,7 +234,8 @@
   "post": "final post text",
   "score": 82,
   "score_feedback": ["Sentence in paragraph 2 is too generic.", "Avoid 'it's worth noting'"],
-  "iterations": 2
+  "iterations": 2,
+  "archetype": "incident_report"
 }
 ```
 **Notes:** Runs the full LangGraph pipeline. `quality` defaults to `"standard"` (1 humanizer + 1 scorer pass, no retry loop). Pass `"polished"` for up to 3 humanizer iterations. Pass `"draft"` to skip humanizer and scorer entirely. Posts are NOT auto-saved by this endpoint — the frontend calls `/log-post` automatically after generation completes.
@@ -252,7 +253,8 @@
   "authenticity_score": 82,
   "svg_diagrams": [
     { "position": 0, "description": "...", "svg_code": "<svg>...</svg>" }
-  ]
+  ],
+  "archetype": "incident_report"
 }
 ```
 **Response:**
@@ -594,8 +596,9 @@
 | Post versioning uses a parent + child table design | The `posts` table is the parent record (one row per generation session); `post_versions` stores every historical version. Every generation creates v1; every refinement creates the next version. SVG diagram updates do not create new versions — `update_latest_version_svg()` stamps diagrams onto the current version row in place. |
 | Best version tracked by highest authenticity_score | `get_best_version()` orders by `authenticity_score DESC, version_number DESC` so ties go to the latest version. The History UI highlights the best version with a green "Best" badge. |
 | Restore writes to sessionStorage, not a new PATCH | Restoring a version calls `POST /history/{post_id}/restore/{version_id}`, which updates the `posts` row. The frontend then writes the restored content to `contentOS_last_post` and related keys so Create Post picks it up immediately without an extra fetch. |
-| Post archetypes system — 7 structural patterns inferred from topic/tone | `infer_archetype()` in `draft_agent.py` pattern-matches the topic + context against 7 archetype keys (`incident_report`, `contrarian_take`, `personal_story`, `teach_me_something`, `list_that_isnt`, `prediction_bet`, `before_after`). The archetype key is stored in pipeline state, returned in the `/generate` response, and saved to the `posts` SQLite table. Structural instructions are injected into the draft prompt via `get_archetype_instructions()` in `formatters.py`. |
+| Post archetypes system — 7 structural patterns inferred from topic/tone | `infer_archetype()` in `draft_agent.py` uses Claude Haiku to semantically classify the topic + context into one of 7 archetype keys (`incident_report`, `contrarian_take`, `personal_story`, `teach_me_something`, `list_that_isnt`, `prediction_bet`, `before_after`). The archetype key is stored in pipeline state, returned in the `/generate` response, and saved to the `posts` SQLite table. Structural instructions are injected into the draft prompt via `get_archetype_instructions()` in `formatters.py`. |
 | `infer_archetype()` uses Claude Haiku, not regex | Haiku (`claude-haiku-4-5-20251001`, `max_tokens=20`) classifies the topic semantically — understands intent beyond keyword matching (e.g. "after 2 years" doesn't incorrectly trigger `before_after`). Fallback chain: valid key → use it; invalid/empty key → `incident_report`; any exception → `incident_report`. |
+| Chunks prefixed with `[source_type: X]` before reaching draft agent | `retrieval_node` prepends `[source_type: article]`, `[source_type: note]`, `[source_type: youtube]`, or `[source_type: image]` to each chunk string. Preserves attribution metadata without changing the `list[str]` schema of `retrieved_chunks` in `PipelineState`. The draft agent's SOURCE ATTRIBUTION RULES use this label to distinguish content the user personally wrote (notes — attributable to direct experience) from content they read or watched (articles, youtube, images — must be framed as external references, never as first-person claims). Prevents the fabrication of personal experiences by combining the user's employer/role from their profile with technical details from external chunks. Missing or `"unknown"` source_type defaults to `"article"` as the safe assumption. |
 
 ---
 

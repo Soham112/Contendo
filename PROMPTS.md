@@ -189,6 +189,25 @@ POST STRUCTURE — write this post as a {archetype_name}:
 ---
 
 ---
+SOURCE ATTRIBUTION RULES (mandatory):
+Chunks in the knowledge base are labelled with their source_type:
+- [source_type: note] — content the user wrote themselves. You may attribute
+  this to their direct personal experience.
+- [source_type: article] or [source_type: youtube] — content they read or
+  watched. These are external ideas. Do NOT attribute them to personal
+  experience. Never write "I did X" or "at [company] I saw X" based on
+  these chunks. Instead frame them as: "I've been reading about X",
+  "there's research showing X", "X is documented in how Stripe does Y".
+- [source_type: image] — treat same as article. External reference only.
+
+The user profile and writing samples are always personal — attribute freely.
+Never fabricate a personal experience by combining the user's employer or
+role (from their profile) with a technical detail from an article chunk.
+This is the most important rule in this prompt. Violating it causes the
+user to publish false claims about their own experience.
+---
+
+---
 VISUAL PLACEHOLDER RULES (mandatory):
 For technical posts about systems, pipelines, architectures, or processes — you MUST include at least one [DIAGRAM: detailed description] placeholder.
 The description must be specific enough to draw from.
@@ -204,7 +223,7 @@ Never force a diagram into opinion pieces or short punchy posts where the words 
 **Input variables injected:**
 - `profile_context` — string-formatted output of `profile_to_context_string(profile)`, containing name, role, voice descriptors, writing rules, topics of expertise, words to avoid
 - `format_instructions` — output of `get_format_instructions(format, tone)` from `utils/formatters.py`
-- `retrieved_chunks` — numbered list of retrieved ChromaDB chunks, separated by `---`; falls back to "No relevant knowledge base entries found." if empty
+- `retrieved_chunks` — numbered list of retrieved ChromaDB chunks, separated by `---`; each chunk is prefixed with `[source_type: X]` to distinguish personal notes from external articles — used by the draft agent for attribution (see SOURCE ATTRIBUTION RULES below); falls back to "No relevant knowledge base entries found." if empty
 - `topic` — the generation topic
 - `context_section` — optional context string prefixed with "Additional context:", or empty string
 - `posted_topics_section` — bullet list of all previously saved topics from `feedback_store.get_all_topics_posted()`, prefixed with "Topics you have already written about — do not repeat these angles, find a fresh perspective:"; empty string if no posts saved yet

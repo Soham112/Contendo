@@ -14,6 +14,18 @@ def retrieval_node(state: PipelineState) -> PipelineState:
 
     chunks = query_similar(query, top_k=8)
 
-    retrieved_texts = [chunk["text"] for chunk in chunks]
+    retrieved_texts = []
+    for chunk in chunks:
+        source_type = chunk.get("source_type", "")
+        # Default unknown/missing source_type to "article" — safe assumption that
+        # content came from an external source rather than the user's own notes.
+        if not source_type or source_type == "unknown":
+            source_type = "article"
+        retrieved_texts.append(f"[source_type: {source_type}] {chunk['text']}")
+
+    # Debug: print a sample so the attribution labels can be verified at runtime.
+    if retrieved_texts:
+        print(f"[retrieval_node] {len(retrieved_texts)} chunks retrieved. Sample: {retrieved_texts[0][:120]!r}")
+
     state["retrieved_chunks"] = retrieved_texts
     return state
