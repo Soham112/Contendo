@@ -95,7 +95,7 @@ export default function FeedMemory() {
   const [obsidianResult, setObsidianResult] = useState<ObsidianIngestResult | null>(null);
   const [loadingMessage, setLoadingMessage] = useState("Reading vault notes...");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ chunks_stored: number; tags: string[]; title?: string; word_count?: number } | null>(null);
+  const [result, setResult] = useState<{ chunks_stored: number; tags: string[]; title?: string; word_count?: number; duplicate?: boolean } | null>(null);
   const [error, setError] = useState("");
   const [stats, setStats] = useState<Stats | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -586,32 +586,55 @@ export default function FeedMemory() {
         )}
 
         {result && (
-          <div className="rounded-lg border border-score-green bg-score-green-bg px-5 py-4">
-            {result.title ? (
-              <p className="text-sm font-medium text-score-green">Scraped and stored: {result.title}</p>
-            ) : (
-              <p className="text-sm font-medium text-score-green">
-                Stored {result.chunks_stored} chunk{result.chunks_stored !== 1 ? "s" : ""}
+          result.duplicate ? (
+            <div className="rounded-lg border border-border bg-stat px-5 py-4">
+              <p className="text-sm font-medium text-text-secondary">
+                Already in your knowledge base ({result.chunks_stored} chunk{result.chunks_stored !== 1 ? "s" : ""})
               </p>
-            )}
-            {result.word_count != null && (
-              <p className="text-xs text-score-green mt-0.5 opacity-80">
-                {result.word_count} words → {result.chunks_stored} chunks
-              </p>
-            )}
-            {result.tags.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {result.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="text-xs px-2 py-0.5 rounded-full border border-score-green bg-score-green-bg text-score-green"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
+              {result.title && (
+                <p className="text-xs text-text-muted mt-0.5">{result.title}</p>
+              )}
+              {result.tags.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {result.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="text-xs px-2 py-0.5 rounded-full border border-border text-text-muted"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-score-green bg-score-green-bg px-5 py-4">
+              {result.title ? (
+                <p className="text-sm font-medium text-score-green">Scraped and stored: {result.title}</p>
+              ) : (
+                <p className="text-sm font-medium text-score-green">
+                  Stored {result.chunks_stored} chunk{result.chunks_stored !== 1 ? "s" : ""}
+                </p>
+              )}
+              {result.word_count != null && (
+                <p className="text-xs text-score-green mt-0.5 opacity-80">
+                  {result.word_count} words → {result.chunks_stored} chunks
+                </p>
+              )}
+              {result.tags.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {result.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="text-xs px-2 py-0.5 rounded-full border border-score-green bg-score-green-bg text-score-green"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
         )}
 
         {activeTab === "obsidian" ? (

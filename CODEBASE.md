@@ -26,7 +26,7 @@
 | `backend/.env.example` | Required env var keys with no values |
 | `backend/agents/ideation_agent.py` | Generates N content ideas from ChromaDB sample, profile, and posted topic history |
 | `backend/agents/visual_agent.py` | Parses [DIAGRAM:] and [IMAGE:] placeholders from post; calls Claude to generate SVG for diagrams; returns reminder text for images |
-| `backend/agents/ingestion_agent.py` | Chunks content, extracts tags via Claude, upserts to ChromaDB; accepts `user_id: str = "default"` and passes it through to `upsert_chunks()` |
+| `backend/agents/ingestion_agent.py` | Chunks content, extracts tags via Claude, upserts to ChromaDB; accepts `user_id: str = "default"` and passes it through to `upsert_chunks()`; computes SHA-256 hash of content and calls `query_by_hash()` before the Claude tag extraction call — duplicate content is returned immediately with no Claude call |
 | `backend/agents/vision_agent.py` | Sends base64 images to Claude vision, returns extracted text |
 | `backend/agents/retrieval_agent.py` | Semantic search node in the LangGraph pipeline; reads `user_id` from pipeline state to query the correct per-user ChromaDB collection; prefixes each retrieved chunk with `[source_type: X]` so the draft agent can distinguish personal notes from external articles |
 | `backend/agents/draft_agent.py` | Calls Claude Haiku via `infer_archetype()` to classify the topic into one of 7 post archetypes, then generates the initial draft via Claude Sonnet |
@@ -34,7 +34,7 @@
 | `backend/agents/scorer_agent.py` | Scores draft 0–100 across 5 dimensions, returns flagged sentences |
 | `backend/pipeline/state.py` | TypedDict schema for shared LangGraph pipeline state; includes `archetype` field for the inferred post archetype key and `user_id` field for ChromaDB collection namespacing |
 | `backend/pipeline/graph.py` | LangGraph graph definition — nodes, edges, conditional retry loop |
-| `backend/memory/vector_store.py` | ChromaDB init, upsert, semantic query, stats, delete_source; collections are namespaced per user as `contendo_{user_id}` — all public functions accept `user_id: str = "default"` |
+| `backend/memory/vector_store.py` | ChromaDB init, upsert, semantic query, stats, delete_source, query_by_hash; collections are namespaced per user as `contendo_{user_id}` — all public functions accept `user_id: str = "default"` |
 | `backend/memory/profile_store.py` | profile.json read/write, defaults, profile-to-string formatter |
 | `backend/memory/feedback_store.py` | SQLite posts and post_versions tables — log_post, get_recent_posts, get_all_topics_posted, add_version, get_versions, get_best_version, update_latest_version_svg |
 | `backend/tools/scraper_tool.py` | URL scraper using Jina Reader — `is_valid_url()`, `clean_scraped_text()`, `scrape_url()` |
@@ -75,8 +75,8 @@
 | | |
 |---|---|
 | **Reads** | `content: str`, `source_type: str` (passed directly, not from pipeline state) |
-| **Writes** | Returns `{ chunks_stored: int, tags: list[str] }` — not a pipeline node |
-| **Side effects** | Upserts chunks to ChromaDB with `source_title` (first 80 chars of content) and `ingested_at` (UTC ISO timestamp) |
+| **Writes** | Returns `{ chunks_stored: int, tags: list[str] }` on new content; `{ chunks_stored: int, tags: list[str], duplicate: True }` if content already exists — not a pipeline node |
+| **Side effects** | Computes SHA-256 hash of normalised content and calls `query_by_hash()` before any Claude call. If duplicate: returns immediately. If new: calls Claude for tag extraction, upserts chunks to ChromaDB with `source_title`, `ingested_at`, and `content_hash` in metadata. |
 
 ### vector_store.py — get_all_sources()
 | | |
@@ -84,6 +84,13 @@
 | **Reads** | All ChromaDB chunk metadatas via `collection.get()` |
 | **Returns** | `list[dict]` — one entry per unique `source_id` with `source_title`, `source_type`, `ingested_at`, `chunk_count`, `tags` (deduplicated) |
 | **Sort** | Newest `ingested_at` first; sources without timestamp sort last |
+
+### vector_store.py — query_by_hash()
+| | |
+|---|---|
+| **Reads** | `content_hash: str`, `user_id: str = "default"` |
+| **Returns** | `{ chunk_count: int, tags: list[str] }` if hash found; `None` if not found |
+| **Side effects** | Two `collection.get()` calls with a metadata filter — no vector search |
 
 ### vision_agent.py
 | | |
@@ -609,6 +616,7 @@
 | ChromaDB collections namespaced per user as `contendo_{user_id}` | Data isolation layer that auth will sit on top of. The default single-user collection is `contendo_default` — existing single-user deployments are unaffected. All `vector_store.py` functions accept `user_id: str = "default"`. All call sites in router files (`library.py`, `ingest.py`, `stats.py`) currently pass `user_id="default"` (hardcoded); the pipeline receives `user_id` from the `POST /generate` request body. When Clerk auth is added, `"default"` is replaced with the JWT-extracted user ID at each endpoint — no changes to `vector_store.py` or the pipeline internals required. Existing data in the old `"contendo"` collection is not auto-migrated; the single user must re-ingest. |
 | Chunks prefixed with `[source_type: X]` before reaching draft agent | `retrieval_node` prepends `[source_type: article]`, `[source_type: note]`, `[source_type: youtube]`, or `[source_type: image]` to each chunk string. Preserves attribution metadata without changing the `list[str]` schema of `retrieved_chunks` in `PipelineState`. The draft agent's SOURCE ATTRIBUTION RULES use this label to distinguish content the user personally wrote (notes — attributable to direct experience) from content they read or watched (articles, youtube, images — must be framed as external references, never as first-person claims). Prevents the fabrication of personal experiences by combining the user's employer/role from their profile with technical details from external chunks. Missing or `"unknown"` source_type defaults to `"article"` as the safe assumption. |
 | Anthropic client is instantiated at module level in each agent file | Client is created once at import time and reused across all calls — not re-instantiated on every function invocation. `max_retries=3` enables the SDK's built-in retry logic for 429 rate limit errors and transient network failures at no extra code cost. No shared `llm_client.py` — module-level per file is sufficient at current codebase size. Applies to all 7 agent files: `draft_agent.py`, `humanizer_agent.py`, `scorer_agent.py`, `ingestion_agent.py`, `vision_agent.py`, `visual_agent.py`, `ideation_agent.py`. |
+| Ingestion deduplication uses SHA-256 hash of normalised content | `compute_content_hash()` in `ingestion_agent.py` strips and lowercases the content string before hashing. On every `ingest_content()` call, `query_by_hash()` checks for an existing match in ChromaDB metadata before the Claude tag extraction call runs. Duplicate content returns immediately with the existing chunk count and tags — zero Claude API calls. The hash is stored in each chunk's `content_hash` metadata field so future checks can find it. Content ingested before this feature was added has no `content_hash` in metadata and will not be deduplicated retroactively. Obsidian vault ingest (`/obsidian/ingest`) is excluded — its upsert-based flow already handles re-ingestion safely. |
 
 ---
 

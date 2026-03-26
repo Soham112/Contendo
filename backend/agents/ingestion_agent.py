@@ -1,9 +1,10 @@
 import anthropic
+import hashlib
 import os
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 
-from memory.vector_store import upsert_chunks
+from memory.vector_store import query_by_hash, upsert_chunks
 from utils.chunker import chunk_text
 
 load_dotenv()
@@ -22,6 +23,11 @@ Rules:
 - Return ONLY a JSON array of strings, nothing else
 
 Example output: ["machine learning", "transformer models", "ai inference", "scaling laws"]"""
+
+
+def compute_content_hash(content: str) -> str:
+    normalised = content.strip().lower()
+    return hashlib.sha256(normalised.encode()).hexdigest()
 
 
 def _extract_tags(text: str) -> list[str]:
@@ -57,6 +63,16 @@ def ingest_content(content: str, source_type: str, source_title: str | None = No
     if not chunks:
         return {"chunks_stored": 0, "tags": []}
 
+    # Deduplication check — skip Claude call entirely if content already exists
+    content_hash = compute_content_hash(content)
+    existing = query_by_hash(content_hash, user_id=user_id)
+    if existing:
+        return {
+            "chunks_stored": existing["chunk_count"],
+            "tags": existing["tags"],
+            "duplicate": True,
+        }
+
     tags = _extract_tags(content)
 
     if source_title is None:
@@ -73,6 +89,7 @@ def ingest_content(content: str, source_type: str, source_title: str | None = No
         source_title=source_title,
         ingested_at=ingested_at,
         user_id=user_id,
+        content_hash=content_hash,
     )
 
     return {"chunks_stored": stored, "tags": tags}
