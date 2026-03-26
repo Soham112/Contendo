@@ -340,7 +340,7 @@ Output only the refined post. No commentary. No "Here is the refined version:" p
 - `profile_context` — string-formatted output of `profile_to_context_string(profile)`; loaded via `load_profile()` if not passed explicitly
 - `words_to_avoid` — comma-separated list from `profile["words_to_avoid"]`
 - `current_draft` — the draft string passed directly to the function
-- `refinement_instruction` — pre-processed by `_feedback_to_instructions()` in `main.py` before being passed; each scorer feedback item is prefixed with `"ACTION NEEDED:"` so Claude treats them as directives rather than observations
+- `refinement_instruction` — pre-processed by `_feedback_to_instructions()` in `routers/generate.py` before being passed; each scorer feedback item is prefixed with `"ACTION NEEDED:"` so Claude treats them as directives rather than observations
 
 ---
 
