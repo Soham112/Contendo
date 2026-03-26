@@ -123,7 +123,7 @@ Navigation across all five screens is handled by a persistent left sidebar (`Sid
 | 3 | `draft_node` | First calls Claude Haiku (`infer_archetype()`) to semantically classify the topic into one of 7 post archetypes. Then calls Claude Sonnet to produce an initial draft using the user profile, retrieved chunks, format-specific instructions, archetype structural rules, and mandatory visual placeholder rules |
 | 4 | `humanizer_node` | Calls Claude to strip AI writing patterns, vary sentence structure, and inject the user's authentic voice. Also exposes `refine_draft()` for targeted post-generation edits via `/refine` |
 | 5 | `scorer_node` | Calls Claude to score the draft 0–100 across 5 dimensions; uses 3-attempt JSON parse to handle markdown-wrapped responses |
-| 6 | Conditional | **draft** mode: skip humanizer and scorer entirely, return raw draft. **standard** mode (default): always finalize after one pass. **polished** mode: retry humanizer if score < 75 and iterations < 3. |
+| 6 | Conditional | **draft** mode: skip humanizer and scorer entirely, return raw draft. **standard** mode (default): 1 humanizer pass; scorer skipped during generation — scored lazily on demand via `POST /score` when user clicks the analysis toggle. **polished** mode: up to 3 humanizer passes with scorer running each iteration; retries if score < 75 and iterations < 3. |
 
 ---
 
