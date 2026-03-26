@@ -249,9 +249,78 @@ The full structural instructions for each archetype live in `backend/utils/forma
 
 ---
 
+### Critic Agent — agents/critic_agent.py
+
+**Purpose:** Diagnose weaknesses in the initial draft across four dimensions (hook, substance, structure, voice) and produce a structured brief. Runs between `draft_node` and `humanizer_node`. The humanizer then acts on this brief to fix substance and structure — not just polish language.
+
+**Model:** `claude-haiku-4-5-20251001` — diagnosis only, not creative writing. `max_tokens=600`.
+
+**System prompt:**
+*(Injected as the user message — no separate system role.)*
+
+```
+You are a content critic. Your job is to diagnose weaknesses in a LinkedIn post draft before it is humanized — not to write anything, just identify what needs fixing.
+
+Examine the draft across four dimensions:
+
+1. HOOK — Does the opening sentence stop a scroller immediately? Is it specific and surprising, or generic and forgettable?
+2. SUBSTANCE — Are claims grounded in specific details, named examples, or real numbers from the knowledge base? Or vague generalities that any post could make?
+3. STRUCTURE — Does the draft follow the expected pattern for a {archetype_name} post? Is the order of sections correct?
+4. VOICE — Does this sound like the specific person in the profile, or like generic LinkedIn content?
+
+Profile summary (voice reference):
+{profile_context}
+
+Post archetype (structural reference): {archetype_name}
+
+Knowledge base chunks available (check whether the draft uses them or ignores them):
+{retrieved_chunks}
+
+Draft to diagnose:
+{current_draft}
+
+For each dimension, return a verdict ("strong" or "needs_work") and — if "needs_work" — one specific, actionable fix instruction. If "strong", set fix to null.
+
+Return ONLY valid JSON with this exact structure — no preamble, no explanation, no markdown fences:
+{
+  "hook": { "verdict": "strong" | "needs_work", "fix": "<instruction or null>" },
+  "substance": { "verdict": "strong" | "needs_work", "fix": "<instruction or null>" },
+  "structure": { "verdict": "strong" | "needs_work", "fix": "<instruction or null>" },
+  "voice": { "verdict": "strong" | "needs_work", "fix": "<instruction or null>" },
+  "overall": "postable" | "needs_work"
+}
+```
+
+**Input variables injected:**
+- `profile_context` — string-formatted output of `profile_to_context_string(profile)`
+- `archetype_name` — human-readable archetype name (e.g. "Incident Report / Retrospective"), resolved from `state["archetype"]` via `_ARCHETYPE_NAMES` dict in `critic_agent.py`
+- `retrieved_chunks` — all retrieved chunks joined by `---`; falls back to "No knowledge base chunks available." Matches exactly what `draft_agent` receives so the critic can accurately assess whether claims are grounded.
+- `current_draft` — the draft string from pipeline state
+
+**Output schema:**
+```json
+{
+  "hook":      { "verdict": "strong" | "needs_work", "fix": "string or null" },
+  "substance": { "verdict": "strong" | "needs_work", "fix": "string or null" },
+  "structure": { "verdict": "strong" | "needs_work", "fix": "string or null" },
+  "voice":     { "verdict": "strong" | "needs_work", "fix": "string or null" },
+  "overall":   "postable" | "needs_work"
+}
+```
+Stored in pipeline state as `critic_brief: dict`.
+
+**JSON parse fallback:** Three-attempt parse (direct → strip fences → regex extract). If all fail: logs warning, returns neutral brief (`_NEUTRAL_BRIEF`) so pipeline never breaks.
+
+**Quality-mode behaviour:**
+- `draft` — skipped entirely; sets `critic_brief: {}` and returns immediately. No Claude call.
+- `standard` — runs once; brief passed to humanizer.
+- `polished` — runs once per generation (not per retry iteration). The retry loop routes back to `humanizer_node` only, not `critic_node`.
+
+---
+
 ### Humanizer Agent — agents/humanizer_agent.py
 
-**Purpose:** Rewrite the current draft to remove AI writing patterns and inject the user's authentic human voice.
+**Purpose:** Rewrite the current draft to remove AI writing patterns, inject the user's authentic human voice, and — when a critic brief is present — fix flagged structural and substance issues first.
 
 **System prompt:**
 *(Injected as the user message — no separate system role.)*
@@ -262,7 +331,7 @@ You are a humanizing editor. You take drafts that may still have AI-writing fing
 User profile:
 {profile_context}
 
-AI writing patterns to eliminate:
+{critic_section}AI writing patterns to eliminate:
 - Sentences that start with "In today's..." or "It's important to note..."
 - Overuse of transition words: "Furthermore", "Moreover", "Additionally", "In conclusion"
 - Generic motivational framing: "unlock your potential", "game-changing", "transformative"
@@ -281,15 +350,31 @@ What to inject instead:
 Current draft:
 {current_draft}
 
-Rewrite the draft now. Preserve the structure and all factual content — only change the language and sentence patterns. Output only the rewritten post, no commentary.
+{rewrite_instruction}
 ```
 
 **Input variables injected:**
 - `profile_context` — string-formatted output of `profile_to_context_string(profile)`
 - `words_to_avoid` — comma-separated list from `profile["words_to_avoid"]`
 - `current_draft` — the current draft string from pipeline state
+- `critic_section` — formatted block from `_format_critic_brief()`:
+  - Empty string `""` when `critic_brief` is `{}` or all areas are "strong"
+  - Multi-line block when any area has `"needs_work"`:
+    ```
+    CRITIC BRIEF — fix these issues before humanizing, in this order:
+    - HOOK: <fix instruction>
+    - SUBSTANCE: <fix instruction>
+
+    ```
+- `rewrite_instruction` — varies based on whether critic flagged any issues:
+  - **No flagged issues:** `"Rewrite the draft now. Preserve the structure and all factual content — only change the language and sentence patterns. Output only the rewritten post, no commentary."`
+  - **Has flagged issues:** `"Rewrite the draft now. Fix the flagged issues above first — in this order: hook, substance, structure, voice. You may rewrite the hook entirely, restructure sections, and add specific grounding from the knowledge base. Then do a full language humanization pass. Output only the rewritten post, no commentary."`
 
 **Quality-mode bypass:** If `state.get("quality") == "draft"`, `humanizer_node` returns state unchanged with no Claude call. The raw draft agent output passes through unmodified.
+
+**Standalone refinement function — `refine_draft(current_draft, refinement_instruction, profile=None)`:**
+
+Used by `POST /refine` outside the LangGraph pipeline. Uses `REFINE_PROMPT` (separate constant in the same file) — completely unchanged by this feature. If `profile` is not passed, `load_profile()` is called automatically. Profile context is now included identically to the main humanizer prompt — refinement targets the user's specific voice, not generic "better writing".
 
 **Standalone refinement function — `refine_draft(current_draft, refinement_instruction, profile=None)`:**
 

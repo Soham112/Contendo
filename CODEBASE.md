@@ -30,9 +30,10 @@
 | `backend/agents/vision_agent.py` | Sends base64 images to Claude vision, returns extracted text |
 | `backend/agents/retrieval_agent.py` | Semantic search node in the LangGraph pipeline; reads `user_id` from pipeline state to query the correct per-user ChromaDB collection; prefixes each retrieved chunk with `[source_type: X]` so the draft agent can distinguish personal notes from external articles |
 | `backend/agents/draft_agent.py` | Calls Claude Haiku via `infer_archetype()` to classify the topic into one of 7 post archetypes, then generates the initial draft via Claude Sonnet |
-| `backend/agents/humanizer_agent.py` | Rewrites draft to remove AI patterns, inject human voice |
+| `backend/agents/critic_agent.py` | Diagnoses the initial draft across hook, substance, structure, and voice; produces a structured JSON brief; runs between `draft_node` and `humanizer_node`; uses Claude Haiku; skipped for draft quality mode |
+| `backend/agents/humanizer_agent.py` | Rewrites draft to remove AI patterns, inject human voice; reads `critic_brief` from state and fixes flagged issues before humanizing if any area was rated "needs_work" |
 | `backend/agents/scorer_agent.py` | Scores draft 0–100 across 5 dimensions, returns flagged sentences |
-| `backend/pipeline/state.py` | TypedDict schema for shared LangGraph pipeline state; includes `archetype` field for the inferred post archetype key and `user_id` field for ChromaDB collection namespacing |
+| `backend/pipeline/state.py` | TypedDict schema for shared LangGraph pipeline state; includes `archetype` field for the inferred post archetype key, `user_id` field for ChromaDB collection namespacing, and `critic_brief` field for the structured critic diagnosis |
 | `backend/pipeline/graph.py` | LangGraph graph definition — nodes, edges, conditional retry loop |
 | `backend/memory/vector_store.py` | ChromaDB init, upsert, semantic query, stats, delete_source, query_by_hash; collections are namespaced per user as `contendo_{user_id}` — all public functions accept `user_id: str = "default"` |
 | `backend/memory/profile_store.py` | profile.json read/write, defaults, profile-to-string formatter |
@@ -113,12 +114,31 @@
 | **Writes to state** | `current_draft: str`, `archetype: str` (inferred archetype key, e.g. `"incident_report"`) |
 | **Side effects** | 2 Claude API calls: Haiku (`claude-haiku-4-5-20251001`) for `infer_archetype()`, then Sonnet (`claude-sonnet-4-6`) for the draft |
 
+### critic_node (critic_agent.py)
+| | |
+|---|---|
+| **Reads from state** | `current_draft`, `profile`, `archetype`, `retrieved_chunks`, `quality` |
+| **Writes to state** | `critic_brief: dict` — structured JSON with verdict + fix per area and an overall verdict |
+| **Side effects** | 1 Claude Haiku call (`claude-haiku-4-5-20251001`, `max_tokens=600`). Skipped entirely for `draft` quality mode (sets `critic_brief: {}` with no API call). All exceptions caught — sets `critic_brief: {}` on failure so the pipeline never breaks. |
+
+**critic_brief schema:**
+```json
+{
+  "hook":      { "verdict": "strong" | "needs_work", "fix": "instruction or null" },
+  "substance": { "verdict": "strong" | "needs_work", "fix": "instruction or null" },
+  "structure": { "verdict": "strong" | "needs_work", "fix": "instruction or null" },
+  "voice":     { "verdict": "strong" | "needs_work", "fix": "instruction or null" },
+  "overall":   "postable" | "needs_work"
+}
+```
+On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable") so the humanizer always receives a valid dict.
+
 ### humanizer_node (humanizer_agent.py)
 | | |
 |---|---|
-| **Reads from state** | `profile`, `current_draft` |
+| **Reads from state** | `profile`, `current_draft`, `critic_brief` |
 | **Writes to state** | `current_draft: str` (overwrites), `iterations: int` (increments by 1) |
-| **Side effects** | 1 Claude API call per invocation |
+| **Side effects** | 1 Claude Sonnet call per invocation. `_format_critic_brief()` converts `critic_brief` into `(critic_section, rewrite_instruction)` injected into `SYSTEM_PROMPT`. When any area has `"needs_work"`, the humanizer fixes hook/substance/structure/voice first then humanizes. When all areas are "strong" or brief is `{}`, behavior is identical to the old prompt (preserve structure, language-only pass). |
 
 ### scorer_node (scorer_agent.py)
 | | |
@@ -632,6 +652,11 @@
 | `main.py` split into 6 focused `APIRouter` files under `backend/routers/` | Each router owns its endpoints and imports only what it needs. `main.py` is now ~40 lines — CORS config, lifespan hook, and router registration only. Pydantic models that are used by only one router live in that router file; no shared `models.py` was needed. When Clerk auth middleware is added, it attaches at the app level in `main.py` and extracts `user_id` before any router handler runs — no changes to individual router files required. |
 | ChromaDB collections namespaced per user as `contendo_{user_id}` | Data isolation layer that auth will sit on top of. The default single-user collection is `contendo_default` — existing single-user deployments are unaffected. All `vector_store.py` functions accept `user_id: str = "default"`. All call sites in router files (`library.py`, `ingest.py`, `stats.py`) currently pass `user_id="default"` (hardcoded); the pipeline receives `user_id` from the `POST /generate` request body. When Clerk auth is added, `"default"` is replaced with the JWT-extracted user ID at each endpoint — no changes to `vector_store.py` or the pipeline internals required. Existing data in the old `"contendo"` collection is not auto-migrated; the single user must re-ingest. |
 | Chunks prefixed with `[source_type: X]` before reaching draft agent | `retrieval_node` prepends `[source_type: article]`, `[source_type: note]`, `[source_type: youtube]`, or `[source_type: image]` to each chunk string. Preserves attribution metadata without changing the `list[str]` schema of `retrieved_chunks` in `PipelineState`. The draft agent's SOURCE ATTRIBUTION RULES use this label to distinguish content the user personally wrote (notes — attributable to direct experience) from content they read or watched (articles, youtube, images — must be framed as external references, never as first-person claims). Prevents the fabrication of personal experiences by combining the user's employer/role from their profile with technical details from external chunks. Missing or `"unknown"` source_type defaults to `"article"` as the safe assumption. |
+| Critic agent runs once per generation, not per retry iteration | The retry loop in polished mode routes back to `humanizer_node` only. Re-running the critic on each iteration would add a Haiku call per retry pass and is redundant — the critic already diagnosed the initial draft's structural issues; subsequent humanizer passes are language refinements on an already-diagnosed foundation. The critic brief from iteration 1 remains in state for all retry passes. |
+| Critic agent receives all retrieved chunks, not a subset | `critic_node` passes all `retrieved_chunks` to the prompt — no slicing. This matches exactly what `draft_agent` received, so the critic can accurately assess whether claims in the draft are grounded. Passing only a subset (e.g. the first 5) risked false "substance: needs_work" verdicts for claims that were actually supported by chunks the critic was never shown. |
+| Critic agent uses Haiku, not Sonnet | Diagnosis is pattern recognition (is the hook weak? are there vague claims?), not creative generation. Haiku is fast and cheap for classification tasks. Sonnet is reserved for the humanizer where creative rewriting quality matters. |
+| Critic brief fallback is a neutral brief, not an exception | If the Haiku call fails or JSON parsing fails after 3 attempts, `critic_node` sets `critic_brief=_NEUTRAL_BRIEF` (all "strong") or `{}` depending on failure type. This ensures the humanizer always receives a safe input — the pipeline never breaks due to a failed critic call. |
+| Critic brief is `{}` for draft mode, neutral dict for standard/polished parse failure | An empty dict `{}` from draft-mode bypass means "critic was skipped intentionally." `_format_critic_brief({})` returns empty critic_section — humanizer behaves as pre-critic for backward compat. |
 | Anthropic client is instantiated at module level in each agent file | Client is created once at import time and reused across all calls — not re-instantiated on every function invocation. `max_retries=3` enables the SDK's built-in retry logic for 429 rate limit errors and transient network failures at no extra code cost. No shared `llm_client.py` — module-level per file is sufficient at current codebase size. Applies to all 7 agent files: `draft_agent.py`, `humanizer_agent.py`, `scorer_agent.py`, `ingestion_agent.py`, `vision_agent.py`, `visual_agent.py`, `ideation_agent.py`. |
 | Ingestion deduplication uses SHA-256 hash of normalised content | `compute_content_hash()` in `ingestion_agent.py` strips and lowercases the content string before hashing. On every `ingest_content()` call, `query_by_hash()` checks for an existing match in ChromaDB metadata before the Claude tag extraction call runs. Duplicate content returns immediately with the existing chunk count and tags — zero Claude API calls. The hash is stored in each chunk's `content_hash` metadata field so future checks can find it. Content ingested before this feature was added has no `content_hash` in metadata and will not be deduplicated retroactively. Obsidian vault ingest (`/obsidian/ingest`) is excluded — its upsert-based flow already handles re-ingestion safely. |
 

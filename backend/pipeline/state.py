@@ -24,6 +24,7 @@ class PipelineState(TypedDict, total=False):
     current_draft: str
     iterations: int
     archetype: str  # inferred post archetype key, e.g. "incident_report"
+    critic_brief: dict  # structured diagnosis from critic_node; {} if skipped (draft mode) or on error
 
     # Scoring
     score: int
