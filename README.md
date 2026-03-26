@@ -244,7 +244,14 @@ Note: `profile.json` is gitignored — your personal details never get committed
 │   └── package.json                  # Next.js 14 + TypeScript + Tailwind
 │
 └── backend/
-    ├── main.py                       # FastAPI app — all API routes + CORS config
+    ├── main.py                       # FastAPI entry point — CORS, lifespan, router registration (~40 lines)
+    ├── routers/
+    │   ├── ingest.py                 # /ingest, /ingest-file, /scrape-and-ingest, /obsidian/*
+    │   ├── generate.py               # /generate, /refine, /generate-visuals
+    │   ├── history.py                # /history, /log-post, PATCH/DELETE/restore history
+    │   ├── library.py                # /library, DELETE /library/source
+    │   ├── ideas.py                  # /suggestions
+    │   └── stats.py                  # /stats
     ├── requirements.txt              # All Python dependencies pinned
     ├── .env.example                  # Required env var keys with no values
     ├── agents/

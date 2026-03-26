@@ -14,7 +14,14 @@
 | `PROMPTS.md` | All agent system prompts verbatim — source of truth for agent behaviour |
 | `.gitignore` | Excludes venv, node_modules, .env, chroma_db data |
 | **Backend** | |
-| `backend/main.py` | FastAPI app — all routes, CORS config, SQLite post history init |
+| `backend/main.py` | FastAPI app entry point — CORS config, lifespan hook (`init_db`), and router registration only (~40 lines) |
+| `backend/routers/__init__.py` | Empty — marks routers/ as a Python package |
+| `backend/routers/ingest.py` | `/ingest`, `/ingest-file`, `/scrape-and-ingest`, `/obsidian/preview`, `/obsidian/ingest` |
+| `backend/routers/generate.py` | `/generate`, `/refine`, `/generate-visuals` |
+| `backend/routers/history.py` | `GET /history`, `POST /log-post`, `PATCH /history/{id}`, `DELETE /history/{id}`, `POST /history/{id}/restore/{vid}` |
+| `backend/routers/library.py` | `GET /library`, `DELETE /library/source` |
+| `backend/routers/ideas.py` | `GET /suggestions` |
+| `backend/routers/stats.py` | `GET /stats` |
 | `backend/requirements.txt` | All Python dependencies pinned |
 | `backend/.env.example` | Required env var keys with no values |
 | `backend/agents/ideation_agent.py` | Generates N content ideas from ChromaDB sample, profile, and posted topic history |
@@ -598,6 +605,7 @@
 | Restore writes to sessionStorage, not a new PATCH | Restoring a version calls `POST /history/{post_id}/restore/{version_id}`, which updates the `posts` row. The frontend then writes the restored content to `contentOS_last_post` and related keys so Create Post picks it up immediately without an extra fetch. |
 | Post archetypes system — 7 structural patterns inferred from topic/tone | `infer_archetype()` in `draft_agent.py` uses Claude Haiku to semantically classify the topic + context into one of 7 archetype keys (`incident_report`, `contrarian_take`, `personal_story`, `teach_me_something`, `list_that_isnt`, `prediction_bet`, `before_after`). The archetype key is stored in pipeline state, returned in the `/generate` response, and saved to the `posts` SQLite table. Structural instructions are injected into the draft prompt via `get_archetype_instructions()` in `formatters.py`. |
 | `infer_archetype()` uses Claude Haiku, not regex | Haiku (`claude-haiku-4-5-20251001`, `max_tokens=20`) classifies the topic semantically — understands intent beyond keyword matching (e.g. "after 2 years" doesn't incorrectly trigger `before_after`). Fallback chain: valid key → use it; invalid/empty key → `incident_report`; any exception → `incident_report`. |
+| `main.py` split into 6 focused `APIRouter` files under `backend/routers/` | Each router owns its endpoints and imports only what it needs. `main.py` is now ~40 lines — CORS config, lifespan hook, and router registration only. Pydantic models that are used by only one router live in that router file; no shared `models.py` was needed. When Clerk auth middleware is added, it attaches at the app level in `main.py` and extracts `user_id` before any router handler runs — no changes to individual router files required. |
 | ChromaDB collections namespaced per user as `contendo_{user_id}` | Data isolation layer that auth will sit on top of. The default single-user collection is `contendo_default` — existing single-user deployments are unaffected. All `vector_store.py` functions accept `user_id: str = "default"`. All call sites in `main.py` currently pass `user_id="default"` (hardcoded). When Clerk auth is added, `"default"` is replaced with the JWT-extracted user ID at each endpoint — no changes to `vector_store.py` or the pipeline internals required. Existing data in the old `"contendo"` collection is not auto-migrated; the single user must re-ingest. |
 | Chunks prefixed with `[source_type: X]` before reaching draft agent | `retrieval_node` prepends `[source_type: article]`, `[source_type: note]`, `[source_type: youtube]`, or `[source_type: image]` to each chunk string. Preserves attribution metadata without changing the `list[str]` schema of `retrieved_chunks` in `PipelineState`. The draft agent's SOURCE ATTRIBUTION RULES use this label to distinguish content the user personally wrote (notes — attributable to direct experience) from content they read or watched (articles, youtube, images — must be framed as external references, never as first-person claims). Prevents the fabrication of personal experiences by combining the user's employer/role from their profile with technical details from external chunks. Missing or `"unknown"` source_type defaults to `"article"` as the safe assumption. |
 
