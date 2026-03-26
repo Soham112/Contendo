@@ -133,7 +133,7 @@ Navigation across all five screens is handled by a persistent left sidebar (`Sid
 |-------|------|-----|
 | Frontend | Next.js 14 (App Router) | File-based routing, RSC-ready, deploys instantly to Vercel |
 | Styling | TailwindCSS | Utility-first, zero config, great with Next.js |
-| Font | DM Sans (Google Fonts) | Loaded via `@import` in `globals.css`; applied to `body`; warm, readable sans-serif |
+| Font | Noto Serif + Inter (Google Fonts) | Noto Serif for headlines (`font-headline`), Inter for body/UI — loaded via `@import` in `globals.css`; editorial atelier aesthetic |
 | Backend | FastAPI (Python 3.11) | Async, typed, auto-docs, fast iteration |
 | LLM | claude-sonnet-4-6 (Anthropic) | Best balance of quality and speed for generation tasks |
 | Embeddings | sentence-transformers (all-MiniLM-L6-v2) | Local, no API key, good semantic quality for retrieval |
@@ -291,3 +291,5 @@ Two files exist at the project root specifically for developer and AI-assistant 
 **`CODEBASE.md`** — the complete technical reference for this system. It contains every file's purpose, all agent input/output contracts, all API endpoint shapes, all data schemas, every architectural decision made and why, and an explicit list of what is not yet built. Any developer or AI assistant starting a new session should read this file before touching any code.
 
 **`PROMPTS.md`** — the single source of truth for every agent's behaviour. It contains each agent's system prompt verbatim, the variables injected into each prompt, and the scorer's full rubric. When any prompt needs tuning, update `PROMPTS.md` first, then update the corresponding agent file to match. These two must never be out of sync.
+
+**`DESIGN.md`** — the Editorial Atelier design system specification. Defines the full colour palette (Material Design tokens), typography rules (Noto Serif headlines + Inter body), the No-Line Rule, surface hierarchy, elevation model, and component specs for buttons, inputs, and cards. Mandatory reading before any frontend UI/UX change.

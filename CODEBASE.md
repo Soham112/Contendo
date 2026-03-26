@@ -12,6 +12,7 @@
 | `README.md` | Project overview, architecture diagram, setup instructions |
 | `CODEBASE.md` | This file — full technical reference |
 | `PROMPTS.md` | All agent system prompts verbatim — source of truth for agent behaviour |
+| `DESIGN.md` | Editorial Atelier design system — palette tokens, typography (Noto Serif + Inter), No-Line Rule, surface hierarchy, component specs; mandatory reading before any UI change |
 | `.gitignore` | Excludes venv, node_modules, .env, chroma_db data |
 | **Backend** | |
 | `backend/main.py` | FastAPI app entry point — CORS config, lifespan hook (`init_db`), and router registration only (~40 lines) |
@@ -52,20 +53,20 @@
 | **Frontend** | |
 | `frontend/app/layout.tsx` | Root layout — mounts AppShell which renders Sidebar for app routes; /welcome bypasses sidebar |
 | `frontend/app/page.tsx` | Screen 1: Feed Memory (default route `/`) |
-| `frontend/app/library/page.tsx` | Screen 2: Library (`/library`) — source cards, stats bar, text search, filter/sort |
+| `frontend/app/library/page.tsx` | Screen 2: Library (`/library`) — source cards, stats bar, text search, filter/sort; card placeholder areas use `getTitleGradient()` (deterministic charcode-sum gradient from `TITLE_GRADIENTS`) + `getSourceIcon()` (48px type-specific SVG illustrations: book/article, pencil/note, play/youtube, photo/image, layers/default) |
 | `frontend/app/create/page.tsx` | Screen 3: Create Post (`/create`) |
 | `frontend/app/ideas/page.tsx` | Screen 4: Get Ideas (`/ideas`) — standalone ideas screen with topic filter, count picker, save-for-later; ideas persisted in localStorage |
 | `frontend/app/history/page.tsx` | Screen 5: Post History (`/history`) — searchable list, expandable post cards, version pills, restore, delete, diagram rendering |
 | `frontend/app/history/[id]/page.tsx` | Post detail page (`/history/[id]`) — full-page view of a single post with version picker, restore, delete, diagram rendering |
-| `frontend/app/welcome/page.tsx` | Landing page (`/welcome`) — marketing page with interactive nav; AppShell sidebar is suppressed for this route |
-| `frontend/app/globals.css` | Global styles — Tailwind directives, custom keyframes, warm cream palette |
+| `frontend/app/welcome/page.tsx` | Landing page (`/welcome`) — editorial atelier marketing page; fixed glassmorphic nav with `font-headline italic` logo + CSS-only dropdowns + `btn-primary` CTA; hero with Noto Serif h1, feature cards, philosophy section, bento grid, `MOOD_GRADIENTS` staggered mood grid (8 tiles, charcode-deterministic), final CTA with dot-grid overlay; own top nav, AppShell sidebar suppressed |
+| `frontend/app/globals.css` | Global styles — Tailwind directives, CSS custom properties for design tokens, `.btn-primary` gradient, `.glass` glassmorphism, `.font-headline`/`.serif-text`, grain texture overlay, custom scrollbar, `.input-editorial`, `.label-caps`, `.ghost-border` |
 | `frontend/components/ui/ToastProvider.tsx` | Global custom lightweight React Context for floating success/error notifications |
 | `frontend/components/AppShell.tsx` | Layout wrapper — renders Sidebar for all app routes; returns children unwrapped for `/welcome` |
 | `frontend/components/Sidebar.tsx` | Left sidebar navigation — logo, five nav items (Feed Memory, Library, Create Post, Get Ideas, History), user row at bottom |
 | `frontend/components/FeedMemory.tsx` | Feed Memory form — tabs (Article/Text, URL, File, YouTube, Image, Note, Obsidian), URL scraping, textarea, file upload with drag-and-drop, image upload, Obsidian vault preview/ingest flow, result display |
-| `frontend/components/CreatePost.tsx` | Create Post — 4-state UI; dynamic autosave tracker; settings drawer; split-screen analysis panel |
+| `frontend/components/CreatePost.tsx` | Create Post — 4-state UI; dynamic autosave tracker; settings drawer; split-screen analysis panel. Pre-gen form: outlined "THE CENTRAL THEME" input, "FORMAT & MEDIUM" vertical pills, "VOICE & RESONANCE" horizontal pills, centered sparkle Generate button. Post-gen: "The Manuscript" Noto Serif heading + status pill, `whitespace-pre-wrap` textarea. Action buttons: three equal ghost buttons (Regenerate / Analyse / Gen.Visuals) + full-width `btn-primary` Copy. Analysis panel: SVG score ring (`stroke="#58614f"`), first `score_feedback` item as quote, remaining items as STRONG POINT/NEEDS ATTENTION focus cards, scrollable with `maxHeight:"50vh"` in stacked layout. |
 | `frontend/.env.local` | Sets `NEXT_PUBLIC_API_URL=http://localhost:8000` |
-| `frontend/tailwind.config.ts` | Tailwind config scoped to app/ and components/ with custom shadows and colors |
+| `frontend/tailwind.config.ts` | Tailwind config scoped to app/ and components/; extends colors with full Material Design token set (primary, secondary, tertiary, surface-container-*, on-surface, outline-variant, error); custom box shadows (card, card-hover, float, ambient, focus); border radius overrides; font families (headline: Noto Serif, body/sans: Inter) |
 | `frontend/package.json` | Next.js 14 app with TypeScript + Tailwind |
 
 ---

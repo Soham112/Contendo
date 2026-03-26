@@ -7,18 +7,24 @@
 
 ## Read These First
 
-Before touching any code, read these three files in order:
+Before touching any code, read these four files in order:
 
-1. **CODEBASE.md** — full technical reference. Every file's purpose, 
-   all API endpoint contracts, all data schemas, every architectural 
+1. **CODEBASE.md** — full technical reference. Every file's purpose,
+   all API endpoint contracts, all data schemas, every architectural
    decision made and why, and what is not built yet.
 
-2. **PROMPTS.md** — every agent system prompt verbatim. Source of truth 
-   for agent behaviour. If a prompt needs changing, update PROMPTS.md 
+2. **PROMPTS.md** — every agent system prompt verbatim. Source of truth
+   for agent behaviour. If a prompt needs changing, update PROMPTS.md
    first, then the agent file. They must never be out of sync.
 
-3. **README.md** — architecture diagram, the five screens, agent pipeline 
+3. **README.md** — architecture diagram, the five screens, agent pipeline
    table, tech stack, setup instructions.
+
+4. **DESIGN.md** — the Editorial Atelier design system. Mandatory reading
+   before any UI/UX work. Covers the full palette, typography rules
+   (Noto Serif headlines + Inter body), the No-Line Rule, surface
+   hierarchy, elevation, and component specs for buttons, inputs, and
+   cards. Never deviate from it without explicit instruction.
 
 ---
 
@@ -57,6 +63,7 @@ Single user. No auth layer yet.
 **Docs discipline:**
 - After every change, update CODEBASE.md and PROMPTS.md to match
 - README.md needs updating only if architecture or screens change
+- DESIGN.md is the source of truth for all UI/UX decisions — read it before any frontend change
 - The implementation is always the source of truth if docs conflict
 
 **Auth placeholder:**
