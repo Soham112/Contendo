@@ -8,6 +8,10 @@ from memory.profile_store import profile_to_context_string
 
 load_dotenv()
 
+client = anthropic.Anthropic(
+    api_key=os.environ["ANTHROPIC_API_KEY"],
+    max_retries=3,
+)
 
 _ARCHETYPE_HUMAN_NAMES = {
     "incident_report": "Incident Report / Retrospective",
@@ -46,7 +50,6 @@ Think about what this topic is REALLY about, not just the keywords. \
 Return ONLY the archetype key, nothing else. No explanation."""
 
     try:
-        client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
         message = client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=20,
@@ -117,8 +120,6 @@ Never force a diagram into opinion pieces or short punchy posts where the words 
 
 
 def draft_node(state: PipelineState) -> PipelineState:
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-
     # Infer archetype from topic/context/tone — no Claude call, deterministic
     archetype = infer_archetype(
         topic=state.get("topic", ""),

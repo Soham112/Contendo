@@ -10,6 +10,11 @@ from memory.profile_store import load_profile, profile_to_context_string
 
 load_dotenv()
 
+client = anthropic.Anthropic(
+    api_key=os.environ["ANTHROPIC_API_KEY"],
+    max_retries=3,
+)
+
 SYSTEM_PROMPT = """You are a content strategist who generates specific, fresh content ideas for a creator.
 
 You will be given:
@@ -44,7 +49,6 @@ Return nothing outside the JSON array."""
 def generate_suggestions(count: int = 8, topic: str | None = None) -> list[dict]:
     count = min(max(count, 1), 15)
 
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     profile = load_profile()
     profile_context = profile_to_context_string(profile)
 

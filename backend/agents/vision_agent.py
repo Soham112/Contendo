@@ -5,6 +5,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+client = anthropic.Anthropic(
+    api_key=os.environ["ANTHROPIC_API_KEY"],
+    max_retries=3,
+)
+
 SYSTEM_PROMPT = """You are an image-to-knowledge extractor. Your job is to read images — diagrams, screenshots, slides, photos of whiteboards, charts — and extract all meaningful information as clean, structured text.
 
 Rules:
@@ -21,8 +26,6 @@ Be thorough. Every detail that carries information should make it into your outp
 
 
 def extract_from_image(image_base64: str, media_type: str = "image/jpeg") -> str:
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-
     # Strip data URI prefix if present
     if "," in image_base64:
         image_base64 = image_base64.split(",", 1)[1]

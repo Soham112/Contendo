@@ -8,6 +8,11 @@ from memory.profile_store import load_profile, profile_to_context_string
 
 load_dotenv()
 
+client = anthropic.Anthropic(
+    api_key=os.environ["ANTHROPIC_API_KEY"],
+    max_retries=3,
+)
+
 SYSTEM_PROMPT = """You are a humanizing editor. You take drafts that may still have AI-writing fingerprints and rewrite them to sound like a real human wrote them — specifically, like the person described in the profile below.
 
 User profile:
@@ -86,7 +91,6 @@ def refine_draft(
     profile_context = profile_to_context_string(profile)
     words_to_avoid = ", ".join(profile.get("words_to_avoid", []))
 
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     prompt = REFINE_PROMPT.format(
         profile_context=profile_context,
         words_to_avoid=words_to_avoid,
@@ -115,8 +119,6 @@ def refine_draft(
 def humanizer_node(state: PipelineState) -> PipelineState:
     if state.get("quality") == "draft":
         return state  # pass raw draft through unchanged
-
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
     profile = state["profile"]
     profile_context = profile_to_context_string(profile)

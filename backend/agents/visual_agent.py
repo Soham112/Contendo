@@ -5,6 +5,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+client = anthropic.Anthropic(
+    api_key=os.environ["ANTHROPIC_API_KEY"],
+    max_retries=3,
+)
+
 DIAGRAM_PROMPT = """Generate a clean SVG diagram for the following concept:
 {description}
 
@@ -40,7 +45,6 @@ def _parse_placeholders(post_content: str) -> list[dict]:
 
 
 def _generate_svg(description: str) -> str:
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     message = client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=4000,
