@@ -5,6 +5,7 @@ from memory.profile_store import load_profile
 from memory.feedback_store import get_all_topics_posted
 from agents.retrieval_agent import retrieval_node
 from agents.draft_agent import draft_node
+from agents.critic_agent import critic_node
 from agents.humanizer_agent import humanizer_node
 from agents.scorer_agent import scorer_node
 
@@ -16,6 +17,7 @@ def load_profile_node(state: PipelineState) -> PipelineState:
     state["profile"] = load_profile()
     state["iterations"] = 0
     state["archetype"] = state.get("archetype", "")
+    state["critic_brief"] = {}
     state["posted_topics"] = get_all_topics_posted()
     return state
 
@@ -48,6 +50,7 @@ def build_graph() -> StateGraph:
     graph.add_node("load_profile", load_profile_node)
     graph.add_node("retrieval", retrieval_node)
     graph.add_node("draft", draft_node)
+    graph.add_node("critic", critic_node)
     graph.add_node("humanizer", humanizer_node)
     graph.add_node("scorer", scorer_node)
     graph.add_node("finalize", finalize_node)
@@ -55,7 +58,8 @@ def build_graph() -> StateGraph:
     graph.set_entry_point("load_profile")
     graph.add_edge("load_profile", "retrieval")
     graph.add_edge("retrieval", "draft")
-    graph.add_edge("draft", "humanizer")
+    graph.add_edge("draft", "critic")
+    graph.add_edge("critic", "humanizer")
     graph.add_conditional_edges(
         "humanizer",
         should_score,
@@ -91,6 +95,7 @@ def run_pipeline(topic: str, format: str, tone: str, context: str = "", quality:
         "user_id": user_id,
         "iterations": 0,
         "archetype": "",
+        "critic_brief": {},
     }
 
     result = pipeline.invoke(initial_state)

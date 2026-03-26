@@ -18,7 +18,7 @@ SYSTEM_PROMPT = """You are a humanizing editor. You take drafts that may still h
 User profile:
 {profile_context}
 
-AI writing patterns to eliminate:
+{critic_section}AI writing patterns to eliminate:
 - Sentences that start with "In today's..." or "It's important to note..."
 - Overuse of transition words: "Furthermore", "Moreover", "Additionally", "In conclusion"
 - Generic motivational framing: "unlock your potential", "game-changing", "transformative"
@@ -37,7 +37,47 @@ What to inject instead:
 Current draft:
 {current_draft}
 
-Rewrite the draft now. Preserve the structure and all factual content — only change the language and sentence patterns. Output only the rewritten post, no commentary."""
+{rewrite_instruction}"""
+
+
+def _format_critic_brief(critic_brief: dict) -> tuple[str, str]:
+    """Format critic_brief dict into (critic_section, rewrite_instruction) for SYSTEM_PROMPT.
+
+    Returns empty critic_section and a preserve-structure instruction when the brief
+    is empty (draft mode / error) or all areas are "strong".
+    Returns a populated critic_section and a fix-first instruction when any area
+    has verdict "needs_work".
+    """
+    _preserve = (
+        "Rewrite the draft now. Preserve the structure and all factual content — "
+        "only change the language and sentence patterns. Output only the rewritten post, no commentary."
+    )
+    _fix_first = (
+        "Rewrite the draft now. Fix the flagged issues above first — in this order: "
+        "hook, substance, structure, voice. You may rewrite the hook entirely, restructure sections, "
+        "and add specific grounding from the knowledge base. Then do a full language humanization pass. "
+        "Output only the rewritten post, no commentary."
+    )
+
+    if not critic_brief:
+        return "", _preserve
+
+    _areas = ["hook", "substance", "structure", "voice"]
+    flagged = []
+    for area in _areas:
+        entry = critic_brief.get(area, {})
+        if isinstance(entry, dict) and entry.get("verdict") == "needs_work" and entry.get("fix"):
+            flagged.append(f"- {area.upper()}: {entry['fix']}")
+
+    if not flagged:
+        return "", _preserve
+
+    critic_section = (
+        "CRITIC BRIEF — fix these issues before humanizing, in this order:\n"
+        + "\n".join(flagged)
+        + "\n\n"
+    )
+    return critic_section, _fix_first
 
 
 REFINE_PROMPT = """You are a sharp editor rewriting a post draft based on specific feedback. Your job is to make meaningful improvements — not cosmetic tweaks.
@@ -125,10 +165,14 @@ def humanizer_node(state: PipelineState) -> PipelineState:
     words_to_avoid = ", ".join(profile.get("words_to_avoid", []))
     current_draft = state["current_draft"]
 
+    critic_section, rewrite_instruction = _format_critic_brief(state.get("critic_brief", {}))
+
     prompt = SYSTEM_PROMPT.format(
         profile_context=profile_context,
         words_to_avoid=words_to_avoid,
         current_draft=current_draft,
+        critic_section=critic_section,
+        rewrite_instruction=rewrite_instruction,
     )
 
     message = client.messages.create(
