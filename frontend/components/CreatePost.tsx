@@ -932,34 +932,6 @@ export default function CreatePost() {
 
           <div style={{ borderTop: "0.5px solid #dfe3e2", marginBottom: 20 }} />
 
-          {/* Aesthetic Match */}
-          <div className="mb-6">
-            <p
-              className="label-caps text-secondary mb-3"
-              style={{ fontSize: "0.58rem", letterSpacing: "0.1em" }}
-            >
-              AESTHETIC MATCH
-            </p>
-            <div
-              className="relative rounded-lg overflow-hidden bg-primary-container"
-              style={{ height: 88 }}
-            >
-              <div
-                className="absolute bottom-2 right-2 px-2 py-1 rounded"
-                style={{ background: "rgba(88,97,79,0.82)" }}
-              >
-                <span
-                  className="label-caps text-white"
-                  style={{ fontSize: "0.53rem", letterSpacing: "0.1em" }}
-                >
-                  STYLE: EDITORIAL
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ borderTop: "0.5px solid #dfe3e2", marginBottom: 20 }} />
-
           {/* Refine section */}
           <p
             className="label-caps text-secondary mb-3"
@@ -1082,7 +1054,7 @@ export default function CreatePost() {
           </svg>
           Regenerate
         </button>
-        {/* Refine */}
+        {/* Analyse */}
         <button
           onClick={() => {
             setAnalysisOpen(true);
@@ -1093,11 +1065,9 @@ export default function CreatePost() {
           className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-surface-container-high text-secondary text-[13px] py-2.5 hover:border-outline-variant hover:text-on-surface transition-colors bg-surface-container-lowest disabled:opacity-50"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" />
-            <line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" />
-            <line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
+            <rect x="3" y="12" width="4" height="9" /><rect x="10" y="7" width="4" height="14" /><rect x="17" y="3" width="4" height="18" />
           </svg>
-          Refine
+          Analyse
         </button>
         {/* Generate Visuals */}
         <button
@@ -1251,7 +1221,7 @@ export default function CreatePost() {
             </div>
 
             {/* Post textarea */}
-            <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+            <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
               <div
                 className="rounded-xl bg-surface-container-lowest shadow-card focus-within:shadow-card-hover transition-all duration-300"
                 style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "28px 32px" }}
@@ -1284,6 +1254,7 @@ export default function CreatePost() {
           <div
             style={{
               flex: "0 0 38%",
+              height: "100%",
               overflowY: "auto",
               padding: "28px 32px",
               background: "#faf9f8",
@@ -1388,7 +1359,7 @@ export default function CreatePost() {
             </div>
 
             {/* Post textarea */}
-            <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+            <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
               <div
                 className="rounded-xl bg-surface-container-lowest shadow-card focus-within:shadow-card-hover transition-all duration-300"
                 style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "28px 32px" }}
@@ -1428,6 +1399,8 @@ export default function CreatePost() {
                   paddingTop: 24,
                   borderTop: "0.5px solid #dfe3e2",
                   flexShrink: 0,
+                  maxHeight: "50vh",
+                  overflowY: "auto",
                 }}
               >
                 {analysisPanelContent}
