@@ -8,6 +8,11 @@ from utils.chunker import chunk_text
 
 load_dotenv()
 
+client = anthropic.Anthropic(
+    api_key=os.environ["ANTHROPIC_API_KEY"],
+    max_retries=3,
+)
+
 SYSTEM_PROMPT = """You are a tag extraction assistant. Given a passage of text, extract 3–8 short, lowercase topic tags that best describe what this content is about.
 
 Rules:
@@ -20,7 +25,6 @@ Example output: ["machine learning", "transformer models", "ai inference", "scal
 
 
 def _extract_tags(text: str) -> list[str]:
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     # Use first 1500 words for tag extraction to keep costs low
     preview = " ".join(text.split()[:1500])
     message = client.messages.create(

@@ -8,6 +8,11 @@ from pipeline.state import PipelineState
 
 load_dotenv()
 
+client = anthropic.Anthropic(
+    api_key=os.environ["ANTHROPIC_API_KEY"],
+    max_retries=3,
+)
+
 SYSTEM_PROMPT = """You are a content authenticity scorer. Score the following post on how much it reads like a real human wrote it — specifically a founder/builder with a strong, direct voice. Not polished corporate content. Not AI-generated filler. Real.
 
 Score across exactly these 5 dimensions, each out of 20 points (total: 100):
@@ -88,8 +93,6 @@ def parse_scorer_response(response_text: str) -> dict:
 
 def score_text(draft: str) -> tuple[int, list[str]]:
     """Score a draft and return (total_score, combined feedback+flagged_sentences list)."""
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-
     message = client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=800,
