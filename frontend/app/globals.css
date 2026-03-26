@@ -1,12 +1,20 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif:ital,wght@0,400;0,700;1,400&family=Inter:wght@300;400;500;600&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --background: #faf9f7;
-  --foreground: #1a1918;
+  --background: #faf9f8;
+  --foreground: #2f3333;
+  --primary: #58614f;
+  --primary-dim: #4c5543;
+  --secondary: #645e57;
+  --tertiary: #81543c;
+  --surface-container-low: #f3f4f3;
+  --surface-container: #edeeed;
+  --surface-container-high: #e6e9e8;
+  --outline-variant: #aeb3b2;
 }
 
 html {
@@ -16,11 +24,42 @@ html {
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: "DM Sans", system-ui, sans-serif;
+  font-family: "Inter", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Sleek scrollbar */
+/* ── Typography helpers ─────────────────────────────────── */
+.font-headline,
+.serif-text {
+  font-family: "Noto Serif", Georgia, serif;
+}
+
+/* ── Primary gradient button ────────────────────────────── */
+.btn-primary {
+  background: linear-gradient(135deg, #58614f 0%, #4c5543 100%);
+}
+
+/* ── Glassmorphism ──────────────────────────────────────── */
+.glass {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+/* ── Subtle grain texture on the page background ────────── */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.018;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+}
+
+/* ── Scrollbar ──────────────────────────────────────────── */
 ::-webkit-scrollbar {
   width: 5px;
   height: 5px;
@@ -29,19 +68,46 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #d6d1c7;
+  background: var(--outline-variant);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #bfbbae;
+  background: var(--secondary);
 }
 
-/* Global focus states */
+/* ── Focus states ───────────────────────────────────────── */
 *:focus-visible {
-  outline: 2px solid #1a1918;
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
 
+/* ── Input — bottom-border style ───────────────────────── */
+.input-editorial {
+  background: var(--surface-container-low);
+  border: none;
+  border-bottom: 1.5px solid var(--outline-variant);
+  border-radius: 0;
+  transition: border-color 0.15s ease;
+}
+.input-editorial:focus {
+  outline: none;
+  border-bottom: 2px solid var(--primary);
+}
+
+/* ── Label / metadata caps ──────────────────────────────── */
+.label-caps {
+  font-size: 0.75rem;
+  letter-spacing: 0.05rem;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+/* ── Ghost border (for the "Ghost Border" rule) ─────────── */
+.ghost-border {
+  outline: 1px solid rgba(174, 179, 178, 0.15);
+}
+
+/* ── Toast animation (preserved from original) ─────────── */
 @keyframes toast-slide-up {
   from {
     opacity: 0;
@@ -53,3 +119,8 @@ body {
   }
 }
 
+/* ── Selection ──────────────────────────────────────────── */
+::selection {
+  background: #dce6ce;
+  color: #394231;
+}
