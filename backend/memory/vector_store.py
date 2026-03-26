@@ -61,6 +61,7 @@ def upsert_chunks(
     source_title: str = "",
     ingested_at: str = "",
     user_id: str = "default",
+    content_hash: str = "",
 ) -> int:
     collection = get_collection(user_id)
     if not chunks:
@@ -80,6 +81,7 @@ def upsert_chunks(
             "total_chunks": total,
             "source_title": source_title,
             "ingested_at": ingested_at,
+            "content_hash": content_hash,
         }
         for i in range(total)
     ]
@@ -91,6 +93,30 @@ def upsert_chunks(
         metadatas=metadatas,
     )
     return total
+
+
+def query_by_hash(content_hash: str, user_id: str = "default") -> dict | None:
+    """Check if content with this hash already exists in the collection.
+
+    Returns dict with chunk_count and tags if found, None if not.
+    """
+    collection = get_collection(user_id)
+    results = collection.get(
+        where={"content_hash": content_hash},
+        limit=1,
+    )
+    if not results or not results["ids"]:
+        return None
+
+    # Get all chunks for this hash to count them
+    all_chunks = collection.get(where={"content_hash": content_hash})
+    chunk_count = len(all_chunks["ids"])
+
+    # Extract tags from first chunk metadata
+    tags_raw = all_chunks["metadatas"][0].get("tags", "")
+    tags = [t.strip() for t in tags_raw.split(",") if t.strip()] if tags_raw else []
+
+    return {"chunk_count": chunk_count, "tags": tags}
 
 
 def query_similar(query: str, top_k: int = 8, user_id: str = "default") -> list[dict]:

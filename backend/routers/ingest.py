@@ -24,6 +24,8 @@ class IngestRequest(BaseModel):
 class IngestResponse(BaseModel):
     chunks_stored: int
     tags: list[str]
+    duplicate: bool = False
+    message: str = ""
 
 
 class ScrapeRequest(BaseModel):
@@ -78,6 +80,13 @@ async def ingest(req: IngestRequest) -> IngestResponse:
             raise HTTPException(status_code=400, detail="content is required")
         result = ingest_content(req.content, source_type=req.source_type, user_id="default")
 
+    if result.get("duplicate"):
+        return IngestResponse(
+            chunks_stored=result["chunks_stored"],
+            tags=result["tags"],
+            duplicate=True,
+            message="This content is already in your knowledge base",
+        )
     return IngestResponse(chunks_stored=result["chunks_stored"], tags=result["tags"])
 
 
@@ -95,6 +104,13 @@ async def ingest_file(file: UploadFile = File(...)) -> IngestResponse:
 
     source_title = _title_from_text(text, file.filename or "")
     result = ingest_content(text, source_type="article", source_title=source_title, user_id="default")
+    if result.get("duplicate"):
+        return IngestResponse(
+            chunks_stored=result["chunks_stored"],
+            tags=result["tags"],
+            duplicate=True,
+            message="This content is already in your knowledge base",
+        )
     return IngestResponse(chunks_stored=result["chunks_stored"], tags=result["tags"])
 
 
@@ -110,6 +126,15 @@ async def scrape_and_ingest(req: ScrapeRequest) -> dict:
         source_title=scraped["title"],
         user_id="default",
     )
+    if result.get("duplicate"):
+        return {
+            "chunks_stored": result["chunks_stored"],
+            "tags": result["tags"],
+            "title": scraped["title"],
+            "word_count": scraped["word_count"],
+            "duplicate": True,
+            "message": "This content is already in your knowledge base",
+        }
     return {
         "chunks_stored": result["chunks_stored"],
         "tags": result["tags"],
