@@ -17,7 +17,7 @@
 | `backend/main.py` | FastAPI app entry point — CORS config, lifespan hook (`init_db`), and router registration only (~40 lines) |
 | `backend/routers/__init__.py` | Empty — marks routers/ as a Python package |
 | `backend/routers/ingest.py` | `/ingest`, `/ingest-file`, `/scrape-and-ingest`, `/obsidian/preview`, `/obsidian/ingest` |
-| `backend/routers/generate.py` | `/generate`, `/refine`, `/generate-visuals` |
+| `backend/routers/generate.py` | `/generate`, `/refine`, `/score`, `/generate-visuals` |
 | `backend/routers/history.py` | `GET /history`, `POST /log-post`, `PATCH /history/{id}`, `DELETE /history/{id}`, `POST /history/{id}/restore/{vid}` |
 | `backend/routers/library.py` | `GET /library`, `DELETE /library/source` |
 | `backend/routers/ideas.py` | `GET /suggestions` |
@@ -125,7 +125,7 @@
 |---|---|
 | **Reads from state** | `current_draft` |
 | **Writes to state** | `score: int`, `score_feedback: list[str]` |
-| **Side effects** | 1 Claude API call |
+| **Side effects** | 1 Claude API call — only invoked for polished mode. Skipped entirely for standard and draft modes (graph routes humanizer → finalize directly). |
 
 ### load_profile_node (graph.py inline)
 | | |
@@ -249,10 +249,11 @@
   "score": 82,
   "score_feedback": ["Sentence in paragraph 2 is too generic.", "Avoid 'it's worth noting'"],
   "iterations": 2,
-  "archetype": "incident_report"
+  "archetype": "incident_report",
+  "scored": true
 }
 ```
-**Notes:** Runs the full LangGraph pipeline. `quality` defaults to `"standard"` (1 humanizer + 1 scorer pass, no retry loop). Pass `"polished"` for up to 3 humanizer iterations. Pass `"draft"` to skip humanizer and scorer entirely. Posts are NOT auto-saved by this endpoint — the frontend calls `/log-post` automatically after generation completes.
+**Notes:** Runs the full LangGraph pipeline. `quality` defaults to `"standard"` (1 humanizer pass, scorer skipped — lazy). Pass `"polished"` for up to 3 humanizer iterations with scorer running each pass. Pass `"draft"` to skip humanizer and scorer entirely. `scored` in the response indicates whether the scorer ran: `false` for `standard` and `draft` modes (use `POST /score` to score on demand), `true` for `polished` mode. Posts are NOT auto-saved by this endpoint — the frontend calls `/log-post` automatically after generation completes.
 
 ---
 
@@ -417,6 +418,22 @@
 
 ---
 
+### POST /score
+**Request body:**
+```json
+{ "post_content": "string — the post text to score" }
+```
+**Response:**
+```json
+{
+  "score": 78,
+  "score_feedback": ["note 1", "note 2", "flagged sentence"]
+}
+```
+**Notes:** Standalone scoring endpoint. Calls `score_text()` directly — no pipeline. Used by the frontend when the user requests analysis on a standard-mode post (where the scorer was skipped during generation). Does not save to history — frontend calls `PATCH /history/{id}` separately if it wants to persist the score.
+
+---
+
 ### DELETE /library/source
 **Request body:**
 ```json
@@ -577,7 +594,7 @@
 | Ideation agent uses multi-query diversity sampling | 8 queries (5 broad + 2 random tags + 1 oldest source) prevent recency bias; chunk cap raised to 30; diversity rules added to system prompt |
 | Default idea count is 8 | Raised from 5 — more ideas needed to span different knowledge base topics after diversity sampling |
 | Refinements update the existing history entry in place | After `/refine`, frontend calls `PATCH /history/{post_id}` with new content + score. After visuals generation, calls `PATCH` with `svg_diagrams`. No new history rows are created — one entry per generation session. |
-| Score and feedback hidden by default | Score ring, iterations, feedback, and refine section are collapsed behind a "View authenticity analysis" toggle. Post textarea and action buttons are always visible. Preference stored in `contentOS_show_analysis` sessionStorage. Scorer still runs every time — this is display only. |
+| Scorer runs lazily for standard mode | Scorer is skipped entirely during generation for `standard` and `draft` modes — the graph routes `humanizer → finalize` directly. The analysis toggle button reads "Score this post" and calls `POST /score` on first click, then shows results. `polished` mode still runs the scorer automatically because the retry loop depends on the score. Saves one Sonnet call per standard generation for users who never open the analysis panel. Score ring, feedback, and refine section are collapsed behind the toggle; post textarea and action buttons are always visible. |
 | Ideas persist in sessionStorage until dismissed | `contentOS_last_ideas` stores the ideas array on Create Post; panel is restored on mount if key exists. Panel stays open after "Use this" (idea gets a checkmark). Cleared only by explicit X dismiss, Regenerate, or restored-session dismiss. |
 | Top navigation replaced with left sidebar | `AppShell` renders `Sidebar` (a 224px fixed-width left sidebar) for all app routes. The `/welcome` route bypasses AppShell entirely and renders its own top nav. The root layout no longer contains any nav elements directly. |
 | Get Ideas moved to dedicated screen `/ideas` | The Get Ideas feature has its own page at `/ideas` (not just a panel on Create Post). The sidebar links to it. Ideas state (generated ideas, topic, count) is persisted in localStorage under `contendo_ideas`, `contendo_ideas_topic`, and `contendo_ideas_count` keys. |

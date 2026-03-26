@@ -410,13 +410,13 @@ Three-attempt parse with fallback:
 
 If all three fail: logs raw response, returns `score=50`, `feedback=["Score parsing failed — retry to get fresh evaluation."]`.
 
-**Quality modes (defined in pipeline/graph.py `should_retry()` and agent short-circuits):**
+**Quality modes (defined in pipeline/graph.py `should_score()` and `should_retry()`):**
 
 | Mode | humanizer_node | scorer_node | Retry loop |
 |------|---------------|-------------|------------|
-| `draft` | Returns state unchanged — no Claude call | Returns `score=0`, `score_feedback=[]` — no Claude call | Never retries; always finalizes |
-| `standard` (default) | Runs normally — one Claude call | Runs normally | Always finalizes after one pass regardless of score |
-| `polished` | Runs normally — one Claude call per iteration | Runs normally | Retries if score < 75 AND iterations < 3; finalizes at 3 iterations or score ≥ 75 |
+| `draft` | Returns state unchanged — no Claude call | Skipped entirely — graph routes `humanizer → finalize` directly | Never retries; always finalizes |
+| `standard` (default) | Runs normally — one Claude call | Skipped entirely — graph routes `humanizer → finalize` directly. On-demand scoring available via `POST /score` | Always finalizes after one humanizer pass; scorer not involved |
+| `polished` | Runs normally — one Claude call per iteration | Runs normally — required for retry loop | Retries if score < 75 AND iterations < 3; finalizes at 3 iterations or score ≥ 75 |
 
 **Retry logic (polished mode only — defined in pipeline/graph.py):**
 - Score ≥ 75 → finalize

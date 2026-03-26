@@ -25,13 +25,18 @@ def finalize_node(state: PipelineState) -> PipelineState:
     return state
 
 
+def should_score(state: PipelineState) -> str:
+    """Route after humanizer: only run scorer for polished mode.
+
+    standard and draft skip scorer entirely and go straight to finalize.
+    """
+    if state.get("quality", "standard") == "polished":
+        return "scorer"
+    return "finalize"
+
+
 def should_retry(state: PipelineState) -> str:
-    quality = state.get("quality", "standard")
-
-    if quality in ("draft", "standard"):
-        return "finalize"
-
-    # quality == "polished": retry loop up to MAX_ITERATIONS
+    """Route after scorer: only called for polished mode."""
     if state.get("score", 0) < SCORE_THRESHOLD and state.get("iterations", 0) < MAX_ITERATIONS:
         return "humanizer"
     return "finalize"
@@ -51,7 +56,14 @@ def build_graph() -> StateGraph:
     graph.add_edge("load_profile", "retrieval")
     graph.add_edge("retrieval", "draft")
     graph.add_edge("draft", "humanizer")
-    graph.add_edge("humanizer", "scorer")
+    graph.add_conditional_edges(
+        "humanizer",
+        should_score,
+        {
+            "scorer": "scorer",
+            "finalize": "finalize",
+        },
+    )
     graph.add_conditional_edges(
         "scorer",
         should_retry,
@@ -89,4 +101,5 @@ def run_pipeline(topic: str, format: str, tone: str, context: str = "", quality:
         "score_feedback": result.get("score_feedback", []),
         "iterations": result.get("iterations", 1),
         "archetype": result.get("archetype", ""),
+        "scored": quality == "polished",
     }
