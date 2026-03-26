@@ -10,7 +10,7 @@ type SourceType = "article" | "url" | "file" | "youtube" | "image" | "note" | "o
 const TABS: { id: SourceType; label: string; description: string }[] = [
   {
     id: "article",
-    label: "Article / Text",
+    label: "Article",
     description: "Paste any article, blog post, or long-form text.",
   },
   {
@@ -32,7 +32,7 @@ const TABS: { id: SourceType; label: string; description: string }[] = [
   },
   {
     id: "image",
-    label: "Image / Diagram",
+    label: "Image",
     description: "Upload a screenshot, diagram, or whiteboard photo. Claude will extract the knowledge.",
   },
   {
@@ -80,6 +80,52 @@ interface ObsidianIngestResult {
   skipped_files: number;
   all_tags: string[];
 }
+
+const SOURCE_ICONS: Record<SourceType, React.ReactNode> = {
+  article: (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="2" y="2" width="12" height="12" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M5 6h6M5 9h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+  ),
+  url: (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M6.5 9.5a3.5 3.5 0 0 0 4.95 0l2-2a3.5 3.5 0 0 0-4.95-4.95l-1 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      <path d="M9.5 6.5a3.5 3.5 0 0 0-4.95 0l-2 2a3.5 3.5 0 0 0 4.95 4.95l1-1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+  ),
+  youtube: (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="1" y="4" width="14" height="8" rx="2" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M7 6.5l3 1.5-3 1.5V6.5z" fill="currentColor"/>
+    </svg>
+  ),
+  image: (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="2" y="2" width="12" height="12" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
+      <circle cx="5.5" cy="5.5" r="1" fill="currentColor"/>
+      <path d="M2 11l4-3 3 2.5 2-1.5 3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  ),
+  note: (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M3 3h10v8l-3 3H3z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+      <path d="M10 11v3M10 11h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+  ),
+  file: (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M4 2h6l4 4v9H4z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+      <path d="M10 2v4h4" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+    </svg>
+  ),
+  obsidian: (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M8 2L2 6v8h12V6z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+      <path d="M8 2l6 4M8 2v12" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+    </svg>
+  ),
+};
 
 export default function FeedMemory() {
   const [activeTab, setActiveTab] = useState<SourceType>("article");
@@ -248,29 +294,16 @@ export default function FeedMemory() {
     setResult(null);
 
     if (activeTab === "image") {
-      if (!imageFile) {
-        setError("Please select an image file.");
-        return;
-      }
+      if (!imageFile) { setError("Please select an image file."); return; }
     } else if (activeTab === "file") {
-      if (!uploadedFile) {
-        setError("Please upload a file.");
-        return;
-      }
+      if (!uploadedFile) { setError("Please upload a file."); return; }
     } else if (activeTab === "url") {
-      if (!urlInput.trim()) {
-        setError("Please enter a URL.");
-        return;
-      }
+      if (!urlInput.trim()) { setError("Please enter a URL."); return; }
       if (!urlInput.startsWith("http://") && !urlInput.startsWith("https://")) {
-        setError("URL must start with http:// or https://");
-        return;
+        setError("URL must start with http:// or https://"); return;
       }
     } else {
-      if (!content.trim()) {
-        setError("Please enter some content.");
-        return;
-      }
+      if (!content.trim()) { setError("Please enter some content."); return; }
     }
 
     setLoading(true);
@@ -280,10 +313,7 @@ export default function FeedMemory() {
       if (activeTab === "file") {
         const formData = new FormData();
         formData.append("file", uploadedFile!);
-        res = await fetch(`${API}/ingest-file`, {
-          method: "POST",
-          body: formData,
-        });
+        res = await fetch(`${API}/ingest-file`, { method: "POST", body: formData });
       } else if (activeTab === "url") {
         res = await fetch(`${API}/scrape-and-ingest`, {
           method: "POST",
@@ -292,12 +322,8 @@ export default function FeedMemory() {
         });
       } else {
         const body: Record<string, string> = { source_type: activeTab };
-        if (activeTab === "image") {
-          body.raw_image = imagePreview;
-          body.content = "";
-        } else {
-          body.content = content;
-        }
+        if (activeTab === "image") { body.raw_image = imagePreview; body.content = ""; }
+        else { body.content = content; }
         res = await fetch(`${API}/ingest`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -330,364 +356,461 @@ export default function FeedMemory() {
 
   const currentTab = TABS.find((t) => t.id === activeTab)!;
 
+  const inputLabel =
+    activeTab === "url" ? "SOURCE URL" :
+    activeTab === "file" ? "DOCUMENT FILE" :
+    activeTab === "image" ? "IMAGE / DIAGRAM" :
+    activeTab === "obsidian" ? "VAULT PATH" :
+    "CONTENT FRAGMENT";
+
   return (
-    <div className="space-y-7">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-text-primary tracking-tight">Feed Memory</h1>
-        <p className="mt-1 text-text-secondary text-sm">
-          Add knowledge to your memory store. It will be chunked, embedded, and made available when you generate posts.
-        </p>
+    <div className="flex gap-8 max-w-7xl">
+      {/* ── Left: main form ───────────────────────────────────── */}
+      <div className="flex-1 min-w-0 space-y-7">
+
+        {/* Header */}
+        <div>
+          <h1 className="font-headline text-4xl text-on-surface leading-tight">Feed Memory</h1>
+          <p className="mt-2 text-secondary text-[15px] leading-relaxed">
+            Transform raw fragments into editorial wisdom. Select a medium to store your inspiration.
+          </p>
+        </div>
+
+        {/* Tab selector */}
+        <div className="flex flex-wrap gap-2">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => handleTabChange(tab.id)}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-[12.5px] font-medium tracking-wide transition-all duration-150 ${
+                activeTab === tab.id
+                  ? "btn-primary text-white shadow-card"
+                  : "bg-surface-container text-secondary hover:bg-surface-container-high hover:text-on-surface"
+              }`}
+            >
+              <span className={activeTab === tab.id ? "text-white/80" : "text-outline"}>
+                {SOURCE_ICONS[tab.id]}
+              </span>
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Main input card */}
+        <div className="bg-surface-container-lowest rounded-2xl shadow-card overflow-hidden">
+          {/* Card body */}
+          <div className="p-8 space-y-6">
+
+            {activeTab === "obsidian" ? (
+              /* ── Obsidian flow ── */
+              <div className="space-y-5">
+                {obsidianPhase === "done" && obsidianResult ? (
+                  <div className="space-y-3">
+                    <p className="label-caps text-secondary">Vault ingested</p>
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center shrink-0">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                          <path d="M3 8.5l3.5 3.5 6.5-7" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="text-[15px] font-medium text-on-surface">
+                          {obsidianResult.total_files_processed} notes ingested
+                        </p>
+                        <p className="text-sm text-secondary mt-0.5">
+                          {obsidianResult.total_chunks_stored} chunks · {obsidianResult.total_words_processed.toLocaleString()} words
+                        </p>
+                      </div>
+                    </div>
+                    {obsidianResult.all_tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {obsidianResult.all_tags.slice(0, 10).map((tag) => (
+                          <span key={tag} className="text-[11px] px-2.5 py-1 rounded-full bg-primary-container text-on-primary-container font-medium">
+                            #{tag}
+                          </span>
+                        ))}
+                        {obsidianResult.all_tags.length > 10 && (
+                          <span className="text-xs text-outline self-center">+{obsidianResult.all_tags.length - 10} more</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : obsidianPhase === "ingesting" ? (
+                  <div className="py-8 text-center space-y-3">
+                    <div className="inline-block w-5 h-5 border-2 border-surface-container-high border-t-primary rounded-full animate-spin" />
+                    <p className="text-[15px] text-on-surface font-medium">{loadingMessage}</p>
+                    <p className="text-sm text-secondary">Do not close this tab.</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="space-y-2">
+                      <label className="label-caps text-secondary">Vault folder path</label>
+                      <input
+                        type="text"
+                        value={vaultPath}
+                        onChange={(e) => { setVaultPath(e.target.value); setVaultPreview(null); setObsidianPhase("input"); }}
+                        onKeyDown={(e) => { if (e.key === "Enter" && obsidianPhase === "input") handleVaultPreview(); }}
+                        placeholder="/Users/yourname/Documents/ObsidianVault"
+                        className="w-full bg-surface-container-low px-4 py-3 text-[15px] text-on-surface placeholder:text-outline rounded-lg border-0 border-b-2 border-outline-variant focus:outline-none focus:border-primary transition-colors"
+                      />
+                      <p className="text-xs text-outline">
+                        Open Obsidian → Settings → About to find your vault path.
+                      </p>
+                    </div>
+                    {vaultPreview && obsidianPhase === "preview" && (
+                      <div className="rounded-xl bg-surface-container-low px-5 py-4 space-y-1">
+                        <p className="text-[15px] font-medium text-on-surface">{vaultPreview.vault_name}</p>
+                        <p className="text-sm text-secondary">
+                          {vaultPreview.total_files} notes · {vaultPreview.total_words.toLocaleString()} words
+                        </p>
+                        <p className="text-xs text-outline">
+                          ~{vaultPreview.estimated_chunks} chunks to store
+                        </p>
+                        {vaultPreview.skipped_files > 0 && (
+                          <p className="text-xs text-outline">{vaultPreview.skipped_files} short notes will be skipped</p>
+                        )}
+                        {vaultPreview.total_files > 500 && (
+                          <p className="text-xs text-secondary mt-2">Large vault — ingestion may take 2–3 minutes. Do not close this tab.</p>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+            ) : activeTab === "url" ? (
+              /* ── URL ── */
+              <div className="space-y-2">
+                <label className="label-caps text-secondary">{inputLabel}</label>
+                <input
+                  type="url"
+                  value={urlInput}
+                  onChange={(e) => setUrlInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
+                  placeholder="https://example.com/article"
+                  className="w-full bg-surface-container-low px-4 py-3 text-[15px] text-on-surface placeholder:text-outline rounded-lg border-0 border-b-2 border-outline-variant focus:outline-none focus:border-primary transition-colors"
+                />
+              </div>
+
+            ) : activeTab === "image" ? (
+              /* ── Image ── */
+              <div className="space-y-4">
+                <label className="label-caps text-secondary">{inputLabel}</label>
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`rounded-xl border-2 border-dashed p-10 text-center cursor-pointer transition-colors ${
+                    imagePreview
+                      ? "border-outline-variant"
+                      : isDragging
+                      ? "border-primary bg-primary-container/20"
+                      : "border-outline-variant hover:border-primary"
+                  }`}
+                >
+                  {imagePreview ? (
+                    <img src={imagePreview} alt="Preview" className="max-h-56 mx-auto rounded-lg object-contain" />
+                  ) : (
+                    <div className="space-y-1">
+                      <p className="text-[15px] text-secondary">Click to upload</p>
+                      <p className="text-xs text-outline">PNG, JPG, or WEBP</p>
+                    </div>
+                  )}
+                </div>
+                <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={handleImageChange} className="hidden" />
+                {imageFile && <p className="text-xs text-outline">{imageFile.name}</p>}
+              </div>
+
+            ) : activeTab === "file" ? (
+              /* ── File ── */
+              <div className="space-y-4">
+                <label className="label-caps text-secondary">{inputLabel}</label>
+                {!uploadedFile ? (
+                  <div
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onClick={() => docFileInputRef.current?.click()}
+                    className={`rounded-xl border-2 border-dashed p-10 text-center cursor-pointer transition-colors ${
+                      isDragging
+                        ? "border-primary bg-primary-container/20"
+                        : "border-outline-variant hover:border-primary"
+                    }`}
+                  >
+                    <div className="space-y-1">
+                      <p className="text-[15px] text-secondary">
+                        {isDragging ? "Drop file here" : "Click or drag a file here"}
+                      </p>
+                      <p className="text-xs text-outline">PDF, DOCX, or TXT · max 10 MB</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-xl bg-surface-container-low px-5 py-4 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="label-caps px-2.5 py-1 rounded-full bg-surface-container text-on-surface-variant shrink-0 text-[10px]">
+                        {FILE_TYPE_LABELS[uploadedFile.type] ?? uploadedFile.name.split(".").pop()?.toUpperCase() ?? "FILE"}
+                      </span>
+                      <span className="text-sm text-on-surface truncate">{uploadedFile.name}</span>
+                      <span className="text-xs text-outline shrink-0">{formatBytes(uploadedFile.size)}</span>
+                    </div>
+                    <button
+                      onClick={() => { setUploadedFile(null); if (docFileInputRef.current) docFileInputRef.current.value = ""; }}
+                      className="text-xs text-outline hover:text-error shrink-0 transition-colors"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+                <input ref={docFileInputRef} type="file" accept=".pdf,.docx,.txt" onChange={handleDocFileChange} className="hidden" />
+              </div>
+
+            ) : (
+              /* ── Article / YouTube / Note ── */
+              <div className="space-y-2">
+                <label className="label-caps text-secondary">{inputLabel}</label>
+                <textarea
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  placeholder={
+                    activeTab === "youtube"
+                      ? "Paste the YouTube transcript here..."
+                      : activeTab === "note"
+                      ? "Write your thoughts, ideas, or observations..."
+                      : "Paste your article or thoughts here. We'll automatically structure it for your editorial needs..."
+                  }
+                  rows={10}
+                  className="w-full bg-surface-container-low px-4 py-3 text-[15px] text-on-surface placeholder:text-outline rounded-lg border-0 border-b-2 border-outline-variant focus:outline-none focus:border-primary resize-none transition-colors leading-relaxed"
+                />
+              </div>
+            )}
+
+            {/* Error */}
+            {error && (
+              <div>
+                <p className="text-sm text-error">{error}</p>
+                {activeTab === "url" && (
+                  <p className="text-xs text-outline mt-1">You can paste the text manually in the Article tab instead.</p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Card footer / action bar */}
+          <div className="px-8 py-5 bg-surface-container-low flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4 text-outline">
+              <button className="hover:text-secondary transition-colors" title="Format options">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M3 4h10M3 8h7M3 12h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+              </button>
+              <button className="hover:text-secondary transition-colors" title="Translate">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M2 4h7M5.5 2v2M4 4c.5 2.5 2.5 5 4 5.5M7 4c-.5 2 .5 4 2 5.5M9 8l5 6M11.5 8l-2.5 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+              <button className="hover:text-secondary transition-colors" title="AI assist">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M8 2l1.5 3.5L13 7l-3.5 1.5L8 12l-1.5-3.5L3 7l3.5-1.5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+                </svg>
+              </button>
+            </div>
+
+            {activeTab === "obsidian" ? (
+              obsidianPhase === "done" ? (
+                <button
+                  onClick={() => { setObsidianPhase("input"); setVaultPreview(null); setObsidianResult(null); setVaultPath(""); setError(""); }}
+                  className="px-6 py-2.5 rounded-lg bg-surface-container text-secondary text-[13px] font-medium hover:bg-surface-container-high transition-colors"
+                >
+                  Add another vault
+                </button>
+              ) : obsidianPhase === "ingesting" ? null : obsidianPhase === "preview" ? (
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => { setObsidianPhase("input"); setVaultPreview(null); setError(""); }}
+                    disabled={loading}
+                    className="px-4 py-2.5 rounded-lg bg-surface-container text-secondary text-[13px] font-medium hover:bg-surface-container-high disabled:opacity-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleVaultIngest}
+                    disabled={loading}
+                    className="btn-primary px-6 py-2.5 rounded-lg text-white text-[13px] font-semibold uppercase tracking-widest shadow-card hover:opacity-90 disabled:opacity-50 transition-all"
+                  >
+                    Ingest all notes
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={handleVaultPreview}
+                  disabled={loading}
+                  className="btn-primary px-6 py-2.5 rounded-lg text-white text-[13px] font-semibold uppercase tracking-widest shadow-card hover:opacity-90 disabled:opacity-50 transition-all"
+                >
+                  {loading ? "Scanning vault…" : "Preview vault"}
+                </button>
+              )
+            ) : (
+              <button
+                onClick={handleSubmit}
+                disabled={loading}
+                className="btn-primary px-7 py-2.5 rounded-lg text-white text-[13px] font-semibold uppercase tracking-widest shadow-card hover:opacity-90 disabled:opacity-50 active:scale-95 transition-all"
+              >
+                {loading
+                  ? activeTab === "url"
+                    ? (() => { try { return `Scraping ${new URL(urlInput).hostname}…`; } catch { return "Scraping…"; } })()
+                    : activeTab === "file" && uploadedFile
+                    ? `Processing ${uploadedFile.name}…`
+                    : "Processing…"
+                  : "Feed into Memory"}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Tab description */}
+        <p className="text-xs text-outline -mt-3 px-1">{currentTab.description}</p>
+
+        {/* ── Success / duplicate result card ── */}
+        {result && (
+          result.duplicate ? (
+            <div className="rounded-2xl bg-surface-container px-6 py-5 flex items-start gap-4">
+              <div className="w-9 h-9 rounded-full bg-surface-container-high flex items-center justify-center shrink-0 mt-0.5">
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                  <path d="M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zm0 4v4m0-4h.01" stroke="#777c7b" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[15px] font-medium text-on-surface">Already in your knowledge base</p>
+                <p className="text-sm text-secondary mt-0.5">{result.chunks_stored} chunk{result.chunks_stored !== 1 ? "s" : ""} already stored</p>
+                {result.tags.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {result.tags.map((tag) => (
+                      <span key={tag} className="text-[11px] px-2.5 py-1 rounded-full bg-surface-container-high text-on-surface-variant font-medium">#{tag}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl bg-surface-container-lowest shadow-card px-6 py-5 flex items-start gap-4">
+              <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center shrink-0 mt-0.5">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M3 8.5l3.5 3.5 6.5-7" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[15px] font-semibold text-on-surface">Knowledge Ingested</p>
+                {result.title ? (
+                  <p className="text-sm text-secondary mt-0.5">"{result.title}" has been successfully distilled and added to your Library.</p>
+                ) : (
+                  <p className="text-sm text-secondary mt-0.5">Your content has been successfully distilled and added to your Library.</p>
+                )}
+                <div className="mt-4 flex items-start gap-8">
+                  <div>
+                    <p className="label-caps text-outline mb-1">Extracted Concepts</p>
+                    {result.tags.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {result.tags.map((tag) => (
+                          <span key={tag} className="text-[11px] px-2.5 py-1 rounded-full bg-primary-container text-on-primary-container font-medium">#{tag}</span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-outline">No tags extracted</p>
+                    )}
+                  </div>
+                  <div className="shrink-0 text-center">
+                    <p className="label-caps text-outline mb-1">Stored Chunks</p>
+                    <p className="text-3xl font-headline text-on-surface">{result.chunks_stored}</p>
+                  </div>
+                  {result.word_count != null && (
+                    <div className="shrink-0 text-center">
+                      <p className="label-caps text-outline mb-1">Words</p>
+                      <p className="text-3xl font-headline text-on-surface">{result.word_count.toLocaleString()}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )
+        )}
       </div>
 
-      {/* Stats bar */}
-      {stats && (
-        <div className="rounded-lg border border-border bg-stat px-4 py-3 flex items-center justify-between">
-          <span className="text-sm text-text-secondary">
-            <span className="text-text-primary font-medium">{stats.total_chunks}</span> chunks in memory
-          </span>
-          {stats.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 justify-end max-w-xs">
-              {stats.tags.slice(0, 8).map((tag) => (
-                <span
-                  key={tag}
-                  className="text-xs px-2 py-0.5 rounded-full bg-surface border border-border text-text-muted"
-                >
-                  {tag}
-                </span>
+      {/* ── Right: info panel ─────────────────────────────────── */}
+      <div className="w-72 shrink-0 space-y-4 pt-[88px]">
+
+        {/* Recent Memory stats card */}
+        <div className="bg-surface-container-lowest rounded-2xl shadow-card p-6">
+          <h3 className="font-headline text-xl text-on-surface mb-4">Recent Memory</h3>
+          {stats ? (
+            <div className="space-y-3">
+              {stats.tags.slice(0, 3).map((tag, i) => (
+                <div key={tag} className="flex items-center gap-3 py-2.5 border-b border-surface-container last:border-0">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                    i === 0 ? "bg-primary-container" : i === 1 ? "bg-tertiary-fixed/40" : "bg-secondary-container"
+                  }`}>
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                      <rect x="2" y="2" width="12" height="12" rx="1.5" stroke={i === 0 ? "#58614f" : i === 1 ? "#81543c" : "#645e57"} strokeWidth="1.5"/>
+                      <path d="M5 6h6M5 9h4" stroke={i === 0 ? "#58614f" : i === 1 ? "#81543c" : "#645e57"} strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium text-on-surface capitalize truncate">{tag}</p>
+                    <p className="text-[11px] text-outline">In your library</p>
+                  </div>
+                </div>
               ))}
-              {stats.tags.length > 8 && (
-                <span className="text-xs text-text-hint">+{stats.tags.length - 8} more</span>
+              {stats.tags.length === 0 && (
+                <p className="text-sm text-outline text-center py-4">No memory yet — add your first source above.</p>
               )}
+              <div className="pt-2 flex items-center justify-between">
+                <span className="text-[12px] text-outline">{stats.total_chunks} total chunks</span>
+                <a href="/library" className="text-[12px] text-primary font-medium hover:underline uppercase tracking-wide">
+                  View Full Library
+                </a>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="flex items-center gap-3 py-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-surface-container animate-pulse" />
+                  <div className="flex-1 space-y-1.5">
+                    <div className="h-3 bg-surface-container rounded animate-pulse w-3/4" />
+                    <div className="h-2.5 bg-surface-container rounded animate-pulse w-1/2" />
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
-      )}
 
-      {/* Tab selector */}
-      <div className="flex flex-wrap gap-1.5">
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => handleTabChange(tab.id)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-              activeTab === tab.id
-                ? "bg-hover border-amber text-text-primary"
-                : "border-border-subtle text-text-secondary hover:text-text-primary hover:bg-surface hover:border-border bg-card shadow-sm"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Description */}
-      <p className="text-xs text-text-muted -mt-3">{currentTab.description}</p>
-
-      {/* Input area */}
-      <div className="space-y-4">
-        {activeTab === "obsidian" ? (
-          <div className="space-y-4">
-            {obsidianPhase === "done" && obsidianResult ? (
-              <div className="rounded-lg border border-score-green bg-score-green-bg px-5 py-4">
-                <p className="text-sm font-medium text-score-green">
-                  {obsidianResult.total_files_processed} notes ingested
-                </p>
-                <p className="text-xs text-score-green mt-0.5 opacity-80">
-                  {obsidianResult.total_chunks_stored} chunks stored · {obsidianResult.total_words_processed.toLocaleString()} words processed
-                </p>
-                {obsidianResult.all_tags.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {obsidianResult.all_tags.slice(0, 10).map((tag) => (
-                      <span key={tag} className="text-xs px-2 py-0.5 rounded-full border border-score-green bg-score-green-bg text-score-green">
-                        {tag}
-                      </span>
-                    ))}
-                    {obsidianResult.all_tags.length > 10 && (
-                      <span className="text-xs text-score-green opacity-70">+{obsidianResult.all_tags.length - 10} more</span>
-                    )}
-                  </div>
-                )}
-                <p className="text-xs text-text-muted mt-3">
-                  Your Obsidian notes are now part of your knowledge base. Go to Create Post to generate content from them.
-                </p>
-              </div>
-            ) : obsidianPhase === "ingesting" ? (
-              <div className="rounded-lg border border-border bg-card px-5 py-8 text-center">
-                <div className="inline-block w-4 h-4 border-2 border-border-input border-t-text-primary rounded-full animate-spin mb-3" />
-                <p className="text-sm text-text-primary font-medium">{loadingMessage}</p>
-                <p className="text-xs text-text-muted mt-1">Do not close this tab.</p>
-              </div>
-            ) : (
-              <>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-text-secondary">Obsidian vault folder path</label>
-                  <input
-                    type="text"
-                    value={vaultPath}
-                    onChange={(e) => { setVaultPath(e.target.value); setVaultPreview(null); setObsidianPhase("input"); }}
-                    onKeyDown={(e) => { if (e.key === "Enter" && obsidianPhase === "input") handleVaultPreview(); }}
-                    placeholder="/Users/yourname/Documents/ObsidianVault"
-                    className="w-full rounded-xl border border-border-subtle bg-card px-4 py-3 text-[15px] font-medium text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary shadow-sm focus-within:shadow-md focus-within:border-border transition-all duration-200"
-                  />
-                  <p className="text-xs text-text-hint">
-                    Open Obsidian → Settings → About to find your vault path.
-                  </p>
-                </div>
-
-                {vaultPreview && obsidianPhase === "preview" && (
-                  <div className="rounded-lg border border-border bg-stat px-5 py-4 space-y-1">
-                    <p className="text-sm font-semibold text-text-primary">{vaultPreview.vault_name}</p>
-                    <p className="text-sm text-text-secondary">
-                      {vaultPreview.total_files} notes · {vaultPreview.total_words.toLocaleString()} words
-                    </p>
-                    <p className="text-xs text-text-muted">
-                      Estimated {vaultPreview.estimated_chunks} chunks to store
-                    </p>
-                    {vaultPreview.skipped_files > 0 && (
-                      <p className="text-xs text-text-muted">
-                        {vaultPreview.skipped_files} short notes will be skipped
-                      </p>
-                    )}
-                    {vaultPreview.total_files > 500 && (
-                      <p className="text-xs text-text-secondary mt-2">
-                        Large vault detected. Ingestion may take 2–3 minutes. Do not close this tab.
-                      </p>
-                    )}
-                    {vaultPreview.total_files > 1000 && (
-                      <p className="text-xs text-text-secondary">
-                        This vault has {vaultPreview.total_files} notes. Consider pointing to a subfolder with your most relevant notes instead.
-                      </p>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        ) : activeTab === "url" ? (
-          <div className="space-y-2">
-            <input
-              type="url"
-              value={urlInput}
-              onChange={(e) => setUrlInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
-              placeholder="https://example.com/article"
-              className="w-full rounded-xl border border-border-subtle bg-card px-4 py-3 text-[15px] font-medium text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary shadow-sm focus-within:shadow-md focus-within:border-border transition-all duration-200"
-            />
-          </div>
-        ) : activeTab === "image" ? (
-          <div className="space-y-4">
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              className={`border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-colors bg-card ${
-                imagePreview ? "border-border" : "border-border hover:border-text-primary"
-              }`}
+        {/* Writer's Block CTA */}
+        <div className="bg-tertiary rounded-2xl p-6 text-on-tertiary relative overflow-hidden">
+          <div className="relative z-10 space-y-3">
+            <p className="font-headline text-xl text-white">Writer&apos;s Block?</p>
+            <p className="text-sm text-white/80 leading-relaxed">
+              Use your stored memories to generate a unique editorial angle for your next project.
+            </p>
+            <a
+              href="/ideas"
+              className="inline-block mt-1 px-4 py-2 rounded-lg border border-white/30 text-white text-[12px] font-semibold uppercase tracking-widest hover:bg-white/10 transition-colors"
             >
-              {imagePreview ? (
-                <img
-                  src={imagePreview}
-                  alt="Preview"
-                  className="max-h-64 mx-auto rounded-lg object-contain"
-                />
-              ) : (
-                <div className="text-text-muted text-sm">
-                  <p className="text-base mb-1 text-text-secondary">Click to upload</p>
-                  <p className="text-xs">PNG, JPG, or WEBP</p>
-                </div>
-              )}
-            </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              onChange={handleImageChange}
-              className="hidden"
-            />
-            {imageFile && (
-              <p className="text-xs text-text-muted">{imageFile.name}</p>
-            )}
+              Generate Idea
+            </a>
           </div>
-        ) : activeTab === "file" ? (
-          <div className="space-y-4">
-            {!uploadedFile ? (
-              <div
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                onClick={() => docFileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-colors bg-card ${
-                  isDragging
-                    ? "border-text-primary bg-hover"
-                    : "border-border hover:border-text-primary"
-                }`}
-              >
-                <div className="text-text-muted text-sm">
-                  <p className="text-base mb-1 text-text-secondary">
-                    {isDragging ? "Drop file here" : "Click or drag a file here"}
-                  </p>
-                  <p className="text-xs">PDF, DOCX, or TXT · max 10 MB</p>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-lg border border-border bg-card px-4 py-3 flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-stat border border-border text-text-secondary shrink-0">
-                    {FILE_TYPE_LABELS[uploadedFile.type] ??
-                      uploadedFile.name.split(".").pop()?.toUpperCase() ??
-                      "FILE"}
-                  </span>
-                  <span className="text-sm text-text-primary truncate">{uploadedFile.name}</span>
-                  <span className="text-xs text-text-muted shrink-0">{formatBytes(uploadedFile.size)}</span>
-                </div>
-                <button
-                  onClick={() => {
-                    setUploadedFile(null);
-                    if (docFileInputRef.current) docFileInputRef.current.value = "";
-                  }}
-                  className="text-xs text-text-muted hover:text-score-red shrink-0 transition-colors"
-                >
-                  Remove
-                </button>
-              </div>
-            )}
-            <input
-              ref={docFileInputRef}
-              type="file"
-              accept=".pdf,.docx,.txt"
-              onChange={handleDocFileChange}
-              className="hidden"
-            />
+          <div className="absolute -right-6 -bottom-6 opacity-10">
+            <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+              <path d="M40 10l7.5 17.5L65 30l-12.5 12 3 17.5L40 52 24.5 59.5l3-17.5L15 30l17.5-2.5z" fill="white"/>
+            </svg>
           </div>
-        ) : (
-          <textarea
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            placeholder={
-              activeTab === "youtube"
-                ? "Paste the YouTube transcript here (use YouTube's transcript feature or otter.ai to get it)"
-                : activeTab === "note"
-                ? "Write your thoughts, ideas, or observations..."
-                : "Paste article or text content here..."
-            }
-            rows={12}
-            className="w-full rounded-xl border border-border-subtle bg-card px-4 py-3 text-[15px] text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary resize-none shadow-sm focus-within:shadow-md focus-within:border-border transition-all duration-200"
-          />
-        )}
+        </div>
 
-        {error && (
-          <div>
-            <p className="text-sm text-score-red">{error}</p>
-            {activeTab === "url" && (
-              <p className="text-xs text-text-muted mt-1">
-                You can paste the text manually in the Article / Text tab instead.
-              </p>
-            )}
-          </div>
-        )}
-
-        {result && (
-          result.duplicate ? (
-            <div className="rounded-lg border border-border bg-stat px-5 py-4">
-              <p className="text-sm font-medium text-text-secondary">
-                Already in your knowledge base ({result.chunks_stored} chunk{result.chunks_stored !== 1 ? "s" : ""})
-              </p>
-              {result.title && (
-                <p className="text-xs text-text-muted mt-0.5">{result.title}</p>
-              )}
-              {result.tags.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {result.tags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="text-xs px-2 py-0.5 rounded-full border border-border text-text-muted"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="rounded-lg border border-score-green bg-score-green-bg px-5 py-4">
-              {result.title ? (
-                <p className="text-sm font-medium text-score-green">Scraped and stored: {result.title}</p>
-              ) : (
-                <p className="text-sm font-medium text-score-green">
-                  Stored {result.chunks_stored} chunk{result.chunks_stored !== 1 ? "s" : ""}
-                </p>
-              )}
-              {result.word_count != null && (
-                <p className="text-xs text-score-green mt-0.5 opacity-80">
-                  {result.word_count} words → {result.chunks_stored} chunks
-                </p>
-              )}
-              {result.tags.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {result.tags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="text-xs px-2 py-0.5 rounded-full border border-score-green bg-score-green-bg text-score-green"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          )
-        )}
-
-        {activeTab === "obsidian" ? (
-          obsidianPhase === "done" ? (
-            <button
-              onClick={() => { setObsidianPhase("input"); setVaultPreview(null); setObsidianResult(null); setVaultPath(""); setError(""); }}
-              className="w-full rounded-lg border border-border bg-card text-text-secondary font-medium py-2.5 text-sm hover:bg-hover transition-colors"
-            >
-              Add another vault
-            </button>
-          ) : obsidianPhase === "ingesting" ? null : obsidianPhase === "preview" ? (
-            <div className="flex gap-3">
-              <button
-                onClick={handleVaultIngest}
-                disabled={loading}
-                className="flex-1 rounded-xl bg-amber text-white font-bold tracking-wide py-3.5 text-[15px] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed shadow-float hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-200"
-              >
-                Ingest all notes
-              </button>
-              <button
-                onClick={() => { setObsidianPhase("input"); setVaultPreview(null); setError(""); }}
-                disabled={loading}
-                className="px-5 rounded-lg border border-border bg-card text-text-secondary font-medium py-2.5 text-sm hover:bg-hover disabled:opacity-50 transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={handleVaultPreview}
-              disabled={loading}
-              className="w-full rounded-xl bg-amber text-white font-bold tracking-wide py-3.5 text-[15px] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed shadow-float hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-200"
-            >
-              {loading ? "Scanning vault…" : "Preview vault"}
-            </button>
-          )
-        ) : (
-          <button
-            onClick={handleSubmit}
-            disabled={loading}
-            className="w-full rounded-xl bg-amber text-white font-bold tracking-wide py-3.5 text-[15px] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed shadow-float hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-200"
-          >
-            {loading
-              ? activeTab === "url"
-                ? (() => { try { return `Scraping ${new URL(urlInput).hostname}…`; } catch { return "Scraping…"; } })()
-                : activeTab === "file" && uploadedFile
-                ? `Processing ${uploadedFile.name}…`
-                : "Processing…"
-              : activeTab === "url"
-              ? "Scrape and add to memory"
-              : "Add to memory"}
-          </button>
-        )}
+        {/* Decorative pen card */}
+        <div className="rounded-2xl overflow-hidden bg-surface-container h-40 flex items-center justify-center">
+          <svg width="48" height="48" viewBox="0 0 48 48" fill="none" opacity="0.3">
+            <path d="M8 40L14 26 36 4 44 12 22 34z" stroke="#58614f" strokeWidth="2.5" strokeLinejoin="round"/>
+            <path d="M8 40l6-4 4 6-10-2z" fill="#58614f"/>
+            <path d="M36 4l4 4-6 6-4-4 6-6z" fill="#81543c"/>
+          </svg>
+        </div>
       </div>
     </div>
   );

@@ -101,11 +101,11 @@ function DiagramCard({ visual }: { visual: Visual }) {
 
   if (!visual.svg_code) {
     return (
-      <div className="rounded-lg border border-score-red bg-score-red-bg px-5 py-4">
-        <p className="text-sm font-medium text-score-red">
+      <div className="rounded-xl border border-error-container bg-error-container/20 px-5 py-4">
+        <p className="text-sm font-medium text-error">
           Diagram generation failed — try regenerating the post
         </p>
-        <p className="text-xs text-score-red opacity-70 mt-1">{visual.description}</p>
+        <p className="text-xs text-error opacity-70 mt-1">{visual.description}</p>
       </div>
     );
   }
@@ -133,11 +133,11 @@ function DiagramCard({ visual }: { visual: Visual }) {
   };
 
   return (
-    <div className="rounded-lg border border-border bg-card overflow-hidden">
-      <div className="px-5 py-3 border-b border-border-subtle">
-        <p className="text-sm font-medium text-text-secondary">
+    <div className="rounded-xl border border-surface-container-high bg-surface-container-lowest overflow-hidden">
+      <div className="px-5 py-3 border-b border-surface-container-high">
+        <p className="text-sm font-medium text-secondary">
           Diagram —{" "}
-          <span className="font-normal text-text-muted">
+          <span className="font-normal text-outline">
             {visual.description.length > 60
               ? visual.description.slice(0, 60) + "…"
               : visual.description}
@@ -145,28 +145,28 @@ function DiagramCard({ visual }: { visual: Visual }) {
         </p>
       </div>
       <div className="p-4 overflow-x-auto" dangerouslySetInnerHTML={{ __html: visual.svg_code }} />
-      <div className="px-5 py-3 border-t border-border-subtle space-y-2">
+      <div className="px-5 py-3 border-t border-surface-container-high space-y-2">
         <div className="flex items-center gap-3">
           <button
             onClick={handleOpen}
-            className="text-xs border border-border rounded-lg px-3 py-1.5 text-text-secondary hover:border-text-primary hover:text-text-primary transition-colors"
+            className="text-xs border border-surface-container-high rounded-lg px-3 py-1.5 text-secondary hover:border-outline-variant hover:text-on-surface transition-colors"
           >
             Open as PNG
           </button>
           {pngState === "opened" && (
-            <span className="text-xs text-text-muted">
+            <span className="text-xs text-outline">
               PNG opened in new tab — right-click and <strong>Save Image</strong>
             </span>
           )}
           {pngState === "blocked" && (
-            <span className="text-xs text-text-muted">
+            <span className="text-xs text-outline">
               Popup blocked — right-click the image below and <strong>Save Image</strong>
             </span>
           )}
         </div>
         {pngState === "blocked" && fallbackDataURL && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={fallbackDataURL} alt="diagram PNG" className="max-w-full rounded-lg border border-border" />
+          <img src={fallbackDataURL} alt="diagram PNG" className="max-w-full rounded-xl border border-surface-container-high" />
         )}
       </div>
     </div>
@@ -175,11 +175,11 @@ function DiagramCard({ visual }: { visual: Visual }) {
 
 function ImageReminderCard({ visual }: { visual: Visual }) {
   return (
-    <div className="rounded-lg border-2 border-dashed border-border bg-surface px-5 py-4 space-y-1">
-      <p className="text-xs font-semibold uppercase tracking-widest text-text-hint">
+    <div className="rounded-xl border-2 border-dashed border-outline-variant bg-surface-container px-5 py-4 space-y-1">
+      <p className="label-caps text-outline-variant">
         Add your own visual
       </p>
-      <p className="text-sm text-text-muted leading-relaxed">{visual.reminder_text}</p>
+      <p className="text-sm text-outline leading-relaxed">{visual.reminder_text}</p>
     </div>
   );
 }
@@ -209,16 +209,16 @@ function SettingsDrawer({ initialTopic, initialFormat, initialTone, initialConte
         onClick={onCancel}
       />
       {/* Drawer panel */}
-      <div className="fixed top-0 right-0 h-full w-80 bg-page border-l border-border z-50 flex flex-col shadow-lg">
+      <div className="fixed top-0 right-0 h-full w-80 bg-background border-l border-surface-container-high z-50 flex flex-col shadow-card">
         {/* Header */}
         <div
-          style={{ borderBottom: "0.5px solid #e0dcd3", height: "52px" }}
+          style={{ borderBottom: "0.5px solid #dfe3e2", height: "52px" }}
           className="flex items-center justify-between px-5 shrink-0"
         >
-          <p className="text-sm font-medium text-text-primary">Regenerate settings</p>
+          <p className="text-sm font-medium text-on-surface font-headline">Regenerate settings</p>
           <button
             onClick={onCancel}
-            className="text-text-muted hover:text-text-primary transition-colors text-xl leading-none"
+            className="text-outline hover:text-on-surface transition-colors text-xl leading-none"
             aria-label="Close"
           >
             ×
@@ -226,31 +226,31 @@ function SettingsDrawer({ initialTopic, initialFormat, initialTone, initialConte
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-5 py-6 space-y-5">
+        <div className="flex-1 overflow-y-auto px-5 py-6 space-y-6">
           {/* Topic */}
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">Topic</label>
+            <label className="label-caps text-secondary block mb-2">Topic</label>
             <input
               type="text"
               value={dTopic}
               onChange={(e) => setDTopic(e.target.value)}
               placeholder="What do you want to write about?"
-              className="w-full rounded-xl border border-border-subtle bg-card px-4 py-3 text-sm font-medium text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary shadow-sm focus-within:shadow-md focus-within:border-border transition-all duration-200"
+              className="input-editorial w-full px-0 py-2 text-sm font-medium text-on-surface placeholder:text-outline-variant focus:outline-none"
             />
           </div>
 
           {/* Format */}
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">Format</label>
+            <label className="label-caps text-secondary block mb-2">Format</label>
             <div className="space-y-1.5">
               {FORMATS.map((f) => (
                 <button
                   key={f.id}
                   onClick={() => setDFormat(f.id)}
-                  className={`w-full px-3 py-2 rounded-lg text-sm text-left border transition-colors ${
+                  className={`w-full px-3 py-2 rounded-lg text-sm text-left transition-colors ${
                     dFormat === f.id
-                      ? "border-text-primary bg-surface text-text-primary shadow-sm ring-1 ring-text-primary ring-opacity-10 font-medium"
-                      : "border-border text-text-secondary hover:bg-hover bg-card"
+                      ? "btn-primary text-white font-medium"
+                      : "bg-surface-container text-secondary hover:bg-surface-container-high hover:text-on-surface"
                   }`}
                 >
                   {f.label}
@@ -261,20 +261,20 @@ function SettingsDrawer({ initialTopic, initialFormat, initialTone, initialConte
 
           {/* Tone */}
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">Tone</label>
+            <label className="label-caps text-secondary block mb-2">Tone</label>
             <div className="space-y-1.5">
               {TONES.map((t) => (
                 <button
                   key={t.id}
                   onClick={() => setDTone(t.id)}
-                  className={`w-full px-3 py-2.5 rounded-lg text-sm text-left border transition-colors ${
+                  className={`w-full px-3 py-2.5 rounded-lg text-sm text-left transition-colors ${
                     dTone === t.id
-                      ? "border-text-primary bg-surface text-text-primary shadow-sm ring-1 ring-text-primary ring-opacity-10"
-                      : "border-border text-text-secondary hover:bg-hover bg-card"
+                      ? "btn-primary text-white"
+                      : "bg-surface-container text-secondary hover:bg-surface-container-high hover:text-on-surface"
                   }`}
                 >
-                  <div className={`font-medium ${dTone === t.id ? "" : ""}`}>{t.label}</div>
-                  <div className={`text-xs mt-0.5 ${dTone === t.id ? "text-text-muted" : "text-text-hint"}`}>
+                  <div className="font-medium">{t.label}</div>
+                  <div className={`text-xs mt-0.5 ${dTone === t.id ? "text-white/70" : "text-outline"}`}>
                     {t.description}
                   </div>
                 </button>
@@ -284,34 +284,34 @@ function SettingsDrawer({ initialTopic, initialFormat, initialTone, initialConte
 
           {/* Context */}
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">
+            <label className="label-caps text-secondary block mb-2">
               Additional context{" "}
-              <span className="font-normal text-text-hint">(optional)</span>
+              <span className="normal-case font-normal text-outline-variant">(optional)</span>
             </label>
             <textarea
               value={dContext}
               onChange={(e) => setDContext(e.target.value)}
               placeholder="Specific angle, story, or data point..."
               rows={3}
-              className="w-full rounded-xl border border-border-subtle bg-card px-4 py-3 text-sm text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary resize-none shadow-sm focus-within:shadow-md focus-within:border-border transition-all duration-200"
+              className="input-editorial w-full px-0 py-2 text-sm text-on-surface placeholder:text-outline-variant focus:outline-none resize-none"
             />
           </div>
         </div>
 
         {/* Footer */}
         <div
-          style={{ borderTop: "0.5px solid #e0dcd3" }}
+          style={{ borderTop: "0.5px solid #dfe3e2" }}
           className="px-5 py-4 flex gap-2 shrink-0"
         >
           <button
             onClick={onCancel}
-            className="flex-1 rounded-lg border border-border text-text-secondary text-sm py-2 hover:border-text-primary hover:text-text-primary transition-colors bg-card"
+            className="flex-1 rounded-lg border border-surface-container-high text-secondary text-sm py-2 hover:border-outline-variant hover:text-on-surface transition-colors bg-surface-container-lowest"
           >
             Cancel
           </button>
           <button
             onClick={() => onRegenerate({ topic: dTopic, format: dFormat, tone: dTone, context: dContext })}
-            className="flex-1 rounded-lg bg-text-primary text-card text-sm font-medium py-2 hover:opacity-90 transition-opacity"
+            className="flex-1 btn-primary rounded-lg text-white text-sm font-medium py-2 hover:opacity-90 transition-opacity"
           >
             Regenerate
           </button>
@@ -785,193 +785,319 @@ export default function CreatePost() {
   const postGenerated = !!result;
   const splitActive = postGenerated && analysisOpen && isWide && !visualsVisible;
 
-  const scoreColor = result
-    ? result.score >= 80 ? "#4a7a4a" : result.score >= 60 ? "#1a1918" : "#6b6862"
-    : "#6b6862";
-  const scoreStatus = result
-    ? result.score >= 80
-      ? "Good"
-      : result.score >= 60
-        ? "Needs work"
-        : "Needs revision"
-    : "";
 
-  // ─── Analysis panel content (reused in split right panel and stacked mobile) ─
+  // Grade derivation for metric rows
+  const sc = result?.score ?? 0;
+  const gradeLabel   = sc >= 85 ? "Grade 8" : sc >= 70 ? "Grade 7" : "Grade 6";
+  const clarityLabel = sc >= 85 ? "Excellent" : sc >= 70 ? "Good" : "Fair";
+  const engagementLabel = sc >= 85 ? "High" : sc >= 70 ? "Medium" : "Low";
 
-  const analysisPanelContent = result ? (
-    scoreLoading ? (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "64px 0", gap: 12 }}>
-        <div style={{ width: 20, height: 20, border: "2px solid #e0dcd3", borderTopColor: "#1a1918", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-        <p style={{ fontSize: 13, color: "#969288" }}>Scoring post…</p>
+  // SVG score ring
+  const ringR = 54;
+  const ringC = 2 * Math.PI * ringR; // ≈ 339.29
+  const ringOffset = result?.scored ? ringC * (1 - result.score / 100) : ringC;
+
+  // ─── Analysis panel (right column) ──────────────────────────────────────
+
+  const analysisPanelContent = (
+    <div>
+      {/* Panel header */}
+      <div className="flex items-center justify-between mb-7 shrink-0">
+        <span className="label-caps text-secondary" style={{ fontSize: "0.6rem", letterSpacing: "0.1em" }}>
+          ANALYSIS &amp; IMPACT
+        </span>
+        <button
+          onClick={() => setAnalysisOpen(false)}
+          className="text-outline hover:text-on-surface transition-colors text-xl leading-none"
+          aria-label="Close analysis"
+        >
+          ×
+        </button>
       </div>
-    ) : result.scored ? (
-    <div ref={analysisRef}>
 
-      {/* Score header row */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
-        <div>
-          <span style={{ fontSize: 40, fontWeight: 500, color: scoreColor, lineHeight: 1, display: "block" }}>
-            {result.score}
-          </span>
-          <p style={{ fontSize: 12, color: "#969288", marginTop: 4 }}>out of 100</p>
+      {scoreLoading ? (
+        <div className="flex flex-col items-center justify-center py-16 gap-3">
+          <div className="w-5 h-5 rounded-full border-2 border-surface-container-high border-t-primary animate-spin" />
+          <p className="text-xs text-outline">Scoring post…</p>
         </div>
-        <div style={{ textAlign: "right" }}>
-          <p style={{ fontSize: 13, fontWeight: 500, color: "#1a1918" }}>{scoreStatus}</p>
-          <p style={{ fontSize: 11, color: "#969288", marginTop: 3 }}>
-            {result.iterations} humanizer pass{result.iterations !== 1 ? "es" : ""}
-          </p>
-        </div>
-      </div>
-
-      {/* Progress bar */}
-      <div
-        style={{
-          width: "100%",
-          height: 4,
-          borderRadius: 20,
-          background: "#e0dcd3",
-          marginBottom: 24,
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            width: `${result.score}%`,
-            height: "100%",
-            borderRadius: 20,
-            background: scoreColor,
-            transition: "width 0.7s",
-          }}
-        />
-      </div>
-
-      {/* Divider before feedback */}
-      <div style={{ borderTop: "0.5px solid #e0dcd3", marginBottom: 20 }} />
-
-      {/* What to fix */}
-      {result.score_feedback.length > 0 && (
+      ) : result?.scored ? (
         <>
-          <p
-            style={{
-              fontSize: 10.5,
-              fontWeight: 500,
-              textTransform: "uppercase",
-              letterSpacing: "0.07em",
-              color: "#969288",
-              marginBottom: 14,
-            }}
-          >
-            WHAT TO FIX
-          </p>
-          <div>
-            {result.score_feedback.map((f, i) => (
-              <div
-                key={i}
-                style={{
-                  display: "flex",
-                  gap: 10,
-                  padding: "10px 0",
-                  borderBottom:
-                    i < result.score_feedback.length - 1 ? "0.5px solid #ebe7df" : "none",
-                }}
+          {/* Score ring */}
+          <div className="flex flex-col items-center mb-5">
+            <svg width="130" height="130" viewBox="0 0 130 130">
+              <circle cx="65" cy="65" r={ringR} fill="none" stroke="#e6e9e8" strokeWidth="8" />
+              <circle
+                cx="65" cy="65" r={ringR} fill="none"
+                stroke="#58614f" strokeWidth="8"
+                strokeLinecap="round"
+                strokeDasharray={ringC}
+                strokeDashoffset={ringOffset}
+                transform="rotate(-90 65 65)"
+                style={{ transition: "stroke-dashoffset 0.7s ease" }}
+              />
+              <text
+                x="65" y="62"
+                textAnchor="middle"
+                fontSize="26" fontWeight="700" fill="#2f3333"
+                fontFamily="Inter, system-ui, sans-serif"
               >
-                <span style={{ color: "#969288", flexShrink: 0, fontSize: 13, marginTop: 1 }}>—</span>
-                <p style={{ fontSize: 13.5, lineHeight: 1.65, color: "#6b6862" }}>{f}</p>
+                {result.score}
+              </text>
+              <text
+                x="65" y="79"
+                textAnchor="middle"
+                fontSize="8.5" fontWeight="500"
+                letterSpacing="0.09em" fill="#777c7b"
+                fontFamily="Inter, system-ui, sans-serif"
+              >
+                AUTHSCORE
+              </text>
+            </svg>
+          </div>
+
+          {/* Quote from first feedback item */}
+          {result.score_feedback.length > 0 ? (
+            <p
+              className="font-headline italic text-secondary text-center mb-6 px-3 leading-relaxed"
+              style={{ fontSize: 13 }}
+            >
+              &ldquo;{result.score_feedback[0]}&rdquo;
+            </p>
+          ) : (
+            <p
+              className="text-outline-variant text-center mb-6 px-3 leading-relaxed"
+              style={{ fontSize: 13 }}
+            >
+              Your narrative voice analysis will appear here.
+            </p>
+          )}
+
+          {/* Metric rows */}
+          <div className="space-y-4 mb-6">
+            {(
+              [
+                { label: "READABILITY", value: gradeLabel },
+                { label: "CLARITY",     value: clarityLabel },
+                { label: "ENGAGEMENT",  value: engagementLabel },
+              ] as { label: string; value: string }[]
+            ).map(({ label, value }) => (
+              <div key={label}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span
+                    className="label-caps text-outline"
+                    style={{ fontSize: "0.58rem", letterSpacing: "0.09em" }}
+                  >
+                    {label}
+                  </span>
+                  <span className="text-xs font-medium text-on-surface">{value}</span>
+                </div>
+                <div className="h-1 rounded-full bg-surface-container-high overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-primary transition-all duration-700"
+                    style={{ width: `${result.score}%` }}
+                  />
+                </div>
               </div>
             ))}
           </div>
+
+          <div style={{ borderTop: "0.5px solid #dfe3e2", marginBottom: 20 }} />
+
+          {/* Focus Points */}
+          {result.score_feedback.length > 0 && (
+            <div className="mb-6">
+              <p
+                className="label-caps text-secondary mb-3"
+                style={{ fontSize: "0.58rem", letterSpacing: "0.1em" }}
+              >
+                FOCUS POINTS
+              </p>
+              <div className="space-y-3">
+                {result.score_feedback.slice(1).map((f, i) => (
+                  <div key={i} className="bg-surface-container rounded-lg px-4 py-3">
+                    <p className="font-headline italic text-secondary leading-relaxed" style={{ fontSize: 12.5 }}>
+                      &ldquo;{f}&rdquo;
+                    </p>
+                    <p
+                      className={`label-caps mt-2 ${i % 2 === 0 ? "text-primary" : "text-tertiary"}`}
+                      style={{ fontSize: "0.53rem", letterSpacing: "0.1em" }}
+                    >
+                      {i % 2 === 0 ? "STRONG POINT" : "NEEDS ATTENTION"}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={{ borderTop: "0.5px solid #dfe3e2", marginBottom: 20 }} />
+
+          {/* Refine section */}
+          <p
+            className="label-caps text-secondary mb-3"
+            style={{ fontSize: "0.58rem", letterSpacing: "0.1em" }}
+          >
+            REFINE DRAFT
+          </p>
+          <textarea
+            value={refineInstruction}
+            onChange={(e) => setRefineInstruction(e.target.value)}
+            placeholder="Describe what to fix — or leave blank to auto-apply the feedback above..."
+            style={{
+              width: "100%",
+              minHeight: 80,
+              fontSize: 13,
+              lineHeight: 1.6,
+              border: "none",
+              borderBottom: "1.5px solid #aeb3b2",
+              borderRadius: 0,
+              padding: "8px 0",
+              resize: "vertical",
+              fontFamily: "inherit",
+              background: "transparent",
+              color: "#2f3333",
+              outline: "none",
+              boxSizing: "border-box",
+              marginBottom: 12,
+            }}
+          />
+          {refineError && (
+            <p className="text-xs text-error mb-2">{refineError}</p>
+          )}
+          <div className="flex gap-2">
+            <button
+              onClick={handleApplyFeedback}
+              disabled={refineLoading}
+              className="flex-1 btn-primary rounded-lg text-white text-[13px] font-medium py-2.5 disabled:opacity-50 hover:opacity-90 transition-opacity"
+            >
+              {refineLoading ? "Refining…" : "Apply feedback"}
+            </button>
+            <button
+              onClick={handleRefine}
+              disabled={refineLoading}
+              className="flex-1 rounded-lg border border-surface-container-high bg-surface-container-lowest text-secondary text-[13px] font-medium py-2.5 disabled:opacity-50 hover:border-outline-variant hover:text-on-surface transition-colors"
+            >
+              Refine with note
+            </button>
+          </div>
         </>
-      )}
+      ) : (
+        /* Placeholder — score not yet run */
+        <div className="flex flex-col items-center py-6 gap-4">
+          <svg width="130" height="130" viewBox="0 0 130 130">
+            <circle cx="65" cy="65" r={ringR} fill="none" stroke="#e6e9e8" strokeWidth="8" />
+            <circle
+              cx="65" cy="65" r={ringR} fill="none"
+              stroke="#dfe3e2" strokeWidth="8"
+              strokeDasharray={ringC} strokeDashoffset={ringC}
+              transform="rotate(-90 65 65)"
+            />
+            <text
+              x="65" y="62" textAnchor="middle"
+              fontSize="26" fontWeight="500" fill="#aeb3b2"
+              fontFamily="Inter, system-ui, sans-serif"
+            >
+              0
+            </text>
+            <text
+              x="65" y="79" textAnchor="middle"
+              fontSize="8.5" fontWeight="500"
+              letterSpacing="0.09em" fill="#aeb3b2"
+              fontFamily="Inter, system-ui, sans-serif"
+            >
+              AUTHSCORE
+            </text>
+          </svg>
+          <p className="text-xs text-outline text-center">Run analysis to see your authscore.</p>
+          <button
+            onClick={() => { if (!result?.scored && !scoreLoading) handleScore(); }}
+            className="btn-primary text-white text-xs font-medium rounded-lg px-5 py-2 hover:opacity-90 transition-opacity"
+          >
+            Run Analysis
+          </button>
 
-      {/* Divider before refine */}
-      <div style={{ borderTop: "0.5px solid #e0dcd3", marginTop: 4, marginBottom: 20 }} />
-
-      {/* Refine box */}
-      <p
-        style={{
-          fontSize: 10.5,
-          fontWeight: 500,
-          textTransform: "uppercase",
-          color: "#969288",
-          letterSpacing: "0.07em",
-          marginBottom: 12,
-        }}
-      >
-        REFINE DRAFT
-      </p>
-      <textarea
-        value={refineInstruction}
-        onChange={(e) => setRefineInstruction(e.target.value)}
-        placeholder="Describe what to fix — or leave blank to auto-apply the feedback above..."
-        style={{
-          width: "100%",
-          minHeight: 90,
-          fontSize: 13,
-          lineHeight: 1.6,
-          border: "0.5px solid #e0dcd3",
-          borderRadius: 8,
-          padding: "12px 14px",
-          resize: "vertical",
-          fontFamily: "inherit",
-          background: "#ffffff",
-          color: "#1a1918",
-          outline: "none",
-          boxSizing: "border-box",
-          marginBottom: 12,
-        }}
-      />
-      {refineError && (
-        <p style={{ fontSize: 12, color: "#b34e4e", marginTop: -8, marginBottom: 8 }}>{refineError}</p>
+          {/* Placeholder metric rows */}
+          <div className="w-full space-y-4 mt-2">
+            {["READABILITY", "CLARITY", "ENGAGEMENT"].map((label) => (
+              <div key={label}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span
+                    className="label-caps text-outline-variant"
+                    style={{ fontSize: "0.58rem", letterSpacing: "0.09em" }}
+                  >
+                    {label}
+                  </span>
+                  <span className="text-xs text-outline-variant">—</span>
+                </div>
+                <div className="h-1 rounded-full bg-surface-container-high" />
+              </div>
+            ))}
+          </div>
+        </div>
       )}
-      <div style={{ display: "flex", gap: 8 }}>
+    </div>
+  );
+
+  // ─── Shared action buttons for post view ─────────────────────────────────
+
+  const postActionButtons = (
+    <div style={{ flexShrink: 0, marginTop: 14 }}>
+      <div className="flex gap-2 mb-2">
+        {/* Regenerate */}
         <button
-          onClick={handleApplyFeedback}
-          disabled={refineLoading}
-          style={{
-            flex: 1,
-            borderRadius: 8,
-            background: "#1a1918",
-            color: "#ffffff",
-            fontSize: 13,
-            fontWeight: 500,
-            padding: "11px 0",
-            border: "none",
-            cursor: refineLoading ? "not-allowed" : "pointer",
-            opacity: refineLoading ? 0.6 : 1,
-            transition: "opacity 0.15s",
-          }}
+          onClick={() => generate()}
+          disabled={loading}
+          className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-surface-container-high text-secondary text-[13px] py-2.5 hover:border-outline-variant hover:text-on-surface transition-colors bg-surface-container-lowest disabled:opacity-50"
         >
-          {refineLoading ? "Refining…" : "Apply feedback"}
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M1 4v6h6" /><path d="M3.51 15a9 9 0 1 0 .49-4" />
+          </svg>
+          Regenerate
         </button>
+        {/* Analyse */}
         <button
-          onClick={handleRefine}
-          disabled={refineLoading}
-          style={{
-            flex: 1,
-            borderRadius: 8,
-            border: "0.5px solid #e0dcd3",
-            background: "#ffffff",
-            color: "#6b6862",
-            fontSize: 13,
-            fontWeight: 500,
-            padding: "11px 0",
-            cursor: refineLoading ? "not-allowed" : "pointer",
-            opacity: refineLoading ? 0.6 : 1,
-            transition: "opacity 0.15s",
+          onClick={() => {
+            setAnalysisOpen(true);
+            if (!result?.scored && !scoreLoading) handleScore();
+            else if (!isWide) setTimeout(() => analysisRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
           }}
+          disabled={refineLoading}
+          className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-surface-container-high text-secondary text-[13px] py-2.5 hover:border-outline-variant hover:text-on-surface transition-colors bg-surface-container-lowest disabled:opacity-50"
         >
-          Refine with note
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="12" width="4" height="9" /><rect x="10" y="7" width="4" height="14" /><rect x="17" y="3" width="4" height="18" />
+          </svg>
+          Analyse
+        </button>
+        {/* Generate Visuals */}
+        <button
+          onClick={visuals.length > 0 ? () => { setVisualsVisible(true); setAnalysisOpen(false); } : handleGenerateVisuals}
+          disabled={visualsLoading}
+          className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-surface-container-high text-secondary text-[13px] py-2.5 hover:border-outline-variant hover:text-on-surface transition-colors bg-surface-container-lowest disabled:opacity-50"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+            <circle cx="8.5" cy="8.5" r="1.5" />
+            <polyline points="21 15 16 10 5 21" />
+          </svg>
+          {visuals.length > 0 ? "View Visuals" : "Gen. Visuals"}
         </button>
       </div>
+      {/* Copy — full width primary */}
+      <button
+        onClick={handleCopy}
+        className="w-full btn-primary rounded-lg text-white text-[13px] font-medium py-2.5 hover:opacity-90 transition-opacity tracking-wide"
+      >
+        {copied ? "Copied!" : "Copy to Clipboard"}
+      </button>
     </div>
-    ) : null
-  ) : null;
+  );
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
     <div
-      className={splitActive ? "" : "-mx-8 -mt-10 -mb-10 bg-page flex flex-col"}
+      className={splitActive ? "" : "-mx-10 -mt-10 -mb-10 bg-background flex flex-col"}
       style={
         splitActive
           ? {
@@ -982,106 +1108,156 @@ export default function CreatePost() {
               bottom: 0,
               display: "flex",
               flexDirection: "column",
-              background: "#faf9f7",
+              background: "#faf9f8",
               zIndex: 10,
             }
           : { minHeight: "100vh" }
       }
     >
 
-      {/* Topbar */}
+      {/* ── Header bar ──────────────────────────────────────────────────────── */}
       <div
-        style={{ borderBottom: "0.5px solid #e0dcd3", height: "52px" }}
-        className="flex items-center px-8 bg-page shrink-0"
+        style={{ borderBottom: "0.5px solid #dfe3e2", height: "52px" }}
+        className="flex items-center justify-between px-8 bg-background shrink-0"
       >
-        <div className="flex items-baseline gap-3">
-          <span className="text-sm font-medium text-text-primary">Create Post</span>
-          <span className="text-xs text-text-muted">
-            {loading
-              ? "Generating your draft…"
-              : !postGenerated
-                ? "Set up your post"
-                : "Review and refine"}
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-1.5">
+          <span
+            className="label-caps text-outline"
+            style={{ fontSize: "0.62rem", letterSpacing: "0.1em" }}
+          >
+            WORKSPACE
           </span>
+          <span className="text-outline-variant mx-1 text-xs select-none">›</span>
+          <span
+            className="label-caps text-on-surface"
+            style={{ fontSize: "0.62rem", letterSpacing: "0.1em" }}
+          >
+            NEW CREATION
+          </span>
+        </div>
+
+        {/* Right controls */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 rounded-lg border border-surface-container-high bg-surface-container-lowest px-3 py-1.5">
+            <svg
+              width="12" height="12" viewBox="0 0 24 24"
+              fill="none" stroke="currentColor" strokeWidth="2"
+              className="text-outline-variant shrink-0"
+            >
+              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+            </svg>
+            <input
+              placeholder="Search atelier..."
+              className="text-xs text-on-surface bg-transparent outline-none w-32 placeholder:text-outline-variant"
+            />
+          </div>
+          <button className="text-outline hover:text-on-surface transition-colors">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+          </button>
+          <div className="w-7 h-7 rounded-full bg-primary-container flex items-center justify-center shrink-0">
+            <span className="text-[11px] font-semibold text-on-primary-container select-none">S</span>
+          </div>
         </div>
       </div>
 
-      {/* ── Split layout (wide viewport, post generated, analysis open) ─────── */}
+      {/* ── Split layout (wide, post generated, analysis open) ──────────────── */}
       {splitActive ? (
         <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
-          {/* Left panel — post */}
+          {/* Left — manuscript */}
           <div
             style={{
-              flex: 1,
-              minWidth: 0,
-              overflow: "hidden",
-              padding: "32px 40px",
-              borderRight: "0.5px solid #e0dcd3",
+              flex: "0 0 62%",
               display: "flex",
               flexDirection: "column",
+              padding: "32px 40px",
+              borderRight: "0.5px solid #dfe3e2",
+              overflow: "hidden",
             }}
           >
-            {/* Topic header */}
-            {topic && (
-              <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 12, flexShrink: 0 }}>
-                <span style={{ fontSize: 10.5, fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase", color: "#969288", flexShrink: 0 }}>
-                  TOPIC
-                </span>
-                <span style={{ fontSize: 14, fontWeight: 500, color: "#1a1918", lineHeight: 1.4 }}>
-                  {topic}
-                </span>
-              </div>
-            )}
+            {/* Manuscript heading row */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 16,
+                flexShrink: 0,
+              }}
+            >
+              <h2
+                className="font-headline"
+                style={{ fontSize: 22, fontWeight: 400, color: "#2f3333", margin: 0 }}
+              >
+                The Manuscript
+              </h2>
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 11,
+                  color: "#777c7b",
+                  background: "#edeeed",
+                  borderRadius: 20,
+                  padding: "3px 11px",
+                  lineHeight: 1.6,
+                }}
+              >
+                <span style={{ color: "#58614f", fontSize: 10 }}>●</span>
+                AI Refined:{" "}
+                <span
+                  className="capitalize"
+                  style={{ fontWeight: 500, color: "#2f3333", marginLeft: 2 }}
+                >
+                  {tone}
+                </span>{" "}
+                Tone
+              </span>
+            </div>
 
-            {/* Post box — fills remaining space */}
-            <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+            {/* Post textarea */}
+            <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
               <div
-                className="rounded-2xl border border-border-subtle bg-card shadow-card focus-within:shadow-card-hover focus-within:border-border transition-all duration-300"
-                style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "32px 36px" }}
+                className="rounded-xl bg-surface-container-lowest shadow-card focus-within:shadow-card-hover transition-all duration-300"
+                style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "28px 32px" }}
               >
                 <textarea
                   value={editedPost}
                   onChange={(e) => setEditedPost(e.target.value)}
                   className="w-full h-full resize-none outline-none bg-transparent"
-                  style={{ fontSize: 16, lineHeight: 1.8, color: "#1a1918", fontFamily: "inherit", border: "none", display: "block" }}
+                  style={{
+                    fontSize: 15.5,
+                    lineHeight: 1.85,
+                    color: "#2f3333",
+                    fontFamily: "inherit",
+                    border: "none",
+                    display: "block",
+                    whiteSpace: "pre-wrap",
+                  }}
                 />
               </div>
             </div>
 
-            {/* Action row */}
-            <div className="flex gap-2 flex-shrink-0 mt-3">
-              {(
-                [
-                  { label: copied ? "Copied!" : "Copy", onClick: handleCopy, disabled: false },
-                  { label: visuals.length > 0 ? "View visuals" : "Generate visuals", onClick: visuals.length > 0 ? () => { setVisualsVisible(true); setAnalysisOpen(false); } : handleGenerateVisuals, disabled: visualsLoading },
-                  { label: "Regenerate", onClick: () => generate(), disabled: loading },
-                  { label: "Hide analysis", onClick: () => setAnalysisOpen(false), disabled: false },
-                ] as { label: string; onClick: () => void; disabled: boolean }[]
-              ).map(({ label, onClick, disabled }) => (
-                <button
-                  key={label}
-                  onClick={onClick}
-                  disabled={disabled}
-                  className="flex-1 rounded-xl border border-border-subtle text-text-secondary font-semibold hover:border-border hover:text-text-primary hover:shadow-card transition-all duration-200 bg-card disabled:opacity-50"
-                  style={{ padding: "10px 18px", fontSize: 13 }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            {postActionButtons}
 
-            <p className="text-xs text-text-hint flex-shrink-0 mt-2">{lastSaved ? saveStatusText : "Auto-saved to history"}</p>
+            <p className="text-xs text-outline-variant shrink-0 mt-2">
+              {lastSaved ? saveStatusText : "Auto-saved to history"}
+            </p>
           </div>
 
-          {/* Right panel — analysis */}
+          {/* Right — analysis panel */}
           <div
             style={{
-              width: 480,
-              flexShrink: 0,
+              flex: "0 0 38%",
+              height: "100%",
               overflowY: "auto",
-              padding: "28px 36px",
-              background: "#faf9f7",
+              padding: "28px 32px",
+              background: "#faf9f8",
             }}
           >
             {analysisPanelContent}
@@ -1089,14 +1265,33 @@ export default function CreatePost() {
         </div>
 
       ) : postGenerated && !loading && !visualsVisible ? (
-        // ── Full-height writing surface (single column, post state) ─────────
-        <div style={{ height: "calc(100vh - 52px)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <div style={{ maxWidth: 780, margin: "0 auto", width: "100%", height: "100%", display: "flex", flexDirection: "column", padding: "24px 32px" }}>
-
+        // ── Single-column manuscript (panel closed or narrow) ────────────────
+        <div
+          style={{
+            height: "calc(100vh - 52px)",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              maxWidth: 820,
+              margin: "0 auto",
+              width: "100%",
+              height: "100%",
+              display: "flex",
+              flexDirection: "column",
+              padding: "28px 32px",
+            }}
+          >
             {/* Restored session banner */}
             {restored && (
-              <div className="flex items-center justify-between rounded-lg border border-border bg-surface px-4 py-2.5" style={{ flexShrink: 0, marginBottom: 12 }}>
-                <p className="text-xs text-text-secondary">Restored your last session</p>
+              <div
+                className="flex items-center justify-between rounded-lg border border-surface-container-high bg-surface-container px-4 py-2.5"
+                style={{ flexShrink: 0, marginBottom: 12 }}
+              >
+                <p className="text-xs text-secondary">Restored your last session</p>
                 <button
                   onClick={() => {
                     clearSession();
@@ -1106,7 +1301,7 @@ export default function CreatePost() {
                     setVisualsVisible(false);
                     setAnalysisOpen(false);
                   }}
-                  className="text-text-muted hover:text-text-secondary text-xl leading-none ml-4"
+                  className="text-outline hover:text-secondary text-xl leading-none ml-4"
                   aria-label="Dismiss"
                 >
                   ×
@@ -1114,111 +1309,115 @@ export default function CreatePost() {
               </div>
             )}
 
-            {/* Post meta row */}
-            <div className="flex items-center justify-between" style={{ flexShrink: 0, marginBottom: 12 }}>
-              <div className="flex items-center gap-2">
-                <span className="text-xs px-2 py-0.5 rounded-full bg-stat border border-border text-text-muted">
-                  {FORMAT_BADGE[format] ?? format}
-                </span>
-                <span className="text-xs text-text-muted capitalize">{tone}</span>
-              </div>
-              <button
-                onClick={() => { setResult(null); setEditedPost(""); setAnalysisOpen(false); }}
-                className="text-xs text-text-muted hover:text-text-secondary transition-colors"
+            {/* Manuscript heading row */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 16,
+                flexShrink: 0,
+              }}
+            >
+              <h2
+                className="font-headline"
+                style={{ fontSize: 22, fontWeight: 400, color: "#2f3333", margin: 0 }}
               >
-                ← Start over
-              </button>
+                The Manuscript
+              </h2>
+              <div className="flex items-center gap-3">
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontSize: 11,
+                    color: "#777c7b",
+                    background: "#edeeed",
+                    borderRadius: 20,
+                    padding: "3px 11px",
+                    lineHeight: 1.6,
+                  }}
+                >
+                  <span style={{ color: "#58614f", fontSize: 10 }}>●</span>
+                  AI Refined:{" "}
+                  <span
+                    className="capitalize"
+                    style={{ fontWeight: 500, color: "#2f3333", marginLeft: 2 }}
+                  >
+                    {tone}
+                  </span>{" "}
+                  Tone
+                </span>
+                <button
+                  onClick={() => { setResult(null); setEditedPost(""); setAnalysisOpen(false); }}
+                  className="text-xs text-outline hover:text-secondary transition-colors"
+                >
+                  ← Start over
+                </button>
+              </div>
             </div>
 
-            {/* Topic header */}
-            {topic && (
-              <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 12, flexShrink: 0 }}>
-                <span style={{ fontSize: 10.5, fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase", color: "#969288", flexShrink: 0 }}>TOPIC</span>
-                <span style={{ fontSize: 14, fontWeight: 500, color: "#1a1918", lineHeight: 1.4 }}>{topic}</span>
-              </div>
-            )}
-
-            {/* Post box — fills all remaining space */}
-            <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+            {/* Post textarea */}
+            <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
               <div
-                className="rounded-2xl border border-border-subtle bg-card shadow-card focus-within:shadow-card-hover focus-within:border-border transition-all duration-300"
-                style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "32px 36px" }}
+                className="rounded-xl bg-surface-container-lowest shadow-card focus-within:shadow-card-hover transition-all duration-300"
+                style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "28px 32px" }}
               >
                 <textarea
                   value={editedPost}
                   onChange={(e) => setEditedPost(e.target.value)}
                   className="w-full h-full resize-none outline-none bg-transparent"
-                  style={{ fontSize: 16, lineHeight: 1.8, color: "#1a1918", fontFamily: "inherit", border: "none", display: "block" }}
+                  style={{
+                    fontSize: 15.5,
+                    lineHeight: 1.85,
+                    color: "#2f3333",
+                    fontFamily: "inherit",
+                    border: "none",
+                    display: "block",
+                    whiteSpace: "pre-wrap",
+                  }}
                 />
               </div>
             </div>
 
-            {/* Action row */}
-            <div className="flex gap-2 flex-wrap" style={{ flexShrink: 0, marginTop: 12 }}>
-              <button
-                onClick={handleCopy}
-                className="flex-1 rounded-lg border border-border text-text-secondary font-medium hover:border-text-primary hover:text-text-primary transition-colors bg-card"
-                style={{ padding: "10px 18px", fontSize: 13 }}
-              >
-                {copied ? "Copied!" : "Copy"}
-              </button>
-              <button
-                onClick={visuals.length > 0 ? () => { setVisualsVisible(true); setAnalysisOpen(false); } : handleGenerateVisuals}
-                disabled={visualsLoading}
-                className="flex-1 rounded-xl border border-border-subtle text-text-secondary font-semibold hover:border-border hover:text-text-primary hover:shadow-card transition-all duration-200 bg-card disabled:opacity-50"
-                style={{ padding: "10px 18px", fontSize: 13 }}
-              >
-                {visuals.length > 0 ? "View visuals" : "Generate visuals"}
-              </button>
-              <button
-                onClick={() => generate()}
-                disabled={loading}
-                className="flex-1 rounded-xl border border-border-subtle text-text-secondary font-semibold hover:border-border hover:text-text-primary hover:shadow-card transition-all duration-200 bg-card disabled:opacity-50"
-                style={{ padding: "10px 18px", fontSize: 13 }}
-              >
-                Regenerate
-              </button>
-              <button
-                onClick={() => {
-                  setAnalysisOpen(true);
-                  if (!result?.scored && !scoreLoading) {
-                    handleScore();
-                  } else if (!isWide) {
-                    setTimeout(() => analysisRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
-                  }
-                }}
-                disabled={scoreLoading}
-                className="flex-1 rounded-lg border border-border text-text-secondary font-medium hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
-                style={{ padding: "10px 18px", fontSize: 13 }}
-              >
-                {result?.scored ? "View authenticity analysis" : scoreLoading ? "Scoring…" : "Score this post"}
-              </button>
-            </div>
+            {postActionButtons}
 
-            <p className="text-xs text-text-hint" style={{ flexShrink: 0, marginTop: 8 }}>{lastSaved ? saveStatusText : "Auto-saved to history"}</p>
+            <p
+              className="text-xs text-outline-variant"
+              style={{ flexShrink: 0, marginTop: 8 }}
+            >
+              {lastSaved ? saveStatusText : "Auto-saved to history"}
+            </p>
 
             {/* Analysis stacked below post (narrow viewport only) */}
             {analysisOpen && !isWide && (
               <div
                 ref={analysisRef}
-                style={{ marginTop: 24, paddingTop: 24, borderTop: "0.5px solid #e0dcd3", flexShrink: 0 }}
+                style={{
+                  marginTop: 24,
+                  paddingTop: 24,
+                  borderTop: "0.5px solid #dfe3e2",
+                  flexShrink: 0,
+                  maxHeight: "50vh",
+                  overflowY: "auto",
+                }}
               >
                 {analysisPanelContent}
               </div>
             )}
-
           </div>
         </div>
 
       ) : (
         // ── Scrollable column (configure / spinner / visuals) ────────────────
         <div className="flex-1 overflow-y-auto">
-          <div style={{ maxWidth: 780, margin: "0 auto", padding: "32px 40px" }}>
+          <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px 40px" }}>
 
             {/* Restored session banner */}
             {restored && !loading && (
-              <div className="flex items-center justify-between rounded-lg border border-border bg-surface px-4 py-2.5 mb-6">
-                <p className="text-xs text-text-secondary">Restored your last session</p>
+              <div className="flex items-center justify-between rounded-lg border border-surface-container-high bg-surface-container px-4 py-2.5 mb-6">
+                <p className="text-xs text-secondary">Restored your last session</p>
                 <button
                   onClick={() => {
                     clearSession();
@@ -1228,7 +1427,7 @@ export default function CreatePost() {
                     setVisualsVisible(false);
                     setAnalysisOpen(false);
                   }}
-                  className="text-text-muted hover:text-text-secondary text-xl leading-none ml-4"
+                  className="text-outline hover:text-secondary text-xl leading-none ml-4"
                   aria-label="Dismiss"
                 >
                   ×
@@ -1238,16 +1437,16 @@ export default function CreatePost() {
 
             {/* Ideas panel */}
             {suggestionsVisible && (
-              <div className="rounded-lg border border-border bg-card overflow-hidden mb-6">
-                <div className="flex items-center justify-between px-5 py-3 border-b border-border-subtle">
+              <div className="rounded-xl border border-surface-container-high bg-surface-container-lowest overflow-hidden mb-6">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-surface-container-high">
                   <div>
-                    <p className="text-sm font-medium text-text-primary">
+                    <p className="text-sm font-medium text-on-surface">
                       {suggestionsLoading
                         ? "Finding ideas…"
                         : `${suggestions.length} idea${suggestions.length !== 1 ? "s" : ""} from your memory`}
                     </p>
                     {!suggestionsLoading && (
-                      <p className="text-xs text-text-muted mt-0.5">
+                      <p className="text-xs text-outline mt-0.5">
                         {ideaTopic.trim()
                           ? `Focused on: ${ideaTopic.trim()}`
                           : "Ideas drawn from your full knowledge base"}
@@ -1258,14 +1457,14 @@ export default function CreatePost() {
                     {!suggestionsLoading && (
                       <button
                         onClick={handleGetIdeas}
-                        className="text-xs text-text-secondary hover:text-text-primary border border-border rounded-lg px-2.5 py-1 transition-colors"
+                        className="text-xs text-secondary hover:text-on-surface border border-surface-container-high rounded-lg px-2.5 py-1 transition-colors"
                       >
                         Refresh
                       </button>
                     )}
                     <button
                       onClick={handleDismissIdeas}
-                      className="text-text-muted hover:text-text-primary transition-colors text-xl leading-none"
+                      className="text-outline hover:text-on-surface transition-colors text-xl leading-none"
                     >
                       ×
                     </button>
@@ -1273,44 +1472,44 @@ export default function CreatePost() {
                 </div>
 
                 {suggestionsLoading && (
-                  <div className="px-5 py-6 text-sm text-text-muted">Thinking…</div>
+                  <div className="px-5 py-6 text-sm text-outline">Thinking…</div>
                 )}
 
                 {!suggestionsLoading && suggestions.length === 0 && (
-                  <div className="px-5 py-6 text-sm text-text-muted">
+                  <div className="px-5 py-6 text-sm text-outline">
                     No suggestions returned. Try adding more content to your memory first.
                   </div>
                 )}
 
                 {!suggestionsLoading && suggestions.length > 0 && (
-                  <div className="divide-y divide-border-subtle">
+                  <div className="divide-y divide-surface-container-high">
                     {suggestions.map((s, i) => (
                       <div
                         key={i}
                         className={`px-5 py-4 flex items-start justify-between gap-4 transition-colors ${
-                          selectedIdeaIndex === i ? "bg-stat" : ""
+                          selectedIdeaIndex === i ? "bg-surface-container-low" : ""
                         }`}
                       >
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             {selectedIdeaIndex === i && (
-                              <span className="text-score-green text-xs font-medium">✓</span>
+                              <span className="text-primary text-xs font-medium">✓</span>
                             )}
-                            <p className="text-sm font-medium text-text-primary leading-snug">{s.title}</p>
+                            <p className="text-sm font-medium text-on-surface leading-snug">{s.title}</p>
                           </div>
                           <div className="mt-1 flex items-center gap-2">
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-stat border border-border text-text-muted">
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-surface-container-low border border-surface-container-high text-outline">
                               {FORMAT_BADGE[s.format] ?? s.format}
                             </span>
                           </div>
-                          <p className="mt-1 text-xs text-text-muted leading-relaxed">{s.angle}</p>
+                          <p className="mt-1 text-xs text-outline leading-relaxed">{s.angle}</p>
                         </div>
                         <button
                           onClick={() => handleUseSuggestion(s, i)}
                           className={`text-xs whitespace-nowrap rounded-lg px-3 py-1.5 transition-colors border flex-shrink-0 ${
                             selectedIdeaIndex === i
-                              ? "border-border bg-card text-text-muted"
-                              : "border-border bg-card text-text-secondary hover:bg-hover"
+                              ? "border-surface-container-high bg-surface-container-lowest text-outline"
+                              : "border-surface-container-high bg-surface-container-lowest text-secondary hover:bg-surface-container-low"
                           }`}
                         >
                           {selectedIdeaIndex === i ? "Selected" : "Use this"}
@@ -1324,98 +1523,121 @@ export default function CreatePost() {
 
             {/* ── Configure form ──────────────────────────────────────────── */}
             {!postGenerated && !loading && (
-              <div className="space-y-5">
-                {/* Topic */}
-                <div>
-                  <label className="block text-xs font-medium text-text-secondary mb-1.5">Topic</label>
-                  <input
-                    ref={topicRef}
-                    type="text"
-                    value={topic}
-                    onChange={(e) => setTopic(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && generate()}
-                    placeholder="What do you want to write about?"
-                    className="w-full rounded-xl border border-border-subtle bg-card px-4 py-3 text-[15px] font-medium text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary shadow-sm focus-within:shadow-md focus-within:border-border transition-all duration-200"
-                  />
+              <div style={{ maxWidth: 600, margin: "0 auto" }}>
+                {/* Editorial header */}
+                <div className="mb-8">
+                  <h1 className="font-headline text-3xl text-on-surface leading-tight">
+                    Drafting a new thought
+                  </h1>
+                  <p className="text-sm text-secondary mt-1.5">
+                    Shape your idea and let your memory do the rest.
+                  </p>
                 </div>
 
-                {/* Format */}
-                <div>
-                  <label className="block text-xs font-medium text-text-secondary mb-1.5">Format</label>
-                  <div className="flex gap-2">
-                    {FORMATS.map((f) => (
-                      <button
-                        key={f.id}
-                        onClick={() => setFormat(f.id)}
-                        className={`flex-1 px-4 py-2.5 rounded-xl text-[14px] font-semibold border transition-all duration-200 ${
-                          format === f.id
-                            ? "border-text-primary bg-surface text-text-primary shadow-sm ring-1 ring-text-primary ring-opacity-10"
-                            : "border-border-subtle text-text-secondary hover:text-text-primary hover:bg-surface hover:border-border bg-card shadow-sm"
-                        }`}
+                <div className="space-y-8">
+                  {/* Topic */}
+                  <div>
+                    <label
+                      className="label-caps text-secondary block mb-2.5"
+                      style={{ fontSize: "0.62rem", letterSpacing: "0.09em" }}
+                    >
+                      THE CENTRAL THEME
+                    </label>
+                    <input
+                      ref={topicRef}
+                      type="text"
+                      value={topic}
+                      onChange={(e) => setTopic(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && generate()}
+                      placeholder="What story are we telling today?"
+                      className="w-full px-4 py-3.5 rounded-lg border border-outline-variant bg-surface-container-lowest text-[15px] font-medium text-on-surface placeholder:text-outline-variant focus:outline-none focus:border-primary transition-colors"
+                    />
+                  </div>
+
+                  {/* Format & Tone side-by-side */}
+                  <div className="flex gap-8 items-start">
+                    {/* Format — vertical pills */}
+                    <div className="w-44 shrink-0">
+                      <label
+                        className="label-caps text-secondary block mb-3"
+                        style={{ fontSize: "0.62rem", letterSpacing: "0.09em" }}
                       >
-                        {f.label}
-                      </button>
-                    ))}
+                        FORMAT &amp; MEDIUM
+                      </label>
+                      <div className="space-y-2">
+                        {FORMATS.map((f) => (
+                          <button
+                            key={f.id}
+                            onClick={() => setFormat(f.id)}
+                            className={`w-full px-3 py-2 rounded-lg text-[13px] text-left transition-all border ${
+                              format === f.id
+                                ? "btn-primary text-white border-transparent font-medium"
+                                : "border-outline-variant text-secondary hover:border-outline hover:text-on-surface bg-transparent"
+                            }`}
+                          >
+                            {f.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Tone — horizontal pills, no descriptions */}
+                    <div className="flex-1">
+                      <label
+                        className="label-caps text-secondary block mb-3"
+                        style={{ fontSize: "0.62rem", letterSpacing: "0.09em" }}
+                      >
+                        VOICE &amp; RESONANCE
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {TONES.map((t) => (
+                          <button
+                            key={t.id}
+                            onClick={() => setTone(t.id)}
+                            className={`px-4 py-2 rounded-lg text-[13px] transition-all border ${
+                              tone === t.id
+                                ? "btn-primary text-white border-transparent font-medium"
+                                : "border-outline-variant text-secondary hover:border-outline hover:text-on-surface bg-transparent"
+                            }`}
+                          >
+                            {t.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Additional context — hidden from initial view; state & logic preserved */}
+
+                  {error && <p className="text-sm text-error">{error}</p>}
+
+                  {/* Generate button */}
+                  <div className="flex justify-center pt-2">
+                    <button
+                      onClick={() => generate()}
+                      disabled={loading}
+                      className="btn-primary text-white rounded-xl font-bold tracking-widest uppercase text-[13px] flex items-center gap-2.5 py-3.5 px-8 disabled:opacity-50 hover:opacity-90 hover:-translate-y-0.5 transition-all duration-200 shadow-card hover:shadow-card-hover"
+                      style={{ width: 280, justifyContent: "center" }}
+                    >
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2l2.09 6.43H21l-5.47 3.97 2.09 6.43L12 15l-5.62 3.83 2.09-6.43L3 8.43h6.91z" />
+                      </svg>
+                      Generate Draft
+                    </button>
                   </div>
                 </div>
-
-                {/* Tone */}
-                <div>
-                  <label className="block text-xs font-medium text-text-secondary mb-1.5">Tone</label>
-                  <div className="flex gap-2">
-                    {TONES.map((t) => (
-                      <button
-                        key={t.id}
-                        onClick={() => setTone(t.id)}
-                        className={`flex-1 px-4 py-3 rounded-xl text-sm border transition-all duration-200 text-left ${
-                          tone === t.id
-                            ? "border-text-primary bg-surface text-text-primary shadow-sm ring-1 ring-text-primary ring-opacity-10"
-                            : "border-border-subtle text-text-secondary hover:text-text-primary hover:bg-surface hover:border-border bg-card shadow-sm"
-                        }`}
-                      >
-                        <div className="font-medium">{t.label}</div>
-                        <div className={`text-xs mt-0.5 ${tone === t.id ? "text-text-muted" : "text-text-hint"}`}>
-                          {t.description}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Context */}
-                <div>
-                  <label className="block text-xs font-medium text-text-secondary mb-1.5">
-                    Additional context{" "}
-                    <span className="font-normal text-text-hint">(optional)</span>
-                  </label>
-                  <textarea
-                    value={context}
-                    onChange={(e) => setContext(e.target.value)}
-                    placeholder="Specific angle, story, or data point you want included…"
-                    rows={3}
-                    className="w-full rounded-xl border border-border-subtle bg-card px-4 py-3 text-[15px] text-text-primary placeholder:text-text-hint focus:outline-none focus:border-text-primary resize-none shadow-sm focus-within:shadow-md focus-within:border-border transition-all duration-200"
-                  />
-                </div>
-
-                {error && <p className="text-sm text-score-red">{error}</p>}
-
-                <button
-                  onClick={() => generate()}
-                  disabled={loading}
-                  className="w-full rounded-xl bg-amber text-white font-bold tracking-wide py-3.5 text-[15px] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed shadow-float hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-200"
-                >
-                  Generate
-                </button>
               </div>
             )}
 
             {/* ── Generating spinner ──────────────────────────────────────── */}
             {loading && (
               <div className="flex flex-col items-center justify-center py-20 gap-5 text-center">
-                <div className="w-10 h-10 rounded-full border-2 border-border border-t-text-primary animate-spin" />
+                <div className="w-10 h-10 rounded-full border-2 border-surface-container-high border-t-primary animate-spin" />
                 <div>
-                  <p className="text-sm font-medium text-text-primary">Generating your draft</p>
-                  <p className="text-xs text-text-muted mt-1">
+                  <p className="text-sm font-medium text-on-surface font-headline">
+                    Generating your draft
+                  </p>
+                  <p className="text-xs text-outline mt-1">
                     Retrieving from memory, composing in your voice, running humanizer pass…
                   </p>
                 </div>
@@ -1428,14 +1650,14 @@ export default function CreatePost() {
                 <div className="flex items-center justify-between">
                   <button
                     onClick={() => setVisualsVisible(false)}
-                    className="text-xs text-text-muted hover:text-text-secondary transition-colors"
+                    className="text-xs text-outline hover:text-secondary transition-colors"
                   >
                     ← Back to post
                   </button>
                   <button
                     onClick={handleGenerateVisuals}
                     disabled={visualsLoading}
-                    className="text-xs border border-border rounded-lg px-3 py-1.5 text-text-secondary hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
+                    className="text-xs border border-surface-container-high rounded-lg px-3 py-1.5 text-secondary hover:border-outline-variant hover:text-on-surface transition-colors bg-surface-container-lowest disabled:opacity-50"
                   >
                     {visualsLoading ? "Scanning…" : "Regenerate visuals"}
                   </button>
@@ -1443,18 +1665,18 @@ export default function CreatePost() {
 
                 {visualsLoading && (
                   <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-                    <div className="w-8 h-8 rounded-full border-2 border-border border-t-text-primary animate-spin" />
-                    <p className="text-sm text-text-muted">Scanning post for visual opportunities…</p>
+                    <div className="w-8 h-8 rounded-full border-2 border-surface-container-high border-t-primary animate-spin" />
+                    <p className="text-sm text-outline">Scanning post for visual opportunities…</p>
                   </div>
                 )}
 
                 {!visualsLoading && visuals.length === 0 && (
-                  <div className="rounded-lg border border-border bg-card px-5 py-5">
-                    <p className="text-sm text-text-muted leading-relaxed">
+                  <div className="rounded-xl border border-surface-container-high bg-surface-container-lowest px-5 py-5">
+                    <p className="text-sm text-outline leading-relaxed">
                       No visual placeholders found. Add{" "}
-                      <code className="text-xs bg-stat px-1 py-0.5 rounded">[DIAGRAM: description]</code>
+                      <code className="text-xs bg-surface-container-low px-1 py-0.5 rounded">[DIAGRAM: description]</code>
                       {" "}or{" "}
-                      <code className="text-xs bg-stat px-1 py-0.5 rounded">[IMAGE: description]</code>
+                      <code className="text-xs bg-surface-container-low px-1 py-0.5 rounded">[IMAGE: description]</code>
                       {" "}to your post and try again.
                     </p>
                   </div>
@@ -1486,6 +1708,7 @@ export default function CreatePost() {
           onRegenerate={handleDrawerRegenerate}
         />
       )}
+
     </div>
   );
 }
