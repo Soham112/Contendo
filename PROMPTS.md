@@ -294,7 +294,7 @@ Return ONLY valid JSON with this exact structure — no preamble, no explanation
 **Input variables injected:**
 - `profile_context` — string-formatted output of `profile_to_context_string(profile)`
 - `archetype_name` — human-readable archetype name (e.g. "Incident Report / Retrospective"), resolved from `state["archetype"]` via `_ARCHETYPE_NAMES` dict in `critic_agent.py`
-- `retrieved_chunks` — first 5 retrieved chunks joined by `---`; falls back to "No knowledge base chunks available."
+- `retrieved_chunks` — all retrieved chunks joined by `---`; falls back to "No knowledge base chunks available." Matches exactly what `draft_agent` receives so the critic can accurately assess whether claims are grounded.
 - `current_draft` — the draft string from pipeline state
 
 **Output schema:**

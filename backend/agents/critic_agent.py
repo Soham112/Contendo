@@ -102,7 +102,7 @@ def critic_node(state: PipelineState) -> PipelineState:
 
         retrieved_chunks = state.get("retrieved_chunks", [])
         chunks_text = (
-            "\n---\n".join(retrieved_chunks[:5])
+            "\n---\n".join(retrieved_chunks)
             if retrieved_chunks
             else "No knowledge base chunks available."
         )
