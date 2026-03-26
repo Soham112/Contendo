@@ -25,6 +25,16 @@ class GenerateResponse(BaseModel):
     score_feedback: list[str]
     iterations: int
     archetype: str = ""
+    scored: bool = False
+
+
+class ScoreRequest(BaseModel):
+    post_content: str
+
+
+class ScoreResponse(BaseModel):
+    score: int
+    score_feedback: list[str]
 
 
 class RefineRequest(BaseModel):
@@ -94,6 +104,7 @@ async def generate(req: GenerateRequest) -> GenerateResponse:
         score_feedback=result["score_feedback"],
         iterations=result["iterations"],
         archetype=result.get("archetype", ""),
+        scored=result.get("scored", False),
     )
 
 
@@ -126,6 +137,19 @@ async def refine(req: RefineRequest) -> RefineResponse:
         score=score,
         score_feedback=score_feedback,
     )
+
+
+@router.post("/score", response_model=ScoreResponse)
+async def score(req: ScoreRequest) -> ScoreResponse:
+    if not req.post_content.strip():
+        raise HTTPException(status_code=400, detail="post_content is required")
+    try:
+        s, score_feedback = score_text(req.post_content)
+    except (InternalServerError, APIStatusError) as e:
+        _raise_anthropic_error(e)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return ScoreResponse(score=s, score_feedback=score_feedback)
 
 
 @router.post("/generate-visuals")

@@ -14,6 +14,7 @@ const SS_CURRENT_POST_ID = "contentOS_current_post_id";
 const SS_TOPIC = "contentOS_last_topic_meta";
 const SS_FORMAT = "contentOS_last_format_meta";
 const SS_TONE = "contentOS_last_tone_meta";
+const SS_SCORED = "contentOS_last_scored";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -37,6 +38,7 @@ interface GenerateResult {
   score: number;
   score_feedback: string[];
   iterations: number;
+  scored: boolean;
 }
 
 interface Suggestion {
@@ -362,6 +364,8 @@ export default function CreatePost() {
     return () => clearInterval(interval);
   }, [lastSaved]);
 
+  const [scoreLoading, setScoreLoading] = useState(false);
+
   const [refineInstruction, setRefineInstruction] = useState("");
   const [refineLoading, setRefineLoading] = useState(false);
   const [refineError, setRefineError] = useState("");
@@ -395,12 +399,16 @@ export default function CreatePost() {
       const savedShowAnalysis = sessionStorage.getItem(SS_SHOW_ANALYSIS);
       const savedPostId = sessionStorage.getItem(SS_CURRENT_POST_ID);
 
+      const savedScored = sessionStorage.getItem(SS_SCORED);
+
       if (savedPost && savedScore && savedFeedback && savedIterations) {
         const restoredResult: GenerateResult = {
           post: savedPost,
           score: Number(savedScore),
           score_feedback: JSON.parse(savedFeedback),
           iterations: Number(savedIterations),
+          // null = old session before lazy scoring — treat as scored for back-compat
+          scored: savedScored === null ? true : savedScored === "true",
         };
         setResult(restoredResult);
         setEditedPost(savedPost);
@@ -457,6 +465,7 @@ export default function CreatePost() {
       sessionStorage.setItem(SS_TOPIC, topic);
       sessionStorage.setItem(SS_FORMAT, format);
       sessionStorage.setItem(SS_TONE, tone);
+      sessionStorage.setItem(SS_SCORED, String(result.scored));
     } catch {
       // ignore
     }
@@ -483,7 +492,7 @@ export default function CreatePost() {
   }, [result]);
 
   const clearSession = () => {
-    [SS_POST, SS_SCORE, SS_FEEDBACK, SS_ITERATIONS, SS_VISUALS, SS_IDEAS, SS_CURRENT_POST_ID, SS_TOPIC, SS_FORMAT, SS_TONE].forEach((k) =>
+    [SS_POST, SS_SCORE, SS_FEEDBACK, SS_ITERATIONS, SS_VISUALS, SS_IDEAS, SS_CURRENT_POST_ID, SS_TOPIC, SS_FORMAT, SS_TONE, SS_SCORED].forEach((k) =>
       sessionStorage.removeItem(k)
     );
     setRestored(false);
@@ -540,6 +549,35 @@ export default function CreatePost() {
       setLastSaved(Date.now());
     } catch {
       // patch failure is non-critical
+    }
+  };
+
+  const handleScore = async () => {
+    if (!result || scoreLoading) return;
+    setScoreLoading(true);
+    try {
+      const res = await fetch(`${API}/score`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ post_content: editedPost }),
+      });
+      if (!res.ok) throw new Error("Scoring failed");
+      const data: { score: number; score_feedback: string[] } = await res.json();
+      setResult((prev) =>
+        prev ? { ...prev, score: data.score, score_feedback: data.score_feedback, scored: true } : prev
+      );
+      try {
+        sessionStorage.setItem(SS_SCORE, String(data.score));
+        sessionStorage.setItem(SS_FEEDBACK, JSON.stringify(data.score_feedback));
+        sessionStorage.setItem(SS_SCORED, "true");
+      } catch {
+        // ignore
+      }
+      await patchHistory({ authenticity_score: data.score });
+    } catch {
+      // scoring failure is non-critical — user can try again
+    } finally {
+      setScoreLoading(false);
     }
   };
 
@@ -761,6 +799,12 @@ export default function CreatePost() {
   // ─── Analysis panel content (reused in split right panel and stacked mobile) ─
 
   const analysisPanelContent = result ? (
+    scoreLoading ? (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "64px 0", gap: 12 }}>
+        <div style={{ width: 20, height: 20, border: "2px solid #e0dcd3", borderTopColor: "#1a1918", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+        <p style={{ fontSize: 13, color: "#969288" }}>Scoring post…</p>
+      </div>
+    ) : result.scored ? (
     <div ref={analysisRef}>
 
       {/* Score header row */}
@@ -920,6 +964,7 @@ export default function CreatePost() {
         </button>
       </div>
     </div>
+    ) : null
   ) : null;
 
   // ─── Render ───────────────────────────────────────────────────────────────
@@ -1136,14 +1181,17 @@ export default function CreatePost() {
               <button
                 onClick={() => {
                   setAnalysisOpen(true);
-                  if (!isWide) {
+                  if (!result?.scored && !scoreLoading) {
+                    handleScore();
+                  } else if (!isWide) {
                     setTimeout(() => analysisRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
                   }
                 }}
-                className="flex-1 rounded-lg border border-border text-text-secondary font-medium hover:border-text-primary hover:text-text-primary transition-colors bg-card"
+                disabled={scoreLoading}
+                className="flex-1 rounded-lg border border-border text-text-secondary font-medium hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
                 style={{ padding: "10px 18px", fontSize: 13 }}
               >
-                View authenticity analysis
+                {result?.scored ? "View authenticity analysis" : scoreLoading ? "Scoring…" : "Score this post"}
               </button>
             </div>
 
