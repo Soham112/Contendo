@@ -796,9 +796,6 @@ export default function CreatePost() {
   const ringR = 54;
   const ringC = 2 * Math.PI * ringR; // ≈ 339.29
   const ringOffset = result?.scored ? ringC * (1 - result.score / 100) : ringC;
-  const ringStroke = result?.scored
-    ? (result.score >= 80 ? "#58614f" : result.score >= 60 ? "#81543c" : "#9e422c")
-    : "#dfe3e2";
 
   // ─── Analysis panel (right column) ──────────────────────────────────────
 
@@ -831,7 +828,7 @@ export default function CreatePost() {
               <circle cx="65" cy="65" r={ringR} fill="none" stroke="#e6e9e8" strokeWidth="8" />
               <circle
                 cx="65" cy="65" r={ringR} fill="none"
-                stroke={ringStroke} strokeWidth="8"
+                stroke="#58614f" strokeWidth="8"
                 strokeLinecap="round"
                 strokeDasharray={ringC}
                 strokeDashoffset={ringOffset}
@@ -841,7 +838,7 @@ export default function CreatePost() {
               <text
                 x="65" y="62"
                 textAnchor="middle"
-                fontSize="26" fontWeight="500" fill="#2f3333"
+                fontSize="26" fontWeight="700" fill="#2f3333"
                 fontFamily="Inter, system-ui, sans-serif"
               >
                 {result.score}
@@ -859,12 +856,19 @@ export default function CreatePost() {
           </div>
 
           {/* Quote from first feedback item */}
-          {result.score_feedback.length > 0 && (
+          {result.score_feedback.length > 0 ? (
             <p
               className="font-headline italic text-secondary text-center mb-6 px-3 leading-relaxed"
               style={{ fontSize: 13 }}
             >
               &ldquo;{result.score_feedback[0]}&rdquo;
+            </p>
+          ) : (
+            <p
+              className="text-outline-variant text-center mb-6 px-3 leading-relaxed"
+              style={{ fontSize: 13 }}
+            >
+              Your narrative voice analysis will appear here.
             </p>
           )}
 
@@ -909,16 +913,16 @@ export default function CreatePost() {
                 FOCUS POINTS
               </p>
               <div className="space-y-3">
-                {result.score_feedback.map((f, i) => (
+                {result.score_feedback.slice(1).map((f, i) => (
                   <div key={i} className="bg-surface-container rounded-lg px-4 py-3">
-                    <p className="italic text-secondary leading-relaxed" style={{ fontSize: 12.5 }}>
+                    <p className="font-headline italic text-secondary leading-relaxed" style={{ fontSize: 12.5 }}>
                       &ldquo;{f}&rdquo;
                     </p>
                     <p
-                      className={`label-caps mt-2 ${i % 2 === 0 ? "text-tertiary" : "text-outline"}`}
+                      className={`label-caps mt-2 ${i % 2 === 0 ? "text-primary" : "text-tertiary"}`}
                       style={{ fontSize: "0.53rem", letterSpacing: "0.1em" }}
                     >
-                      {i % 2 === 0 ? "POWERFUL HOOK POTENTIAL" : "STANDARD TRANSITION"}
+                      {i % 2 === 0 ? "STRONG POINT" : "NEEDS ATTENTION"}
                     </p>
                   </div>
                 ))}
@@ -937,11 +941,8 @@ export default function CreatePost() {
               AESTHETIC MATCH
             </p>
             <div
-              className="relative rounded-lg overflow-hidden"
-              style={{
-                height: 88,
-                background: "linear-gradient(135deg, #dce6ce 0%, #ced8c1 50%, #c5d0b8 100%)",
-              }}
+              className="relative rounded-lg overflow-hidden bg-primary-container"
+              style={{ height: 88 }}
             >
               <div
                 className="absolute bottom-2 right-2 px-2 py-1 rounded"
@@ -1035,7 +1036,7 @@ export default function CreatePost() {
               AUTHSCORE
             </text>
           </svg>
-          <p className="text-xs text-outline text-center">Run analysis to see your score</p>
+          <p className="text-xs text-outline text-center">Run analysis to see your authscore.</p>
           <button
             onClick={() => { if (!result?.scored && !scoreLoading) handleScore(); }}
             className="btn-primary text-white text-xs font-medium rounded-lg px-5 py-2 hover:opacity-90 transition-opacity"
