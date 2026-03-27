@@ -15,7 +15,9 @@ class PipelineState(TypedDict, total=False):
     profile: dict[str, Any]
 
     # Retrieved knowledge
-    retrieved_chunks: list[str]
+    retrieved_chunks: list[str]       # flat list of "[source_type: X] text" strings — always set for backward compat
+    retrieval_bundle: dict            # structured hierarchical bundle {chunks, source_contexts, topic_contexts}
+    retrieved_context: str            # pre-formatted text block for draft prompt injection; "" triggers flat fallback
 
     # Previously posted topics (for novelty injection in draft)
     posted_topics: list[str]

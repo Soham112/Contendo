@@ -74,6 +74,7 @@ def upsert_chunks(
     ids = [f"{source_id}_{i}" for i in range(total)]
     metadatas = [
         {
+            "node_type": "chunk",
             "source_type": source_type,
             "tags": ",".join(tags),
             "source_id": source_id,
@@ -145,12 +146,82 @@ def query_similar(query: str, top_k: int = 8, user_id: str = "default") -> list[
                 {
                     "text": doc,
                     "source_type": meta.get("source_type", "unknown"),
-                    "tags": meta.get("tags", "").split(","),
+                    "tags": [t.strip() for t in meta.get("tags", "").split(",") if t.strip()],
+                    "source_id": meta.get("source_id", ""),
+                    "chunk_index": int(meta.get("chunk_index", 0)),
                     "similarity": round(similarity, 4),
                 }
             )
 
     return chunks
+
+
+def get_chunks_for_source(source_id: str, user_id: str = "default") -> list[dict]:
+    """Return all chunk dicts for a source_id, sorted by chunk_index ascending.
+
+    Each dict: {"text": str, "chunk_index": int, "source_id": str}
+    Returns [] if source not found or collection empty.
+    """
+    collection = get_collection(user_id)
+    if collection.count() == 0:
+        return []
+    try:
+        results = collection.get(
+            where={"source_id": {"$eq": source_id}},
+            include=["documents", "metadatas"],
+        )
+    except Exception:
+        return []
+    if not results or not results["ids"]:
+        return []
+    chunks = []
+    for doc, meta in zip(results["documents"], results["metadatas"]):
+        chunks.append({
+            "text": doc,
+            "chunk_index": int(meta.get("chunk_index", 0)),
+            "source_id": source_id,
+        })
+    chunks.sort(key=lambda c: c["chunk_index"])
+    return chunks
+
+
+def get_adjacent_chunks(
+    source_id: str,
+    chunk_index: int,
+    user_id: str = "default",
+    window: int = 1,
+) -> list[str]:
+    """Return text of chunks adjacent to chunk_index within the same source.
+
+    Fetches chunks at indices [chunk_index-window .. chunk_index+window],
+    excluding chunk_index itself. Returns texts in index order.
+    Returns [] on any error.
+    """
+    collection = get_collection(user_id)
+    if collection.count() == 0:
+        return []
+
+    adjacent_texts: list[tuple[int, str]] = []
+    for idx in range(chunk_index - window, chunk_index + window + 1):
+        if idx < 0 or idx == chunk_index:
+            continue
+        try:
+            results = collection.get(
+                where={
+                    "$and": [
+                        {"source_id": {"$eq": source_id}},
+                        {"chunk_index": {"$eq": idx}},
+                    ]
+                },
+                include=["documents"],
+            )
+            if results and results["documents"]:
+                adjacent_texts.append((idx, results["documents"][0]))
+        except Exception:
+            continue
+
+    adjacent_texts.sort(key=lambda t: t[0])
+    return [text for _, text in adjacent_texts]
 
 
 def get_total_chunks(user_id: str = "default") -> int:
