@@ -373,8 +373,10 @@ export default function CreatePost() {
   const [analysisOpen, setAnalysisOpen] = useState(false);
   const [isWide, setIsWide] = useState(true);
   const [currentPostId, setCurrentPostId] = useState<number | null>(null);
-  const [restored, setRestored] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [showInterstitial, setShowInterstitial] = useState(false);
+  const [interstitialTopic, setInterstitialTopic] = useState("");
+  const [interstitialScore, setInterstitialScore] = useState(0);
 
   const topicRef = useRef<HTMLInputElement>(null);
   const analysisRef = useRef<HTMLDivElement>(null);
@@ -387,67 +389,46 @@ export default function CreatePost() {
     return () => window.removeEventListener("resize", check);
   }, []);
 
-  // Restore session on mount
+  // On mount: show interstitial if a saved post exists, else go to idle with prefill
   useEffect(() => {
     try {
       const savedPost = sessionStorage.getItem(SS_POST);
-      const savedScore = sessionStorage.getItem(SS_SCORE);
-      const savedFeedback = sessionStorage.getItem(SS_FEEDBACK);
-      const savedIterations = sessionStorage.getItem(SS_ITERATIONS);
-      const savedVisuals = sessionStorage.getItem(SS_VISUALS);
-      const savedIdeas = sessionStorage.getItem(SS_IDEAS);
-      const savedShowAnalysis = sessionStorage.getItem(SS_SHOW_ANALYSIS);
-      const savedPostId = sessionStorage.getItem(SS_CURRENT_POST_ID);
 
-      const savedScored = sessionStorage.getItem(SS_SCORED);
+      if (savedPost) {
+        // A saved post exists — show the interstitial and defer all restoration
+        setInterstitialTopic(sessionStorage.getItem(SS_TOPIC) || "");
+        setInterstitialScore(Number(sessionStorage.getItem(SS_SCORE)) || 0);
+        setShowInterstitial(true);
 
-      if (savedPost && savedScore && savedFeedback && savedIterations) {
-        const restoredResult: GenerateResult = {
-          post: savedPost,
-          score: Number(savedScore),
-          score_feedback: JSON.parse(savedFeedback),
-          iterations: Number(savedIterations),
-          // null = old session before lazy scoring — treat as scored for back-compat
-          scored: savedScored === null ? true : savedScored === "true",
-        };
-        setResult(restoredResult);
-        setEditedPost(savedPost);
-        if (savedVisuals) {
-          const parsedVisuals: Visual[] = JSON.parse(savedVisuals);
-          setVisuals(parsedVisuals);
+        // Restore non-post preferences immediately (ideas panel, analysis open state)
+        const savedIdeas = sessionStorage.getItem(SS_IDEAS);
+        if (savedIdeas) {
+          try {
+            const parsedIdeas: Suggestion[] = JSON.parse(savedIdeas);
+            if (parsedIdeas.length > 0) { setSuggestions(parsedIdeas); setSuggestionsVisible(true); }
+          } catch { /* ignore */ }
         }
-        // Restore topic/format/tone so history saves correctly after restore
-        const savedTopic = sessionStorage.getItem(SS_TOPIC);
-        const savedFormat = sessionStorage.getItem(SS_FORMAT);
-        const savedTone = sessionStorage.getItem(SS_TONE);
-        if (savedTopic) setTopic(savedTopic);
-        if (savedFormat) setFormat(savedFormat as Format);
-        if (savedTone) setTone(savedTone as Tone);
-        setRestored(true);
-      }
-
-      if (savedIdeas) {
-        const parsedIdeas: Suggestion[] = JSON.parse(savedIdeas);
-        if (parsedIdeas.length > 0) {
-          setSuggestions(parsedIdeas);
-          setSuggestionsVisible(true);
+        const savedShowAnalysis = sessionStorage.getItem(SS_SHOW_ANALYSIS);
+        if (savedShowAnalysis !== null) setAnalysisOpen(savedShowAnalysis === "true");
+      } else {
+        // No saved post — idle state; apply any prefill from Ideas screen
+        const savedIdeas = sessionStorage.getItem(SS_IDEAS);
+        if (savedIdeas) {
+          try {
+            const parsedIdeas: Suggestion[] = JSON.parse(savedIdeas);
+            if (parsedIdeas.length > 0) { setSuggestions(parsedIdeas); setSuggestionsVisible(true); }
+          } catch { /* ignore */ }
         }
-      }
+        const savedShowAnalysis = sessionStorage.getItem(SS_SHOW_ANALYSIS);
+        if (savedShowAnalysis !== null) setAnalysisOpen(savedShowAnalysis === "true");
 
-      if (savedShowAnalysis !== null) {
-        setAnalysisOpen(savedShowAnalysis === "true");
+        const prefillTopic = sessionStorage.getItem("contentOS_last_topic");
+        const prefillFormat = sessionStorage.getItem("contentOS_prefill_format");
+        if (prefillTopic) setTopic(prefillTopic);
+        if (prefillFormat) setFormat(prefillFormat as Format);
+        sessionStorage.removeItem("contentOS_last_topic");
+        sessionStorage.removeItem("contentOS_prefill_format");
       }
-
-      if (savedPostId) {
-        setCurrentPostId(Number(savedPostId));
-      }
-
-      // Check for prefill from Ideas screen
-      const prefillTopic = sessionStorage.getItem("contentOS_last_topic");
-      const prefillFormat = sessionStorage.getItem("contentOS_prefill_format");
-      if (prefillTopic) setTopic(prefillTopic);
-      if (prefillFormat) setFormat(prefillFormat as Format);
-      sessionStorage.removeItem("contentOS_prefill_format");
     } catch {
       // corrupt sessionStorage — ignore
     }
@@ -495,11 +476,75 @@ export default function CreatePost() {
     [SS_POST, SS_SCORE, SS_FEEDBACK, SS_ITERATIONS, SS_VISUALS, SS_IDEAS, SS_CURRENT_POST_ID, SS_TOPIC, SS_FORMAT, SS_TONE, SS_SCORED].forEach((k) =>
       sessionStorage.removeItem(k)
     );
-    setRestored(false);
     setCurrentPostId(null);
     setSuggestions([]);
     setSuggestionsVisible(false);
     setSelectedIdeaIndex(null);
+  };
+
+  // Restore full session from storage — called when user clicks "Continue editing"
+  const handleContinueEditing = () => {
+    try {
+      const savedPost = sessionStorage.getItem(SS_POST);
+      const savedScore = sessionStorage.getItem(SS_SCORE);
+      const savedFeedback = sessionStorage.getItem(SS_FEEDBACK);
+      const savedIterations = sessionStorage.getItem(SS_ITERATIONS);
+      const savedVisuals = sessionStorage.getItem(SS_VISUALS);
+      const savedScored = sessionStorage.getItem(SS_SCORED);
+      const savedTopic = sessionStorage.getItem(SS_TOPIC);
+      const savedFormat = sessionStorage.getItem(SS_FORMAT);
+      const savedTone = sessionStorage.getItem(SS_TONE);
+      const savedPostId = sessionStorage.getItem(SS_CURRENT_POST_ID);
+
+      if (savedPost && savedScore && savedFeedback && savedIterations) {
+        const restoredResult: GenerateResult = {
+          post: savedPost,
+          score: Number(savedScore),
+          score_feedback: JSON.parse(savedFeedback),
+          iterations: Number(savedIterations),
+          // null = old session before lazy scoring — treat as scored for back-compat
+          scored: savedScored === null ? true : savedScored === "true",
+        };
+        setResult(restoredResult);
+        setEditedPost(savedPost);
+        if (savedVisuals) {
+          try { setVisuals(JSON.parse(savedVisuals)); } catch { /* ignore */ }
+        }
+        if (savedTopic) setTopic(savedTopic);
+        if (savedFormat) setFormat(savedFormat as Format);
+        if (savedTone) setTone(savedTone as Tone);
+        if (savedPostId) setCurrentPostId(Number(savedPostId));
+      }
+    } catch {
+      // corrupt storage — fall through to idle
+    }
+    setShowInterstitial(false);
+  };
+
+  // Discard saved session and start blank — called when user clicks "Start fresh"
+  const handleStartFresh = () => {
+    [SS_POST, SS_SCORE, SS_FEEDBACK, SS_ITERATIONS, SS_VISUALS, SS_IDEAS,
+     SS_CURRENT_POST_ID, SS_TOPIC, SS_FORMAT, SS_TONE, SS_SCORED, SS_SHOW_ANALYSIS].forEach((k) =>
+      sessionStorage.removeItem(k)
+    );
+    sessionStorage.removeItem("contentOS_last_topic");
+
+    const prefillFormat = sessionStorage.getItem("contentOS_prefill_format");
+    if (prefillFormat) {
+      setFormat(prefillFormat as Format);
+      sessionStorage.removeItem("contentOS_prefill_format");
+    }
+
+    setResult(null);
+    setEditedPost("");
+    setVisuals([]);
+    setVisualsVisible(false);
+    setAnalysisOpen(false);
+    setCurrentPostId(null);
+    setSuggestions([]);
+    setSuggestionsVisible(false);
+    setSelectedIdeaIndex(null);
+    setShowInterstitial(false);
   };
 
   const autoSavePost = async (data: GenerateResult, postContent: string) => {
@@ -1285,30 +1330,6 @@ export default function CreatePost() {
               padding: "28px 32px",
             }}
           >
-            {/* Restored session banner */}
-            {restored && (
-              <div
-                className="flex items-center justify-between rounded-lg border border-surface-container-high bg-surface-container px-4 py-2.5"
-                style={{ flexShrink: 0, marginBottom: 12 }}
-              >
-                <p className="text-xs text-secondary">Restored your last session</p>
-                <button
-                  onClick={() => {
-                    clearSession();
-                    setResult(null);
-                    setEditedPost("");
-                    setVisuals([]);
-                    setVisualsVisible(false);
-                    setAnalysisOpen(false);
-                  }}
-                  className="text-outline hover:text-secondary text-xl leading-none ml-4"
-                  aria-label="Dismiss"
-                >
-                  ×
-                </button>
-              </div>
-            )}
-
             {/* Manuscript heading row */}
             <div
               style={{
@@ -1414,27 +1435,6 @@ export default function CreatePost() {
         <div className="flex-1 overflow-y-auto">
           <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px 40px" }}>
 
-            {/* Restored session banner */}
-            {restored && !loading && (
-              <div className="flex items-center justify-between rounded-lg border border-surface-container-high bg-surface-container px-4 py-2.5 mb-6">
-                <p className="text-xs text-secondary">Restored your last session</p>
-                <button
-                  onClick={() => {
-                    clearSession();
-                    setResult(null);
-                    setEditedPost("");
-                    setVisuals([]);
-                    setVisualsVisible(false);
-                    setAnalysisOpen(false);
-                  }}
-                  className="text-outline hover:text-secondary text-xl leading-none ml-4"
-                  aria-label="Dismiss"
-                >
-                  ×
-                </button>
-              </div>
-            )}
-
             {/* Ideas panel */}
             {suggestionsVisible && (
               <div className="rounded-xl border border-surface-container-high bg-surface-container-lowest overflow-hidden mb-6">
@@ -1521,8 +1521,80 @@ export default function CreatePost() {
               </div>
             )}
 
+            {/* ── Interstitial: continue vs start fresh ───────────────────── */}
+            {showInterstitial && (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  minHeight: "60vh",
+                  padding: "40px 24px",
+                }}
+              >
+                <div style={{ maxWidth: 480, width: "100%", textAlign: "center" }}>
+                  <p className="text-xs text-tertiary tracking-widest uppercase mb-3">
+                    Welcome Back
+                  </p>
+                  <h2
+                    className="font-headline text-on-surface"
+                    style={{ fontSize: 26, fontWeight: 400, marginBottom: 28 }}
+                  >
+                    Continue your last draft?
+                  </h2>
+
+                  {/* Preview card */}
+                  <div
+                    className="bg-surface-container rounded-xl"
+                    style={{ padding: "16px 20px", marginBottom: 28, textAlign: "left" }}
+                  >
+                    <p
+                      className="text-sm text-on-surface"
+                      style={{ marginBottom: interstitialScore > 0 ? 10 : 0 }}
+                    >
+                      {interstitialTopic.length > 80
+                        ? interstitialTopic.slice(0, 80) + "…"
+                        : interstitialTopic || "Untitled draft"}
+                    </p>
+                    {interstitialScore > 0 && (
+                      <span
+                        className="text-xs text-secondary"
+                        style={{
+                          display: "inline-block",
+                          background: "var(--color-surface-container-high, #e8edeb)",
+                          borderRadius: 6,
+                          padding: "2px 10px",
+                        }}
+                      >
+                        Score {interstitialScore}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex flex-col gap-3" style={{ alignItems: "center" }}>
+                    <button
+                      className="btn-primary"
+                      style={{ width: "100%", maxWidth: 320 }}
+                      onClick={handleContinueEditing}
+                    >
+                      Continue editing
+                    </button>
+                    <button
+                      className="ghost-border"
+                      style={{ width: "100%", maxWidth: 320 }}
+                      onClick={handleStartFresh}
+                    >
+                      Start fresh
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* ── Configure form ──────────────────────────────────────────── */}
-            {!postGenerated && !loading && (
+            {!postGenerated && !loading && !showInterstitial && (
               <div style={{ maxWidth: 600, margin: "0 auto" }}>
                 {/* Editorial header */}
                 <div className="mb-8">
