@@ -14,7 +14,7 @@
 | `PROMPTS.md` | All agent system prompts verbatim — source of truth for agent behaviour |
 | `.gitignore` | Excludes venv, node_modules, .env, chroma_db data |
 | **Backend** | |
-| `backend/main.py` | FastAPI app entry point — CORS config, lifespan hook (`init_db`), and router registration only (~40 lines) |
+| `backend/main.py` | FastAPI app entry point — CORS config, lifespan hook (calls `init_db` + `init_hierarchy_db`), and router registration only (~40 lines) |
 | `backend/routers/__init__.py` | Empty — marks routers/ as a Python package |
 | `backend/routers/ingest.py` | `/ingest`, `/ingest-file`, `/scrape-and-ingest`, `/obsidian/preview`, `/obsidian/ingest` |
 | `backend/routers/generate.py` | `/generate`, `/refine`, `/score`, `/generate-visuals` |
@@ -26,17 +26,18 @@
 | `backend/.env.example` | Required env var keys with no values |
 | `backend/agents/ideation_agent.py` | Generates N content ideas from ChromaDB sample, profile, and posted topic history |
 | `backend/agents/visual_agent.py` | Parses [DIAGRAM:] and [IMAGE:] placeholders from post; calls Claude to generate SVG for diagrams; returns reminder text for images |
-| `backend/agents/ingestion_agent.py` | Chunks content, extracts tags via Claude, upserts to ChromaDB; accepts `user_id: str = "default"` and passes it through to `upsert_chunks()`; computes SHA-256 hash of content and calls `query_by_hash()` before the Claude tag extraction call — duplicate content is returned immediately with no Claude call |
+| `backend/agents/ingestion_agent.py` | Chunks content, extracts tags via Claude Sonnet, upserts to ChromaDB; after successful upsert: generates a 2-3 sentence source summary via Claude Haiku and writes a source_node + topic_node to hierarchy_store (wrapped in try/except — never blocks ingestion); SHA-256 dedup via `query_by_hash()` before any Claude call |
 | `backend/agents/vision_agent.py` | Sends base64 images to Claude vision, returns extracted text |
-| `backend/agents/retrieval_agent.py` | Semantic search node in the LangGraph pipeline; reads `user_id` from pipeline state to query the correct per-user ChromaDB collection; prefixes each retrieved chunk with `[source_type: X]` so the draft agent can distinguish personal notes from external articles |
-| `backend/agents/draft_agent.py` | Calls Claude Haiku via `infer_archetype()` to classify the topic into one of 7 post archetypes, then generates the initial draft via Claude Sonnet |
+| `backend/agents/retrieval_agent.py` | Semantic search node in the LangGraph pipeline; builds a `retrieval_bundle` (chunks + source_contexts + topic_contexts) from hierarchy_store; sets `retrieved_context` (pre-formatted enriched text block) and always sets `retrieved_chunks` for backward compat; falls back to flat retrieval if hierarchy_store is empty |
+| `backend/agents/draft_agent.py` | Calls Claude Haiku via `infer_archetype()` to classify the topic into one of 7 post archetypes, then generates the initial draft via Claude Sonnet; uses `_format_retrieval_context()` which prefers the enriched `retrieved_context` from state and falls back to flat `retrieved_chunks` |
 | `backend/agents/critic_agent.py` | Diagnoses the initial draft across hook, substance, structure, and voice; produces a structured JSON brief; runs between `draft_node` and `humanizer_node`; uses Claude Haiku; skipped for draft quality mode |
 | `backend/agents/humanizer_agent.py` | Rewrites draft to remove AI patterns, inject human voice; reads `critic_brief` from state and fixes flagged issues before humanizing if any area was rated "needs_work" |
 | `backend/agents/scorer_agent.py` | Scores draft 0–100 across 5 dimensions, returns flagged sentences |
-| `backend/pipeline/state.py` | TypedDict schema for shared LangGraph pipeline state; includes `archetype` field for the inferred post archetype key, `user_id` field for ChromaDB collection namespacing, and `critic_brief` field for the structured critic diagnosis |
+| `backend/pipeline/state.py` | TypedDict schema for shared LangGraph pipeline state; includes `archetype`, `user_id`, `critic_brief`, `retrieved_chunks` (backward compat flat list), `retrieval_bundle` (full hierarchical bundle), and `retrieved_context` (pre-formatted enriched text for draft prompt) |
 | `backend/pipeline/graph.py` | LangGraph graph definition — nodes, edges, conditional retry loop |
-| `backend/memory/vector_store.py` | ChromaDB init, upsert, semantic query, stats, delete_source, query_by_hash; collections are namespaced per user as `contendo_{user_id}` — all public functions accept `user_id: str = "default"` |
+| `backend/memory/vector_store.py` | ChromaDB init, upsert, semantic query, stats, delete_source, query_by_hash; `query_similar()` now returns `source_id` and `chunk_index` per result; `upsert_chunks()` stores `node_type:"chunk"`; new `get_chunks_for_source()` and `get_adjacent_chunks()` for hierarchical sibling retrieval; collections namespaced as `contendo_{user_id}` |
 | `backend/memory/profile_store.py` | profile.json read/write, defaults, profile-to-string formatter |
+| `backend/memory/hierarchy_store.py` | SQLite store (`backend/data/hierarchy.db`) for source_nodes and topic_nodes — `upsert_source_node`, `get_source_node`, `source_node_exists`, `upsert_topic_node`, `get_topic_node`, `find_matching_topic` (tag-overlap heuristic), `add_source_to_topic`; initialized in FastAPI lifespan |
 | `backend/memory/feedback_store.py` | SQLite posts and post_versions tables — log_post, get_recent_posts, get_all_topics_posted, add_version, get_versions, get_best_version, update_latest_version_svg |
 | `backend/tools/scraper_tool.py` | URL scraper using Jina Reader — `is_valid_url()`, `clean_scraped_text()`, `scrape_url()` |
 | `backend/tools/obsidian_tool.py` | Obsidian vault reader — `read_vault()` yields cleaned note dicts, `get_vault_stats()` for preview, `clean_obsidian_markdown()` strips wikilinks/frontmatter/Dataview |
@@ -48,6 +49,8 @@
 | `backend/data/profile.template.json` | Committed template with placeholder values — starting point for new users |
 | `backend/data/chroma_db/` | ChromaDB persistent storage (gitignored) |
 | `backend/data/posts.db` | SQLite post history (gitignored) |
+| `backend/data/hierarchy.db` | SQLite hierarchy store — source_nodes + topic_nodes (gitignored) |
+| `scripts/migrate_hierarchy.py` | One-time migration script: backfills hierarchy_store from existing ChromaDB data; idempotent; run with `python scripts/migrate_hierarchy.py [--dry_run] [--force] [--user_id default]` |
 | `backend/venv/` | Python virtual environment (gitignored) |
 | **Frontend** | |
 | `frontend/app/layout.tsx` | Root layout — mounts AppShell which renders Sidebar for app routes; /welcome bypasses sidebar |

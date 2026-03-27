@@ -119,8 +119,8 @@ Navigation across all five screens is handled by a persistent left sidebar (`Sid
 | Step | Agent | Job |
 |------|-------|-----|
 | 1 | `load_profile_node` | Reads `profile.json`, injects user voice and style into state. Also loads all previously posted topics from SQLite to prevent repeated angles. |
-| 2 | `retrieval_node` | Queries ChromaDB for the 8 most semantically relevant chunks; filters out anything below 0.3 cosine similarity; prefixes each chunk with `[source_type: X]` so the draft agent can distinguish the user's personal notes from external articles, YouTube, and images |
-| 3 | `draft_node` | First calls Claude Haiku (`infer_archetype()`) to semantically classify the topic into one of 7 post archetypes. Then calls Claude Sonnet to produce an initial draft using the user profile, retrieved chunks, format-specific instructions, archetype structural rules, and mandatory visual placeholder rules |
+| 2 | `retrieval_node` | Queries ChromaDB for the 8 most semantically relevant chunks; builds a `retrieval_bundle` with source summaries and adjacent sibling chunks from `hierarchy_store`; sets `retrieved_context` (enriched prompt block) and always sets `retrieved_chunks` for backward compat; falls back to flat retrieval if hierarchy_store is empty |
+| 3 | `draft_node` | First calls Claude Haiku (`infer_archetype()`) to classify the topic into one of 7 post archetypes. Then calls Claude Sonnet to produce a draft using the enriched `retrieved_context` (source summaries + sibling chunks for top sources) or flat `retrieved_chunks` as fallback |
 | 4 | `humanizer_node` | Calls Claude to strip AI writing patterns, vary sentence structure, and inject the user's authentic voice. Also exposes `refine_draft()` for targeted post-generation edits via `/refine` |
 | 5 | `scorer_node` | Calls Claude to score the draft 0–100 across 5 dimensions; uses 3-attempt JSON parse to handle markdown-wrapped responses |
 | 6 | Conditional | **draft** mode: skip humanizer and scorer entirely, return raw draft. **standard** mode (default): 1 humanizer pass; scorer skipped during generation — scored lazily on demand via `POST /score` when user clicks the analysis toggle. **polished** mode: up to 3 humanizer passes with scorer running each iteration; retries if score < 75 and iterations < 3. |
@@ -215,6 +215,9 @@ Note: `profile.json` is gitignored — your personal details never get committed
 ├── README.md                         # This file — project overview and architecture
 ├── CODEBASE.md                       # Full technical reference — read before touching code
 ├── PROMPTS.md                        # All agent system prompts verbatim — source of truth
+├── DESIGN.md                         # Editorial Atelier design system — read before any UI change
+├── scripts/
+│   └── migrate_hierarchy.py          # One-time migration: backfill hierarchy_store from existing ChromaDB data
 ├── .gitignore                        # Excludes venv, node_modules, .env, chroma data
 │
 ├── frontend/
@@ -267,7 +270,8 @@ Note: `profile.json` is gitignored — your personal details never get committed
     │   ├── state.py                  # TypedDict defining shared LangGraph pipeline state
     │   └── graph.py                  # LangGraph graph — nodes, edges, quality-aware routing
     ├── memory/
-    │   ├── vector_store.py           # ChromaDB init, upsert, semantic query, get_all_sources; per-user collections namespaced as contendo_{user_id}
+    │   ├── vector_store.py           # ChromaDB init, upsert, semantic query, get_all_sources, get_adjacent_chunks; per-user collections namespaced as contendo_{user_id}
+    │   ├── hierarchy_store.py        # SQLite hierarchy.db — source_nodes + topic_nodes for hierarchical retrieval
     │   ├── profile_store.py          # profile.json load/save with defaults auto-created
     │   └── feedback_store.py         # SQLite posts + post_versions tables — history, versions, restore
     ├── tools/

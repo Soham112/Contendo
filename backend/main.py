@@ -7,12 +7,14 @@ from fastapi.middleware.cors import CORSMiddleware
 load_dotenv()
 
 from memory.feedback_store import init_db
+from memory.hierarchy_store import init_db as init_hierarchy_db
 from routers import generate, history, ideas, ingest, library, stats
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    init_hierarchy_db()
     yield
 
 

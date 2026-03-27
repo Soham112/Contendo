@@ -119,6 +119,28 @@ Never force a diagram into opinion pieces or short punchy posts where the words 
 ---"""
 
 
+def _format_retrieval_context(state: PipelineState) -> str:
+    """Return the text block to inject as the knowledge base section.
+
+    Priority:
+    1. Use state["retrieved_context"] if non-empty (hierarchical path — richer context
+       with source summaries and sibling chunks for top sources).
+    2. Fall back to formatting state["retrieved_chunks"] as a flat numbered list
+       (identical to the pre-hierarchy behavior, ensures nothing breaks pre-migration).
+    """
+    retrieved_context = state.get("retrieved_context", "")
+    if retrieved_context:
+        return retrieved_context
+
+    # Flat fallback — preserves exact pre-hierarchy behavior
+    chunks = state.get("retrieved_chunks", [])
+    if chunks:
+        return "\n\n---\n\n".join(
+            f"[Chunk {i + 1}]\n{chunk}" for i, chunk in enumerate(chunks)
+        )
+    return "No relevant knowledge base entries found. Draw on general expertise."
+
+
 def draft_node(state: PipelineState) -> PipelineState:
     # Infer archetype from topic/context/tone — no Claude call, deterministic
     archetype = infer_archetype(
@@ -134,13 +156,7 @@ def draft_node(state: PipelineState) -> PipelineState:
     profile_context = profile_to_context_string(profile)
     format_instructions = get_format_instructions(state["format"], state["tone"])
 
-    chunks = state.get("retrieved_chunks", [])
-    if chunks:
-        chunks_text = "\n\n---\n\n".join(
-            f"[Chunk {i+1}]\n{chunk}" for i, chunk in enumerate(chunks)
-        )
-    else:
-        chunks_text = "No relevant knowledge base entries found. Draw on general expertise."
+    chunks_text = _format_retrieval_context(state)
 
     context = state.get("context", "").strip()
     context_section = f"Additional context: {context}" if context else ""
