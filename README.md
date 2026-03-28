@@ -255,7 +255,7 @@ Note: profile files are gitignored — your personal details never get committed
     │   ├── stats.py                  # /stats
     │   ├── profile.py                # GET/POST /profile — per-user read/write, read-back verification
     │   ├── debug.py                  # TEMPORARY: GET /debug/profile-paths (no auth)
-    │   └── admin.py                  # TEMPORARY: POST /admin/migrate-profile (x-migration-secret)
+    │   └── admin.py                  # TEMPORARY: POST /admin/migrate-profile + POST /admin/migrate-user-data (x-migration-secret)
     ├── requirements.txt              # All Python dependencies pinned
     ├── .env.example                  # Required env var keys with no values
     ├── agents/
@@ -362,24 +362,28 @@ backend/data/hierarchy.db      →  /data/hierarchy.db
 backend/data/profile.json      →  /data/profile.json
 ```
 
-**How to migrate via the temporary migration endpoint:**
+**How to migrate via the temporary migration endpoints in `backend/routers/admin.py`:**
 
-The recommended approach is to use the built-in migration endpoint (see `backend/routers/migrate.py` if still present, or the commit history). The endpoint accepts a tar.gz archive of your local `backend/data/` directory and extracts it to `DATA_DIR` on the server.
+Two endpoints handle the migration. Run them in order after the backend is deployed and the persistent volume is mounted:
 
 ```bash
-# Create archive from your local data directory
-cd backend
-tar -czf data_backup.tar.gz -C data .
-
-# Upload to Railway (replace with your actual Railway URL and secret)
-curl --http1.1 -X POST https://your-service.up.railway.app/admin/migrate \
+# 1. Migrate ChromaDB chunks, SQLite posts, and hierarchy nodes
+#    (copies everything under user_id="default" to your Clerk user ID)
+curl -X POST https://your-service.up.railway.app/admin/migrate-user-data \
+  -H "Content-Type: application/json" \
   -H "x-migration-secret: YOUR_MIGRATION_SECRET" \
-  -F "file=@data_backup.tar.gz"
+  -d '{"target_user_id": "your_clerk_user_id"}'
+
+# 2. Migrate your voice/style profile
+curl -X POST https://your-service.up.railway.app/admin/migrate-profile \
+  -H "Content-Type: application/json" \
+  -H "x-migration-secret: YOUR_MIGRATION_SECRET" \
+  -d '{"target_user_id": "your_clerk_user_id"}'
 ```
 
 **Verify the migration:**
 
-After uploading, check `GET /health` returns `{"status": "ok"}` and then ingest a test piece of content to confirm ChromaDB is reading from the volume.
+After running both curls, sign in to the app and confirm: Library shows all existing sources, History shows all existing posts, Stats shows a non-zero chunk count, and `/settings` shows your profile name.
 
 ---
 

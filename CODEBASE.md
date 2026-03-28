@@ -25,7 +25,7 @@
 | `backend/routers/stats.py` | `GET /stats` |
 | `backend/routers/profile.py` | `GET /profile`, `POST /profile` — per-user profile read/write; returns `has_profile: bool` so frontend can detect new users needing onboarding; `POST /profile` does a read-back verification after save and returns HTTP 500 if the write didn't land; returns `{"saved": true, "user_id": "..."}` |
 | `backend/routers/debug.py` | **TEMPORARY** — `GET /debug/profile-paths` (no auth); returns `data_dir`, `profiles_dir`, `profiles_dir_exists`, `profile_files`, `environment`; used to verify Railway volume mount; remove once persistence is confirmed |
-| `backend/routers/admin.py` | **TEMPORARY** — `POST /admin/migrate-profile` (protected by `x-migration-secret` header matching `MIGRATION_SECRET` env var, no Clerk auth); accepts `target_user_id` + optional `profile` dict; if `profile` omitted falls back to reading legacy `profile.json`; used to seed per-user profile files for existing users; remove after all users migrated |
+| `backend/routers/admin.py` | **TEMPORARY** — `POST /admin/migrate-profile` and `POST /admin/migrate-user-data` (both protected by `x-migration-secret` header matching `MIGRATION_SECRET` env var, no Clerk auth); `migrate-profile` accepts `target_user_id` + optional `profile` dict (falls back to legacy `profile.json`); `migrate-user-data` copies ChromaDB chunks, SQLite posts, and hierarchy nodes from `user_id="default"` to a real Clerk user ID — `contendo_default` collection preserved as backup; remove both after all users migrated |
 | `backend/requirements.txt` | All Python dependencies pinned |
 | `backend/.env.example` | Required env var template — `ANTHROPIC_API_KEY`, `DATA_DIR`, `FRONTEND_ORIGIN`, `ENVIRONMENT`, `CLERK_SECRET_KEY` |
 | `backend/Dockerfile` | Production Docker image for Railway — Python 3.11-slim; pre-installs CPU-only `torch==2.2.2` from PyTorch CPU wheel registry (avoids 4 GB image limit); sentence-transformers model downloads at first request (not baked in); uses `$PORT` and `$DATA_DIR` |
@@ -543,6 +543,49 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
   "tags": ["ai", "machine learning", "product strategy", "startups"]
 }
 ```
+
+---
+
+### POST /admin/migrate-profile *(TEMPORARY)*
+**Auth:** `x-migration-secret` header must match `MIGRATION_SECRET` env var. No Clerk auth.
+**Request body:**
+```json
+{
+  "target_user_id": "user_3BYsin1Q4qNbSpkYOKnhPCTTarN",
+  "profile": { ... }  // optional — if omitted, reads legacy DATA_DIR/profile.json
+}
+```
+**Response:**
+```json
+{
+  "migrated": true,
+  "source": "/data/profile.json",
+  "to": "/data/profiles/profile_user_3BYsin1Q4qNbSpkYOKnhPCTTarN.json",
+  "name": "Soham Patil"
+}
+```
+**Notes:** Writes a profile for any user ID without requiring Clerk auth. If `profile` is provided in the body, that data is used directly. Otherwise falls back to reading `DATA_DIR/profile.json`. Returns 403 if secret is wrong, 404 if no legacy profile exists and no inline `profile` was provided, 500 if `MIGRATION_SECRET` is unset.
+
+---
+
+### POST /admin/migrate-user-data *(TEMPORARY)*
+**Auth:** `x-migration-secret` header must match `MIGRATION_SECRET` env var. No Clerk auth.
+**Request body:**
+```json
+{ "target_user_id": "user_3BYsin1Q4qNbSpkYOKnhPCTTarN" }
+```
+**Response:**
+```json
+{
+  "migrated": true,
+  "target_user_id": "user_3BYsin1Q4qNbSpkYOKnhPCTTarN",
+  "chunks_migrated": 312,
+  "posts_migrated": 47,
+  "hierarchy": "18 nodes migrated",
+  "note": "contendo_default collection preserved as backup. Profile migration is separate — run /admin/migrate-profile too."
+}
+```
+**Notes:** One-time migration that copies all data from `user_id="default"` to a real Clerk user ID. Three steps: (1) gets `contendo_default` ChromaDB collection and upserts all chunks + embeddings + metadata into `contendo_{target_user_id}` — `contendo_default` is NOT deleted (backup); (2) updates `posts` table in `posts.db` WHERE `user_id='default'`; (3) updates `source_nodes` and `topic_nodes` in `hierarchy.db` if a `user_id` column exists (skipped with message if not). Returns 403 if secret is wrong, 404 if `contendo_default` not found, 500 with `{"step": "chromadb"|"posts"|"hierarchy", "error": "..."}` on any step failure. Profile must be migrated separately via `/admin/migrate-profile`.
 
 ---
 

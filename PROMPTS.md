@@ -4,7 +4,7 @@
 > When any prompt needs to be tuned, update this file first, then update the
 > corresponding agent file to match. The two must never be out of sync.
 
-> **Verification note (2026-03-27):** All agent system prompts remain in sync with implementations. The five most recent feature merges (`feature/shared-llm-client`, `feature/ingestion-deduplication`, `feature/lazy-scorer`, `feature/critic-agent`, `feature/ui-revamp`) involved no prompt changes — only implementation scaffolding, deduplication logic, conditional routing, critic agent addition, and hierarchical retrieval. No prompt tuning was required.
+> **Verification note (2026-03-28):** All agent system prompts remain in sync with implementations. The most recent change (`feature/multi-user-auth` — adding `POST /admin/migrate-user-data` to `admin.py`) touched no agent files and required no prompt changes.
 
 ---
 
