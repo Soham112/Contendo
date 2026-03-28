@@ -25,7 +25,7 @@
 | `backend/routers/stats.py` | `GET /stats` |
 | `backend/requirements.txt` | All Python dependencies pinned |
 | `backend/.env.example` | Required env var template — `ANTHROPIC_API_KEY`, `DATA_DIR`, `FRONTEND_ORIGIN`, `ENVIRONMENT` |
-| `backend/Dockerfile` | Production Docker image for Railway — Python 3.11-slim, pre-bakes sentence-transformers model, uses `$PORT` and `$DATA_DIR` |
+| `backend/Dockerfile` | Production Docker image for Railway — Python 3.11-slim; pre-installs CPU-only `torch==2.2.2` from PyTorch CPU wheel registry (avoids 4 GB image limit); sentence-transformers model downloads at first request (not baked in); uses `$PORT` and `$DATA_DIR` |
 | `backend/.dockerignore` | Excludes venv, pycache, local data files, .env from Docker build context |
 | `backend/config/__init__.py` | Empty — marks config/ as a Python package |
 | `backend/config/paths.py` | Single source of truth for all data paths; reads `DATA_DIR` env var, falls back to `backend/data/` for local dev; exposes `CHROMA_DIR`, `POSTS_DB_PATH`, `HIERARCHY_DB_PATH`, `PROFILE_PATH` |
@@ -40,7 +40,7 @@
 | `backend/agents/scorer_agent.py` | Scores draft 0–100 across 5 dimensions, returns flagged sentences |
 | `backend/pipeline/state.py` | TypedDict schema for shared LangGraph pipeline state; includes `archetype`, `user_id`, `critic_brief`, `retrieved_chunks` (backward compat flat list), `retrieval_bundle` (full hierarchical bundle), and `retrieved_context` (pre-formatted enriched text for draft prompt) |
 | `backend/pipeline/graph.py` | LangGraph graph definition — nodes, edges, conditional retry loop |
-| `backend/memory/vector_store.py` | ChromaDB init, upsert, semantic query, stats, delete_source, query_by_hash; `query_similar()` now returns `source_id` and `chunk_index` per result; `upsert_chunks()` stores `node_type:"chunk"`; new `get_chunks_for_source()` and `get_adjacent_chunks()` for hierarchical sibling retrieval; collections namespaced as `contendo_{user_id}` |
+| `backend/memory/vector_store.py` | ChromaDB init, upsert, semantic query, stats, delete_source, query_by_hash; `query_similar()` returns `source_id` and `chunk_index` per result; `query_similar_batch()` embeds all queries in a single batched forward pass then queries ChromaDB for each (significantly faster than N sequential `query_similar()` calls); `upsert_chunks()` stores `node_type:"chunk"`; `get_chunks_for_source()` and `get_adjacent_chunks()` for hierarchical sibling retrieval; collections namespaced as `contendo_{user_id}` |
 | `backend/memory/profile_store.py` | profile.json read/write, defaults, profile-to-string formatter |
 | `backend/memory/hierarchy_store.py` | SQLite store (path from `config.paths.HIERARCHY_DB_PATH`) for source_nodes and topic_nodes — `upsert_source_node`, `get_source_node`, `source_node_exists`, `upsert_topic_node`, `get_topic_node`, `find_matching_topic` (tag-overlap heuristic), `add_source_to_topic`; initialized in FastAPI lifespan |
 | `backend/memory/feedback_store.py` | SQLite posts and post_versions tables — log_post, get_recent_posts, get_all_topics_posted, add_version, get_versions, get_best_version, update_latest_version_svg |
@@ -56,7 +56,6 @@
 | `backend/data/posts.db` | SQLite post history (gitignored) |
 | `backend/data/hierarchy.db` | SQLite hierarchy store — source_nodes + topic_nodes (gitignored) |
 | `scripts/migrate_hierarchy.py` | One-time migration script: backfills hierarchy_store from existing ChromaDB data; idempotent; run with `python scripts/migrate_hierarchy.py [--dry_run] [--force] [--user_id default]` |
-| `scripts/check_data.py` | Data verification utility — prints file existence, Chroma collection chunk counts, posts.db row counts, hierarchy.db row counts; safe to run locally or in Railway shell; honours `DATA_DIR` |
 | `backend/venv/` | Python virtual environment (gitignored) |
 | **Frontend** | |
 | `frontend/app/layout.tsx` | Root layout — mounts AppShell which renders Sidebar for app routes; /welcome bypasses sidebar |
@@ -607,11 +606,14 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
 | Claude model selection | Draft generation and all main pipeline calls use `claude-sonnet-4-6`. Archetype inference (`infer_archetype()` in `draft_agent.py`) uses `claude-haiku-4-5-20251001` (`max_tokens=20`) for low-latency classification before the Sonnet draft call. |
 | ChromaDB similarity threshold is 0.3 | Cosine similarity — chunks below this are too semantically distant to help |
 | profile.json has auto-merge on load | Ensures new profile fields added in code appear without manual migration |
-| CORS allows `*.vercel.app` wildcard | Covers all preview and production Vercel deployments without hardcoding URLs |
+| CORS: production origin set via `FRONTEND_ORIGIN` env var | Starlette does NOT support glob patterns in `allow_origins` — `https://*.vercel.app` is treated as a literal string and won't match real requests. The Railway env var `FRONTEND_ORIGIN` is appended to the allow-list at startup. The list also always includes `http://localhost:3000` and `https://localhost:3000` for local dev. Never add trailing slashes to `FRONTEND_ORIGIN` or `NEXT_PUBLIC_API_URL` — trailing slash causes origin mismatches. |
 | All data paths derived from `DATA_DIR` env var | `backend/config/paths.py` is the single source of truth. `DATA_DIR` defaults to `backend/data/` for local dev (identical to the previous hardcoded relative paths). On Railway, set `DATA_DIR=/data` and mount the persistent volume at `/data`. All four memory modules import from `config.paths` — no path logic elsewhere. |
 | Obsidian routes guarded by `ENVIRONMENT=production` | `/obsidian/preview` and `/obsidian/ingest` return HTTP 400 when `ENVIRONMENT=production`. The frontend hides the Obsidian tab when `NEXT_PUBLIC_API_URL` does not contain `localhost` or `127.0.0.1`. This prevents meaningless/dangerous filesystem reads on a remote server. |
 | `GET /health` endpoint returns `{"status": "ok"}` | Lightweight health check at the app level in `main.py`. Used by Railway's health check probe and smoke tests after deployment. |
 | Backend Docker image does not pre-bake the sentence-transformers model | Model pre-loading was removed from the Dockerfile because it caused Railway build timeouts. The `all-MiniLM-L6-v2` model (~90 MB) is downloaded by `sentence-transformers` on first use and cached inside the container. Build times stay fast; only the very first embedding call (ingest or generate) on a fresh container is slow. |
+| `numpy<2` pinned in requirements.txt | NumPy 2.x is incompatible with the torch version used. After multiple embedding calls, torch raises a fatal ABI mismatch error which crashes the worker process. Pinning to `numpy<2` prevents silent upgrade breakage. |
+| CPU-only `torch==2.2.2` pre-installed in Dockerfile from PyTorch CPU wheel registry | The default PyTorch wheel includes CUDA libraries (~2 GB) and exceeds Railway's 4 GB image limit. Pre-installing from `https://download.pytorch.org/whl/cpu` before `requirements.txt` keeps the image under the limit. This must happen before the pip install step so the CPU wheel is not overwritten. |
+| `query_similar_batch()` used in ideation agent instead of N `query_similar()` calls | The ideation agent generates 8 diversity-sampling queries. Calling `query_similar()` once per query runs 8 separate transformer forward passes (slow on CPU). `query_similar_batch()` embeds all queries in one batched forward pass then queries ChromaDB for each, cutting embedding time by ~7×. |
 | SQLite used for post history | Zero-config, single-file, sufficient for one user — no PostgreSQL needed at MVP |
 | Posts are auto-saved after generation | Frontend calls `POST /log-post` immediately after `POST /generate` completes. The returned `post_id` is stored in `contentOS_current_post_id` sessionStorage. Manual "Save to history" button removed. |
 | feedback_store.py owns the SQLite table | `main.py` no longer contains `init_db` or `save_post` — all DB logic is in `feedback_store.py`; `init_db()` is called from the FastAPI lifespan |

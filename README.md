@@ -360,37 +360,24 @@ backend/data/hierarchy.db      →  /data/hierarchy.db
 backend/data/profile.json      →  /data/profile.json
 ```
 
-**How to copy via Railway CLI:**
+**How to migrate via the temporary migration endpoint:**
+
+The recommended approach is to use the built-in migration endpoint (see `backend/routers/migrate.py` if still present, or the commit history). The endpoint accepts a tar.gz archive of your local `backend/data/` directory and extracts it to `DATA_DIR` on the server.
 
 ```bash
-# Install Railway CLI if you haven't already
-npm install -g @railway/cli
-railway login
+# Create archive from your local data directory
+cd backend
+tar -czf data_backup.tar.gz -C data .
 
-# Link to your project
-railway link
-
-# Upload using railway run with a temporary data-copy approach:
-# 1. Use `railway shell` to open a shell into your running container
-# 2. Use `railway volume cp` or scp / rsync via a bastion if available
-
-# Simplest approach: use Railway's web UI volume browser to upload
-# files directly, then verify with:
-railway run python scripts/check_data.py
+# Upload to Railway (replace with your actual Railway URL and secret)
+curl --http1.1 -X POST https://your-service.up.railway.app/admin/migrate \
+  -H "x-migration-secret: YOUR_MIGRATION_SECRET" \
+  -F "file=@data_backup.tar.gz"
 ```
 
 **Verify the migration:**
 
-```bash
-# Locally, verify what you're about to upload:
-cd backend
-python ../scripts/check_data.py
-
-# After upload, in Railway shell:
-DATA_DIR=/data python /app/backend/../scripts/check_data.py
-```
-
-Expected output: all 4 files present, Chroma collection shows your chunk count, posts.db shows your post count.
+After uploading, check `GET /health` returns `{"status": "ok"}` and then ingest a test piece of content to confirm ChromaDB is reading from the volume.
 
 ---
 

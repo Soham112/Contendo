@@ -42,8 +42,9 @@ learns a user's knowledge base and writes posts in their voice.
 - Embeddings: sentence-transformers (local, no API key)
 - Agent orchestration: LangGraph
 
-**Current state:** Fully working locally. Not yet deployed. 
-Single user. No auth layer yet.
+**Current state:** Fully working locally and deployed to production.
+Frontend on Vercel (contendo-six.vercel.app). Backend on Railway
+(contendo-production.up.railway.app). Single user. No auth layer yet.
 
 ---
 
@@ -89,10 +90,10 @@ Single user. No auth layer yet.
 These are explicitly out of scope until planned:
 - User authentication (Clerk)
 - Profile editing screen (profile.json is edited manually for now)
-- Vercel + Railway deployment config
 - LinkedIn / resume / GitHub onboarding flow
 - Archetype override UI in Create Post
-- Obsidian integration post-deployment
+- Obsidian vault ingestion in production (filesystem access only works on localhost;
+  guarded by ENVIRONMENT=production; future fix is zip upload or desktop wrapper)
 
 Do not build these unless explicitly asked.
 
