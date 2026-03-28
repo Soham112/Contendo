@@ -7,6 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
+import logging
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper())
+
 from memory.feedback_store import init_db
 from memory.hierarchy_store import init_db as init_hierarchy_db
 from routers import admin, debug, generate, history, ideas, ingest, library, profile, stats
