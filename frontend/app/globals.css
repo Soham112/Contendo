@@ -119,6 +119,15 @@ body::before {
   }
 }
 
+/* ── Onboarding step fade-in ────────────────────────────── */
+@keyframes step-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.step-animate {
+  animation: step-in 0.2s ease forwards;
+}
+
 /* ── Selection ──────────────────────────────────────────── */
 ::selection {
   background: #dce6ce;

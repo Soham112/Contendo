@@ -4,15 +4,17 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useApi } from "@/lib/api";
 
-// ── Tag pill input ──────────────────────────────────────────────────────────
+// ── Tag pill input ───────────────────────────────────────────────────────────
 function TagInput({
   value,
   onChange,
   placeholder,
+  hint,
 }: {
   value: string[];
   onChange: (tags: string[]) => void;
   placeholder?: string;
+  hint?: string;
 }) {
   const [input, setInput] = useState("");
 
@@ -32,46 +34,53 @@ function TagInput({
   }
 
   return (
-    <div className="flex flex-wrap gap-2 bg-[#f3f4f3] rounded-xl px-3 py-2.5 focus-within:ring-2 focus-within:ring-[#58614f]/40">
-      {value.map((tag) => (
-        <span
-          key={tag}
-          className="inline-flex items-center gap-1 bg-white text-[#2f3333] text-[13px] px-2.5 py-1 rounded-full shadow-sm"
-        >
-          {tag}
-          <button
-            type="button"
-            onClick={() => onChange(value.filter((t) => t !== tag))}
-            className="text-[#645e57] hover:text-[#2f3333] leading-none"
+    <div className="flex flex-col gap-2">
+      {/* Pills + input container — matches input-editorial style */}
+      <div className="flex flex-wrap gap-2 bg-[#f3f4f3] px-3 py-2.5 border-b border-b-[#aeb3b2] focus-within:border-b-[#58614f] focus-within:border-b-2 transition-all">
+        {value.map((tag) => (
+          <span
+            key={tag}
+            className="inline-flex items-center gap-1 bg-[#58614f]/15 text-[#58614f] text-[12px] font-medium px-2.5 py-0.5 rounded-full"
           >
-            ×
-          </button>
-        </span>
-      ))}
-      <input
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        onKeyDown={onKeyDown}
-        onBlur={() => input && addTag(input)}
-        placeholder={value.length === 0 ? placeholder : ""}
-        className="flex-1 min-w-[120px] bg-transparent outline-none text-[14px] text-[#2f3333] placeholder-[#aeb3b2]"
-      />
+            {tag}
+            <button
+              type="button"
+              onClick={() => onChange(value.filter((t) => t !== tag))}
+              className="opacity-60 hover:opacity-100 leading-none ml-0.5"
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={onKeyDown}
+          onBlur={() => input && addTag(input)}
+          placeholder={value.length === 0 ? placeholder : ""}
+          className="flex-1 min-w-[140px] bg-transparent outline-none text-[14px] text-[#2f3333] placeholder-[#aeb3b2]"
+        />
+      </div>
+      {hint && <p className="text-[11px] text-[#aeb3b2]">{hint}</p>}
     </div>
   );
 }
 
-// ── Shared input styles ─────────────────────────────────────────────────────
-const inputCls =
-  "w-full bg-[#f3f4f3] rounded-xl px-3 py-2.5 text-[14px] text-[#2f3333] placeholder-[#aeb3b2] outline-none focus:ring-2 focus:ring-[#58614f]/40 resize-none";
+// ── Shared label component ───────────────────────────────────────────────────
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <label className="label-caps text-[#645e57]">{children}</label>
+  );
+}
 
-// ── Step indicator ──────────────────────────────────────────────────────────
+// ── Step indicator ───────────────────────────────────────────────────────────
 function StepDots({ total, current }: { total: number; current: number }) {
   return (
     <div className="flex items-center gap-2 justify-center mb-8">
       {Array.from({ length: total }).map((_, i) => (
         <div
           key={i}
-          className={`w-2 h-2 rounded-full transition-all ${
+          className={`w-2 h-2 rounded-full transition-all duration-200 ${
             i <= current
               ? "bg-[#58614f]"
               : "border border-[#58614f] opacity-30"
@@ -79,6 +88,19 @@ function StepDots({ total, current }: { total: number; current: number }) {
         />
       ))}
     </div>
+  );
+}
+
+// ── Shared input class (matches .input-editorial but works with Tailwind) ────
+const inputCls =
+  "w-full bg-[#f3f4f3] border-0 border-b border-b-[#aeb3b2] focus:border-b-2 focus:border-b-[#58614f] outline-none px-3 py-2.5 text-[14px] text-[#2f3333] placeholder-[#aeb3b2] transition-all resize-none";
+
+// ── Optional step hint ───────────────────────────────────────────────────────
+function OptionalHint() {
+  return (
+    <p className="text-[11px] text-[#aeb3b2] text-center mt-1">
+      You can always update this later.
+    </p>
   );
 }
 
@@ -90,7 +112,7 @@ interface FormState {
   location: string;
   topics_of_expertise: string[];
   target_audience: string;
-  voice_descriptors: string[];
+  phrases_i_use: string[];
   words_to_avoid: string[];
   writing_rules: [string, string, string];
   opinions: [string, string, string];
@@ -104,7 +126,7 @@ const EMPTY: FormState = {
   location: "",
   topics_of_expertise: [],
   target_audience: "",
-  voice_descriptors: [],
+  phrases_i_use: [],
   words_to_avoid: [],
   writing_rules: ["", "", ""],
   opinions: ["", "", ""],
@@ -138,9 +160,8 @@ export default function OnboardingPage() {
   }
 
   function canAdvance(): boolean {
-    if (step === 0) return !!form.name.trim() && !!form.role.trim() && !!form.bio.trim();
-    if (step === 1) return form.topics_of_expertise.length > 0;
-    return true;
+    if (step === 0) return !!form.name.trim() && !!form.role.trim();
+    return true; // steps 1–4 are always optional
   }
 
   async function handleFinish() {
@@ -148,10 +169,23 @@ export default function OnboardingPage() {
     setError("");
     try {
       const payload = {
-        ...form,
+        name: form.name,
+        role: form.role,
+        bio: form.bio,
+        location: form.location,
+        target_audience: form.target_audience,
+        topics_of_expertise: form.topics_of_expertise,
+        voice_descriptors: form.phrases_i_use, // mapped to backend field name
+        words_to_avoid: form.words_to_avoid,
         writing_rules: form.writing_rules.filter(Boolean),
         opinions: form.opinions.filter(Boolean),
         writing_samples: form.writing_samples.filter(Boolean),
+        // backend defaults — sent as empty so auto-merge doesn't overwrite
+        projects: [],
+        technical_voice_notes: [],
+        linkedin_style_notes: "",
+        medium_style_notes: "",
+        thread_style_notes: "",
       };
       const res = await api.saveProfile(payload);
       if (!res.ok) throw new Error("Save failed");
@@ -160,16 +194,6 @@ export default function OnboardingPage() {
       setError("Something went wrong. Please try again.");
       setSaving(false);
     }
-  }
-
-  // ── Completion screen ────────────────────────────────────────────────────
-  if (saving) {
-    return (
-      <div className="min-h-screen bg-[#faf9f8] flex flex-col items-center justify-center gap-4">
-        <div className="w-8 h-8 border-2 border-[#58614f]/30 border-t-[#58614f] rounded-full animate-spin" />
-        <p className="text-[14px] text-[#645e57]">Building your profile…</p>
-      </div>
-    );
   }
 
   return (
@@ -181,190 +205,254 @@ export default function OnboardingPage() {
       </div>
 
       {/* Card */}
-      <div className="w-full max-w-[580px] bg-white rounded-2xl shadow-[0px_4px_20px_rgba(47,51,51,0.04),0px_12px_40px_rgba(47,51,51,0.06)] px-8 py-10">
+      <div className="w-full max-w-[600px] bg-white rounded-2xl shadow-[0px_4px_20px_rgba(47,51,51,0.04),0px_12px_40px_rgba(47,51,51,0.06)] px-8 py-10">
         <StepDots total={TOTAL_STEPS} current={step} />
 
-        {/* ── Step 0: Who are you? ─────────────────────────────────────── */}
-        {step === 0 && (
-          <div className="flex flex-col gap-5">
-            <div>
-              <h2 className="font-headline text-[22px] text-[#2f3333] mb-1">Who are you?</h2>
-              <p className="text-[13px] text-[#645e57]">The basics — this shapes every post we write for you.</p>
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-[12px] uppercase tracking-[0.07em] text-[#645e57]">Full name</label>
-              <input
-                className={inputCls}
-                placeholder="Alex Chen"
-                value={form.name}
-                onChange={(e) => set("name", e.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-[12px] uppercase tracking-[0.07em] text-[#645e57]">Current role / title</label>
-              <input
-                className={inputCls}
-                placeholder="Staff Engineer at Stripe"
-                value={form.role}
-                onChange={(e) => set("role", e.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-[12px] uppercase tracking-[0.07em] text-[#645e57]">Short bio</label>
-              <textarea
-                className={inputCls}
-                rows={3}
-                placeholder="2–3 sentences about who you are and what you believe."
-                value={form.bio}
-                onChange={(e) => set("bio", e.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-[12px] uppercase tracking-[0.07em] text-[#645e57]">
-                Location <span className="normal-case tracking-normal text-[#aeb3b2]">(optional)</span>
-              </label>
-              <input
-                className={inputCls}
-                placeholder="San Francisco, CA"
-                value={form.location}
-                onChange={(e) => set("location", e.target.value)}
-              />
-            </div>
-          </div>
-        )}
+        {/* ── Animated step content ────────────────────────────────────────── */}
+        <div key={step} className="step-animate flex flex-col gap-6">
 
-        {/* ── Step 1: What do you know deeply? ────────────────────────── */}
-        {step === 1 && (
-          <div className="flex flex-col gap-5">
-            <div>
-              <h2 className="font-headline text-[22px] text-[#2f3333] mb-1">What do you know deeply?</h2>
-              <p className="text-[13px] text-[#645e57]">Your expertise shapes what ideas we surface for you.</p>
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-[12px] uppercase tracking-[0.07em] text-[#645e57]">Topics of expertise</label>
-              <p className="text-[12px] text-[#aeb3b2] mb-1">Type a topic and press Enter to add it.</p>
-              <TagInput
-                value={form.topics_of_expertise}
-                onChange={(v) => set("topics_of_expertise", v)}
-                placeholder="e.g. distributed systems, ML infrastructure…"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-[12px] uppercase tracking-[0.07em] text-[#645e57]">Target audience</label>
-              <input
-                className={inputCls}
-                placeholder="e.g. Senior engineers considering staff roles"
-                value={form.target_audience}
-                onChange={(e) => set("target_audience", e.target.value)}
-              />
-            </div>
-          </div>
-        )}
+          {/* ── Step 0 ──────────────────────────────────────────────────────── */}
+          {step === 0 && (
+            <>
+              <div>
+                <h2 className="font-headline text-[24px] text-[#2f3333] mb-2">
+                  Let's build your voice.
+                </h2>
+                <p className="text-[13px] text-[#645e57] leading-relaxed">
+                  Contendo writes in your voice. The more specific you are, the better it sounds like you.
+                </p>
+              </div>
 
-        {/* ── Step 2: How do you write? ────────────────────────────────── */}
-        {step === 2 && (
-          <div className="flex flex-col gap-5">
-            <div>
-              <h2 className="font-headline text-[22px] text-[#2f3333] mb-1">How do you write?</h2>
-              <p className="text-[13px] text-[#645e57]">Voice, tone, and the rules you never break.</p>
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-[12px] uppercase tracking-[0.07em] text-[#645e57]">Phrases you naturally use</label>
-              <p className="text-[12px] text-[#aeb3b2] mb-1">Type and press Enter.</p>
-              <TagInput
-                value={form.voice_descriptors}
-                onChange={(v) => set("voice_descriptors", v)}
-                placeholder="e.g. in practice, the real question is…"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-[12px] uppercase tracking-[0.07em] text-[#645e57]">Words you never use</label>
-              <TagInput
-                value={form.words_to_avoid}
-                onChange={(v) => set("words_to_avoid", v)}
-                placeholder="e.g. leverage, synergy, game-changer…"
-              />
-            </div>
-            <div className="flex flex-col gap-3">
-              <label className="text-[12px] uppercase tracking-[0.07em] text-[#645e57]">Your 3 writing rules</label>
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>Full name</FieldLabel>
+                <input
+                  className={inputCls}
+                  placeholder="Alex Chen"
+                  value={form.name}
+                  onChange={(e) => set("name", e.target.value)}
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>Current role or title</FieldLabel>
+                <input
+                  className={inputCls}
+                  placeholder="e.g. ML Engineer, Founder, Product Manager"
+                  value={form.role}
+                  onChange={(e) => set("role", e.target.value)}
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>Who you are and what you believe</FieldLabel>
+                <textarea
+                  className={inputCls}
+                  rows={3}
+                  placeholder="2–3 sentences. What do you do, and what do you stand for?"
+                  value={form.bio}
+                  onChange={(e) => set("bio", e.target.value)}
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>
+                  Location{" "}
+                  <span className="normal-case tracking-normal font-normal text-[#aeb3b2]">
+                    (optional)
+                  </span>
+                </FieldLabel>
+                <input
+                  className={inputCls}
+                  placeholder="e.g. Mumbai, India"
+                  value={form.location}
+                  onChange={(e) => set("location", e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
+          {/* ── Step 1 ──────────────────────────────────────────────────────── */}
+          {step === 1 && (
+            <>
+              <div>
+                <h2 className="font-headline text-[24px] text-[#2f3333] mb-2">
+                  Your expertise.
+                </h2>
+                <p className="text-[13px] text-[#645e57] leading-relaxed">
+                  These shape which ideas get surfaced and how posts are framed.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>Topics of expertise</FieldLabel>
+                <TagInput
+                  value={form.topics_of_expertise}
+                  onChange={(v) => set("topics_of_expertise", v)}
+                  placeholder="e.g. machine learning, product strategy"
+                  hint="Add 3–8 topics. These become the lens for your content."
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>Target audience</FieldLabel>
+                <input
+                  className={inputCls}
+                  placeholder="Who reads your content? e.g. early-stage founders, ML engineers"
+                  value={form.target_audience}
+                  onChange={(e) => set("target_audience", e.target.value)}
+                />
+              </div>
+
+              <OptionalHint />
+            </>
+          )}
+
+          {/* ── Step 2 ──────────────────────────────────────────────────────── */}
+          {step === 2 && (
+            <>
+              <div>
+                <h2 className="font-headline text-[24px] text-[#2f3333] mb-2">
+                  Your writing fingerprint.
+                </h2>
+                <p className="text-[13px] text-[#645e57] leading-relaxed">
+                  These are injected directly into every post generation prompt.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>Phrases you naturally use</FieldLabel>
+                <TagInput
+                  value={form.phrases_i_use}
+                  onChange={(v) => set("phrases_i_use", v)}
+                  placeholder="e.g. to be honest, let me be direct, here's the thing"
+                  hint="Phrases that sound like you. Add 3–6."
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>Words you never use</FieldLabel>
+                <TagInput
+                  value={form.words_to_avoid}
+                  onChange={(v) => set("words_to_avoid", v)}
+                  placeholder="e.g. leverage, synergy, game-changing, transformative"
+                  hint="Words that make you cringe. These get actively avoided."
+                />
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <FieldLabel>Your writing rules</FieldLabel>
+                {([0, 1, 2] as const).map((i) => (
+                  <div key={i} className="flex flex-col gap-1">
+                    <span className="text-[11px] text-[#aeb3b2] uppercase tracking-wide">
+                      Rule {i + 1}
+                    </span>
+                    <input
+                      className={inputCls}
+                      placeholder={
+                        i === 0
+                          ? "e.g. Never use passive voice"
+                          : i === 1
+                          ? "e.g. Always open with a specific story"
+                          : "e.g. No bullet points in LinkedIn posts"
+                      }
+                      value={form.writing_rules[i]}
+                      onChange={(e) => setTriple("writing_rules", i, e.target.value)}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <OptionalHint />
+            </>
+          )}
+
+          {/* ── Step 3 ──────────────────────────────────────────────────────── */}
+          {step === 3 && (
+            <>
+              <div>
+                <h2 className="font-headline text-[24px] text-[#2f3333] mb-2">
+                  Your opinions.
+                </h2>
+                <p className="text-[13px] text-[#645e57] leading-relaxed">
+                  Contendo writes with conviction. These are the takes that make your content different from everyone else's.
+                </p>
+              </div>
+
               {([0, 1, 2] as const).map((i) => (
-                <div key={i} className="flex flex-col gap-1">
-                  <span className="text-[12px] text-[#aeb3b2]">Rule {i + 1}</span>
-                  <input
+                <div key={i} className="flex flex-col gap-1.5">
+                  <span className="text-[11px] text-[#aeb3b2] uppercase tracking-wide">
+                    Opinion {i + 1}
+                  </span>
+                  <textarea
                     className={inputCls}
-                    placeholder={
-                      i === 0
-                        ? "e.g. Never bury the lede — say the thing first"
-                        : i === 1
-                        ? "e.g. One idea per paragraph, always"
-                        : "e.g. End with a question, not a conclusion"
-                    }
-                    value={form.writing_rules[i]}
-                    onChange={(e) => setTriple("writing_rules", i, e.target.value)}
+                    rows={2}
+                    placeholder="A take you'd defend publicly. Be specific — not 'AI is important' but 'most AI demos fail because founders optimize for wow moments, not retention'"
+                    value={form.opinions[i]}
+                    onChange={(e) => setTriple("opinions", i, e.target.value)}
                   />
                 </div>
               ))}
-            </div>
-          </div>
-        )}
 
-        {/* ── Step 3: What do you actually believe? ───────────────────── */}
-        {step === 3 && (
-          <div className="flex flex-col gap-5">
-            <div>
-              <h2 className="font-headline text-[22px] text-[#2f3333] mb-1">What do you actually believe?</h2>
-              <p className="text-[13px] text-[#645e57]">Strong opinions make great posts. Give us three you'd defend.</p>
-            </div>
-            {([0, 1, 2] as const).map((i) => (
-              <div key={i} className="flex flex-col gap-1">
-                <label className="text-[12px] text-[#aeb3b2]">Opinion {i + 1}</label>
-                <textarea
-                  className={inputCls}
-                  rows={2}
-                  placeholder="A take you'd defend in public"
-                  value={form.opinions[i]}
-                  onChange={(e) => setTriple("opinions", i, e.target.value)}
-                />
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* ── Step 4: Show me how you write ───────────────────────────── */}
-        {step === 4 && (
-          <div className="flex flex-col gap-5">
-            <div>
-              <h2 className="font-headline text-[22px] text-[#2f3333] mb-1">Show me how you write</h2>
-              <p className="text-[13px] text-[#645e57]">
-                Paste real posts or pieces you've written. These are the most powerful signal for voice matching.
+              <p className="text-[11px] text-[#aeb3b2]">
+                The more specific, the better. Vague opinions produce generic posts.
               </p>
-            </div>
-            {([0, 1, 2] as const).map((i) => (
-              <div key={i} className="flex flex-col gap-1">
-                <label className="text-[12px] text-[#aeb3b2]">
-                  Sample {i + 1}{i > 0 && <span className="ml-1 text-[#aeb3b2]/70">(optional)</span>}
-                </label>
-                <textarea
-                  className={inputCls}
-                  rows={5}
-                  placeholder={i === 0 ? "Paste a real post or piece you've written…" : "Another writing sample (optional)…"}
-                  value={form.writing_samples[i]}
-                  onChange={(e) => setTriple("writing_samples", i, e.target.value)}
-                />
-              </div>
-            ))}
-            <p className="text-[12px] text-[#aeb3b2]">
-              The more real samples you add, the better we can match your voice.
-            </p>
-            {error && <p className="text-[13px] text-red-500">{error}</p>}
-          </div>
-        )}
 
-        {/* ── Navigation ──────────────────────────────────────────────── */}
+              <OptionalHint />
+            </>
+          )}
+
+          {/* ── Step 4 ──────────────────────────────────────────────────────── */}
+          {step === 4 && (
+            <>
+              <div>
+                <h2 className="font-headline text-[24px] text-[#2f3333] mb-2">
+                  Your writing samples.
+                </h2>
+                <p className="text-[13px] text-[#645e57] leading-relaxed">
+                  This is the single most powerful signal. Paste real posts or pieces you've written — Contendo learns your rhythm from these directly.
+                </p>
+              </div>
+
+              {([0, 1, 2] as const).map((i) => (
+                <div key={i} className="flex flex-col gap-1.5">
+                  <FieldLabel>
+                    Sample {i + 1}{" "}
+                    {i > 0 && (
+                      <span className="normal-case tracking-normal font-normal text-[#aeb3b2]">
+                        (optional)
+                      </span>
+                    )}
+                  </FieldLabel>
+                  <textarea
+                    className={inputCls}
+                    rows={i === 0 ? 8 : 6}
+                    placeholder={
+                      i === 0
+                        ? "Paste a real LinkedIn post, article paragraph, or anything you've actually published"
+                        : "Another writing sample (optional)…"
+                    }
+                    value={form.writing_samples[i]}
+                    onChange={(e) => setTriple("writing_samples", i, e.target.value)}
+                  />
+                </div>
+              ))}
+
+              <p className="label-caps text-[#aeb3b2] text-center">
+                These are stored privately and never shared. They're only used to match your writing style in generated posts.
+              </p>
+
+              {error && (
+                <p className="text-[13px] text-red-500 text-center">{error}</p>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* ── Navigation ──────────────────────────────────────────────────────── */}
         <div className={`flex gap-3 mt-8 ${step === 0 ? "justify-end" : "justify-between"}`}>
           {step > 0 && (
             <button
-              onClick={() => setStep((s) => s - 1)}
+              onClick={() => { setError(""); setStep((s) => s - 1); }}
               className="flex-1 py-2.5 rounded-xl text-[14px] text-[#645e57] hover:bg-[#f3f4f3] transition-colors"
             >
               Back
@@ -374,17 +462,24 @@ export default function OnboardingPage() {
             <button
               onClick={() => setStep((s) => s + 1)}
               disabled={!canAdvance()}
-              className="flex-1 btn-primary py-2.5 rounded-xl text-[14px] disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex-1 btn-primary text-white py-2.5 rounded-xl text-[14px] font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
             >
               Next
             </button>
           ) : (
             <button
               onClick={handleFinish}
-              disabled={!form.writing_samples[0].trim()}
-              className="flex-1 btn-primary py-2.5 rounded-xl text-[14px] disabled:opacity-40 disabled:cursor-not-allowed"
+              disabled={saving}
+              className="flex-1 btn-primary text-white py-2.5 rounded-xl text-[14px] font-medium disabled:opacity-60 disabled:cursor-not-allowed transition-opacity flex items-center justify-center gap-2"
             >
-              Finish
+              {saving ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  Building…
+                </>
+              ) : (
+                "Build my profile →"
+              )}
             </button>
           )}
         </div>
