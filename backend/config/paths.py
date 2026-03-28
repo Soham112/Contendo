@@ -9,8 +9,11 @@ Usage:
     from config.paths import CHROMA_DIR, POSTS_DB_PATH, HIERARCHY_DB_PATH, PROFILE_PATH, PROFILES_DIR
 """
 
+import logging
 import os
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # Resolve DATA_DIR: env var → absolute path; otherwise fall back to the
 # canonical local default (same directory that was previously hardcoded).
@@ -23,3 +26,5 @@ POSTS_DB_PATH = DATA_DIR / "posts.db"
 HIERARCHY_DB_PATH = DATA_DIR / "hierarchy.db"
 PROFILE_PATH = DATA_DIR / "profile.json"       # legacy single-user location
 PROFILES_DIR = DATA_DIR / "profiles"           # per-user profiles: profile_{user_id}.json
+
+logger.info(f"DATA_DIR={DATA_DIR}, PROFILES_DIR={PROFILES_DIR}")

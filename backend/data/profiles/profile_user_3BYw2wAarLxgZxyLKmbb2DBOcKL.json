@@ -1,0 +1,44 @@
+{
+  "name": "Ameya Naik",
+  "role": "Data Engineer",
+  "bio": "I am free floated voice, believes in hardworking, jovial person, currently doing my internship in brazeway, doing my masters in University of Texas at Dallas in information technology and management. ",
+  "location": "Mumbai",
+  "target_audience": "Early engineersm, Mid level engineering, Data engineering ",
+  "topics_of_expertise": [
+    "Data engineering",
+    "IFS",
+    "API integration"
+  ],
+  "voice_descriptors": [
+    "Here’s what I learned from",
+    "Most people in [industry] do [x], but I do [y].",
+    "I almost gave up on [project] when...",
+    "Here’s the behind-the-scenes of [project]..."
+  ],
+  "words_to_avoid": [
+    "Creative",
+    "Innovative",
+    "Specialized",
+    "Go-getter"
+  ],
+  "writing_rules": [
+    "never use passive voice",
+    "open with a specific story",
+    "No bullet points in Linkedln post"
+  ],
+  "opinions": [
+    "1. Lead with a Polarizing or Bold Hook \nConviction starts in the first two lines. Avoid generic openers like \"I've been thinking about...\" instead, lead with a strong statement that challenges the status quo. ",
+    "hare \"Un-Googleable\" Insights\nGeneric advice is forgettable. Conviction is built on specific experiences—mistakes made, risks taken, or patterns noticed in rooms that others don't have access to.",
+    "Use \"Aerodynamic\" Formatting\nConviction is diluted by clutter. To keep your message punchy and authoritative, focus on a structure that moves the reader down the page."
+  ],
+  "writing_samples": [
+    "My Fall Co-Op at Brazeway: Building Reliable Data Pipelines and end-to-end automation\nAmeya Naik\nAmeya Naik\nBusiness Intelligence & Systems Developer Intern @Brazeway | IFS ERP | MS in ITM @ UT Dallas | Ex- Data Engineer @ AWS | Python | ETL | SQL | Snowflake | Databricks | Kafka | AWS | Azure\n\n\nNovember 25, 2025\nOver the past semester, I continued my journey at Brazeway as an Information Technology Co-op, building on the foundation I developed during my summer internship. This term gave me the opportunity to move from learning the systems to actively contributing solutions that directly supported Brazeway’s ongoing ERP modernization and data migration initiatives.\n\nMy work primarily revolved around data migration, SQL Server data loading, and developing automated workflows that connected multiple systems. I created and refined data pipelines, wrote scripts to streamline repetitive tasks, and worked extensively with APIs and ETL logic to move, validate, and transform data between Microsoft Dynamics AX, IFS Cloud ERP, and internal applications. Unlike the summer—where I was mostly learning—this semester pushed me to apply my knowledge independently, troubleshoot problems on my own, and deliver cleaner, more reliable solutions.\n\nWorking remotely for the first time added a new dimension. I learned how to manage communication across teams, stay organized without in-person structure, and balance full-time coursework alongside my co-op responsibilities. This taught me discipline, ownership, and better time-management.\n\nI’m grateful for the people who shaped this experience— Timothy Cox, PMP, CPIM, CSM , my manager, and my counterparts, Moisés Seisdedos, CAPM , Salu Joseph & Heather Dempsey . Their guidance, patience, and willingness to let me take ownership helped me grow both technically and professionally.\n\nThis semester strengthened my confidence in building data-driven solutions, and I look forward to deepening my understanding of automation, integration, and large-scale ERP systems in the months ahead.",
+    "From full-stack data engineering to excelling at pickleball — my summer at Brazeway\nAmeya Naik\nAmeya Naik\nBusiness Intelligence & Systems Developer Intern @Brazeway | IFS ERP | MS in ITM @ UT Dallas | Ex- Data Engineer @ AWS | Python | ETL | SQL | Snowflake | Databricks | Kafka | AWS | Azure\n\n\nAugust 8, 2025\nDropped straight into the deep end of a company-wide ERP data migration, I spent my summer steering projects that touched every corner of Brazeway’s business. This wasn’t a side project; this was the kind of work that few interns ever get to experience.\n\nFrom day one, my role spanned full stack responsibilities — working with data pipelines, applications, ERP configurations, APIs, databases, automation workflows, and scripting. I didn’t just see how the pieces fit together; I helped make them fit.\n\nOn the data migration side, I worked with data from external sources, navigating master data dependencies, mapping, validation, and selecting the right migration tools — from IFS FND MIG to Excel migration. I configured environments for testing, validation, and production; automated file picking; created processes to ease work for others; and deep-dived into IFS Cloud capabilities to ensure accuracy and efficiency.\n\nIn automation, I focused on selecting the right APIs, uploading and testing JSON payloads, and streamlining workflows to reduce errors and save time. This meant moving seamlessly between Python/SQL scripting, ERP configurations, integration tools, and API testing to make processes faster, cleaner, and more reliable.\n\nBeyond the technical work, I developed a strong business-side perspective — understanding how technical solutions directly shape operational decisions and learning that communication is as valuable as technical skill.\n\nThe experience extended beyond the desk. A factory visit to Indiana gave me first-hand insight into manufacturing operations. Company pickleball tournaments, parties, and a collaborative culture created an environment where I could connect with people across teams. Special mention to Tim, whose guidance and genuine interest in my growth made a lasting impact on my learning journey.\n\nThis internship taught me that ERP data migration isn’t just about moving numbers; it’s about moving the business forward. And when you work across every layer — data, applications, automation, and systems — you don’t just “support” the process; you become part of the engine that drives it.",
+    "It’s hard to believe it’s already been 6 months since I left Amazon Web Services (AWS) , but here’s what I learned during my journey. 🌍🚀\n\nMy time at AWS was nothing short of transformative, both professionally and personally. After joining in 2022 as a Cloud Operations Trainee, I had the privilege of growing into a full-time role, where I immersed myself in the dynamic worlds of Cloud Operations, Data Analysis, Data Engineering, and Project Management.\n\n🔹 What I Learned:\nAmazon isn’t just about technology; it’s about embodying its Leadership Principles. From \"Customer Obsession\" to \"Invent and Simplify\" and \"Dive Deep\", these principles became the backbone of my work. I learned the importance of ownership, thinking big, and constantly iterating to deliver better solutions. The exposure to complex, large-scale systems and innovative problem-solving approaches shaped the way I approach challenges today.\n\n🔹 Beyond Work:\nAWS was more than just work—it was a community. I had the chance to participate in BOM Olympics, employee engagement activities, and celebrations that brought our teams closer together. These experiences added a fun, vibrant layer to my professional life and gave me memories I’ll cherish forever. The learning curve was steep, but the exposure to diverse teams and projects made every challenge worthwhile.\n\n🔹 A Heartfelt Thank You:\nI wouldn’t be where I am today without the incredible mentors and teammates who supported me along the way:\nShyam Sabnawis– your strategic vision and support were instrumental in my growth.\nAbhay Srivastava & Prasad Maral – Thank you for your belief in me and guiding me from a trainee to a full-time role. You have significantly shaped my professional values and transformed the way I approach opportunities.\n\nMy managers – Mahendra Gejage, Ajinkya Chavan, Tejas Bhavsar, Rahul Patil, Vivek Parmar, Chetan Sonawane and Pankaj Guhe – your leadership and mentorship were invaluable.\n\nTo my amazing teammates and the fellow trainees who joined with me—you all made this journey unforgettable.\nRittik Gupta, Siddhi Bhabal,Sourabh Dakare, Tejaswini Chinawale, Aakash Zaware, CAPM®,SSGB, Akshat Choudhary, Suraj Mange, ADARSH PANDEY\n\n📸 Memories to Cherish:\nSwipe through to see some of my favorite moments at Amazon—the projects, people, and experiences that made this journey special.\nAs I look ahead to new opportunities, I carry with me the invaluable lessons and experiences from my time at AWS. Thank you, Amazon Web Services, for an unforgettable chapter. 🌟"
+  ],
+  "projects": [],
+  "technical_voice_notes": [],
+  "linkedin_style_notes": "",
+  "medium_style_notes": "",
+  "thread_style_notes": ""
+}
