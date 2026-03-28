@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useToast } from "@/components/ui/ToastProvider";
-
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+import { useApi } from "@/lib/api";
 
 const SS_POST = "contentOS_last_post";
 const SS_SCORE = "contentOS_last_score";
@@ -180,6 +179,7 @@ function PostCard({
   isExpanded: boolean;
   onToggle: () => void;
 }) {
+  const api = useApi();
   const hasVersions = post.versions.length > 1;
   const defaultIdx = hasVersions ? bestVersionIndex(post.versions) : 0;
   const [selectedVersionIdx, setSelectedVersionIdx] = useState(defaultIdx);
@@ -207,7 +207,7 @@ function PostCard({
   const handleDelete = async () => {
     setDeleting(true);
     try {
-      await fetch(`${API}/history/${post.id}`, { method: "DELETE" });
+      await api.deletePost(post.id);
       onDelete(post.id);
       showToast("Post deleted from history", "success");
     } catch {
@@ -222,9 +222,7 @@ function PostCard({
     setRestoring(true);
     setRestoredMsg("");
     try {
-      const res = await fetch(`${API}/history/${post.id}/restore/${activeVersion.id}`, {
-        method: "POST",
-      });
+      const res = await api.restoreVersion(post.id, activeVersion.id);
       if (!res.ok) throw new Error("Restore failed");
       const data = await res.json();
       try {
@@ -495,6 +493,7 @@ function PostCard({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function HistoryPage() {
+  const api = useApi();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -511,7 +510,7 @@ export default function HistoryPage() {
   };
 
   useEffect(() => {
-    fetch(`${API}/history`)
+    api.getHistory()
       .then((r) => {
         if (!r.ok) throw new Error("Failed to load history");
         return r.json();

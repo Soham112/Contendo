@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/ToastProvider";
-
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+import { useApi } from "@/lib/api";
 
 interface Source {
   source_title: string;
@@ -111,6 +110,7 @@ function SourceCard({
   source: Source;
   onDelete: (source_title: string, chunks_removed: number) => void;
 }) {
+  const api = useApi();
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
@@ -123,11 +123,7 @@ function SourceCard({
     setDeleting(true);
     setDeleteError("");
     try {
-      const res = await fetch(`${API}/library/source`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source_title: source.source_title }),
-      });
+      const res = await api.deleteSource(source.source_title);
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.detail ?? "Delete failed");
@@ -276,6 +272,7 @@ function AddSourceCard({ onClick }: { onClick: () => void }) {
 }
 
 export default function LibraryPage() {
+  const api = useApi();
   const router = useRouter();
 
   const [sources, setSources] = useState<Source[]>([]);
@@ -292,7 +289,7 @@ export default function LibraryPage() {
   const [visibleCount, setVisibleCount] = useState(6);
 
   useEffect(() => {
-    fetch(`${API}/library`)
+    api.getLibrary()
       .then((r) => {
         if (!r.ok) throw new Error("Failed to load library");
         return r.json();

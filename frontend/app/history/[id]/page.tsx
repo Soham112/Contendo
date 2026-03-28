@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+import { useApi } from "@/lib/api";
 
 const SS_POST = "contentOS_last_post";
 const SS_SCORE = "contentOS_last_score";
@@ -170,6 +169,7 @@ function bestVersionIndex(versions: Version[]): number {
 }
 
 export default function PostDetailPage() {
+  const api = useApi();
   const params = useParams();
   const router = useRouter();
   const postId = params?.id;
@@ -186,7 +186,7 @@ export default function PostDetailPage() {
 
   useEffect(() => {
     if (!postId) return;
-    fetch(`${API}/history`)
+    api.getHistory()
       .then((r) => {
         if (!r.ok) throw new Error("Failed to load history");
         return r.json();
@@ -228,7 +228,7 @@ export default function PostDetailPage() {
     setRestoring(true);
     setRestoredMsg("");
     try {
-      const res = await fetch(`${API}/history/${post.id}/restore/${activeVersion.id}`, { method: "POST" });
+      const res = await api.restoreVersion(post.id, activeVersion.id);
       if (!res.ok) throw new Error("Restore failed");
       const data = await res.json();
       try {
@@ -250,7 +250,7 @@ export default function PostDetailPage() {
   const handleDelete = async () => {
     setDeleting(true);
     try {
-      await fetch(`${API}/history/${post.id}`, { method: "DELETE" });
+      await api.deletePost(post.id);
       router.push("/history");
     } catch {
       setDeleting(false);
