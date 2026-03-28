@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
@@ -20,13 +21,19 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Contendo API", lifespan=lifespan)
 
+# CORS: always allow localhost dev origins; add FRONTEND_ORIGIN in production.
+_cors_origins = [
+    "http://localhost:3000",
+    "https://localhost:3000",
+    "https://*.vercel.app",
+]
+_frontend_origin = os.environ.get("FRONTEND_ORIGIN", "").strip()
+if _frontend_origin and _frontend_origin not in _cors_origins:
+    _cors_origins.append(_frontend_origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "https://localhost:3000",
-        "https://*.vercel.app",
-    ],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -38,3 +45,8 @@ app.include_router(history.router)
 app.include_router(library.router)
 app.include_router(ideas.router)
 app.include_router(stats.router)
+
+
+@app.get("/health")
+async def health() -> dict:
+    return {"status": "ok"}

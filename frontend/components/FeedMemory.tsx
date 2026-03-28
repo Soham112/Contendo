@@ -5,9 +5,13 @@ import { useToast } from "@/components/ui/ToastProvider";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+// Obsidian vault ingestion only works when the backend runs on localhost
+// because it reads directly from the local filesystem.
+const IS_LOCAL = API.includes("localhost") || API.includes("127.0.0.1");
+
 type SourceType = "article" | "url" | "file" | "youtube" | "image" | "note" | "obsidian";
 
-const TABS: { id: SourceType; label: string; description: string }[] = [
+const ALL_TABS: { id: SourceType; label: string; description: string; localOnly?: boolean }[] = [
   {
     id: "article",
     label: "Article",
@@ -43,10 +47,14 @@ const TABS: { id: SourceType; label: string; description: string }[] = [
   {
     id: "obsidian",
     label: "Obsidian",
+    localOnly: true,
     description:
       "Connect your local Obsidian vault. All notes will be chunked, embedded, and added to your knowledge base.",
   },
 ];
+
+// Hide local-only tabs when running against a remote backend
+const TABS = ALL_TABS.filter((t) => !t.localOnly || IS_LOCAL);
 
 const FILE_TYPE_LABELS: Record<string, string> = {
   "application/pdf": "PDF",

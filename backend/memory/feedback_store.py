@@ -2,7 +2,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-DB_PATH = Path(__file__).parent.parent / "data" / "posts.db"
+from config.paths import POSTS_DB_PATH as DB_PATH
 
 
 def _connect() -> sqlite3.Connection:

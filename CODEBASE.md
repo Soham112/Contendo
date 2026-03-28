@@ -24,7 +24,11 @@
 | `backend/routers/ideas.py` | `GET /suggestions` |
 | `backend/routers/stats.py` | `GET /stats` |
 | `backend/requirements.txt` | All Python dependencies pinned |
-| `backend/.env.example` | Required env var keys with no values |
+| `backend/.env.example` | Required env var template — `ANTHROPIC_API_KEY`, `DATA_DIR`, `FRONTEND_ORIGIN`, `ENVIRONMENT` |
+| `backend/Dockerfile` | Production Docker image for Railway — Python 3.11-slim, pre-bakes sentence-transformers model, uses `$PORT` and `$DATA_DIR` |
+| `backend/.dockerignore` | Excludes venv, pycache, local data files, .env from Docker build context |
+| `backend/config/__init__.py` | Empty — marks config/ as a Python package |
+| `backend/config/paths.py` | Single source of truth for all data paths; reads `DATA_DIR` env var, falls back to `backend/data/` for local dev; exposes `CHROMA_DIR`, `POSTS_DB_PATH`, `HIERARCHY_DB_PATH`, `PROFILE_PATH` |
 | `backend/agents/ideation_agent.py` | Generates N content ideas from ChromaDB sample, profile, and posted topic history |
 | `backend/agents/visual_agent.py` | Parses [DIAGRAM:] and [IMAGE:] placeholders from post; calls Claude to generate SVG for diagrams; returns reminder text for images |
 | `backend/agents/ingestion_agent.py` | Chunks content, extracts tags via Claude Sonnet, upserts to ChromaDB; after successful upsert: generates a 2-3 sentence source summary via Claude Haiku and writes a source_node + topic_node to hierarchy_store (wrapped in try/except — never blocks ingestion); SHA-256 dedup via `query_by_hash()` before any Claude call |
@@ -38,7 +42,7 @@
 | `backend/pipeline/graph.py` | LangGraph graph definition — nodes, edges, conditional retry loop |
 | `backend/memory/vector_store.py` | ChromaDB init, upsert, semantic query, stats, delete_source, query_by_hash; `query_similar()` now returns `source_id` and `chunk_index` per result; `upsert_chunks()` stores `node_type:"chunk"`; new `get_chunks_for_source()` and `get_adjacent_chunks()` for hierarchical sibling retrieval; collections namespaced as `contendo_{user_id}` |
 | `backend/memory/profile_store.py` | profile.json read/write, defaults, profile-to-string formatter |
-| `backend/memory/hierarchy_store.py` | SQLite store (`backend/data/hierarchy.db`) for source_nodes and topic_nodes — `upsert_source_node`, `get_source_node`, `source_node_exists`, `upsert_topic_node`, `get_topic_node`, `find_matching_topic` (tag-overlap heuristic), `add_source_to_topic`; initialized in FastAPI lifespan |
+| `backend/memory/hierarchy_store.py` | SQLite store (path from `config.paths.HIERARCHY_DB_PATH`) for source_nodes and topic_nodes — `upsert_source_node`, `get_source_node`, `source_node_exists`, `upsert_topic_node`, `get_topic_node`, `find_matching_topic` (tag-overlap heuristic), `add_source_to_topic`; initialized in FastAPI lifespan |
 | `backend/memory/feedback_store.py` | SQLite posts and post_versions tables — log_post, get_recent_posts, get_all_topics_posted, add_version, get_versions, get_best_version, update_latest_version_svg |
 | `backend/tools/scraper_tool.py` | URL scraper using Jina Reader — `is_valid_url()`, `clean_scraped_text()`, `scrape_url()` |
 | `backend/tools/obsidian_tool.py` | Obsidian vault reader — `read_vault()` yields cleaned note dicts, `get_vault_stats()` for preview, `clean_obsidian_markdown()` strips wikilinks/frontmatter/Dataview |
@@ -52,6 +56,7 @@
 | `backend/data/posts.db` | SQLite post history (gitignored) |
 | `backend/data/hierarchy.db` | SQLite hierarchy store — source_nodes + topic_nodes (gitignored) |
 | `scripts/migrate_hierarchy.py` | One-time migration script: backfills hierarchy_store from existing ChromaDB data; idempotent; run with `python scripts/migrate_hierarchy.py [--dry_run] [--force] [--user_id default]` |
+| `scripts/check_data.py` | Data verification utility — prints file existence, Chroma collection chunk counts, posts.db row counts, hierarchy.db row counts; safe to run locally or in Railway shell; honours `DATA_DIR` |
 | `backend/venv/` | Python virtual environment (gitignored) |
 | **Frontend** | |
 | `frontend/app/layout.tsx` | Root layout — mounts AppShell which renders Sidebar for app routes; /welcome bypasses sidebar |
@@ -603,6 +608,10 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
 | ChromaDB similarity threshold is 0.3 | Cosine similarity — chunks below this are too semantically distant to help |
 | profile.json has auto-merge on load | Ensures new profile fields added in code appear without manual migration |
 | CORS allows `*.vercel.app` wildcard | Covers all preview and production Vercel deployments without hardcoding URLs |
+| All data paths derived from `DATA_DIR` env var | `backend/config/paths.py` is the single source of truth. `DATA_DIR` defaults to `backend/data/` for local dev (identical to the previous hardcoded relative paths). On Railway, set `DATA_DIR=/data` and mount the persistent volume at `/data`. All four memory modules import from `config.paths` — no path logic elsewhere. |
+| Obsidian routes guarded by `ENVIRONMENT=production` | `/obsidian/preview` and `/obsidian/ingest` return HTTP 400 when `ENVIRONMENT=production`. The frontend hides the Obsidian tab when `NEXT_PUBLIC_API_URL` does not contain `localhost` or `127.0.0.1`. This prevents meaningless/dangerous filesystem reads on a remote server. |
+| `GET /health` endpoint returns `{"status": "ok"}` | Lightweight health check at the app level in `main.py`. Used by Railway's health check probe and smoke tests after deployment. |
+| Backend Docker image does not pre-bake the sentence-transformers model | Model pre-loading was removed from the Dockerfile because it caused Railway build timeouts. The `all-MiniLM-L6-v2` model (~90 MB) is downloaded by `sentence-transformers` on first use and cached inside the container. Build times stay fast; only the very first embedding call (ingest or generate) on a fresh container is slow. |
 | SQLite used for post history | Zero-config, single-file, sufficient for one user — no PostgreSQL needed at MVP |
 | Posts are auto-saved after generation | Frontend calls `POST /log-post` immediately after `POST /generate` completes. The returned `post_id` is stored in `contentOS_current_post_id` sessionStorage. Manual "Save to history" button removed. |
 | feedback_store.py owns the SQLite table | `main.py` no longer contains `init_db` or `save_post` — all DB logic is in `feedback_store.py`; `init_db()` is called from the FastAPI lifespan |
@@ -668,7 +677,7 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
 
 ## 6. WHAT IS NOT BUILT YET
 
-- Obsidian integration does not work after cloud deployment — vault path is a local filesystem path read by FastAPI. Future solution: vault zip upload or Electron desktop wrapper.
+- Obsidian integration does not work after cloud deployment — vault path is a local filesystem path read by FastAPI. Guarded by `ENVIRONMENT=production` (returns HTTP 400) and hidden in the frontend when API URL is not localhost. Future full solution: vault zip upload or Electron desktop wrapper.
 
 - User authentication (single user only for now — no auth layer)
 - Profile editing screen (profile.json must be edited manually)

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-DB_PATH = Path(__file__).parent.parent / "data" / "hierarchy.db"
+from config.paths import HIERARCHY_DB_PATH as DB_PATH
 
 
 def _connect() -> sqlite3.Connection:

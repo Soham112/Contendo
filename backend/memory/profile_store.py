@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-PROFILE_PATH = Path(__file__).parent.parent / "data" / "profile.json"
+from config.paths import PROFILE_PATH
 
 DEFAULT_PROFILE: dict[str, Any] = {
     "name": "Soham",

@@ -1,4 +1,3 @@
-import os
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -7,7 +6,7 @@ import chromadb
 from chromadb.config import Settings
 from sentence_transformers import SentenceTransformer
 
-CHROMA_PATH = Path(__file__).parent.parent / "data" / "chroma_db"
+from config.paths import CHROMA_DIR as CHROMA_PATH
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 RELEVANCE_THRESHOLD = 0.3
 
@@ -152,6 +151,47 @@ def query_similar(query: str, top_k: int = 8, user_id: str = "default") -> list[
                     "similarity": round(similarity, 4),
                 }
             )
+
+    return chunks
+
+
+def query_similar_batch(
+    queries: list[str],
+    top_ks: list[int],
+    user_id: str = "default",
+) -> list[str]:
+    """Embed all queries in one batched model call, then query ChromaDB for each.
+
+    Returns a deduplicated list of chunk texts in discovery order.
+    Significantly faster than calling query_similar() N times because the
+    transformer runs one forward pass over all queries instead of N passes.
+    """
+    if not queries:
+        return []
+    collection = get_collection(user_id)
+    if collection.count() == 0:
+        return []
+
+    embeddings = embed_texts(queries)  # single batched forward pass
+
+    seen: set[str] = set()
+    chunks: list[str] = []
+    col_count = collection.count()
+
+    for embedding, top_k in zip(embeddings, top_ks):
+        try:
+            results = collection.query(
+                query_embeddings=[embedding],
+                n_results=min(top_k, col_count),
+                include=["documents", "distances"],
+            )
+            for doc, dist in zip(results["documents"][0], results["distances"][0]):
+                similarity = 1.0 - (dist / 2.0)
+                if similarity >= RELEVANCE_THRESHOLD and doc not in seen:
+                    seen.add(doc)
+                    chunks.append(doc)
+        except Exception:
+            continue
 
     return chunks
 

@@ -288,6 +288,152 @@ Note: `profile.json` is gitignored — your personal details never get committed
 
 ---
 
+## Production Deployment
+
+### Stack
+- **Frontend** → Vercel
+- **Backend** → Railway (Docker, persistent volume for data)
+
+---
+
+### 1 — Local Development (unchanged)
+
+```bash
+# Backend
+cd backend
+source venv/bin/activate
+uvicorn main:app --reload          # http://localhost:8000
+
+# Frontend (separate terminal)
+cd frontend
+npm run dev                        # http://localhost:3000
+```
+
+No extra env vars needed. `DATA_DIR` defaults to `backend/data/`.
+
+---
+
+### 2 — Backend Deployment to Railway
+
+1. Push this repo to GitHub (or connect Railway to an existing repo).
+2. In Railway, create a **New Service → GitHub repo**, set the **Root Directory** to `backend/`.
+3. Railway auto-detects the `Dockerfile` — no extra config needed.
+4. Set the following environment variables in Railway's dashboard:
+
+| Variable | Value |
+|----------|-------|
+| `ANTHROPIC_API_KEY` | Your Anthropic key |
+| `DATA_DIR` | `/data` |
+| `ENVIRONMENT` | `production` |
+| `FRONTEND_ORIGIN` | `https://your-app.vercel.app` (exact Vercel URL) |
+
+Railway injects `$PORT` automatically — the `CMD` in the Dockerfile uses it.
+
+> **First cold-start note:** the `all-MiniLM-L6-v2` embedding model (~90 MB) is downloaded from Hugging Face on first use, not baked into the Docker image. This keeps Railway build times fast. The model is cached by `sentence-transformers` inside the container after the first download. Expect the very first request that triggers embedding (any ingest or generate call) to take an extra 20–30 seconds. Subsequent restarts reuse the cache.
+
+---
+
+### 3 — Railway Persistent Volume Setup
+
+1. In Railway, open your backend service → **Volumes** → **Add Volume**.
+2. Set the mount path to `/data`.
+3. Railway will persist everything written to `/data` across deploys.
+
+> Your data files must be placed at the **top level of the volume** (not in a subdirectory):
+> - `/data/chroma_db/` — ChromaDB vector store directory
+> - `/data/posts.db` — post history SQLite database
+> - `/data/hierarchy.db` — hierarchy store SQLite database
+> - `/data/profile.json` — your voice and style profile
+
+---
+
+### 4 — Migrating Existing Local Data to Railway
+
+Do this once before your first production deploy.
+
+**Files to copy from your local machine:**
+
+```
+backend/data/chroma_db/        →  /data/chroma_db/
+backend/data/posts.db          →  /data/posts.db
+backend/data/hierarchy.db      →  /data/hierarchy.db
+backend/data/profile.json      →  /data/profile.json
+```
+
+**How to copy via Railway CLI:**
+
+```bash
+# Install Railway CLI if you haven't already
+npm install -g @railway/cli
+railway login
+
+# Link to your project
+railway link
+
+# Upload using railway run with a temporary data-copy approach:
+# 1. Use `railway shell` to open a shell into your running container
+# 2. Use `railway volume cp` or scp / rsync via a bastion if available
+
+# Simplest approach: use Railway's web UI volume browser to upload
+# files directly, then verify with:
+railway run python scripts/check_data.py
+```
+
+**Verify the migration:**
+
+```bash
+# Locally, verify what you're about to upload:
+cd backend
+python ../scripts/check_data.py
+
+# After upload, in Railway shell:
+DATA_DIR=/data python /app/backend/../scripts/check_data.py
+```
+
+Expected output: all 4 files present, Chroma collection shows your chunk count, posts.db shows your post count.
+
+---
+
+### 5 — Frontend Deployment to Vercel
+
+1. Import the GitHub repo into Vercel.
+2. Set **Root Directory** to `frontend/`.
+3. Set the following environment variable in Vercel's dashboard:
+
+| Variable | Value |
+|----------|-------|
+| `NEXT_PUBLIC_API_URL` | `https://your-backend.up.railway.app` |
+
+Vercel runs `npm run build` automatically. No other config needed.
+
+---
+
+### 6 — Obsidian Production Limitation
+
+Obsidian vault ingestion reads directly from the local filesystem. It **cannot work** when the backend runs on a remote server (Railway).
+
+- In production (`ENVIRONMENT=production`), the `/obsidian/preview` and `/obsidian/ingest` endpoints return a `400` with a clear explanation.
+- The frontend hides the Obsidian tab automatically when `NEXT_PUBLIC_API_URL` points to a non-localhost backend.
+- To use Obsidian ingestion: run the backend locally, ingest your vault, then deploy the populated data to Railway.
+
+---
+
+### 7 — Post-Deploy Smoke Test Checklist
+
+After deploying:
+
+- [ ] `GET https://your-backend.up.railway.app/health` returns `{"status": "ok"}`
+- [ ] Frontend loads at your Vercel URL
+- [ ] **Library** screen shows your existing sources and chunk count
+- [ ] **History** screen shows your existing posts
+- [ ] **Create Post** → generate a post on a test topic — confirm it completes without error
+- [ ] **Get Ideas** → generate a few ideas — confirm they draw from your knowledge base
+- [ ] **Feed Memory** → ingest a test article — confirm chunks stored
+- [ ] Obsidian tab is absent (hidden) on the production frontend
+- [ ] No CORS errors in browser DevTools console
+
+---
+
 ## Documentation Guide
 
 Two files exist at the project root specifically for developer and AI-assistant onboarding:

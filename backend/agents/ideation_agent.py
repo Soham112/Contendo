@@ -4,7 +4,7 @@ import os
 import random
 from dotenv import load_dotenv
 
-from memory.vector_store import query_similar, get_all_tags, get_all_sources
+from memory.vector_store import query_similar_batch, get_all_tags, get_all_sources
 from memory.feedback_store import get_all_topics_posted
 from memory.profile_store import load_profile, profile_to_context_string
 
@@ -52,41 +52,37 @@ def generate_suggestions(count: int = 8, topic: str | None = None) -> list[dict]
     profile = load_profile()
     profile_context = profile_to_context_string(profile)
 
-    seen_texts: set[str] = set()
-    chunks: list[str] = []
-
-    def _add_results(results: list[dict]) -> None:
-        for r in results:
-            if r["text"] not in seen_texts:
-                seen_texts.add(r["text"])
-                chunks.append(r["text"])
+    # Build query list first, then embed everything in a single batched call.
+    # This replaces N sequential model forward passes with 1 batched pass.
+    query_texts: list[str] = []
+    query_top_ks: list[int] = []
 
     if topic:
         # Topic-focused sampling: drill into the requested topic from multiple angles
-        _add_results(query_similar(topic, top_k=8))
-        _add_results(query_similar(f"{topic} lessons learned", top_k=5))
-        _add_results(query_similar(f"{topic} failure or mistake", top_k=5))
-        # One broad random sample for diversity
+        query_texts = [
+            topic,
+            f"{topic} lessons learned",
+            f"{topic} failure or mistake",
+        ]
+        query_top_ks = [8, 5, 5]
         all_tags = get_all_tags()
         if all_tags:
-            _add_results(query_similar(random.choice(all_tags), top_k=4))
+            query_texts.append(random.choice(all_tags))
+            query_top_ks.append(4)
     else:
         # Multi-query diversity sampling across the full knowledge base
         broad_queries = ["technology", "career", "learning", "building", "data"]
+        query_texts = list(broad_queries)
+        query_top_ks = [4] * len(broad_queries)
 
-        # Query 1-5: broad topic sweep
-        for q in broad_queries:
-            _add_results(query_similar(q, top_k=4))
-
-        # Query 6-7: two random tags for coverage of niche topics
+        # Two random tags for coverage of niche topics
         all_tags = get_all_tags()
         if all_tags:
-            sample_tags = random.sample(all_tags, min(2, len(all_tags)))
-            for tag in sample_tags:
-                _add_results(query_similar(tag, top_k=5))
+            for tag in random.sample(all_tags, min(2, len(all_tags))):
+                query_texts.append(tag)
+                query_top_ks.append(5)
 
-        # Query 8: oldest sources — pull chunks from sources added earliest
-        # to counteract recency bias from embedding similarity
+        # Oldest source to counteract recency bias
         all_sources = get_all_sources()
         if all_sources:
             oldest = sorted(
@@ -96,7 +92,11 @@ def generate_suggestions(count: int = 8, topic: str | None = None) -> list[dict]
             if oldest:
                 oldest_title = oldest[0]["source_title"]
                 if oldest_title and oldest_title != "Untitled":
-                    _add_results(query_similar(oldest_title, top_k=5))
+                    query_texts.append(oldest_title)
+                    query_top_ks.append(5)
+
+    # Single batched embed + sequential ChromaDB queries
+    chunks = query_similar_batch(query_texts, query_top_ks)
 
     posted_topics = get_all_topics_posted()
 

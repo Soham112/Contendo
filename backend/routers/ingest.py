@@ -1,8 +1,16 @@
+import os
 import re
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel
+
+_IS_PRODUCTION = os.environ.get("ENVIRONMENT", "").lower() == "production"
+_OBSIDIAN_DISABLED_MSG = (
+    "Obsidian vault ingestion is a local-only feature. "
+    "It reads directly from your filesystem and cannot work on a remote server. "
+    "Run the backend locally to use this feature."
+)
 
 from agents.ingestion_agent import ingest_content
 from agents.vision_agent import extract_from_image
@@ -145,6 +153,8 @@ async def scrape_and_ingest(req: ScrapeRequest) -> dict:
 
 @router.post("/obsidian/preview")
 async def obsidian_preview(req: ObsidianRequest) -> dict:
+    if _IS_PRODUCTION:
+        raise HTTPException(status_code=400, detail=_OBSIDIAN_DISABLED_MSG)
     try:
         return get_vault_stats(req.vault_path)
     except ValueError as e:
@@ -153,6 +163,8 @@ async def obsidian_preview(req: ObsidianRequest) -> dict:
 
 @router.post("/obsidian/ingest")
 async def obsidian_ingest(req: ObsidianRequest) -> dict:
+    if _IS_PRODUCTION:
+        raise HTTPException(status_code=400, detail=_OBSIDIAN_DISABLED_MSG)
     try:
         notes = list(read_vault(req.vault_path))
     except ValueError as e:
