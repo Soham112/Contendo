@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useRouter } from "next/navigation";
-
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+import { useApi } from "@/lib/api";
 
 const LS_IDEAS = "contendo_ideas";
 const LS_SAVED = "contendo_saved_ideas";
@@ -158,6 +157,7 @@ function ArchiveRow({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function IdeasPage() {
+  const api = useApi();
   const router = useRouter();
 
   const [ideas, setIdeas] = useState<Idea[]>([]);
@@ -194,9 +194,7 @@ export default function IdeasPage() {
     setLoading(true);
     setError("");
     try {
-      const params = new URLSearchParams({ count: String(count) });
-      if (topic.trim()) params.set("topic", topic.trim());
-      const res = await fetch(`${API}/suggestions?${params}`);
+      const res = await api.getSuggestions(count, topic.trim() || undefined);
       if (!res.ok) throw new Error("Failed");
       const data = await res.json();
       const newIdeas: Idea[] = data.suggestions ?? [];

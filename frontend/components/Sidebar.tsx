@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useUser, useClerk } from "@clerk/nextjs";
 
 const NAV_ITEMS = [
   {
@@ -57,6 +58,8 @@ const NAV_ITEMS = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { user } = useUser();
+  const { signOut } = useClerk();
 
   return (
     <aside className="w-[224px] shrink-0 h-screen sticky top-0 flex flex-col bg-surface-container-low">
@@ -115,23 +118,44 @@ export default function Sidebar() {
         </Link>
       </div>
 
-      {/* Bottom links */}
-      <div className="px-3 pb-6 pt-1 space-y-0.5">
-        <button className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-[13.5px] text-secondary hover:text-on-surface hover:bg-surface-container font-medium transition-all duration-150">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.5"/>
-            <path d="M8 2v1.5M8 12.5V14M2 8h1.5M12.5 8H14M3.5 3.5l1 1M11.5 11.5l1 1M11.5 3.5l-1 1M4.5 11.5l-1 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-          Settings
-        </button>
-        <button className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-[13.5px] text-secondary hover:text-on-surface hover:bg-surface-container font-medium transition-all duration-150">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5"/>
-            <path d="M8 7v4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-            <circle cx="8" cy="5" r="0.75" fill="currentColor"/>
-          </svg>
-          Support
-        </button>
+      {/* User row + sign out */}
+      <div className="px-3 pb-5 pt-1">
+        {user && (
+          <div className="px-3 py-2.5 rounded-lg bg-surface-container">
+            <div className="flex items-center gap-2.5 mb-2">
+              {user.imageUrl ? (
+                <img
+                  src={user.imageUrl}
+                  alt={user.fullName ?? "User"}
+                  className="w-7 h-7 rounded-full shrink-0 object-cover"
+                />
+              ) : (
+                <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                  <span className="text-[11px] font-semibold text-primary">
+                    {(user.fullName ?? user.emailAddresses[0]?.emailAddress ?? "?")[0].toUpperCase()}
+                  </span>
+                </div>
+              )}
+              <div className="flex flex-col min-w-0">
+                <span className="text-[13px] font-medium text-on-surface truncate leading-tight">
+                  {user.fullName ?? "User"}
+                </span>
+                <span className="text-[11px] text-secondary truncate leading-tight">
+                  {user.emailAddresses[0]?.emailAddress ?? ""}
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={() => signOut({ redirectUrl: "/sign-in" })}
+              className="flex items-center gap-2 w-full text-[12px] text-secondary hover:text-on-surface transition-colors duration-150"
+            >
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M6 14H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1h3M11 11l3-3-3-3M14 8H6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              Sign out
+            </button>
+          </div>
+        )}
       </div>
     </aside>
   );

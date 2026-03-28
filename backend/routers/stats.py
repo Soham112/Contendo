@@ -1,6 +1,7 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
+from auth.clerk import get_user_id_dep
 from memory.vector_store import get_all_tags, get_total_chunks
 
 router = APIRouter()
@@ -12,8 +13,8 @@ class StatsResponse(BaseModel):
 
 
 @router.get("/stats", response_model=StatsResponse)
-async def stats() -> StatsResponse:
+async def stats(user_id: str = Depends(get_user_id_dep)) -> StatsResponse:
     return StatsResponse(
-        total_chunks=get_total_chunks(user_id="default"),
-        tags=get_all_tags(user_id="default"),
+        total_chunks=get_total_chunks(user_id=user_id),
+        tags=get_all_tags(user_id=user_id),
     )

@@ -1,10 +1,11 @@
 from anthropic import APIStatusError, InternalServerError
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from agents.humanizer_agent import refine_draft
 from agents.scorer_agent import score_text
 from agents.visual_agent import generate_visuals
+from auth.clerk import get_user_id_dep
 from pipeline.graph import run_pipeline
 
 router = APIRouter()
@@ -16,7 +17,6 @@ class GenerateRequest(BaseModel):
     tone: str
     context: str = ""
     quality: str = "standard"
-    user_id: str = "default"
 
 
 class GenerateResponse(BaseModel):
@@ -80,7 +80,10 @@ def _feedback_to_instructions(feedback_items: list[str]) -> str:
 
 
 @router.post("/generate", response_model=GenerateResponse)
-async def generate(req: GenerateRequest) -> GenerateResponse:
+async def generate(
+    req: GenerateRequest,
+    user_id: str = Depends(get_user_id_dep),
+) -> GenerateResponse:
     if not req.topic.strip():
         raise HTTPException(status_code=400, detail="topic is required")
 
@@ -91,7 +94,7 @@ async def generate(req: GenerateRequest) -> GenerateResponse:
             tone=req.tone,
             context=req.context,
             quality=req.quality,
-            user_id=req.user_id,
+            user_id=user_id,
         )
     except (InternalServerError, APIStatusError) as e:
         _raise_anthropic_error(e)

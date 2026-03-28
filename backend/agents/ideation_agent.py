@@ -46,10 +46,10 @@ Return ONLY a valid JSON array with exactly {count} objects. Each object must ha
 Return nothing outside the JSON array."""
 
 
-def generate_suggestions(count: int = 8, topic: str | None = None) -> list[dict]:
+def generate_suggestions(count: int = 8, topic: str | None = None, user_id: str = "default") -> list[dict]:
     count = min(max(count, 1), 15)
 
-    profile = load_profile()
+    profile = load_profile(user_id=user_id)
     profile_context = profile_to_context_string(profile)
 
     # Build query list first, then embed everything in a single batched call.
@@ -65,7 +65,7 @@ def generate_suggestions(count: int = 8, topic: str | None = None) -> list[dict]
             f"{topic} failure or mistake",
         ]
         query_top_ks = [8, 5, 5]
-        all_tags = get_all_tags()
+        all_tags = get_all_tags(user_id=user_id)
         if all_tags:
             query_texts.append(random.choice(all_tags))
             query_top_ks.append(4)
@@ -76,14 +76,14 @@ def generate_suggestions(count: int = 8, topic: str | None = None) -> list[dict]
         query_top_ks = [4] * len(broad_queries)
 
         # Two random tags for coverage of niche topics
-        all_tags = get_all_tags()
+        all_tags = get_all_tags(user_id=user_id)
         if all_tags:
             for tag in random.sample(all_tags, min(2, len(all_tags))):
                 query_texts.append(tag)
                 query_top_ks.append(5)
 
         # Oldest source to counteract recency bias
-        all_sources = get_all_sources()
+        all_sources = get_all_sources(user_id=user_id)
         if all_sources:
             oldest = sorted(
                 [s for s in all_sources if s["ingested_at"]],
@@ -96,9 +96,9 @@ def generate_suggestions(count: int = 8, topic: str | None = None) -> list[dict]
                     query_top_ks.append(5)
 
     # Single batched embed + sequential ChromaDB queries
-    chunks = query_similar_batch(query_texts, query_top_ks)
+    chunks = query_similar_batch(query_texts, query_top_ks, user_id=user_id)
 
-    posted_topics = get_all_topics_posted()
+    posted_topics = get_all_topics_posted(user_id=user_id)
 
     knowledge_section = (
         "\n\n---\n\n".join(f"[Chunk {i+1}]\n{chunk}" for i, chunk in enumerate(chunks[:30]))

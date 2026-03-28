@@ -44,7 +44,8 @@ learns a user's knowledge base and writes posts in their voice.
 
 **Current state:** Fully working locally and deployed to production.
 Frontend on Vercel (contendo-six.vercel.app). Backend on Railway
-(contendo-production.up.railway.app). Single user. No auth layer yet.
+(contendo-production.up.railway.app). Clerk JWT auth added — multi-user,
+per-user data isolation. Onboarding flow at `/onboarding`.
 
 ---
 
@@ -67,11 +68,12 @@ Frontend on Vercel (contendo-six.vercel.app). Backend on Railway
 - DESIGN.md is the source of truth for all UI/UX decisions — read it before any frontend change
 - The implementation is always the source of truth if docs conflict
 
-**Auth placeholder:**
-- `user_id="default"` is hardcoded everywhere in main.py routers
-- Do not change this until Clerk auth is explicitly added
-- When Clerk is added, replace "default" with the JWT-extracted 
-  user ID at each call site — no other files need to change
+**Auth (Clerk JWT):**
+- All protected endpoints use `Depends(get_user_id_dep)` from `auth/clerk.py`
+- In non-production without a token, `user_id` falls back to `"default"` (local dev convenience)
+- `CLERK_SECRET_KEY` is required in production for JWKS fetching
+- Frontend: all API calls go through `useApi()` from `lib/api.ts` — never raw `fetch()`
+- New users are redirected to `/onboarding` by `useProfileCheck` in AppShell
 
 **ChromaDB:**
 - Collections are namespaced as `contendo_{user_id}`
@@ -88,8 +90,7 @@ Frontend on Vercel (contendo-six.vercel.app). Backend on Railway
 ## What Is Not Built Yet
 
 These are explicitly out of scope until planned:
-- User authentication (Clerk)
-- Profile editing screen (profile.json is edited manually for now)
+- Profile editing screen (users go through `/onboarding` to set their profile; no in-app edit UI after initial setup)
 - LinkedIn / resume / GitHub onboarding flow
 - Archetype override UI in Create Post
 - Obsidian vault ingestion in production (filesystem access only works on localhost;

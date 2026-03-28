@@ -9,7 +9,7 @@ load_dotenv()
 
 from memory.feedback_store import init_db
 from memory.hierarchy_store import init_db as init_hierarchy_db
-from routers import generate, history, ideas, ingest, library, stats
+from routers import generate, history, ideas, ingest, library, profile, stats
 
 
 @asynccontextmanager
@@ -45,6 +45,7 @@ app.include_router(history.router)
 app.include_router(library.router)
 app.include_router(ideas.router)
 app.include_router(stats.router)
+app.include_router(profile.router)
 
 
 @app.get("/health")

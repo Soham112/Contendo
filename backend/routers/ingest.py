@@ -2,8 +2,10 @@ import os
 import re
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
+
+from auth.clerk import get_user_id_dep
 
 _IS_PRODUCTION = os.environ.get("ENVIRONMENT", "").lower() == "production"
 _OBSIDIAN_DISABLED_MSG = (
@@ -70,7 +72,10 @@ def _title_from_text(text: str, filename: str) -> str:
 
 
 @router.post("/ingest", response_model=IngestResponse)
-async def ingest(req: IngestRequest) -> IngestResponse:
+async def ingest(
+    req: IngestRequest,
+    user_id: str = Depends(get_user_id_dep),
+) -> IngestResponse:
     if req.source_type == "image":
         if not req.raw_image:
             raise HTTPException(status_code=400, detail="raw_image is required for image source_type")
@@ -82,11 +87,11 @@ async def ingest(req: IngestRequest) -> IngestResponse:
             elif "image/webp" in header:
                 media_type = "image/webp"
         extracted_text = extract_from_image(req.raw_image, media_type=media_type)
-        result = ingest_content(extracted_text, source_type="image", user_id="default")
+        result = ingest_content(extracted_text, source_type="image", user_id=user_id)
     else:
         if not req.content or not req.content.strip():
             raise HTTPException(status_code=400, detail="content is required")
-        result = ingest_content(req.content, source_type=req.source_type, user_id="default")
+        result = ingest_content(req.content, source_type=req.source_type, user_id=user_id)
 
     if result.get("duplicate"):
         return IngestResponse(
@@ -99,7 +104,10 @@ async def ingest(req: IngestRequest) -> IngestResponse:
 
 
 @router.post("/ingest-file", response_model=IngestResponse)
-async def ingest_file(file: UploadFile = File(...)) -> IngestResponse:
+async def ingest_file(
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_user_id_dep),
+) -> IngestResponse:
     raw = await file.read()
     if len(raw) > MAX_FILE_BYTES:
         raise HTTPException(status_code=413, detail="File exceeds 10 MB limit.")
@@ -111,7 +119,7 @@ async def ingest_file(file: UploadFile = File(...)) -> IngestResponse:
         raise HTTPException(status_code=422, detail=str(e))
 
     source_title = _title_from_text(text, file.filename or "")
-    result = ingest_content(text, source_type="article", source_title=source_title, user_id="default")
+    result = ingest_content(text, source_type="article", source_title=source_title, user_id=user_id)
     if result.get("duplicate"):
         return IngestResponse(
             chunks_stored=result["chunks_stored"],
@@ -123,7 +131,10 @@ async def ingest_file(file: UploadFile = File(...)) -> IngestResponse:
 
 
 @router.post("/scrape-and-ingest")
-async def scrape_and_ingest(req: ScrapeRequest) -> dict:
+async def scrape_and_ingest(
+    req: ScrapeRequest,
+    user_id: str = Depends(get_user_id_dep),
+) -> dict:
     try:
         scraped = scrape_url(req.url)
     except ValueError as e:
@@ -132,7 +143,7 @@ async def scrape_and_ingest(req: ScrapeRequest) -> dict:
         content=scraped["content"],
         source_type="article",
         source_title=scraped["title"],
-        user_id="default",
+        user_id=user_id,
     )
     if result.get("duplicate"):
         return {
@@ -162,7 +173,10 @@ async def obsidian_preview(req: ObsidianRequest) -> dict:
 
 
 @router.post("/obsidian/ingest")
-async def obsidian_ingest(req: ObsidianRequest) -> dict:
+async def obsidian_ingest(
+    req: ObsidianRequest,
+    user_id: str = Depends(get_user_id_dep),
+) -> dict:
     if _IS_PRODUCTION:
         raise HTTPException(status_code=400, detail=_OBSIDIAN_DISABLED_MSG)
     try:
@@ -180,7 +194,7 @@ async def obsidian_ingest(req: ObsidianRequest) -> dict:
                 content=note["content"],
                 source_type="note",
                 source_title=note["filename"],
-                user_id="default",
+                user_id=user_id,
             )
             total_chunks += result["chunks_stored"]
             all_tags.update(result["tags"])

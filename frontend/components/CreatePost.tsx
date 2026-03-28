@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useToast } from "@/components/ui/ToastProvider";
+import { useApi } from "@/lib/api";
 
 const SS_POST = "contentOS_last_post";
 const SS_SCORE = "contentOS_last_score";
@@ -16,7 +17,6 @@ const SS_FORMAT = "contentOS_last_format_meta";
 const SS_TONE = "contentOS_last_tone_meta";
 const SS_SCORED = "contentOS_last_scored";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 type Format = "linkedin post" | "medium article" | "thread";
 type Tone = "casual" | "technical" | "storytelling";
@@ -324,6 +324,7 @@ function SettingsDrawer({ initialTopic, initialFormat, initialTone, initialConte
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function CreatePost() {
+  const api = useApi();
   const [topic, setTopic] = useState("");
   const [format, setFormat] = useState<Format>("linkedin post");
   const [tone, setTone] = useState<Tone>("casual");
@@ -549,17 +550,13 @@ export default function CreatePost() {
 
   const autoSavePost = async (data: GenerateResult, postContent: string) => {
     try {
-      const res = await fetch(`${API}/log-post`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          topic,
-          format,
-          tone,
-          content: postContent,
-          authenticity_score: data.score,
-          svg_diagrams: null,
-        }),
+      const res = await api.logPost({
+        topic,
+        format,
+        tone,
+        content: postContent,
+        authenticity_score: data.score,
+        svg_diagrams: null,
       });
       if (!res.ok) return;
       const saved = await res.json();
@@ -586,11 +583,7 @@ export default function CreatePost() {
     })();
     if (!postId) return;
     try {
-      await fetch(`${API}/history/${postId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(fields),
-      });
+      await api.patchPost(postId, fields);
       setLastSaved(Date.now());
     } catch {
       // patch failure is non-critical
@@ -601,11 +594,7 @@ export default function CreatePost() {
     if (!result || scoreLoading) return;
     setScoreLoading(true);
     try {
-      const res = await fetch(`${API}/score`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ post_content: editedPost }),
-      });
+      const res = await api.scorePost(editedPost);
       if (!res.ok) throw new Error("Scoring failed");
       const data: { score: number; score_feedback: string[] } = await res.json();
       setResult((prev) =>
@@ -656,11 +645,7 @@ export default function CreatePost() {
     if (overrides?.context !== undefined) setContext(overrides.context);
 
     try {
-      const res = await fetch(`${API}/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: t, format: f, tone: tn, context: ctx }),
-      });
+      const res = await api.generatePost({ topic: t, format: f, tone: tn, context: ctx });
 
       if (!res.ok) {
         const err = await res.json();
@@ -682,13 +667,9 @@ export default function CreatePost() {
     setRefineError("");
     setRefineLoading(true);
     try {
-      const res = await fetch(`${API}/refine`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          current_draft: editedPost,
-          refinement_instruction: instruction,
-        }),
+      const res = await api.refinePost({
+        current_draft: editedPost,
+        refinement_instruction: instruction,
       });
       if (!res.ok) {
         const err = await res.json();
@@ -756,11 +737,7 @@ export default function CreatePost() {
     }
 
     try {
-      const res = await fetch(`${API}/generate-visuals`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ post_content: editedPost }),
-      });
+      const res = await api.generateVisuals(editedPost);
       if (!res.ok) throw new Error("Visuals generation failed");
       const data = await res.json();
       const newVisuals: Visual[] = data.visuals ?? [];
@@ -785,9 +762,7 @@ export default function CreatePost() {
     setSuggestions([]);
     setSelectedIdeaIndex(null);
     try {
-      const params = new URLSearchParams({ count: String(ideaCount) });
-      if (ideaTopic.trim()) params.set("topic", ideaTopic.trim());
-      const res = await fetch(`${API}/suggestions?${params}`);
+      const res = await api.getSuggestions(ideaCount, ideaTopic.trim() || undefined);
       if (!res.ok) throw new Error("Failed to fetch suggestions");
       const data = await res.json();
       const fetched: Suggestion[] = data.suggestions ?? [];

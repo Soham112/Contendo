@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useToast } from "@/components/ui/ToastProvider";
+import { useApi } from "@/lib/api";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -136,6 +137,7 @@ const SOURCE_ICONS: Record<SourceType, React.ReactNode> = {
 };
 
 export default function FeedMemory() {
+  const api = useApi();
   const [activeTab, setActiveTab] = useState<SourceType>("article");
   const [content, setContent] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -158,7 +160,7 @@ export default function FeedMemory() {
 
   const fetchStats = async () => {
     try {
-      const res = await fetch(`${API}/stats`);
+      const res = await api.getStats();
       if (res.ok) setStats(await res.json());
     } catch {}
   };
@@ -247,11 +249,7 @@ export default function FeedMemory() {
     }
     setLoading(true);
     try {
-      const res = await fetch(`${API}/obsidian/preview`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vault_path: vaultPath.trim() }),
-      });
+      const res = await api.obsidianPreview(vaultPath.trim());
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.detail ?? "Preview failed");
@@ -275,12 +273,7 @@ export default function FeedMemory() {
     setObsidianPhase("ingesting");
     setLoading(true);
     try {
-      const res = await fetch(`${API}/obsidian/ingest`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vault_path: vaultPath.trim() }),
-        signal: AbortSignal.timeout(300000),
-      });
+      const res = await api.obsidianIngest(vaultPath.trim());
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.detail ?? "Ingest failed");
@@ -321,22 +314,14 @@ export default function FeedMemory() {
       if (activeTab === "file") {
         const formData = new FormData();
         formData.append("file", uploadedFile!);
-        res = await fetch(`${API}/ingest-file`, { method: "POST", body: formData });
+        res = await api.ingestFile(formData);
       } else if (activeTab === "url") {
-        res = await fetch(`${API}/scrape-and-ingest`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: urlInput.trim() }),
-        });
+        res = await api.scrapeAndIngest(urlInput.trim());
       } else {
-        const body: Record<string, string> = { source_type: activeTab };
+        const body: { source_type: string; raw_image?: string; content?: string } = { source_type: activeTab };
         if (activeTab === "image") { body.raw_image = imagePreview; body.content = ""; }
         else { body.content = content; }
-        res = await fetch(`${API}/ingest`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
+        res = await api.ingestContent(body);
       }
 
       if (!res.ok) {
