@@ -90,7 +90,6 @@ per-user data isolation. Onboarding flow at `/onboarding`.
 ## What Is Not Built Yet
 
 These are explicitly out of scope until planned:
-- Profile editing screen (users go through `/onboarding` to set their profile; no in-app edit UI after initial setup)
 - LinkedIn / resume / GitHub onboarding flow
 - Archetype override UI in Create Post
 - Obsidian vault ingestion in production (filesystem access only works on localhost;

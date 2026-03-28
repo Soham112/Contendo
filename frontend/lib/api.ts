@@ -233,11 +233,19 @@ export function useApi() {
     // ── Profile ───────────────────────────────────────────────────────────
     getProfile: () => apiFetch("/profile"),
 
-    saveProfile: (profile: ProfileData) =>
-      apiFetch("/profile", {
+    saveProfile: async (profile: ProfileData) => {
+      const res = await apiFetch("/profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(profile),
-      }),
+      });
+      console.log("[api.saveProfile] status:", res.status, "ok:", res.ok);
+      if (!res.ok) {
+        const body = await res.text().catch(() => "(unreadable)");
+        console.error("[api.saveProfile] error body:", body);
+        throw new Error(`POST /profile failed with status ${res.status}: ${body}`);
+      }
+      return res;
+    },
   };
 }

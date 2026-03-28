@@ -1,8 +1,12 @@
 import json
+import logging
+import os
 from pathlib import Path
 from typing import Any
 
 from config.paths import PROFILE_PATH, PROFILES_DIR
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_PROFILE: dict[str, Any] = {
     "name": "",
@@ -50,8 +54,10 @@ def _profile_path(user_id: str = "default") -> Path:
 
 def load_profile(user_id: str = "default") -> dict[str, Any]:
     path = _profile_path(user_id)
+    logger.info(f"load_profile: reading path={path} (exists={path.exists()}) for user_id={user_id}")
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
+        logger.info(f"load_profile: no file found for user_id={user_id}, returning DEFAULT_PROFILE")
         return DEFAULT_PROFILE.copy()
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -67,22 +73,34 @@ def load_profile(user_id: str = "default") -> dict[str, Any]:
 
 
 def save_profile(profile: dict[str, Any], user_id: str = "default") -> None:
+    # Ensure directory exists before any write attempt
+    os.makedirs(PROFILES_DIR, exist_ok=True)
     path = _profile_path(user_id)
+    logger.info(f"save_profile: writing to path={path} for user_id={user_id}")
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
+    # Atomic write: write to temp file then replace, preventing corrupt half-writes
+    tmp_path = Path(str(path) + ".tmp")
+    with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(profile, f, indent=2, ensure_ascii=False)
+    os.replace(tmp_path, path)
+    logger.info(f"save_profile: successfully wrote profile for user_id={user_id} to path={path}")
 
 
 def profile_exists(user_id: str) -> bool:
     """Return True if the user has completed onboarding (non-empty name field)."""
     path = _profile_path(user_id)
+    logger.info(f"profile_exists: checking path={path} (exists={path.exists()}) for user_id={user_id}")
     if not path.exists():
+        logger.info(f"profile_exists: False (file not found) for user_id={user_id}")
         return False
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        return bool(data.get("name", "").strip())
-    except Exception:
+        result = bool(data.get("name", "").strip())
+        logger.info(f"profile_exists: {result} (name={data.get('name', '')!r}) for user_id={user_id}")
+        return result
+    except Exception as e:
+        logger.warning(f"profile_exists: exception reading profile for user_id={user_id}: {e}")
         return False
 
 
