@@ -23,13 +23,16 @@
 | `backend/routers/library.py` | `GET /library`, `DELETE /library/source` |
 | `backend/routers/ideas.py` | `GET /suggestions` |
 | `backend/routers/stats.py` | `GET /stats` |
+| `backend/routers/profile.py` | `GET /profile`, `POST /profile` — per-user profile read/write; returns `has_profile: bool` so frontend can detect new users needing onboarding |
 | `backend/requirements.txt` | All Python dependencies pinned |
-| `backend/.env.example` | Required env var template — `ANTHROPIC_API_KEY`, `DATA_DIR`, `FRONTEND_ORIGIN`, `ENVIRONMENT` |
+| `backend/.env.example` | Required env var template — `ANTHROPIC_API_KEY`, `DATA_DIR`, `FRONTEND_ORIGIN`, `ENVIRONMENT`, `CLERK_SECRET_KEY` |
 | `backend/Dockerfile` | Production Docker image for Railway — Python 3.11-slim; pre-installs CPU-only `torch==2.2.2` from PyTorch CPU wheel registry (avoids 4 GB image limit); sentence-transformers model downloads at first request (not baked in); uses `$PORT` and `$DATA_DIR` |
 | `backend/.dockerignore` | Excludes venv, pycache, local data files, .env from Docker build context |
 | `backend/config/__init__.py` | Empty — marks config/ as a Python package |
-| `backend/config/paths.py` | Single source of truth for all data paths; reads `DATA_DIR` env var, falls back to `backend/data/` for local dev; exposes `CHROMA_DIR`, `POSTS_DB_PATH`, `HIERARCHY_DB_PATH`, `PROFILE_PATH` |
-| `backend/agents/ideation_agent.py` | Generates N content ideas from ChromaDB sample, profile, and posted topic history |
+| `backend/config/paths.py` | Single source of truth for all data paths; reads `DATA_DIR` env var, falls back to `backend/data/` for local dev; exposes `CHROMA_DIR`, `POSTS_DB_PATH`, `HIERARCHY_DB_PATH`, `PROFILE_PATH`, `PROFILES_DIR` |
+| `backend/agents/ideation_agent.py` | Generates N content ideas from ChromaDB sample, profile, and posted topic history; accepts `user_id` param for per-user data isolation |
+| `backend/auth/__init__.py` | Empty — marks auth/ as a Python package |
+| `backend/auth/clerk.py` | Clerk JWT verification — `get_user_id(authorization)` verifies Bearer token via JWKS (1hr cache); falls back to `user_id="default"` in non-production when no token; `get_user_id_dep` is the FastAPI `Depends()` dependency used by all protected endpoints |
 | `backend/agents/visual_agent.py` | Parses [DIAGRAM:] and [IMAGE:] placeholders from post; calls Claude to generate SVG for diagrams; returns reminder text for images |
 | `backend/agents/ingestion_agent.py` | Chunks content, extracts tags via Claude Sonnet, upserts to ChromaDB; after successful upsert: generates a 2-3 sentence source summary via Claude Haiku and writes a source_node + topic_node to hierarchy_store (wrapped in try/except — never blocks ingestion); SHA-256 dedup via `query_by_hash()` before any Claude call |
 | `backend/agents/vision_agent.py` | Sends base64 images to Claude vision, returns extracted text |
@@ -41,9 +44,9 @@
 | `backend/pipeline/state.py` | TypedDict schema for shared LangGraph pipeline state; includes `archetype`, `user_id`, `critic_brief`, `retrieved_chunks` (backward compat flat list), `retrieval_bundle` (full hierarchical bundle), and `retrieved_context` (pre-formatted enriched text for draft prompt) |
 | `backend/pipeline/graph.py` | LangGraph graph definition — nodes, edges, conditional retry loop |
 | `backend/memory/vector_store.py` | ChromaDB init, upsert, semantic query, stats, delete_source, query_by_hash; `query_similar()` returns `source_id` and `chunk_index` per result; `query_similar_batch()` embeds all queries in a single batched forward pass then queries ChromaDB for each (significantly faster than N sequential `query_similar()` calls); `upsert_chunks()` stores `node_type:"chunk"`; `get_chunks_for_source()` and `get_adjacent_chunks()` for hierarchical sibling retrieval; collections namespaced as `contendo_{user_id}` |
-| `backend/memory/profile_store.py` | profile.json read/write, defaults, profile-to-string formatter |
+| `backend/memory/profile_store.py` | Per-user profile read/write — `load_profile(user_id)`, `save_profile(profile, user_id)`, `profile_exists(user_id)`; legacy fallback to `data/profile.json` when `user_id="default"`; `DEFAULT_PROFILE` includes bio, location, target_audience, opinions, writing_samples; `profile_to_context_string()` formats all fields for prompt injection |
 | `backend/memory/hierarchy_store.py` | SQLite store (path from `config.paths.HIERARCHY_DB_PATH`) for source_nodes and topic_nodes — `upsert_source_node`, `get_source_node`, `source_node_exists`, `upsert_topic_node`, `get_topic_node`, `find_matching_topic` (tag-overlap heuristic), `add_source_to_topic`; initialized in FastAPI lifespan |
-| `backend/memory/feedback_store.py` | SQLite posts and post_versions tables — log_post, get_recent_posts, get_all_topics_posted, add_version, get_versions, get_best_version, update_latest_version_svg |
+| `backend/memory/feedback_store.py` | SQLite posts and post_versions tables — all functions accept `user_id` param for per-user isolation; `init_db()` runs idempotent `ALTER TABLE` migration to add `user_id` column; `_post_owned_by()` helper validates post ownership before version operations |
 | `backend/tools/scraper_tool.py` | URL scraper using Jina Reader — `is_valid_url()`, `clean_scraped_text()`, `scrape_url()` |
 | `backend/tools/obsidian_tool.py` | Obsidian vault reader — `read_vault()` yields cleaned note dicts, `get_vault_stats()` for preview, `clean_obsidian_markdown()` strips wikilinks/frontmatter/Dataview |
 | `backend/tools/__init__.py` | Empty — tools directory retained for future use |
@@ -58,7 +61,7 @@
 | `scripts/migrate_hierarchy.py` | One-time migration script: backfills hierarchy_store from existing ChromaDB data; idempotent; run with `python scripts/migrate_hierarchy.py [--dry_run] [--force] [--user_id default]` |
 | `backend/venv/` | Python virtual environment (gitignored) |
 | **Frontend** | |
-| `frontend/app/layout.tsx` | Root layout — mounts AppShell which renders Sidebar for app routes; /welcome bypasses sidebar |
+| `frontend/app/layout.tsx` | Root layout — wraps body in `ClerkProvider`; mounts AppShell which renders Sidebar for app routes; `/welcome`, `/onboarding`, `/sign-in`, `/sign-up` bypass sidebar |
 | `frontend/app/page.tsx` | Screen 1: Feed Memory (default route `/`) |
 | `frontend/app/library/page.tsx` | Screen 2: Library (`/library`) — source cards, stats bar, text search, filter/sort; card placeholder areas use `getTitleGradient()` (deterministic charcode-sum gradient from `TITLE_GRADIENTS`) + `getSourceIcon()` (48px type-specific SVG illustrations: book/article, pencil/note, play/youtube, photo/image, layers/default) |
 | `frontend/app/create/page.tsx` | Screen 3: Create Post (`/create`) |
@@ -68,11 +71,17 @@
 | `frontend/app/welcome/page.tsx` | Landing page (`/welcome`) — editorial atelier marketing page; fixed glassmorphic nav with `font-headline italic` logo + CSS-only dropdowns + `btn-primary` CTA; hero with Noto Serif h1, feature cards, philosophy section, bento grid, `MOOD_GRADIENTS` staggered mood grid (8 tiles, charcode-deterministic), final CTA with dot-grid overlay; own top nav, AppShell sidebar suppressed |
 | `frontend/app/globals.css` | Global styles — Tailwind directives, CSS custom properties for design tokens, `.btn-primary` gradient, `.glass` glassmorphism, `.font-headline`/`.serif-text`, grain texture overlay, custom scrollbar, `.input-editorial`, `.label-caps`, `.ghost-border` |
 | `frontend/components/ui/ToastProvider.tsx` | Global custom lightweight React Context for floating success/error notifications |
-| `frontend/components/AppShell.tsx` | Layout wrapper — renders Sidebar for all app routes; returns children unwrapped for `/welcome` |
-| `frontend/components/Sidebar.tsx` | Left sidebar navigation — logo, five nav items (Feed Memory, Library, Create Post, Get Ideas, History), user row at bottom |
+| `frontend/components/AppShell.tsx` | Layout wrapper — renders Sidebar for all app routes; returns children unwrapped for `/welcome`, `/onboarding`, `/sign-in`, `/sign-up`; runs `useProfileCheck()` to redirect unauthenticated users or users without profiles to `/onboarding`; shows loading spinner while profile check is in flight |
+| `frontend/components/Sidebar.tsx` | Left sidebar navigation — logo, five nav items (Feed Memory, Library, Create Post, Get Ideas, History), user row at bottom with real user avatar/name/email from `useUser()` and sign-out via `useClerk().signOut()` |
 | `frontend/components/FeedMemory.tsx` | Feed Memory form — tabs (Article/Text, URL, File, YouTube, Image, Note, Obsidian), URL scraping, textarea, file upload with drag-and-drop, image upload, Obsidian vault preview/ingest flow, result display |
 | `frontend/components/CreatePost.tsx` | Create Post — 4-state UI; dynamic autosave tracker; settings drawer; split-screen analysis panel. Pre-gen form: outlined "THE CENTRAL THEME" input, "FORMAT & MEDIUM" vertical pills, "VOICE & RESONANCE" horizontal pills, centered sparkle Generate button. Post-gen: "The Manuscript" Noto Serif heading + status pill, `whitespace-pre-wrap` textarea. Action buttons: three equal ghost buttons (Regenerate / Analyse / Gen.Visuals) + full-width `btn-primary` Copy. Analysis panel: SVG score ring (`stroke="#58614f"`), first `score_feedback` item as quote, remaining items as STRONG POINT/NEEDS ATTENTION focus cards, scrollable with `maxHeight:"50vh"` in stacked layout. |
-| `frontend/.env.local` | Sets `NEXT_PUBLIC_API_URL=http://localhost:8000` |
+| `frontend/middleware.ts` | Clerk v5 middleware — protects all routes except `/welcome`, `/sign-in(.*)`, `/sign-up(.*)`, `/onboarding` via `clerkMiddleware` + `createRouteMatcher` |
+| `frontend/lib/api.ts` | `useApi()` hook — returns all typed API functions with Bearer token pre-attached via `useAuth().getToken()`; single source of truth for all backend calls; replaces raw `fetch()` in all components |
+| `frontend/hooks/useProfileCheck.ts` | `useProfileCheck()` hook — runs after Clerk confirms auth, calls `GET /profile`, redirects to `/onboarding` if `has_profile === false`; no-op on public routes |
+| `frontend/app/sign-in/[[...sign-in]]/page.tsx` | Clerk prebuilt `<SignIn />` page with Editorial Atelier wordmark (Noto Serif italic) and sage `#58614f` primary color |
+| `frontend/app/sign-up/[[...sign-up]]/page.tsx` | Clerk prebuilt `<SignUp />` page, identical structure to sign-in page |
+| `frontend/app/onboarding/page.tsx` | 5-step onboarding flow — collects name/role/bio/location, topics/audience, voice/words/rules, opinions, writing samples; tag pill inputs; posts to `POST /profile` on completion; redirects to `/` |
+| `frontend/.env.local` | Sets `NEXT_PUBLIC_API_URL=http://localhost:8000` and `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` |
 | `frontend/tailwind.config.ts` | Tailwind config scoped to app/ and components/; extends colors with full Material Design token set (primary, secondary, tertiary, surface-container-*, on-surface, outline-variant, error); custom box shadows (card, card-hover, float, ambient, focus); border radius overrides; font families (headline: Noto Serif, body/sans: Inter) |
 | `frontend/package.json` | Next.js 14 app with TypeScript + Tailwind |
 
@@ -170,6 +179,28 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
 ---
 
 ## 3. API CONTRACT
+
+### GET /profile
+**Response:**
+```json
+{
+  "profile": { "name": "Alex Chen", "role": "Staff Engineer", ... },
+  "has_profile": true
+}
+```
+**Notes:** Returns the profile for the authenticated user. `has_profile` is `true` if the profile file exists and the `name` field is non-empty. `false` means the user has not completed onboarding. The profile is always returned (falling back to `DEFAULT_PROFILE`) regardless of `has_profile`.
+
+---
+
+### POST /profile
+**Request body:** Full profile object (see profile.json schema below)
+**Response:**
+```json
+{ "saved": true }
+```
+**Notes:** Saves the profile to `DATA_DIR/profiles/profile_{user_id}.json`. Creates the `profiles/` directory if it does not exist.
+
+---
 
 ### POST /obsidian/preview
 **Request body:**
@@ -515,29 +546,28 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
 
 ### profile.json (full structure)
 
-**Location:** `backend/data/profile.json`
-**Gitignored:** Yes — personal details never committed. Copy from `backend/data/profile.template.json` to create.
-**Auto-created:** `load_profile()` creates a minimal default if the file does not exist, but the output will be generic until the user fills in their real profile.
-**Forward-compatible:** Missing keys are filled in from defaults on load — adding new fields to the template does not break existing profiles.
+**Location:** `DATA_DIR/profiles/profile_{user_id}.json` (per-user); legacy `DATA_DIR/profile.json` for `user_id="default"` if it exists
+**Gitignored:** Yes — personal details never committed.
+**Auto-created:** `load_profile()` returns `DEFAULT_PROFILE` copy if the file does not exist.
+**Forward-compatible:** Missing keys are filled in from `DEFAULT_PROFILE` on load — adding new fields never breaks existing profiles.
+**New users:** Redirected to `/onboarding` after Clerk sign-up; `POST /profile` creates their profile file.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `name` | str | User's name |
+| `name` | str | User's name — `profile_exists()` checks this field is non-empty |
 | `role` | str | Role/title — injected into every draft prompt |
 | `bio` | str | 2–3 sentence summary of who they are and what they believe |
-| `location` | str | City, country |
+| `location` | str | City, country (optional) |
 | `target_audience` | str | Who they write for — shapes tone and framing |
 | `topics_of_expertise` | list[str] | Domains the user knows deeply |
-| `projects` | list[dict] | Built things — name, description with real numbers, stack |
+| `voice_descriptors` | list[str] | Phrases the user naturally uses |
 | `opinions` | list[str] | Strong takes the user actually holds — not facts |
-| `phrases_i_use` | list[str] | Natural phrases specific to this person |
 | `words_to_avoid` | list[str] | Injected into humanizer prompt as banned language |
 | `writing_rules` | list[str] | Style rules injected into draft and humanizer prompts |
-| `technical_voice_notes` | list[str] | How the user specifically explains hard technical things |
-| `linkedin_style_notes` | str | Format-specific style notes for LinkedIn posts |
-| `medium_style_notes` | str | Format-specific style notes for Medium articles |
-| `thread_style_notes` | str | Format-specific style notes for threads |
 | `writing_samples` | list[str] | Real past posts — the single most powerful signal for voice matching |
+| `linkedin_style_notes` | str | Format-specific style notes for LinkedIn posts (default set in DEFAULT_PROFILE) |
+| `medium_style_notes` | str | Format-specific style notes for Medium articles (default set in DEFAULT_PROFILE) |
+| `thread_style_notes` | str | Format-specific style notes for threads (default set in DEFAULT_PROFILE) |
 
 ---
 
@@ -578,6 +608,7 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
 | `authenticity_score` | INTEGER | Score of current content (0–100) |
 | `svg_diagrams` | TEXT | JSON array of `{position, description, svg_code}` objects; NULL if no diagrams |
 | `archetype` | TEXT | Post archetype key inferred at generation time (e.g. `"incident_report"`); default empty string |
+| `user_id` | TEXT | Clerk user ID (`sub` claim); defaults to `'default'` for rows inserted before auth was added; added via idempotent `ALTER TABLE` in `init_db()` |
 
 **Table:** `post_versions`
 
@@ -677,12 +708,21 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
 
 ---
 
+| Clerk JWT auth via PyJWT + JWKS | `auth/clerk.py` fetches Clerk's JWKS from `https://api.clerk.com/v1/jwks` (cached 1hr in memory); uses `RSAAlgorithm.from_jwk()` to select the signing key by `kid` header; decodes with `jwt.decode(..., algorithms=["RS256"])`. `CLERK_SECRET_KEY` is required for the JWKS endpoint. Any exception → 401. |
+| Dev fallback to `user_id="default"` | When `ENVIRONMENT != "production"` and no Authorization header is present, `get_user_id()` returns `"default"` instead of raising 401. This preserves full local dev convenience — no token needed. Production always requires a valid token. |
+| Per-user profile files at `DATA_DIR/profiles/profile_{user_id}.json` | Separates profiles per Clerk `sub` claim. The `"default"` user still falls back to `DATA_DIR/profile.json` if it exists (backward compat for existing local dev data). `PROFILES_DIR` is exposed from `config/paths.py`. |
+| SQLite `ALTER TABLE posts ADD COLUMN user_id` migration is idempotent | Wrapped in try/except in `init_db()`. First deploy after this change adds the column; subsequent deploys silently pass the `except`. Existing rows default to `user_id='default'` (SQLite `DEFAULT 'default'`). No manual migration needed. |
+| All existing rows in posts.db get `user_id='default'` | Railway production: the first deploy after this branch merges runs `init_db()` which adds the column. All pre-existing post history is attributed to `"default"`. If that user later creates a Clerk account, they will not see their old posts (different user_id). Acceptable for MVP. |
+| Onboarding redirect via `useProfileCheck` in AppShell | After Clerk confirms auth, AppShell calls `GET /profile`. If `has_profile === false`, the user is pushed to `/onboarding`. Public routes (`/welcome`, `/sign-in`, `/sign-up`, `/onboarding`) skip the check. The hook exposes `loading` so AppShell can show a spinner while the check is in flight. |
+| Frontend API layer via `useApi()` hook in `lib/api.ts` | Centralises all backend calls in one hook. `useAuth().getToken()` is called per-request to always attach a fresh token (Clerk tokens are short-lived). Components call `const api = useApi()` instead of raw `fetch()`. All request/response types are exported from `lib/api.ts` for IDE completions. |
+
+---
+
 ## 6. WHAT IS NOT BUILT YET
 
 - Obsidian integration does not work after cloud deployment — vault path is a local filesystem path read by FastAPI. Guarded by `ENVIRONMENT=production` (returns HTTP 400) and hidden in the frontend when API URL is not localhost. Future full solution: vault zip upload or Electron desktop wrapper.
 
-- User authentication (single user only for now — no auth layer)
-- Profile editing screen (profile.json must be edited manually)
+- Profile editing screen (profile is created via the onboarding flow at `/onboarding`; there is no in-app edit screen after initial setup — users must go through onboarding again or the profile file is manually edited)
 - Vercel and Railway/Render deployment config files
 - YouTube transcript auto-fetching (removed — manual paste only)
 - Tag filtering in Library (can't filter ChromaDB chunks by tag in the UI — only source-type filter exists)
