@@ -14,11 +14,12 @@ MAX_ITERATIONS = 3
 
 
 def load_profile_node(state: PipelineState) -> PipelineState:
-    state["profile"] = load_profile()
+    user_id = state.get("user_id", "default")
+    state["profile"] = load_profile(user_id=user_id)
     state["iterations"] = 0
     state["archetype"] = state.get("archetype", "")
     state["critic_brief"] = {}
-    state["posted_topics"] = get_all_topics_posted()
+    state["posted_topics"] = get_all_topics_posted(user_id=user_id)
     return state
 
 
