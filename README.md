@@ -10,8 +10,8 @@ Built for a single user. No auth, no bloat — just a fast loop from raw knowled
 
 ```mermaid
 flowchart TD
-    subgraph UI["Frontend (Next.js 14) — 5 Screens + Landing Page"]
-        NAV["Left Sidebar (Sidebar.tsx)\nFeed Memory / Library / Create Post / Get Ideas / History"]
+    subgraph UI["Frontend (Next.js 14) — 5 Screens + Settings + Landing Page"]
+        NAV["Left Sidebar (Sidebar.tsx)\nFeed Memory / Library / Create Post / Get Ideas / History / Settings"]
         S1["Screen 1: Feed Memory (/)\n(Article / URL / File / YouTube / Image / Note / Obsidian)"]
         S2["Screen 2: Library (/library)\n(Source cards, stats, filter/sort)"]
         S3["Screen 3: Create Post (/create)\n(Settings drawer / Split-screen analysis / Topic header)"]
@@ -21,7 +21,7 @@ flowchart TD
         S6["Landing Page (/welcome)\n(Own top nav, bypasses sidebar)"]
     end
 
-    subgraph API["FastAPI Backend — 17 Endpoints"]
+    subgraph API["FastAPI Backend — 19 Endpoints"]
         R1["POST /ingest\nPOST /ingest-file\nPOST /scrape-and-ingest"]
         R1b["POST /obsidian/preview\nPOST /obsidian/ingest"]
         R2["POST /generate"]
@@ -32,6 +32,7 @@ flowchart TD
         R6["GET /suggestions"]
         R7["POST /generate-visuals"]
         R8["GET /stats"]
+        R9["GET /profile\nPOST /profile"]
     end
 
     subgraph Pipeline["LangGraph Pipeline"]
@@ -50,8 +51,8 @@ flowchart TD
     end
 
     subgraph Memory["Memory Layer"]
-        DB1["ChromaDB\n(vector store — chunks + metadata)"]
-        DB2["profile.json\n(voice, style, words to avoid)"]
+        DB1["ChromaDB\n(vector store — chunks + metadata, per-user collections)"]
+        DB2["profiles/profile_{user_id}.json\n(voice, style, words to avoid — per user)"]
         DB3["SQLite posts.db\n(posts + post_versions tables)"]
     end
 
@@ -98,9 +99,9 @@ flowchart TD
 
 ---
 
-## The Five Screens
+## The Five Screens + Settings
 
-Navigation across all five screens is handled by a persistent left sidebar (`Sidebar.tsx`), rendered by `AppShell.tsx` for every route except `/welcome`. The landing page at `/welcome` has its own top nav and bypasses the sidebar entirely.
+Navigation is handled by a persistent left sidebar (`Sidebar.tsx`), rendered by `AppShell.tsx` for every route except `/welcome`, `/sign-in`, `/sign-up`, and `/onboarding`. The landing page at `/welcome` has its own top nav and bypasses the sidebar entirely.
 
 **Screen 1 — Feed Memory (`/`):** The user selects an input type (Article/Text, URL, File, YouTube, Image/Diagram, Note, or Obsidian vault) and adds their content. For **URL**, the backend scrapes the page via Jina Reader and stores it automatically. For **File**, PDF, DOCX, and TXT uploads (up to 10 MB) are accepted — text is extracted server-side. For **Image/Diagram**, Claude vision extracts the knowledge as text first. For **Obsidian**, the user enters their local vault folder path; a preview step shows how many notes and words will be ingested before committing. The YouTube tab shows a textarea for manual paste — auto-fetching was removed after YouTube blocked bot-based transcript retrieval. For all types, content is chunked into 500-word overlapping segments, embedded locally with `sentence-transformers`, and upserted into ChromaDB. The response shows how many chunks were stored and what tags were auto-extracted.
 
@@ -111,6 +112,8 @@ Navigation across all five screens is handled by a persistent left sidebar (`Sid
 **Screen 4 — Get Ideas (`/ideas`):** A dedicated brainstorm screen. The user optionally enters a topic focus and picks how many ideas to generate (3–15). The ideation agent runs multi-query diversity sampling across the knowledge base and returns content suggestions. Ideas generated in a session persist in localStorage (`contendo_ideas`) and are restored on page revisit. Individual ideas can be saved for later (`contendo_saved_ideas` localStorage key); saved ideas appear in a "SAVED" subsection. Clicking "Use this" writes the idea title to `contentOS_last_topic` and the format to `contentOS_prefill_format` in sessionStorage, then redirects to Create Post where both are pre-filled.
 
 **Screen 5 — History (`/history`):** All auto-saved posts, newest first. Searchable by topic and content string matches. Each card shows topic, format/tone badges, authenticity score, and date. Every generation creates version 1; every refinement creates the next version. Version pills in the card header show the score for each version (color-coded green/amber/red) with the best version starred. Clicking a pill switches the expanded view to that version's content. Any version can be restored to Create Post with one click. Cards can be deleted with a confirmation step. Global toast notifications pop up confirming system interactions. If SVG diagrams were saved alongside the post, they are rendered inline in the expanded view with an "Open as PNG" button. Individual posts also have a dedicated full-page detail view at `/history/[id]`.
+
+**Settings (`/settings`):** Single-page profile editor accessible from the sidebar. Loads the current user's full profile via `GET /profile` on mount, shows a loading skeleton while fetching. All onboarding fields are editable: name/role/bio/location, expertise tags, writing fingerprint (phrases, words to avoid, rules up to 5), opinions (up to 5), writing samples (up to 5). An "Advanced" section (collapsed by default) exposes technical voice notes and platform-specific style notes. A sticky "Save changes" button shows an amber dot when fields are dirty; saves via `POST /profile` with atomic write on the backend; shows success/error toast. Browser `beforeunload` guard fires if navigating away with unsaved changes.
 
 ---
 
@@ -185,26 +188,13 @@ npm run dev
 
 The system writes in YOUR voice — but it needs to know who you are first.
 
-Before running the system for the first time:
+**Production (Vercel + Railway):** Sign up at the app URL. New users are automatically redirected to `/onboarding` — a 5-step guided flow that collects your name, role, bio, expertise topics, writing fingerprint, opinions, and writing samples. After completing it, you land in the app. Edit your profile any time at `/settings`.
 
-1. Copy the profile template:
-   ```bash
-   cp backend/data/profile.template.json backend/data/profile.json
-   ```
+**Local dev:** The same onboarding flow works locally. Profiles are saved to `backend/data/profiles/profile_{user_id}.json` (or `backend/data/profile.json` for the legacy `user_id=default` fallback when no auth token is present).
 
-2. Open `backend/data/profile.json` and fill in every field:
-   - `name`, `role`, `bio` — who you are
-   - `topics_of_expertise` — what you know deeply
-   - `projects` — what you have built (with real numbers)
-   - `opinions` — strong takes you actually hold
-   - `phrases_i_use` — words and phrases natural to you
-   - `words_to_avoid` — language that does not sound like you
-   - `writing_samples` — paste 3–5 of your real past posts here
-   - `technical_voice_notes` — how you specifically explain hard things (see examples in the template)
+The more specific you are, the better the output. Generic profile → generic posts. Specific profile → posts that sound like you wrote them.
 
-3. The more specific you are, the better the output. Generic profile → generic posts. Specific profile → posts that sound like you wrote them.
-
-Note: `profile.json` is gitignored — your personal details never get committed to the repository. Only the template is tracked.
+Note: profile files are gitignored — your personal details never get committed.
 
 ---
 
@@ -237,24 +227,35 @@ Note: `profile.json` is gitignored — your personal details never get committed
 │   │   │       └── page.tsx          # Post detail (/history/[id])
 │   │   └── welcome/
 │   │       └── page.tsx              # Landing page (/welcome) — own top nav, no sidebar
+│   ├── app/
+│   │   ├── onboarding/
+│   │   │   └── page.tsx              # 5-step onboarding flow — new users only, no sidebar
+│   │   └── settings/
+│   │       └── page.tsx              # Profile editor (/settings) — single-page, sticky save, dirty tracking
 │   ├── components/
-│   │   ├── AppShell.tsx              # Layout wrapper — sidebar for app routes, passthrough for /welcome
-│   │   ├── Sidebar.tsx               # Left sidebar — logo, five nav items, user row
+│   │   ├── AppShell.tsx              # Layout wrapper — sidebar for app routes, passthrough for /welcome + /onboarding
+│   │   ├── Sidebar.tsx               # Left sidebar — logo, six nav items (+ Settings), user row
 │   │   ├── FeedMemory.tsx            # Feed Memory form — all input types, Obsidian vault flow
-│   │   └── CreatePost.tsx            # Create Post — 4-state UI, settings drawer, split-screen analysis
+│   │   ├── CreatePost.tsx            # Create Post — 4-state UI, settings drawer, split-screen analysis
+│   │   └── ui/
+│   │       ├── TagInput.tsx          # Shared tag pill input — used by onboarding + settings
+│   │       └── ToastProvider.tsx     # Global toast notifications context
 │   ├── .env.local                    # Sets NEXT_PUBLIC_API_URL=http://localhost:8000
 │   ├── tailwind.config.ts            # Tailwind config scoped to app/ and components/
 │   └── package.json                  # Next.js 14 + TypeScript + Tailwind
 │
 └── backend/
-    ├── main.py                       # FastAPI entry point — CORS, lifespan, router registration (~40 lines)
+    ├── main.py                       # FastAPI entry point — CORS, lifespan, router registration, logging config
     ├── routers/
     │   ├── ingest.py                 # /ingest, /ingest-file, /scrape-and-ingest, /obsidian/*
     │   ├── generate.py               # /generate, /refine, /generate-visuals
     │   ├── history.py                # /history, /log-post, PATCH/DELETE/restore history
     │   ├── library.py                # /library, DELETE /library/source
     │   ├── ideas.py                  # /suggestions
-    │   └── stats.py                  # /stats
+    │   ├── stats.py                  # /stats
+    │   ├── profile.py                # GET/POST /profile — per-user read/write, read-back verification
+    │   ├── debug.py                  # TEMPORARY: GET /debug/profile-paths (no auth)
+    │   └── admin.py                  # TEMPORARY: POST /admin/migrate-profile (x-migration-secret)
     ├── requirements.txt              # All Python dependencies pinned
     ├── .env.example                  # Required env var keys with no values
     ├── agents/
@@ -339,11 +340,12 @@ Railway injects `$PORT` automatically — the `CMD` in the Dockerfile uses it.
 2. Set the mount path to `/data`.
 3. Railway will persist everything written to `/data` across deploys.
 
-> Your data files must be placed at the **top level of the volume** (not in a subdirectory):
+> Your data files live at the top level of the volume:
 > - `/data/chroma_db/` — ChromaDB vector store directory
 > - `/data/posts.db` — post history SQLite database
 > - `/data/hierarchy.db` — hierarchy store SQLite database
-> - `/data/profile.json` — your voice and style profile
+> - `/data/profiles/profile_{user_id}.json` — per-user voice and style profiles (created by onboarding)
+> - `/data/profile.json` — legacy single-user profile (still read for `user_id=default` in local dev)
 
 ---
 
@@ -410,7 +412,11 @@ Obsidian vault ingestion reads directly from the local filesystem. It **cannot w
 After deploying:
 
 - [ ] `GET https://your-backend.up.railway.app/health` returns `{"status": "ok"}`
+- [ ] `GET https://your-backend.up.railway.app/debug/profile-paths` shows `data_dir: "/data"` and `profiles_dir_exists: true`
 - [ ] Frontend loads at your Vercel URL
+- [ ] New user sign-up → redirected to `/onboarding` → fills in name → submits → lands on `/`
+- [ ] Sign out and sign back in → lands on `/` (not onboarding again)
+- [ ] `/settings` loads with all profile fields populated
 - [ ] **Library** screen shows your existing sources and chunk count
 - [ ] **History** screen shows your existing posts
 - [ ] **Create Post** → generate a post on a test topic — confirm it completes without error

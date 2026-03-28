@@ -45,7 +45,9 @@ learns a user's knowledge base and writes posts in their voice.
 **Current state:** Fully working locally and deployed to production.
 Frontend on Vercel (contendo-six.vercel.app). Backend on Railway
 (contendo-production.up.railway.app). Clerk JWT auth added — multi-user,
-per-user data isolation. Onboarding flow at `/onboarding`.
+per-user data isolation. Onboarding flow at `/onboarding`. Profile editor
+at `/settings`. Per-user profiles stored at `DATA_DIR/profiles/profile_{user_id}.json`
+on Railway's persistent volume (`/data`).
 
 ---
 
@@ -82,8 +84,10 @@ per-user data isolation. Onboarding flow at `/onboarding`.
 
 **Backend structure:**
 - Endpoints live in backend/routers/ — not in main.py
-- main.py is CORS, lifespan, and router registration only (~40 lines)
+- main.py is CORS, lifespan, router registration, and logging config
 - Each router imports only what it needs
+- `backend/routers/debug.py` and `backend/routers/admin.py` are TEMPORARY —
+  remove after Railway persistence is confirmed and all user profiles are migrated
 
 ---
 
