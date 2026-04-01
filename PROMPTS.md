@@ -4,7 +4,7 @@
 > When any prompt needs to be tuned, update this file first, then update the
 > corresponding agent file to match. The two must never be out of sync.
 
-> **Verification note (2026-04-01):** All agent system prompts remain in sync with implementations. The most recent change (`feature/landing-page-default` — middleware routing and CTA link fixes in `welcome/page.tsx`) touched no agent files and required no prompt changes.
+> **Verification note (2026-04-01):** All agent system prompts remain in sync with implementations. The most recent change (`feature/settings-hub` — new settings hub at `/settings`, profile editor moved to `/settings/profile`) touched no agent files and required no prompt changes.
 
 ---
 
