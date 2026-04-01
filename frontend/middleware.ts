@@ -9,13 +9,23 @@ const isPublicRoute = createRouteMatcher([
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
-  if (!isPublicRoute(req)) {
-    const { userId } = auth();
-    if (!userId) {
-      const signInUrl = new URL("/sign-in", req.url);
-      signInUrl.searchParams.set("redirect_url", req.url);
-      return NextResponse.redirect(signInUrl);
-    }
+  const { userId } = auth();
+
+  // Signed-in users visiting /welcome → send them straight to the app
+  if (userId && req.nextUrl.pathname === "/welcome") {
+    return NextResponse.redirect(new URL("/", req.url));
+  }
+
+  // Unauthenticated visitors hitting / → show the landing page
+  if (!userId && req.nextUrl.pathname === "/") {
+    return NextResponse.redirect(new URL("/welcome", req.url));
+  }
+
+  // All other protected routes → require sign-in
+  if (!isPublicRoute(req) && !userId) {
+    const signInUrl = new URL("/sign-in", req.url);
+    signInUrl.searchParams.set("redirect_url", req.url);
+    return NextResponse.redirect(signInUrl);
   }
 });
 

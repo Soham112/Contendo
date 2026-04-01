@@ -85,11 +85,11 @@ export default function WelcomePage() {
         </div>
 
         <div className="flex items-center gap-3">
-          <Link href="/" className="text-sm text-secondary hover:text-on-surface transition-colors px-4 py-2 rounded-lg hidden sm:block">
+          <Link href="/sign-in" className="text-sm text-secondary hover:text-on-surface transition-colors px-4 py-2 rounded-lg hidden sm:block">
             Log in
           </Link>
           <Link
-            href="/"
+            href="/sign-up"
             className="btn-primary text-white text-xs uppercase tracking-widest font-semibold rounded-lg px-5 py-2.5 hover:opacity-90 transition-opacity"
           >
             Get started
@@ -122,7 +122,7 @@ export default function WelcomePage() {
         {/* CTAs */}
         <div className="flex flex-col sm:flex-row items-center gap-4">
           <Link
-            href="/"
+            href="/sign-up"
             className="btn-primary text-white text-sm uppercase tracking-widest font-semibold rounded-lg px-9 py-4 hover:opacity-90 transition-opacity"
           >
             Start writing for free
@@ -425,7 +425,7 @@ export default function WelcomePage() {
             Contendo learns your knowledge base, your voice, and your style. Then it writes content that actually sounds like you wrote it.
           </p>
           <Link
-            href="/"
+            href="/sign-up"
             className="btn-primary text-white text-sm uppercase tracking-widest font-semibold rounded-lg px-10 py-4 hover:opacity-90 transition-opacity inline-block"
           >
             Start writing for free
