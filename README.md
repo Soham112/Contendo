@@ -113,7 +113,9 @@ Navigation is handled by a persistent left sidebar (`Sidebar.tsx`), rendered by 
 
 **Screen 5 — History (`/history`):** All auto-saved posts, newest first. Searchable by topic and content string matches. Each card shows topic, format/tone badges, authenticity score, and date. Every generation creates version 1; every refinement creates the next version. Version pills in the card header show the score for each version (color-coded green/amber/red) with the best version starred. Clicking a pill switches the expanded view to that version's content. Any version can be restored to Create Post with one click. Cards can be deleted with a confirmation step. Global toast notifications pop up confirming system interactions. If SVG diagrams were saved alongside the post, they are rendered inline in the expanded view with an "Open as PNG" button. Individual posts also have a dedicated full-page detail view at `/history/[id]`.
 
-**Settings (`/settings`):** Single-page profile editor accessible from the sidebar. Loads the current user's full profile via `GET /profile` on mount, shows a loading skeleton while fetching. All onboarding fields are editable: name/role/bio/location, expertise tags, writing fingerprint (phrases, words to avoid, rules up to 5), opinions (up to 5), writing samples (up to 5). An "Advanced" section (collapsed by default) exposes technical voice notes and platform-specific style notes. A sticky "Save changes" button shows an amber dot when fields are dirty; saves via `POST /profile` with atomic write on the backend; shows success/error toast. Browser `beforeunload` guard fires if navigating away with unsaved changes.
+**Settings (`/settings`):** Settings hub page accessible from the sidebar. Shows 6 cards in a 2-column grid: **Profile** (avatar, name, role, bio excerpt), **Voice & Fingerprint** (counts for phrases/avoid/rules/topics), **Writing Samples** (sample count + nudge), **Memory** (knowledge chunk count, links to Library), **Account** (Clerk email, sign-out), and **Integrations** (coming soon). Loads profile and stats in parallel with skeleton placeholders while fetching.
+
+**Edit Profile (`/settings/profile`):** Full profile editor linked from the Settings hub. Structured into six anchored card sections (Identity, Audience, Voice, Opinions, Samples, Advanced) with a sticky section nav for fast navigation. A live-updating profile summary header (avatar initials, name, role, location) sits above the form. All fields from onboarding are editable. A sticky "Save changes" button shows an amber dot when dirty; saves via `POST /profile`; shows success/error toast. Browser `beforeunload` guard fires if navigating away with unsaved changes.
 
 ---
 
@@ -231,7 +233,9 @@ Note: profile files are gitignored — your personal details never get committed
 │   │   ├── onboarding/
 │   │   │   └── page.tsx              # 5-step onboarding flow — new users only, no sidebar
 │   │   └── settings/
-│   │       └── page.tsx              # Profile editor (/settings) — single-page, sticky save, dirty tracking
+│   │       ├── page.tsx              # Settings hub (/settings) — 6 cards: Profile, Voice, Samples, Memory, Account, Integrations
+│   │       └── profile/
+│   │           └── page.tsx          # Profile editor (/settings/profile) — section nav, summary header, sticky save
 │   ├── components/
 │   │   ├── AppShell.tsx              # Layout wrapper — sidebar for app routes, passthrough for /welcome + /onboarding
 │   │   ├── Sidebar.tsx               # Left sidebar — logo, six nav items (+ Settings), user row
