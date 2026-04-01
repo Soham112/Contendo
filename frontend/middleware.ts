@@ -11,11 +11,6 @@ const isPublicRoute = createRouteMatcher([
 export default clerkMiddleware(async (auth, req) => {
   const { userId } = auth();
 
-  // Signed-in users visiting /welcome → send them straight to the app
-  if (userId && req.nextUrl.pathname === "/welcome") {
-    return NextResponse.redirect(new URL("/", req.url));
-  }
-
   // Unauthenticated visitors hitting / → show the landing page
   if (!userId && req.nextUrl.pathname === "/") {
     return NextResponse.redirect(new URL("/welcome", req.url));

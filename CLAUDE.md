@@ -49,7 +49,8 @@ per-user data isolation. Onboarding flow at `/onboarding`. Profile editor
 at `/settings`. Per-user profiles stored at `DATA_DIR/profiles/profile_{user_id}.json`
 on Railway's persistent volume (`/data`). Landing page (`/welcome`) is the
 default entry point — unauthenticated visitors hitting `/` are redirected
-there by middleware; signed-in users bypass it and go straight to `/`.
+there by middleware; signed-in users can also visit `/welcome` (sidebar
+logo links there) and see auth-aware CTAs ("Open workspace" → `/`).
 
 ---
 
