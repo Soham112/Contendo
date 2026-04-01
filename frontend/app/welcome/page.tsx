@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useUser } from "@clerk/nextjs";
 
 const STEPS = [
   {
@@ -33,6 +36,8 @@ const MOOD_GRADIENTS = [
 ];
 
 export default function WelcomePage() {
+  const { isSignedIn, isLoaded } = useUser();
+
   return (
     <div className="min-h-screen bg-background flex flex-col font-sans">
 
@@ -85,15 +90,26 @@ export default function WelcomePage() {
         </div>
 
         <div className="flex items-center gap-3">
-          <Link href="/sign-in" className="text-sm text-secondary hover:text-on-surface transition-colors px-4 py-2 rounded-lg hidden sm:block">
-            Log in
-          </Link>
-          <Link
-            href="/sign-up"
-            className="btn-primary text-white text-xs uppercase tracking-widest font-semibold rounded-lg px-5 py-2.5 hover:opacity-90 transition-opacity"
-          >
-            Get started
-          </Link>
+          {isLoaded && isSignedIn ? (
+            <Link
+              href="/"
+              className="btn-primary text-white text-xs uppercase tracking-widest font-semibold rounded-lg px-5 py-2.5 hover:opacity-90 transition-opacity"
+            >
+              Open workspace
+            </Link>
+          ) : (
+            <>
+              <Link href="/sign-in?redirect_url=/welcome" className="text-sm text-secondary hover:text-on-surface transition-colors px-4 py-2 rounded-lg hidden sm:block">
+                Log in
+              </Link>
+              <Link
+                href="/sign-up"
+                className="btn-primary text-white text-xs uppercase tracking-widest font-semibold rounded-lg px-5 py-2.5 hover:opacity-90 transition-opacity"
+              >
+                Get started
+              </Link>
+            </>
+          )}
         </div>
       </nav>
 
@@ -121,12 +137,21 @@ export default function WelcomePage() {
 
         {/* CTAs */}
         <div className="flex flex-col sm:flex-row items-center gap-4">
-          <Link
-            href="/sign-up"
-            className="btn-primary text-white text-sm uppercase tracking-widest font-semibold rounded-lg px-9 py-4 hover:opacity-90 transition-opacity"
-          >
-            Start writing for free
-          </Link>
+          {isLoaded && isSignedIn ? (
+            <Link
+              href="/"
+              className="btn-primary text-white text-sm uppercase tracking-widest font-semibold rounded-lg px-9 py-4 hover:opacity-90 transition-opacity"
+            >
+              Open workspace
+            </Link>
+          ) : (
+            <Link
+              href="/sign-up"
+              className="btn-primary text-white text-sm uppercase tracking-widest font-semibold rounded-lg px-9 py-4 hover:opacity-90 transition-opacity"
+            >
+              Start writing for free
+            </Link>
+          )}
           <a
             href="#how-it-works"
             className="flex items-center gap-2 px-9 py-4 text-sm font-medium text-secondary border border-outline-variant rounded-lg hover:text-on-surface hover:border-outline transition-colors"
@@ -424,15 +449,26 @@ export default function WelcomePage() {
           <p className="text-xl text-secondary font-light leading-relaxed mb-12 max-w-xl mx-auto">
             Contendo learns your knowledge base, your voice, and your style. Then it writes content that actually sounds like you wrote it.
           </p>
-          <Link
-            href="/sign-up"
-            className="btn-primary text-white text-sm uppercase tracking-widest font-semibold rounded-lg px-10 py-4 hover:opacity-90 transition-opacity inline-block"
-          >
-            Start writing for free
-          </Link>
-          <p className="mt-5 uppercase text-xs tracking-widest text-outline">
-            No credit card required
-          </p>
+          {isLoaded && isSignedIn ? (
+            <Link
+              href="/"
+              className="btn-primary text-white text-sm uppercase tracking-widest font-semibold rounded-lg px-10 py-4 hover:opacity-90 transition-opacity inline-block"
+            >
+              Open workspace
+            </Link>
+          ) : (
+            <>
+              <Link
+                href="/sign-up"
+                className="btn-primary text-white text-sm uppercase tracking-widest font-semibold rounded-lg px-10 py-4 hover:opacity-90 transition-opacity inline-block"
+              >
+                Start writing for free
+              </Link>
+              <p className="mt-5 uppercase text-xs tracking-widest text-outline">
+                No credit card required
+              </p>
+            </>
+          )}
         </div>
       </section>
 
