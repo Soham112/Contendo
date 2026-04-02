@@ -136,54 +136,38 @@ const SOURCE_ICONS: Record<SourceType, React.ReactNode> = {
   ),
 };
 
-const EMPTY_STATE_METHODS = [
+const TOUR_STEPS: { id: SourceType; label: string; description: string }[] = [
   {
     id: "article",
-    title: "Article or text",
-    description: "Paste anything you've read, written, or found useful",
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <path d="M4 2.5h6l2 2V13.5H4z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-        <path d="M10 2.5v2h2" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-        <path d="M6 7h4M6 9.5h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-      </svg>
-    ),
+    label: "Article",
+    description: "Paste anything you've been reading — blog posts, essays, research, your own notes. This is the fastest way to start.",
   },
   {
     id: "url",
-    title: "URL",
-    description: "Drop a link and we'll scrape and store it automatically",
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <path d="M6.5 9.5a3.5 3.5 0 0 0 4.95 0l1.2-1.2a3.5 3.5 0 0 0-4.95-4.95L6.8 4.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-        <path d="M9.5 6.5a3.5 3.5 0 0 0-4.95 0l-1.2 1.2a3.5 3.5 0 1 0 4.95 4.95l.9-.85" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-      </svg>
-    ),
+    label: "URL",
+    description: "Drop any link. We'll scrape the full article and store it automatically — no copy-paste needed.",
   },
   {
     id: "file",
-    title: "File",
-    description: "Upload a PDF, Word doc, or text file",
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <path d="M8 12V4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-        <path d="M5.5 6.5L8 4l2.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-        <path d="M3.5 12.5h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-      </svg>
-    ),
+    label: "File",
+    description: "Upload a PDF, Word doc, or plain text file. Good for whitepapers, reports, or saved long-reads.",
   },
   {
     id: "youtube",
-    title: "YouTube",
-    description: "Paste a transcript from any YouTube video",
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <rect x="2" y="3.5" width="12" height="9" rx="2" stroke="currentColor" strokeWidth="1.5"/>
-        <path d="M7 6.5L10 8 7 9.5V6.5z" fill="currentColor"/>
-      </svg>
-    ),
+    label: "YouTube",
+    description: "Open any YouTube video, click the transcript button, copy it, paste it here. Turns talks and interviews into memory.",
   },
-] as const;
+  {
+    id: "image",
+    label: "Image",
+    description: "Upload a screenshot, slide, or diagram. We'll extract the text and knowledge from it automatically.",
+  },
+  {
+    id: "note",
+    label: "Note",
+    description: "Write something directly — a half-formed thought, a takeaway, an opinion. Your own words are the strongest signal.",
+  },
+];
 
 export default function FeedMemory() {
   const api = useApi();
@@ -206,6 +190,56 @@ export default function FeedMemory() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const docFileInputRef = useRef<HTMLInputElement>(null);
   const { showToast } = useToast();
+
+  // ── Tooltip tour ─────────────────────────────────────────────────────────────
+  const [tourStep, setTourStep] = useState(-1);
+  const [tourActive, setTourActive] = useState(false);
+  const [tooltipLeft, setTooltipLeft] = useState(0);
+  const tabBarRef = useRef<HTMLDivElement>(null);
+  const tabButtonRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  // Check localStorage on mount; start tour after 800ms if never seen
+  useEffect(() => {
+    if (typeof window !== "undefined" && !localStorage.getItem("contendo_feed_tour_done")) {
+      const timer = setTimeout(() => {
+        setTourActive(true);
+        setTourStep(0);
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
+  // When tour step changes: switch active tab and measure tooltip position
+  useEffect(() => {
+    if (!tourActive || tourStep < 0) return;
+    const step = TOUR_STEPS[tourStep];
+    setActiveTab(step.id);
+    // Measure after layout
+    requestAnimationFrame(() => {
+      const tabIdx = TABS.findIndex((t) => t.id === step.id);
+      const btn = tabButtonRefs.current[tabIdx];
+      const bar = tabBarRef.current;
+      if (btn && bar) {
+        const barRect = bar.getBoundingClientRect();
+        const btnRect = btn.getBoundingClientRect();
+        setTooltipLeft(btnRect.left - barRect.left + btnRect.width / 2);
+      }
+    });
+  }, [tourStep, tourActive]);
+
+  const dismissTour = () => {
+    setTourActive(false);
+    setTourStep(-1);
+    if (typeof window !== "undefined") localStorage.setItem("contendo_feed_tour_done", "1");
+  };
+
+  const advanceTour = () => {
+    if (tourStep < TOUR_STEPS.length - 1) {
+      setTourStep(tourStep + 1);
+    } else {
+      dismissTour();
+    }
+  };
 
   const fetchStats = async () => {
     try {
@@ -241,6 +275,11 @@ export default function FeedMemory() {
     setIsDragging(false);
     setResult(null);
     setError("");
+    // If tour is active, sync to the clicked tab's step
+    if (tourActive) {
+      const stepIdx = TOUR_STEPS.findIndex((s) => s.id === tab);
+      if (stepIdx >= 0 && stepIdx !== tourStep) setTourStep(stepIdx);
+    }
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -406,7 +445,20 @@ export default function FeedMemory() {
     "CONTENT FRAGMENT";
 
   return (
-    <div className="flex gap-8 max-w-7xl">
+    <div className="flex gap-8 max-w-7xl" style={{ position: "relative" }}>
+      {/* Backdrop — dims content area while tour is active; pointer-events:none so nothing is blocked */}
+      {tourActive && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background: "rgba(0,0,0,0.03)",
+            zIndex: 40,
+            pointerEvents: "none",
+            borderRadius: "inherit",
+          }}
+        />
+      )}
       {/* ── Left: main form ───────────────────────────────────── */}
       <div className="flex-1 min-w-0 space-y-7">
 
@@ -418,72 +470,123 @@ export default function FeedMemory() {
           </p>
         </div>
 
-        {stats?.total_chunks === 0 && (
-          <div className="space-y-3">
-            <div>
-              <h2
-                className="font-headline"
+        {/* Tab selector */}
+        <div style={{ position: "relative" }}>
+          <div className="flex flex-wrap gap-2" ref={tabBarRef}>
+            {TABS.map((tab, idx) => (
+              <button
+                key={tab.id}
+                ref={(el) => { tabButtonRefs.current[idx] = el; }}
+                onClick={() => handleTabChange(tab.id)}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-[12.5px] font-medium tracking-wide transition-all duration-150 ${
+                  activeTab === tab.id
+                    ? "btn-primary text-white shadow-card"
+                    : "bg-surface-container text-secondary hover:bg-surface-container-high hover:text-on-surface"
+                }`}
+              >
+                <span className={activeTab === tab.id ? "text-white/80" : "text-outline"}>
+                  {SOURCE_ICONS[tab.id]}
+                </span>
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Tooltip tour card */}
+          {tourActive && tourStep >= 0 && (
+            <div
+              style={{
+                position: "absolute",
+                top: "calc(100% + 8px)",
+                left: tooltipLeft,
+                transform: "translateX(-50%)",
+                zIndex: 50,
+              }}
+            >
+              {/* Caret border layer */}
+              <div
                 style={{
-                  fontSize: 20,
-                  fontWeight: 400,
-                  color: "var(--color-text-primary)",
+                  position: "absolute",
+                  top: -8,
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  width: 0,
+                  height: 0,
+                  borderLeft: "8px solid transparent",
+                  borderRight: "8px solid transparent",
+                  borderBottom: "8px solid var(--color-border-secondary)",
+                }}
+              />
+              {/* Caret fill layer */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: -6,
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  width: 0,
+                  height: 0,
+                  borderLeft: "7px solid transparent",
+                  borderRight: "7px solid transparent",
+                  borderBottom: "7px solid var(--color-background-primary)",
+                }}
+              />
+              {/* Card */}
+              <div
+                style={{
+                  background: "var(--color-background-primary)",
+                  opacity: 1,
+                  border: "1px solid var(--color-border-secondary)",
+                  borderRadius: 12,
+                  padding: "14px 16px",
+                  minWidth: 260,
+                  maxWidth: 300,
+                  boxShadow: "0px 8px 24px rgba(47,51,51,0.10), 0px 2px 8px rgba(47,51,51,0.08)",
                 }}
               >
-                Start building your knowledge base
-              </h2>
-              <p
-                style={{
-                  marginTop: 6,
-                  fontSize: 13,
-                  color: "var(--color-text-secondary)",
-                }}
-              >
-                The more you feed in, the more your posts will sound like you.
-              </p>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {EMPTY_STATE_METHODS.map((method) => (
-                <div
-                  key={method.id}
-                  style={{
-                    background: "var(--color-background-secondary)",
-                    borderRadius: 12,
-                    padding: 16,
-                  }}
-                >
-                  <div className="text-on-surface" style={{ marginBottom: 10 }}>
-                    {method.icon}
-                  </div>
-                  <p style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)" }}>
-                    {method.title}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>
+                    {TOUR_STEPS[tourStep].label}
                   </p>
-                  <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 4 }}>
-                    {method.description}
+                  <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginLeft: 12, flexShrink: 0 }}>
+                    {tourStep + 1} of {TOUR_STEPS.length}
                   </p>
                 </div>
-              ))}
+                <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6, marginBottom: 12 }}>
+                  {TOUR_STEPS[tourStep].description}
+                </p>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 16 }}>
+                  <button
+                    onClick={dismissTour}
+                    style={{
+                      fontSize: 12,
+                      color: "var(--color-text-tertiary)",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: 0,
+                    }}
+                  >
+                    Skip tour
+                  </button>
+                  <button
+                    onClick={advanceTour}
+                    style={{
+                      fontSize: 12,
+                      color: "#58614f",
+                      fontWeight: 500,
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: 0,
+                    }}
+                  >
+                    {tourStep < TOUR_STEPS.length - 1 ? "Next →" : "Done"}
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        )}
-
-        {/* Tab selector */}
-        <div className="flex flex-wrap gap-2">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => handleTabChange(tab.id)}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-[12.5px] font-medium tracking-wide transition-all duration-150 ${
-                activeTab === tab.id
-                  ? "btn-primary text-white shadow-card"
-                  : "bg-surface-container text-secondary hover:bg-surface-container-high hover:text-on-surface"
-              }`}
-            >
-              <span className={activeTab === tab.id ? "text-white/80" : "text-outline"}>
-                {SOURCE_ICONS[tab.id]}
-              </span>
-              {tab.label}
-            </button>
-          ))}
+          )}
         </div>
 
         {/* Main input card */}

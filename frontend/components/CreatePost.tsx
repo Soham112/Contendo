@@ -33,6 +33,12 @@ const TONES: { id: Tone; label: string; description: string }[] = [
   { id: "storytelling", label: "Storytelling", description: "Scene-driven, lesson earned" },
 ];
 
+const TONE_DESCRIPTIONS: Record<Tone, string> = {
+  casual: "Conversational and direct. First-person, short sentences, reads like a message from someone who's lived it. Best for LinkedIn posts that feel human rather than polished.",
+  technical: "Precise and substantive. Uses domain language without over-explaining. Respects the reader's expertise. Best for audiences who want depth over accessibility.",
+  storytelling: "Narrative-first. Opens with a moment, builds tension, lands on a lesson. Best for posts where the experience itself is the argument.",
+};
+
 interface GenerateResult {
   post: string;
   score: number;
@@ -380,6 +386,7 @@ export default function CreatePost() {
   }, [lastSaved]);
 
   const [scoreLoading, setScoreLoading] = useState(false);
+  const [toneDescOpacity, setToneDescOpacity] = useState(0);
 
   const [refineInstruction, setRefineInstruction] = useState("");
   const [refineLoading, setRefineLoading] = useState(false);
@@ -390,7 +397,6 @@ export default function CreatePost() {
   const [currentPostId, setCurrentPostId] = useState<number | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [showInterstitial, setShowInterstitial] = useState(false);
-  const [hasSessionPost, setHasSessionPost] = useState(false);
   const [interstitialTopic, setInterstitialTopic] = useState("");
   const [interstitialScore, setInterstitialScore] = useState(0);
 
@@ -409,8 +415,6 @@ export default function CreatePost() {
   useEffect(() => {
     try {
       const savedPost = sessionStorage.getItem(SS_POST);
-      setHasSessionPost(!!savedPost);
-
       if (savedPost) {
         // A saved post exists — show the interstitial and defer all restoration
         setInterstitialTopic(sessionStorage.getItem(SS_TOPIC) || "");
@@ -477,6 +481,13 @@ export default function CreatePost() {
       // ignore
     }
   }, [analysisOpen]);
+
+  // Fade tone description in when tone changes
+  useEffect(() => {
+    setToneDescOpacity(0);
+    const t = setTimeout(() => setToneDescOpacity(1), 50);
+    return () => clearTimeout(t);
+  }, [tone]);
 
   // Pre-fill refinement instruction from latest feedback
   useEffect(() => {
@@ -561,7 +572,6 @@ export default function CreatePost() {
     setSuggestions([]);
     setSuggestionsVisible(false);
     setSelectedIdeaIndex(null);
-    setHasSessionPost(false);
     setShowInterstitial(false);
   };
 
@@ -1679,7 +1689,7 @@ export default function CreatePost() {
                       </div>
                     </div>
 
-                    {/* Tone — horizontal pills, no descriptions */}
+                    {/* Tone — horizontal pills with inline description */}
                     <div className="flex-1">
                       <label
                         className="label-caps text-secondary block mb-3"
@@ -1702,81 +1712,21 @@ export default function CreatePost() {
                           </button>
                         ))}
                       </div>
-                    </div>
-                  </div>
-
-                  {/* Additional context — hidden from initial view; state & logic preserved */}
-
-                  {!hasSessionPost && (
-                    <div
-                      style={{
-                        background: "var(--color-background-secondary)",
-                        borderRadius: 12,
-                        padding: "20px 24px",
-                      }}
-                    >
-                      <p
-                        className="label-caps"
-                        style={{
-                          fontSize: 11,
-                          color: "var(--color-text-tertiary)",
-                          letterSpacing: "0.08em",
-                        }}
-                      >
-                        EXAMPLE OUTPUT
-                      </p>
-                      <p
-                        className="whitespace-pre-wrap"
-                        style={{
-                          marginTop: 10,
-                          fontSize: 14,
-                          color: "var(--color-text-secondary)",
-                          opacity: 0.92,
-                          lineHeight: 1.7,
-                        }}
-                      >
-                        {`Everyone talks about writing more consistently.
-Nobody talks about what actually blocks it.
-
-It's not discipline. It's not time.
-It's that you've been reading and thinking for weeks -
-but none of it is connected to what you want to say.
-
-Contendo fixes the layer before writing.
-Feed it what you're learning. It finds the angles you already believe.`}
-                      </p>
                       <p
                         style={{
-                          marginTop: 12,
+                          marginTop: 8,
                           fontSize: 12,
                           color: "var(--color-text-tertiary)",
+                          lineHeight: 1.5,
+                          maxWidth: 420,
+                          opacity: toneDescOpacity,
+                          transition: "opacity 0.2s ease",
                         }}
                       >
-                        Your format and tone choices shape the structure and voice of every post.
+                        {TONE_DESCRIPTIONS[tone]}
                       </p>
-                      <div className="flex flex-wrap gap-2" style={{ marginTop: 12 }}>
-                        {[
-                          "LinkedIn post · Casual",
-                          "Medium article · Technical",
-                          "Thread · Storytelling",
-                        ].map((pill) => (
-                          <span
-                            key={pill}
-                            style={{
-                              background: "var(--color-background-primary)",
-                              border: "0.5px solid var(--color-border-tertiary)",
-                              borderRadius: 99,
-                              padding: "4px 12px",
-                              fontSize: 12,
-                              color: "var(--color-text-secondary)",
-                            }}
-                          >
-                            {pill}
-                          </span>
-                        ))}
-                      </div>
                     </div>
-                  )}
+                  </div>
 
                   {error && <p className="text-sm text-error">{error}</p>}
 
