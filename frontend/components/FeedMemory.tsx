@@ -191,40 +191,26 @@ export default function FeedMemory() {
   const docFileInputRef = useRef<HTMLInputElement>(null);
   const { showToast } = useToast();
 
-  // ── Tooltip tour ─────────────────────────────────────────────────────────────
+  // ── Modal tour ───────────────────────────────────────────────────────────────
   const [tourStep, setTourStep] = useState(-1);
   const [tourActive, setTourActive] = useState(false);
-  const [tooltipLeft, setTooltipLeft] = useState(0);
-  const tabBarRef = useRef<HTMLDivElement>(null);
-  const tabButtonRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
-  // Check localStorage on mount; start tour after 800ms if never seen
+  // Start tour 800ms after stats load — only when: no localStorage key AND total_chunks === 0
   useEffect(() => {
-    if (typeof window !== "undefined" && !localStorage.getItem("contendo_feed_tour_done")) {
-      const timer = setTimeout(() => {
-        setTourActive(true);
-        setTourStep(0);
-      }, 800);
-      return () => clearTimeout(timer);
-    }
-  }, []);
+    if (stats === null) return;
+    if (stats.total_chunks !== 0) return;
+    if (typeof window !== "undefined" && localStorage.getItem("contendo_feed_tour_done")) return;
+    const timer = setTimeout(() => {
+      setTourActive(true);
+      setTourStep(0);
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [stats]);
 
-  // When tour step changes: switch active tab and measure tooltip position
+  // When tour step changes, switch the active tab to match
   useEffect(() => {
     if (!tourActive || tourStep < 0) return;
-    const step = TOUR_STEPS[tourStep];
-    setActiveTab(step.id);
-    // Measure after layout
-    requestAnimationFrame(() => {
-      const tabIdx = TABS.findIndex((t) => t.id === step.id);
-      const btn = tabButtonRefs.current[tabIdx];
-      const bar = tabBarRef.current;
-      if (btn && bar) {
-        const barRect = bar.getBoundingClientRect();
-        const btnRect = btn.getBoundingClientRect();
-        setTooltipLeft(btnRect.left - barRect.left + btnRect.width / 2);
-      }
-    });
+    setActiveTab(TOUR_STEPS[tourStep].id);
   }, [tourStep, tourActive]);
 
   const dismissTour = () => {
@@ -445,20 +431,7 @@ export default function FeedMemory() {
     "CONTENT FRAGMENT";
 
   return (
-    <div className="flex gap-8 max-w-7xl" style={{ position: "relative" }}>
-      {/* Backdrop — dims content area while tour is active; pointer-events:none so nothing is blocked */}
-      {tourActive && (
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            background: "rgba(0,0,0,0.03)",
-            zIndex: 40,
-            pointerEvents: "none",
-            borderRadius: "inherit",
-          }}
-        />
-      )}
+    <div className="flex gap-8 max-w-7xl">
       {/* ── Left: main form ───────────────────────────────────── */}
       <div className="flex-1 min-w-0 space-y-7">
 
@@ -471,122 +444,23 @@ export default function FeedMemory() {
         </div>
 
         {/* Tab selector */}
-        <div style={{ position: "relative" }}>
-          <div className="flex flex-wrap gap-2" ref={tabBarRef}>
-            {TABS.map((tab, idx) => (
-              <button
-                key={tab.id}
-                ref={(el) => { tabButtonRefs.current[idx] = el; }}
-                onClick={() => handleTabChange(tab.id)}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-[12.5px] font-medium tracking-wide transition-all duration-150 ${
-                  activeTab === tab.id
-                    ? "btn-primary text-white shadow-card"
-                    : "bg-surface-container text-secondary hover:bg-surface-container-high hover:text-on-surface"
-                }`}
-              >
-                <span className={activeTab === tab.id ? "text-white/80" : "text-outline"}>
-                  {SOURCE_ICONS[tab.id]}
-                </span>
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Tooltip tour card */}
-          {tourActive && tourStep >= 0 && (
-            <div
-              style={{
-                position: "absolute",
-                top: "calc(100% + 8px)",
-                left: tooltipLeft,
-                transform: "translateX(-50%)",
-                zIndex: 50,
-              }}
+        <div className="flex flex-wrap gap-2">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => handleTabChange(tab.id)}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-[12.5px] font-medium tracking-wide transition-all duration-150 ${
+                activeTab === tab.id
+                  ? "btn-primary text-white shadow-card"
+                  : "bg-surface-container text-secondary hover:bg-surface-container-high hover:text-on-surface"
+              }`}
             >
-              {/* Caret border layer */}
-              <div
-                style={{
-                  position: "absolute",
-                  top: -8,
-                  left: "50%",
-                  transform: "translateX(-50%)",
-                  width: 0,
-                  height: 0,
-                  borderLeft: "8px solid transparent",
-                  borderRight: "8px solid transparent",
-                  borderBottom: "8px solid var(--color-border-secondary)",
-                }}
-              />
-              {/* Caret fill layer */}
-              <div
-                style={{
-                  position: "absolute",
-                  top: -6,
-                  left: "50%",
-                  transform: "translateX(-50%)",
-                  width: 0,
-                  height: 0,
-                  borderLeft: "7px solid transparent",
-                  borderRight: "7px solid transparent",
-                  borderBottom: "7px solid var(--color-background-primary)",
-                }}
-              />
-              {/* Card */}
-              <div
-                style={{
-                  background: "var(--color-background-primary)",
-                  opacity: 1,
-                  border: "1px solid var(--color-border-secondary)",
-                  borderRadius: 12,
-                  padding: "14px 16px",
-                  minWidth: 260,
-                  maxWidth: 300,
-                  boxShadow: "0px 8px 24px rgba(47,51,51,0.10), 0px 2px 8px rgba(47,51,51,0.08)",
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
-                  <p style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>
-                    {TOUR_STEPS[tourStep].label}
-                  </p>
-                  <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginLeft: 12, flexShrink: 0 }}>
-                    {tourStep + 1} of {TOUR_STEPS.length}
-                  </p>
-                </div>
-                <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6, marginBottom: 12 }}>
-                  {TOUR_STEPS[tourStep].description}
-                </p>
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: 16 }}>
-                  <button
-                    onClick={dismissTour}
-                    style={{
-                      fontSize: 12,
-                      color: "var(--color-text-tertiary)",
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: 0,
-                    }}
-                  >
-                    Skip tour
-                  </button>
-                  <button
-                    onClick={advanceTour}
-                    style={{
-                      fontSize: 12,
-                      color: "#58614f",
-                      fontWeight: 500,
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: 0,
-                    }}
-                  >
-                    {tourStep < TOUR_STEPS.length - 1 ? "Next →" : "Done"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+              <span className={activeTab === tab.id ? "text-white/80" : "text-outline"}>
+                {SOURCE_ICONS[tab.id]}
+              </span>
+              {tab.label}
+            </button>
+          ))}
         </div>
 
         {/* Main input card */}
@@ -1005,6 +879,70 @@ export default function FeedMemory() {
           </svg>
         </div>
       </div>
+
+      {/* ── Modal tour ─────────────────────────────────────────────────────── */}
+      {tourActive && tourStep >= 0 && (
+        <div
+          onClick={dismissTour}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.55)",
+            zIndex: 100,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#ffffff",
+              borderRadius: 16,
+              padding: "28px 32px",
+              width: 420,
+              maxWidth: "90vw",
+              borderTop: "4px solid #58614f",
+              boxShadow: "0px 24px 48px rgba(0,0,0,0.20)",
+            }}
+          >
+            {/* Top row: tab name + step indicator */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <p style={{ fontSize: 16, fontWeight: 600, color: "#2f3333" }}>
+                {TOUR_STEPS[tourStep].label}
+              </p>
+              <p style={{ fontSize: 12, color: "#9ca3a3" }}>
+                {tourStep + 1} of {TOUR_STEPS.length}
+              </p>
+            </div>
+            {/* Divider */}
+            <div style={{ height: 1, background: "#f0f0f0", margin: "12px 0" }} />
+            {/* Tab icon */}
+            <div style={{ color: "#58614f" }}>
+              {SOURCE_ICONS[TOUR_STEPS[tourStep].id]}
+            </div>
+            {/* Description */}
+            <p style={{ fontSize: 15, color: "#4a5050", lineHeight: 1.65, marginTop: 12 }}>
+              {TOUR_STEPS[tourStep].description}
+            </p>
+            {/* Bottom row: Skip + Next/Done */}
+            <div style={{ display: "flex", gap: 16, justifyContent: "flex-end", marginTop: 24 }}>
+              <button
+                onClick={dismissTour}
+                style={{ fontSize: 13, color: "#9ca3a3", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+              >
+                Skip tour
+              </button>
+              <button
+                onClick={advanceTour}
+                style={{ fontSize: 13, color: "#ffffff", background: "#58614f", padding: "8px 20px", borderRadius: 99, border: "none", cursor: "pointer" }}
+              >
+                {tourStep < TOUR_STEPS.length - 1 ? "Next →" : "Done"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
