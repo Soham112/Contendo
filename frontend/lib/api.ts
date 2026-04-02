@@ -231,6 +231,14 @@ export function useApi() {
     // ── Stats ─────────────────────────────────────────────────────────────
     getStats: () => apiFetch("/stats"),
 
+    // ── Feedback ──────────────────────────────────────────────────────────
+    submitFeedback: (message: string, page: string) =>
+      apiFetch("/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message, page }),
+      }),
+
     // ── Profile ───────────────────────────────────────────────────────────
     getProfile: () => apiFetch("/profile"),
 

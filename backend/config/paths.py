@@ -26,5 +26,6 @@ POSTS_DB_PATH = DATA_DIR / "posts.db"
 HIERARCHY_DB_PATH = DATA_DIR / "hierarchy.db"
 PROFILE_PATH = DATA_DIR / "profile.json"       # legacy single-user location
 PROFILES_DIR = DATA_DIR / "profiles"           # per-user profiles: profile_{user_id}.json
+FEEDBACK_PATH = DATA_DIR / "feedback.jsonl"   # append-only feedback log
 
 logger.info(f"DATA_DIR={DATA_DIR}, PROFILES_DIR={PROFILES_DIR}")
