@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useApi } from "@/lib/api";
 
@@ -62,6 +62,19 @@ const FORMAT_BADGE: Record<string, string> = {
   "medium article": "Medium",
   "thread": "Thread",
 };
+
+// ─── Markdown stripping ───────────────────────────────────────────────────────
+
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")   // [text](url) → text
+    .replace(/\*\*([^*]+)\*\*/g, "$1")          // **bold** → text
+    .replace(/__([^_]+)__/g, "$1")              // __bold__ → text
+    .replace(/\*([^*\n]+)\*/g, "$1")            // *italic* → text
+    .replace(/_([^_\n]+)_/g, "$1")              // _italic_ → text
+    .replace(/`([^`]+)`/g, "$1")               // `code` → text
+    .replace(/^#{1,6}\s+/gm, "");              // # headings → plain line
+}
 
 // ─── SVG / Visual helpers ─────────────────────────────────────────────────────
 
@@ -333,7 +346,8 @@ export default function CreatePost() {
   const [result, setResult] = useState<GenerateResult | null>(null);
   const [editedPost, setEditedPost] = useState("");
   const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [copiedLinkedIn, setCopiedLinkedIn] = useState(false);
+  const [copiedMedium, setCopiedMedium] = useState(false);
 
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [suggestionsVisible, setSuggestionsVisible] = useState(false);
@@ -715,11 +729,18 @@ export default function CreatePost() {
     await handleRefineWith(instruction);
   };
 
-  const handleCopy = async () => {
+  const handleCopyLinkedIn = async () => {
+    await navigator.clipboard.writeText(stripMarkdown(editedPost));
+    setCopiedLinkedIn(true);
+    showToast("Copied for LinkedIn", "success");
+    setTimeout(() => setCopiedLinkedIn(false), 1500);
+  };
+
+  const handleCopyMedium = async () => {
     await navigator.clipboard.writeText(editedPost);
-    setCopied(true);
-    showToast("Post copied to clipboard", "success");
-    setTimeout(() => setCopied(false), 2000);
+    setCopiedMedium(true);
+    showToast("Copied for Medium", "success");
+    setTimeout(() => setCopiedMedium(false), 1500);
   };
 
   const handleGenerateVisuals = async () => {
@@ -1103,13 +1124,50 @@ export default function CreatePost() {
           {visuals.length > 0 ? "View Visuals" : "Gen. Visuals"}
         </button>
       </div>
-      {/* Copy — full width primary */}
-      <button
-        onClick={handleCopy}
-        className="w-full btn-primary rounded-lg text-white text-[13px] font-medium py-2.5 hover:opacity-90 transition-opacity tracking-wide"
-      >
-        {copied ? "Copied!" : "Copy to Clipboard"}
-      </button>
+      {/* Copy buttons — LinkedIn (stripped) + Medium (raw markdown) */}
+      <div className="flex gap-2">
+        <button
+          onClick={handleCopyLinkedIn}
+          className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-surface-container-high text-secondary text-[13px] py-2.5 hover:border-outline-variant hover:text-on-surface transition-colors bg-surface-container-lowest"
+        >
+          {copiedLinkedIn ? "Copied!" : "Copy for LinkedIn"}
+        </button>
+        <button
+          onClick={handleCopyMedium}
+          className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-surface-container-high text-secondary text-[13px] py-2.5 hover:border-outline-variant hover:text-on-surface transition-colors bg-surface-container-lowest"
+        >
+          {copiedMedium ? "Copied!" : "Copy for Medium"}
+        </button>
+      </div>
+    </div>
+  );
+
+  // ─── Post metadata bar ────────────────────────────────────────────────────
+
+  const postStats = useMemo(() => {
+    const wordCount = editedPost.trim().split(/\s+/).filter(Boolean).length;
+    const charCount = editedPost.length;
+    const readingTime = Math.round((wordCount / 200) * 2) / 2;
+    const tweetCount = Math.ceil(charCount / 280);
+    return { wordCount, charCount, readingTime, tweetCount };
+  }, [editedPost]);
+
+  const postMetaBar = (
+    <div
+      className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 shrink-0"
+      style={{ fontSize: 12, marginTop: 8, color: "#aeb3b2" }}
+    >
+      <span style={{ color: format === "linkedin post" && postStats.wordCount > 300 ? "#81543c" : "#aeb3b2" }}>
+        {postStats.wordCount} words
+      </span>
+      <span>~{postStats.readingTime} min read</span>
+      {format === "thread" && <span>~{postStats.tweetCount} tweets</span>}
+      {format === "linkedin post" && postStats.wordCount > 300 && postStats.wordCount <= 500 && (
+        <span style={{ color: "#81543c" }}>LinkedIn posts perform best under 300 words</span>
+      )}
+      {format === "linkedin post" && postStats.wordCount > 500 && (
+        <span style={{ color: "#81543c" }}>Consider cutting — engagement drops significantly past 500 words</span>
+      )}
     </div>
   );
 
@@ -1263,6 +1321,7 @@ export default function CreatePost() {
               </div>
             </div>
 
+            {postMetaBar}
             {postActionButtons}
 
             <p className="text-xs text-outline-variant shrink-0 mt-2">
@@ -1377,6 +1436,7 @@ export default function CreatePost() {
               </div>
             </div>
 
+            {postMetaBar}
             {postActionButtons}
 
             <p
