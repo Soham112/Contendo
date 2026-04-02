@@ -13,7 +13,7 @@ logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper())
 from memory.feedback_store import init_db
 from memory.hierarchy_store import init_db as init_hierarchy_db
 from memory.retrieval_stats_store import init_retrieval_stats_db
-from routers import admin, debug, generate, history, ideas, ingest, library, profile, stats
+from routers import admin, debug, feedback, generate, history, ideas, ingest, library, profile, stats
 
 
 @asynccontextmanager
@@ -51,6 +51,7 @@ app.include_router(library.router)
 app.include_router(ideas.router)
 app.include_router(stats.router)
 app.include_router(profile.router)
+app.include_router(feedback.router)
 app.include_router(debug.router)   # TEMPORARY — remove after Railway persistence confirmed
 app.include_router(admin.router)   # TEMPORARY — remove after profile migration complete
 

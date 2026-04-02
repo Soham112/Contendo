@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
+import FeedbackButton from "@/components/ui/FeedbackButton";
 import { useProfileCheck } from "@/hooks/useProfileCheck";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -26,6 +27,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <main className="flex-1 min-h-screen overflow-y-auto">
         <div className="px-10 py-10">{children}</div>
       </main>
+      <FeedbackButton />
     </div>
   );
 }
