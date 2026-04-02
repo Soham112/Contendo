@@ -445,7 +445,20 @@ export default function FeedMemory() {
     "CONTENT FRAGMENT";
 
   return (
-    <div className="flex gap-8 max-w-7xl">
+    <div className="flex gap-8 max-w-7xl" style={{ position: "relative" }}>
+      {/* Backdrop — dims content area while tour is active; pointer-events:none so nothing is blocked */}
+      {tourActive && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background: "rgba(0,0,0,0.03)",
+            zIndex: 40,
+            pointerEvents: "none",
+            borderRadius: "inherit",
+          }}
+        />
+      )}
       {/* ── Left: main form ───────────────────────────────────── */}
       <div className="flex-1 min-w-0 space-y-7">
 
@@ -484,10 +497,10 @@ export default function FeedMemory() {
             <div
               style={{
                 position: "absolute",
-                top: "calc(100% + 12px)",
+                top: "calc(100% + 8px)",
                 left: tooltipLeft,
                 transform: "translateX(-50%)",
-                zIndex: 20,
+                zIndex: 50,
               }}
             >
               {/* Caret border layer */}
@@ -522,22 +535,24 @@ export default function FeedMemory() {
               <div
                 style={{
                   background: "var(--color-background-primary)",
-                  border: "0.5px solid var(--color-border-secondary)",
+                  opacity: 1,
+                  border: "1px solid var(--color-border-secondary)",
                   borderRadius: 12,
                   padding: "14px 16px",
-                  maxWidth: 280,
-                  boxShadow: "0px 4px 20px rgba(47,51,51,0.04), 0px 12px 40px rgba(47,51,51,0.06)",
+                  minWidth: 260,
+                  maxWidth: 300,
+                  boxShadow: "0px 8px 24px rgba(47,51,51,0.10), 0px 2px 8px rgba(47,51,51,0.08)",
                 }}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
-                  <p style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)" }}>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>
                     {TOUR_STEPS[tourStep].label}
                   </p>
                   <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginLeft: 12, flexShrink: 0 }}>
                     {tourStep + 1} of {TOUR_STEPS.length}
                   </p>
                 </div>
-                <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.55, marginBottom: 12 }}>
+                <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6, marginBottom: 12 }}>
                   {TOUR_STEPS[tourStep].description}
                 </p>
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 16 }}>
@@ -559,11 +574,11 @@ export default function FeedMemory() {
                     style={{
                       fontSize: 12,
                       color: "#58614f",
+                      fontWeight: 500,
                       background: "none",
                       border: "none",
                       cursor: "pointer",
                       padding: 0,
-                      fontWeight: 500,
                     }}
                   >
                     {tourStep < TOUR_STEPS.length - 1 ? "Next →" : "Done"}
