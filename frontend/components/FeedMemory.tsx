@@ -136,6 +136,55 @@ const SOURCE_ICONS: Record<SourceType, React.ReactNode> = {
   ),
 };
 
+const EMPTY_STATE_METHODS = [
+  {
+    id: "article",
+    title: "Article or text",
+    description: "Paste anything you've read, written, or found useful",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M4 2.5h6l2 2V13.5H4z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+        <path d="M10 2.5v2h2" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+        <path d="M6 7h4M6 9.5h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+      </svg>
+    ),
+  },
+  {
+    id: "url",
+    title: "URL",
+    description: "Drop a link and we'll scrape and store it automatically",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M6.5 9.5a3.5 3.5 0 0 0 4.95 0l1.2-1.2a3.5 3.5 0 0 0-4.95-4.95L6.8 4.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+        <path d="M9.5 6.5a3.5 3.5 0 0 0-4.95 0l-1.2 1.2a3.5 3.5 0 1 0 4.95 4.95l.9-.85" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      </svg>
+    ),
+  },
+  {
+    id: "file",
+    title: "File",
+    description: "Upload a PDF, Word doc, or text file",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M8 12V4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+        <path d="M5.5 6.5L8 4l2.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        <path d="M3.5 12.5h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      </svg>
+    ),
+  },
+  {
+    id: "youtube",
+    title: "YouTube",
+    description: "Paste a transcript from any YouTube video",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect x="2" y="3.5" width="12" height="9" rx="2" stroke="currentColor" strokeWidth="1.5"/>
+        <path d="M7 6.5L10 8 7 9.5V6.5z" fill="currentColor"/>
+      </svg>
+    ),
+  },
+] as const;
+
 export default function FeedMemory() {
   const api = useApi();
   const [activeTab, setActiveTab] = useState<SourceType>("article");
@@ -368,6 +417,54 @@ export default function FeedMemory() {
             Transform raw fragments into editorial wisdom. Select a medium to store your inspiration.
           </p>
         </div>
+
+        {stats?.total_chunks === 0 && (
+          <div className="space-y-3">
+            <div>
+              <h2
+                className="font-headline"
+                style={{
+                  fontSize: 20,
+                  fontWeight: 400,
+                  color: "var(--color-text-primary)",
+                }}
+              >
+                Start building your knowledge base
+              </h2>
+              <p
+                style={{
+                  marginTop: 6,
+                  fontSize: 13,
+                  color: "var(--color-text-secondary)",
+                }}
+              >
+                The more you feed in, the more your posts will sound like you.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {EMPTY_STATE_METHODS.map((method) => (
+                <div
+                  key={method.id}
+                  style={{
+                    background: "var(--color-background-secondary)",
+                    borderRadius: 12,
+                    padding: 16,
+                  }}
+                >
+                  <div className="text-on-surface" style={{ marginBottom: 10 }}>
+                    {method.icon}
+                  </div>
+                  <p style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)" }}>
+                    {method.title}
+                  </p>
+                  <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 4 }}>
+                    {method.description}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Tab selector */}
         <div className="flex flex-wrap gap-2">
