@@ -1,6 +1,7 @@
 from pipeline.state import PipelineState
 from memory.vector_store import get_adjacent_chunks, query_similar
 from memory.hierarchy_store import get_source_node, get_topic_node
+from memory.retrieval_stats_store import increment_retrieval
 
 
 def _build_retrieval_bundle(chunks: list[dict], user_id: str) -> dict:
@@ -167,6 +168,17 @@ def retrieval_node(state: PipelineState) -> PipelineState:
         bundle = _build_retrieval_bundle(chunks, user_id)
         state["retrieval_bundle"] = bundle
         state["retrieved_context"] = _format_retrieved_context(bundle)
+
+        # Track retrieval stats — never let this break retrieval
+        try:
+            seen_titles: set[str] = set()
+            for chunk in bundle["chunks"]:
+                title = chunk.get("source_title", "").strip()
+                if title and title not in seen_titles:
+                    seen_titles.add(title)
+                    increment_retrieval(user_id, title)
+        except Exception as stat_err:
+            print(f"[retrieval_node] stat tracking failed (non-fatal): {stat_err}")
     except Exception as e:
         print(f"[retrieval_node] hierarchical retrieval failed ({e}), falling back to flat")
         try:

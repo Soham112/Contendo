@@ -83,6 +83,7 @@ export interface LibrarySource {
   ingested_at: string;
   chunk_count: number;
   tags: string[];
+  retrieval_count: number;
 }
 
 export interface ProfileData {

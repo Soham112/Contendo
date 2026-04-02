@@ -15,7 +15,7 @@
 | `DESIGN.md` | Editorial Atelier design system — palette tokens, typography (Noto Serif + Inter), No-Line Rule, surface hierarchy, component specs; mandatory reading before any UI change |
 | `.gitignore` | Excludes venv, node_modules, .env, chroma_db data |
 | **Backend** | |
-| `backend/main.py` | FastAPI app entry point — CORS config, lifespan hook (calls `init_db` + `init_hierarchy_db`), router registration, and `logging.basicConfig` (level from `LOG_LEVEL` env var, defaults to INFO) |
+| `backend/main.py` | FastAPI app entry point — CORS config, lifespan hook (calls `init_db` + `init_hierarchy_db` + `init_retrieval_stats_db`), router registration, and `logging.basicConfig` (level from `LOG_LEVEL` env var, defaults to INFO) |
 | `backend/routers/__init__.py` | Empty — marks routers/ as a Python package |
 | `backend/routers/ingest.py` | `/ingest`, `/ingest-file`, `/scrape-and-ingest`, `/obsidian/preview`, `/obsidian/ingest` |
 | `backend/routers/generate.py` | `/generate`, `/refine`, `/score`, `/generate-visuals` |
@@ -38,7 +38,7 @@
 | `backend/agents/visual_agent.py` | Parses [DIAGRAM:] and [IMAGE:] placeholders from post; calls Claude to generate SVG for diagrams; returns reminder text for images |
 | `backend/agents/ingestion_agent.py` | Chunks content, extracts tags via Claude Sonnet, upserts to ChromaDB; after successful upsert: generates a 2-3 sentence source summary via Claude Haiku and writes a source_node + topic_node to hierarchy_store (wrapped in try/except — never blocks ingestion); SHA-256 dedup via `query_by_hash()` before any Claude call |
 | `backend/agents/vision_agent.py` | Sends base64 images to Claude vision, returns extracted text |
-| `backend/agents/retrieval_agent.py` | Semantic search node in the LangGraph pipeline; builds a `retrieval_bundle` (chunks + source_contexts + topic_contexts) from hierarchy_store; sets `retrieved_context` (pre-formatted enriched text block) and always sets `retrieved_chunks` for backward compat; falls back to flat retrieval if hierarchy_store is empty |
+| `backend/agents/retrieval_agent.py` | Semantic search node in the LangGraph pipeline; builds a `retrieval_bundle` (chunks + source_contexts + topic_contexts) from hierarchy_store; sets `retrieved_context` (pre-formatted enriched text block) and always sets `retrieved_chunks` for backward compat; falls back to flat retrieval if hierarchy_store is empty; calls `increment_retrieval()` for each unique source title in a try/except block |
 | `backend/agents/draft_agent.py` | Calls Claude Haiku via `infer_archetype()` to classify the topic into one of 7 post archetypes, then generates the initial draft via Claude Sonnet; uses `_format_retrieval_context()` which prefers the enriched `retrieved_context` from state and falls back to flat `retrieved_chunks` |
 | `backend/agents/critic_agent.py` | Diagnoses the initial draft across hook, substance, structure, and voice; produces a structured JSON brief; runs between `draft_node` and `humanizer_node`; uses Claude Haiku; skipped for draft quality mode |
 | `backend/agents/humanizer_agent.py` | Rewrites draft to remove AI patterns, inject human voice; reads `critic_brief` from state and fixes flagged issues before humanizing if any area was rated "needs_work" |
@@ -48,6 +48,7 @@
 | `backend/memory/vector_store.py` | ChromaDB init, upsert, semantic query, stats, delete_source, query_by_hash; `query_similar()` returns `source_id` and `chunk_index` per result; `query_similar_batch()` embeds all queries in a single batched forward pass then queries ChromaDB for each (significantly faster than N sequential `query_similar()` calls); `upsert_chunks()` stores `node_type:"chunk"`; `get_chunks_for_source()` and `get_adjacent_chunks()` for hierarchical sibling retrieval; collections namespaced as `contendo_{user_id}` |
 | `backend/memory/profile_store.py` | Per-user profile read/write — `load_profile(user_id)`, `save_profile(profile, user_id)`, `profile_exists(user_id)`; legacy fallback to `data/profile.json` when `user_id="default"`; `DEFAULT_PROFILE` includes bio, location, target_audience, opinions, writing_samples; `profile_to_context_string()` formats all fields for prompt injection; `save_profile()` uses atomic write (`os.replace` from `.tmp`) to prevent corrupt half-writes; all three functions emit INFO-level logs of the exact file path for Railway debugging |
 | `backend/memory/hierarchy_store.py` | SQLite store (path from `config.paths.HIERARCHY_DB_PATH`) for source_nodes and topic_nodes — `upsert_source_node`, `get_source_node`, `source_node_exists`, `upsert_topic_node`, `get_topic_node`, `find_matching_topic` (tag-overlap heuristic), `add_source_to_topic`; initialized in FastAPI lifespan |
+| `backend/memory/retrieval_stats_store.py` | SQLite store for source retrieval counts — `init_retrieval_stats_db`, `increment_retrieval`, `get_retrieval_counts`; uses same `HIERARCHY_DB_PATH` as hierarchy store |
 | `backend/memory/feedback_store.py` | SQLite posts and post_versions tables — all functions accept `user_id` param for per-user isolation; `init_db()` runs idempotent `ALTER TABLE` migration to add `user_id` column; `_post_owned_by()` helper validates post ownership before version operations |
 | `backend/tools/scraper_tool.py` | URL scraper using Jina Reader — `is_valid_url()`, `clean_scraped_text()`, `scrape_url()` |
 | `backend/tools/obsidian_tool.py` | Obsidian vault reader — `read_vault()` yields cleaned note dicts, `get_vault_stats()` for preview, `clean_obsidian_markdown()` strips wikilinks/frontmatter/Dataview |
@@ -65,7 +66,7 @@
 | **Frontend** | |
 | `frontend/app/layout.tsx` | Root layout — wraps body in `ClerkProvider`; mounts AppShell which renders Sidebar for app routes; `/welcome`, `/onboarding`, `/sign-in`, `/sign-up` bypass sidebar |
 | `frontend/app/page.tsx` | Screen 1: Feed Memory (default route `/`) |
-| `frontend/app/library/page.tsx` | Screen 2: Library (`/library`) — source cards, stats bar, text search, filter/sort; card placeholder areas use `getTitleGradient()` (deterministic charcode-sum gradient from `TITLE_GRADIENTS`) + `getSourceIcon()` (48px type-specific SVG illustrations: book/article, pencil/note, play/youtube, photo/image, layers/default) |
+| `frontend/app/library/page.tsx` | Screen 2: Library (`/library`) — source cards showing chunk count and dynamic retrieval count UX (sage dot marker for 5+ uses), stats bar, text search, filter/sort ("Date Added", "Oldest First", "Most Used"); card placeholder areas use `getTitleGradient()` (deterministic charcode-sum gradient from `TITLE_GRADIENTS`) + `getSourceIcon()` (48px type-specific SVG illustrations) |
 | `frontend/app/create/page.tsx` | Screen 3: Create Post (`/create`) |
 | `frontend/app/ideas/page.tsx` | Screen 4: Get Ideas (`/ideas`) — standalone ideas screen with topic filter, count picker, save-for-later; ideas persisted in localStorage |
 | `frontend/app/history/page.tsx` | Screen 5: Post History (`/history`) — searchable list, expandable post cards, version pills, restore, delete, diagram rendering |
@@ -525,7 +526,8 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
       "source_type": "article",
       "ingested_at": "2026-03-18T10:22:01+00:00",
       "chunk_count": 5,
-      "tags": ["rag", "machine learning", "production systems"]
+      "tags": ["rag", "machine learning", "production systems"],
+      "retrieval_count": 12
     }
   ],
   "total_chunks": 47,
@@ -670,6 +672,16 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
 | `version_type` | TEXT | `"generated"` (initial) or `"refined"` (after `/refine`) |
 | `created_at` | TIMESTAMP | Auto-set on insert |
 | `svg_diagrams` | TEXT | JSON array; updated in-place by `update_latest_version_svg()` when diagrams are added without a new version |
+
+**Table:** `source_retrieval_stats`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | INTEGER PK | Auto-increment |
+| `user_id` | TEXT | Clerk user ID |
+| `source_title` | TEXT | Unique per user_id |
+| `retrieval_count` | INTEGER | Times retrieved in generation |
+| `last_retrieved_at` | TIMESTAMP | Last updated time |
 
 ---
 

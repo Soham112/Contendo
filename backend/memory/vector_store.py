@@ -147,6 +147,7 @@ def query_similar(query: str, top_k: int = 8, user_id: str = "default") -> list[
                     "source_type": meta.get("source_type", "unknown"),
                     "tags": [t.strip() for t in meta.get("tags", "").split(",") if t.strip()],
                     "source_id": meta.get("source_id", ""),
+                    "source_title": meta.get("source_title", ""),
                     "chunk_index": int(meta.get("chunk_index", 0)),
                     "similarity": round(similarity, 4),
                 }
