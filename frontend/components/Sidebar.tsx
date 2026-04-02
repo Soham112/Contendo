@@ -1,8 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useUser, useClerk } from "@clerk/nextjs";
+import FeedbackModal from "@/components/ui/FeedbackButton";
 
 const NAV_ITEMS = [
   {
@@ -70,6 +72,7 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { user } = useUser();
   const { signOut } = useClerk();
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   return (
     <aside className="w-[224px] shrink-0 h-screen sticky top-0 flex flex-col bg-surface-container-low">
@@ -128,6 +131,21 @@ export default function Sidebar() {
         </Link>
       </div>
 
+      {/* Send Feedback */}
+      <div className="px-3 pb-1">
+        <button
+          onClick={() => setFeedbackOpen(true)}
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13.5px] transition-all duration-150 w-full text-secondary hover:text-on-surface hover:bg-surface-container font-medium"
+        >
+          <span className="shrink-0 text-outline">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M13 2H3a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h3l2 2 2-2h3a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+            </svg>
+          </span>
+          Send Feedback
+        </button>
+      </div>
+
       {/* User row + sign out */}
       <div className="px-3 pb-5 pt-1">
         {user && (
@@ -168,5 +186,7 @@ export default function Sidebar() {
         )}
       </div>
     </aside>
+
+    <FeedbackModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
   );
 }
