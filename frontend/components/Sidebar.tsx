@@ -75,6 +75,7 @@ export default function Sidebar() {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   return (
+    <>
     <aside className="w-[224px] shrink-0 h-screen sticky top-0 flex flex-col bg-surface-container-low">
       {/* Logo */}
       <div className="px-6 pt-7 pb-6">
@@ -188,5 +189,6 @@ export default function Sidebar() {
     </aside>
 
     <FeedbackModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
+    </>
   );
 }
