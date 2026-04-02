@@ -1153,22 +1153,10 @@ export default function CreatePost() {
   }, [editedPost]);
 
   const postMetaBar = (
-    <div
-      className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 shrink-0"
-      style={{ fontSize: 12, marginTop: 8, color: "#aeb3b2" }}
-    >
-      <span style={{ color: format === "linkedin post" && postStats.wordCount > 300 ? "#81543c" : "#aeb3b2" }}>
-        {postStats.wordCount} words
-      </span>
-      <span>~{postStats.readingTime} min read</span>
-      {format === "thread" && <span>~{postStats.tweetCount} tweets</span>}
-      {format === "linkedin post" && postStats.wordCount > 300 && postStats.wordCount <= 500 && (
-        <span style={{ color: "#81543c" }}>LinkedIn posts perform best under 300 words</span>
-      )}
-      {format === "linkedin post" && postStats.wordCount > 500 && (
-        <span style={{ color: "#81543c" }}>Consider cutting — engagement drops significantly past 500 words</span>
-      )}
-    </div>
+    <p className="shrink-0 text-outline-variant" style={{ fontSize: 12, marginTop: 8 }}>
+      {postStats.wordCount} words · ~{postStats.readingTime} min read
+      {format === "thread" && <> · ~{postStats.tweetCount} tweets</>}
+    </p>
   );
 
   // ─── Render ───────────────────────────────────────────────────────────────
