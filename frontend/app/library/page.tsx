@@ -11,6 +11,7 @@ interface Source {
   ingested_at: string;
   chunk_count: number;
   tags: string[];
+  retrieval_count: number;
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -89,7 +90,7 @@ function getSourceIcon(type: string): React.ReactNode {
 }
 
 type FilterType = "all" | "article" | "note" | "image" | "youtube";
-type SortOrder = "newest" | "oldest";
+type SortOrder = "newest" | "oldest" | "most-used";
 
 function formatDate(iso: string): string {
   if (!iso) return "Unknown date";
@@ -208,6 +209,20 @@ function SourceCard({
           </span>
         </div>
 
+        {/* Retrieval count */}
+        {source.retrieval_count === 0 ? (
+          <span className="text-[11px]" style={{ color: "var(--color-outline-variant)" }}>Never used in a post</span>
+        ) : source.retrieval_count >= 5 ? (
+          <span className="flex items-center gap-1 text-[11px]" style={{ color: "#58614f" }}>
+            <span style={{ fontSize: "8px", lineHeight: 1 }}>●</span>
+            Used {source.retrieval_count} times
+          </span>
+        ) : (
+          <span className="text-[11px] text-outline">
+            Used {source.retrieval_count} time{source.retrieval_count === 1 ? "" : "s"}
+          </span>
+        )}
+
         {/* Title */}
         <p className="font-headline text-[14px] text-on-surface leading-snug line-clamp-2 font-semibold">
           {source.source_title || "Untitled"}
@@ -284,6 +299,9 @@ export default function LibraryPage() {
   const [sort, setSort] = useState<SortOrder>("newest");
   const [search, setSearch] = useState("");
 
+  const cycleSortOrder = () => setSort(s => s === "newest" ? "oldest" : s === "oldest" ? "most-used" : "newest");
+  const sortLabel = sort === "newest" ? "Date Added" : sort === "oldest" ? "Oldest First" : "Most Used";
+
   // Pure UI state
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [visibleCount, setVisibleCount] = useState(6);
@@ -320,6 +338,7 @@ export default function LibraryPage() {
       );
     })
     .sort((a, b) => {
+      if (sort === "most-used") return (b.retrieval_count ?? 0) - (a.retrieval_count ?? 0);
       const aT = a.ingested_at || "";
       const bT = b.ingested_at || "";
       return sort === "newest" ? bT.localeCompare(aT) : aT.localeCompare(bT);
@@ -446,13 +465,13 @@ export default function LibraryPage() {
 
                 {/* Sort */}
                 <button
-                  onClick={() => setSort(s => s === "newest" ? "oldest" : "newest")}
+                  onClick={cycleSortOrder}
                   className="flex items-center gap-1.5 text-[12px] text-secondary border border-surface-container-high rounded-lg px-3 py-1.5 hover:border-outline-variant hover:text-on-surface transition-colors bg-surface-container-lowest"
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>
                   </svg>
-                  {sort === "newest" ? "Date Added" : "Oldest First"}
+                  {sortLabel}
                 </button>
 
                 {/* Grid / List toggle */}

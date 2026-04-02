@@ -3,6 +3,7 @@ from pydantic import BaseModel
 
 from auth.clerk import get_user_id_dep
 from memory.vector_store import delete_source, get_all_sources, get_total_chunks
+from memory.retrieval_stats_store import get_retrieval_counts
 
 router = APIRouter()
 
@@ -14,6 +15,9 @@ class DeleteSourceRequest(BaseModel):
 @router.get("/library")
 async def library(user_id: str = Depends(get_user_id_dep)) -> dict:
     sources = get_all_sources(user_id=user_id)
+    retrieval_counts = get_retrieval_counts(user_id)
+    for source in sources:
+        source["retrieval_count"] = retrieval_counts.get(source["source_title"], 0)
     return {
         "sources": sources,
         "total_chunks": get_total_chunks(user_id=user_id),
