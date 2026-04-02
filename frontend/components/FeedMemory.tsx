@@ -198,17 +198,15 @@ export default function FeedMemory() {
   const tabBarRef = useRef<HTMLDivElement>(null);
   const tabButtonRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
-  // Start tour 800ms after stats load — only when: no localStorage key AND total_chunks === 0
+  // Start tour 800ms after mount — only when localStorage key is absent
   useEffect(() => {
-    if (stats === null) return;
-    if (stats.total_chunks !== 0) return;
     if (typeof window !== "undefined" && localStorage.getItem("contendo_feed_tour_done")) return;
     const timer = setTimeout(() => {
       setTourActive(true);
       setTourStep(0);
     }, 800);
     return () => clearTimeout(timer);
-  }, [stats]);
+  }, []);
 
   // When tour step changes: switch active tab and measure fixed position for the tooltip
   useEffect(() => {
@@ -251,6 +249,12 @@ export default function FeedMemory() {
   };
 
   useEffect(() => {
+    // [Tour debug] — remove after confirming tour fires correctly
+    console.log('[Tour debug]', {
+      tourDone: localStorage.getItem('contendo_feed_tour_done'),
+      totalChunks: stats?.total_chunks ?? null,
+      statsLoaded: stats !== null,
+    });
     fetchStats();
   }, []);
 
