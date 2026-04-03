@@ -97,10 +97,9 @@ logo links there) and see auth-aware CTAs ("Open workspace" → `/`).
 ## What Is Not Built Yet
 
 These are explicitly out of scope until planned:
-- LinkedIn / resume / GitHub onboarding flow
-- Archetype override UI in Create Post
-- Obsidian vault ingestion in production (filesystem access only works on localhost;
-  guarded by ENVIRONMENT=production; future fix is zip upload or desktop wrapper)
+ LinkedIn / resume / GitHub onboarding flow
+ Archetype override UI in Create Post
+ 
 
 Do not build these unless explicitly asked.
 

@@ -17,7 +17,7 @@
 | **Backend** | |
 | `backend/main.py` | FastAPI app entry point — CORS config, lifespan hook (calls `init_db` + `init_hierarchy_db` + `init_retrieval_stats_db`), router registration, and `logging.basicConfig` (level from `LOG_LEVEL` env var, defaults to INFO) |
 | `backend/routers/__init__.py` | Empty — marks routers/ as a Python package |
-| `backend/routers/ingest.py` | `/ingest`, `/ingest-file`, `/scrape-and-ingest`, `/obsidian/preview`, `/obsidian/ingest` |
+| `backend/routers/ingest.py` | `/ingest`, `/ingest-file`, `/scrape-and-ingest`, `/obsidian/preview`, `/obsidian/ingest` (both with `ENVIRONMENT=production` guard), `/obsidian/preview-zip`, `/obsidian/ingest-zip` (no environment guard — works in production) |
 | `backend/routers/generate.py` | `/generate`, `/refine`, `/score`, `/generate-visuals` |
 | `backend/routers/history.py` | `GET /history`, `POST /log-post`, `PATCH /history/{id}`, `DELETE /history/{id}`, `POST /history/{id}/restore/{vid}` |
 | `backend/routers/library.py` | `GET /library`, `GET /library/clusters`, `DELETE /library/source` |
@@ -52,7 +52,7 @@
 | `backend/memory/retrieval_stats_store.py` | SQLite store for source retrieval counts — `init_retrieval_stats_db`, `increment_retrieval`, `get_retrieval_counts`; uses same `HIERARCHY_DB_PATH` as hierarchy store |
 | `backend/memory/feedback_store.py` | SQLite posts and post_versions tables — all functions accept `user_id` param for per-user isolation; `init_db()` runs idempotent `ALTER TABLE` migration to add `user_id` column; `_post_owned_by()` helper validates post ownership before version operations |
 | `backend/tools/scraper_tool.py` | URL scraper using Jina Reader — `is_valid_url()`, `clean_scraped_text()`, `scrape_url()` |
-| `backend/tools/obsidian_tool.py` | Obsidian vault reader — `read_vault()` yields cleaned note dicts, `get_vault_stats()` for preview, `clean_obsidian_markdown()` strips wikilinks/frontmatter/Dataview |
+| `backend/tools/obsidian_tool.py` | Obsidian vault reader — `read_vault()` yields cleaned note dicts from a vault directory; `get_vault_stats()` accepts a path and returns stats (total_files, total_words, estimated_chunks, skipped_files, vault_name); `get_vault_stats_from_dir()` is the refactored core that both local and zip endpoints use; `extract_vault_from_zip(zip_bytes)` extracts a zip file to a temp directory, validates for path traversal attacks (rejects paths starting with `/` or containing `..`), and verifies .md files exist; `clean_obsidian_markdown()` strips wikilinks/frontmatter/Dataview/embeds |
 | `backend/tools/__init__.py` | Empty — tools directory retained for future use |
 | `backend/utils/chunker.py` | 500-word chunks with 50-word overlap |
 | `backend/utils/formatters.py` | Format + tone instruction strings per output type; `get_archetype_instructions()` returns structural prompt block for each of 7 post archetypes |
@@ -80,7 +80,7 @@
 | `frontend/components/AppShell.tsx` | Layout wrapper — renders Sidebar + FeedbackButton for all app routes; returns children unwrapped for `/welcome`, `/onboarding`, `/sign-in`, `/sign-up`; runs `useProfileCheck()` to redirect unauthenticated users or users without profiles to `/onboarding`; shows loading spinner while profile check is in flight |
 | `frontend/components/Sidebar.tsx` | Left sidebar navigation — logo, six nav items (Feed Memory, Library, Create Post, Get Ideas, History, Settings), user row at bottom with real user avatar/name/email from `useUser()` and sign-out via `useClerk().signOut()` |
 | `frontend/components/ui/TagInput.tsx` | Shared tag pill input component — used by onboarding and settings; accepts Enter/comma to add tags, Backspace to remove last, deduplicates; exports `TagInputProps` interface |
-| `frontend/components/FeedMemory.tsx` | Feed Memory form — tabs (Article/Text, URL, File, YouTube, Image, Note, Obsidian), URL scraping, textarea, file upload with drag-and-drop, image upload, Obsidian vault preview/ingest flow, result display. **Tooltip tour:** shown when `localStorage.getItem('contendo_feed_tour_done')` is null (single condition — chunk count is not checked, as it caused silent failures for new users). Tour starts 800 ms after mount. Renders a `position: fixed` dark-sage tooltip (`#3a4a35`, `z-index: 9999`, `width: 280px`) anchored below the active tab button — `top` = `tabBarRef bottom + 8px`, `left` = horizontal center of the active button, measured via `getBoundingClientRect()` in a `requestAnimationFrame` callback. An upward CSS-triangle caret (`borderBottom: 8px solid #3a4a35`) points at the active tab. No backdrop/overlay. Card shows: tab name (14px/600/white) + step indicator (11px/55% white), a translucent divider, description text (13px/85% white/1.6 line-height), and Skip/Next→/Done buttons. "Next →" button is white text on `#3a4a35` pill; on step 6 becomes "Done". Tour walks 6 steps (Article → URL → File → YouTube → Image → Note); each step auto-switches the active tab. Completing or skipping sets `contendo_feed_tour_done = "1"` in localStorage. |
+| `frontend/components/FeedMemory.tsx` | Feed Memory form — tabs (Article/Text, URL, File, YouTube, Image, Note, Obsidian), URL scraping, textarea, file upload with drag-and-drop, image upload. **Obsidian tab:** dual-mode toggle pills (Local path / Upload zip). Local path mode shows a text input for vault folder path (with notice "only works locally" on production), optional preview card, and "Preview vault" / "Ingest all notes" buttons. Upload zip mode shows drop zone (dashed ghost-border, surface-container-low bg, accepts .zip files, shows notice on non-localhost recommending zip upload) with drag-over active state; on successful file select calls `previewObsidianZip()`, shows preview stats card, then enables "Ingest vault" / "Choose different file" buttons. Ingesting shows muted progress message "Ingesting vault — this may take a minute…" (no spinner). Both flows show success card with checkmark, file count, chunk count, and sampled tags. **Tooltip tour:** shown when `localStorage.getItem('contendo_feed_tour_done')` is null (single condition — chunk count is not checked, as it caused silent failures for new users). Tour starts 800 ms after mount. Renders a `position: fixed` dark-sage tooltip (`#3a4a35`, `z-index: 9999`, `width: 280px`) anchored below the active tab button — `top` = `tabBarRef bottom + 8px`, `left` = horizontal center of the active button, measured via `getBoundingClientRect()` in a `requestAnimationFrame` callback. An upward CSS-triangle caret (`borderBottom: 8px solid #3a4a35`) points at the active tab. No backdrop/overlay. Card shows: tab name (14px/600/white) + step indicator (11px/55% white), a translucent divider, description text (13px/85% white/1.6 line-height), and Skip/Next→/Done buttons. "Next →" button is white text on `#3a4a35` pill; on step 6 becomes "Done". Tour walks 6 steps (Article → URL → File → YouTube → Image → Note); each step auto-switches the active tab. Completing or skipping sets `contendo_feed_tour_done = "1"` in localStorage. |
 | `frontend/components/CreatePost.tsx` | Create Post — 4-state UI; dynamic autosave tracker; settings drawer; split-screen analysis panel. Pre-gen form: outlined "THE CENTRAL THEME" input, "FORMAT & MEDIUM" vertical pills, "VOICE & RESONANCE" horizontal pills, centered sparkle Generate button. The "EXAMPLE OUTPUT" panel has been removed. In its place, a single contextual description line appears directly below the tone pills (12 px, `var(--color-text-tertiary)`, `max-width: 420px`); it fades in on tone change via `opacity` state + `transition: opacity 0.2s ease`. Descriptions are stored in `TONE_DESCRIPTIONS` record: Casual — conversational/direct/first-person; Technical — precise/domain language/respects expertise; Storytelling — narrative-first/opens with a moment/lesson. Post-gen: "The Manuscript" Noto Serif heading + status pill, `whitespace-pre-wrap` textarea. Action buttons: three equal ghost buttons (Regenerate / Analyse / Gen.Visuals) + two equal ghost buttons side-by-side ("Copy for LinkedIn" strips markdown via `stripMarkdown()` before copying; "Copy for Medium" copies raw markdown as-is); both show "Copied!" for 1.5 s then revert. `stripMarkdown(text)` pure utility at top of file — removes `**bold**`, `*italic*`, `_italic_`, `__bold__`, `` `code` ``, `[text](url)` → text, `# headings` → plain line; preserves all line breaks. Below the textarea in both layout modes (split and stacked), a `postMetaBar` `<p>` shows purely informational live stats computed via `useMemo`: "N words · ~N min read" (and " · ~N tweets" appended for thread format only). Always `text-outline-variant`, 12 px, no conditional colours, no warning states, no threshold logic. Analysis panel: SVG score ring (`stroke="#58614f"`), first `score_feedback` item as quote, remaining items as STRONG POINT/NEEDS ATTENTION focus cards, scrollable with `maxHeight:"50vh"` in stacked layout. |
 | `frontend/middleware.ts` | Clerk v5 middleware — two routing rules: (1) unauthenticated visitors hitting `/` are redirected to `/welcome` (landing page as default entry point); (2) all other unauthenticated requests to protected routes (`/library`, `/create`, `/ideas`, `/history`, `/settings`, `/`) are redirected to `/sign-in?redirect_url=<original-url>` (preserves post-login destination). `/welcome` is accessible to both signed-in and signed-out users — no forced redirect away. Public routes that bypass auth check: `/welcome`, `/sign-in(.*)`, `/sign-up(.*)`, `/onboarding`. |
 | `frontend/lib/api.ts` | `useApi()` hook — returns all typed API functions with Bearer token pre-attached via `useAuth().getToken()`; single source of truth for all backend calls; replaces raw `fetch()` in all components; `saveProfile()` throws on non-2xx (instead of returning the response) and console.logs status for debugging; `submitFeedback(message, page)` posts to `POST /feedback` |
@@ -150,9 +150,8 @@
 **critic_brief schema:**
 ```json
 {
-  "hook":      { "verdict": "strong" | "needs_work", "fix": "instruction or null" },
-  "substance": { "verdict": "strong" | "needs_work", "fix": "instruction or null" },
   "structure": { "verdict": "strong" | "needs_work", "fix": "instruction or null" },
+ Vercel and Railway/Render deployment config files
   "voice":     { "verdict": "strong" | "needs_work", "fix": "instruction or null" },
   "overall":   "postable" | "needs_work"
 }
@@ -245,7 +244,39 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
   "all_tags": ["ai", "machine learning", "product strategy"]
 }
 ```
-**Notes:** Ingests all vault notes via `read_vault()` → `ingest_content()` with `source_type="note"` and `source_title` set to the note filename stem. Per-note errors are caught and skipped; `skipped_files` counts notes that errored during ingestion (not the same as `get_vault_stats` skipped count which refers to short notes). Re-ingesting the same vault is safe — ChromaDB upsert prevents duplicate chunks. Can take 30–120 seconds for large vaults.
+**Notes:** Ingests all vault notes via `read_vault()` → `ingest_content()` with `source_type="note"` and `source_title` set to the note filename stem. Per-note errors are caught and skipped; `skipped_files` counts notes that errored during ingestion (not the same as `get_vault_stats` skipped count which refers to short notes). Re-ingesting the same vault is safe — ChromaDB upsert prevents duplicate chunks. Can take 30–120 seconds for large vaults. **Environment guard:** This endpoint returns 400 with a message on production (`ENVIRONMENT=production`). Local path ingestion only works on localhost.
+
+---
+
+### POST /obsidian/preview-zip
+**Request:** `multipart/form-data` with a single `file` field (`.zip` archive)
+**Response:**
+```json
+{
+  "vault_name": "ObsidianVault",
+  "total_files": 87,
+  "total_words": 42300,
+  "estimated_chunks": 105,
+  "skipped_files": 12
+}
+```
+**Notes:** Uploads and temporarily extracts a zipped Obsidian vault, then returns preview stats without ingesting. Raises 400 for invalid/corrupted zip files, zip files with no `.md` files, or path traversal attempts (entries starting with `/` or containing `..'). Raises 413 if file exceeds 50 MB. Temp directory is cleaned up after response. **No environment guard** — works on both localhost and production.
+
+---
+
+### POST /obsidian/ingest-zip
+**Request:** `multipart/form-data` with a single `file` field (`.zip` archive)
+**Response:**
+```json
+{
+  "total_files_processed": 85,
+  "total_chunks_stored": 203,
+  "total_words_processed": 41500,
+  "skipped_files": 2,
+  "all_tags": ["ai", "machine learning", "product strategy"]
+}
+```
+**Notes:** Uploads and temporarily extracts a zipped Obsidian vault, then ingests all notes via `read_vault()` → `ingest_content()` with `source_type="note"`. Response schema matches local path ingestion. Raises 400 for invalid/corrupted zip files, zip files with no `.md` files, or path traversal attempts. Raises 413 if file exceeds 50 MB. Temp directory is cleaned up in a `finally` block even if ingestion errors occur. Can take 30–120 seconds for large vaults. **No environment guard** — works on both localhost and production. This endpoint removes the production blocker for Obsidian vault ingestion.
 
 ---
 
