@@ -166,6 +166,12 @@ const TOUR_STEPS: { id: SourceType; label: string; description: string }[] = [
     label: "Note",
     description: "Write something directly — a half-formed thought, a takeaway, an opinion. Your own words are the strongest signal.",
   },
+  {
+    id: "obsidian",
+    label: "Obsidian",
+    description:
+      "Import your entire Obsidian vault. Preview how many notes will be ingested before committing — or upload a zipped vault if you're on the web.",
+  },
 ];
 
 export default function FeedMemory() {
