@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useApi } from "@/lib/api";
+import type { ClusterItem, ClusterSourceItem } from "@/lib/api";
 
 interface Source {
   source_title: string;
@@ -286,6 +287,193 @@ function AddSourceCard({ onClick }: { onClick: () => void }) {
   );
 }
 
+// ── Topic Map View ─────────────────────────────────────────────────────────
+function TopicMapView({
+  clusters,
+  unclustered,
+  totalSources,
+  totalTags,
+  loading,
+  onSourceClick,
+}: {
+  clusters: ClusterItem[];
+  unclustered: ClusterSourceItem[];
+  totalSources: number;
+  totalTags: number;
+  loading: boolean;
+  onSourceClick: (sourceTitle: string) => void;
+}) {
+  const [openTags, setOpenTags] = useState<Set<string>>(new Set());
+  const [showUnclustered, setShowUnclustered] = useState(false);
+
+  const toggleCluster = (tag: string) => {
+    setOpenTags(prev => {
+      const next = new Set(prev);
+      if (next.has(tag)) next.delete(tag); else next.add(tag);
+      return next;
+    });
+  };
+
+  const scrollToCluster = (tag: string) => {
+    document.getElementById(`cluster-${tag.replace(/\s+/g, "-")}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setOpenTags(prev => new Set(Array.from(prev).concat(tag)));
+  };
+
+  const pillStyle = (sourceCount: number): { fontSize: string; padding: string } => {
+    if (sourceCount >= 10) return { fontSize: "14px", padding: "6px 14px" };
+    if (sourceCount >= 4) return { fontSize: "12px", padding: "5px 12px" };
+    return { fontSize: "11px", padding: "4px 10px" };
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="h-16 rounded-lg bg-surface-container-low animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+
+  if (clusters.length === 0 && unclustered.length === 0) {
+    return (
+      <div className="rounded-2xl bg-surface-container-lowest shadow-card px-6 py-12 text-center">
+        <p className="text-outline text-sm">No topic clusters yet.</p>
+        <p className="text-outline-variant text-xs mt-1">Add more sources — clusters form when tags appear in 2 or more sources.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-8">
+      {/* Summary stat pills */}
+      <div className="flex gap-3 flex-wrap">
+        <span className="label-caps text-secondary bg-surface-container rounded-full px-4 py-2">
+          {totalTags} topic{totalTags !== 1 ? "s" : ""} in your knowledge base
+        </span>
+        <span className="label-caps text-secondary bg-surface-container rounded-full px-4 py-2">
+          {totalSources} source{totalSources !== 1 ? "s" : ""} across {totalTags} tag{totalTags !== 1 ? "s" : ""}
+        </span>
+      </div>
+
+      {/* Tag cloud */}
+      {clusters.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {clusters.map(cluster => {
+            const { fontSize, padding } = pillStyle(cluster.source_count);
+            return (
+              <button
+                key={cluster.tag}
+                onClick={() => scrollToCluster(cluster.tag)}
+                className="label-caps rounded-full bg-surface-container text-on-surface transition-colors hover:bg-surface-container-high ghost-border"
+                style={{ fontSize, padding }}
+              >
+                {cluster.tag}
+                <span className="ml-1.5 opacity-50">{cluster.source_count}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Cluster sections */}
+      <div className="space-y-3">
+        {clusters.map(cluster => {
+          const isOpen = openTags.has(cluster.tag);
+          return (
+            <div
+              key={cluster.tag}
+              id={`cluster-${cluster.tag.replace(/\s+/g, "-")}`}
+              className="bg-surface-container-low rounded-lg overflow-hidden"
+            >
+              <button
+                onClick={() => toggleCluster(cluster.tag)}
+                className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-surface-container transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="font-headline text-[15px] text-on-surface">{cluster.tag}</span>
+                  <span className="label-caps text-outline">
+                    {cluster.source_count} source{cluster.source_count !== 1 ? "s" : ""} · {cluster.total_chunks} chunk{cluster.total_chunks !== 1 ? "s" : ""}
+                  </span>
+                </div>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                  className={`text-outline transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}>
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+              {isOpen && (
+                <div className="px-5 pb-4 flex flex-col" style={{ gap: "1.4rem" }}>
+                  {cluster.sources.map(source => (
+                    <button
+                      key={source.source_title}
+                      onClick={() => onSourceClick(source.source_title)}
+                      className="flex items-center gap-3 text-left group"
+                    >
+                      <span className="text-[13px] text-on-surface group-hover:text-primary transition-colors flex-1 leading-snug">
+                        {source.source_title}
+                      </span>
+                      <span className="label-caps text-outline bg-surface-container rounded-full px-2 py-0.5 shrink-0">
+                        {TYPE_LABELS[source.source_type] ?? source.source_type}
+                      </span>
+                      <span className="text-[11px] text-outline-variant shrink-0 w-20 text-right">
+                        {formatDate(source.ingested_at)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Unclustered section */}
+        {unclustered.length > 0 && (
+          <div className="bg-surface-container rounded-lg overflow-hidden">
+            <button
+              onClick={() => setShowUnclustered(v => !v)}
+              className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-surface-container-high transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <span className="font-headline text-[15px] text-outline">Unclustered</span>
+                <span className="label-caps text-outline-variant">
+                  {unclustered.length} source{unclustered.length !== 1 ? "s" : ""} · unique tags only
+                </span>
+              </div>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                className={`text-outline-variant transition-transform duration-200 ${showUnclustered ? "rotate-180" : ""}`}>
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+            {showUnclustered && (
+              <div className="px-5 pb-4 flex flex-col" style={{ gap: "1.4rem" }}>
+                {unclustered.map(source => (
+                  <button
+                    key={source.source_title}
+                    onClick={() => onSourceClick(source.source_title)}
+                    className="flex items-center gap-3 text-left group"
+                  >
+                    <span className="text-[13px] text-outline group-hover:text-secondary transition-colors flex-1 leading-snug">
+                      {source.source_title}
+                    </span>
+                    <span className="label-caps text-outline-variant bg-surface-container-high rounded-full px-2 py-0.5 shrink-0">
+                      {TYPE_LABELS[source.source_type] ?? source.source_type}
+                    </span>
+                    <span className="text-[11px] text-outline-variant shrink-0 w-20 text-right">
+                      {formatDate(source.ingested_at)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+type MainView = "sources" | "topic-map";
+
 export default function LibraryPage() {
   const api = useApi();
   const router = useRouter();
@@ -301,6 +489,17 @@ export default function LibraryPage() {
 
   const cycleSortOrder = () => setSort(s => s === "newest" ? "oldest" : s === "oldest" ? "most-used" : "newest");
   const sortLabel = sort === "newest" ? "Date Added" : sort === "oldest" ? "Oldest First" : "Most Used";
+
+  // Main view toggle
+  const [mainView, setMainView] = useState<MainView>("sources");
+
+  // Topic Map state
+  const [clusters, setClusters] = useState<ClusterItem[]>([]);
+  const [unclusteredSources, setUnclusteredSources] = useState<ClusterSourceItem[]>([]);
+  const [clusterTotalSources, setClusterTotalSources] = useState(0);
+  const [clusterTotalTags, setClusterTotalTags] = useState(0);
+  const [clustersLoading, setClustersLoading] = useState(false);
+  const [clustersError, setClustersError] = useState("");
 
   // Pure UI state
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -319,6 +518,26 @@ export default function LibraryPage() {
       .catch(() => setError("Could not load library. Is the backend running?"))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (mainView !== "topic-map") return;
+    setClustersLoading(true);
+    setClustersError("");
+    api.getLibraryClusters()
+      .then(data => {
+        setClusters(data.clusters);
+        setUnclusteredSources(data.unclustered_sources);
+        setClusterTotalSources(data.total_sources);
+        setClusterTotalTags(data.total_tags);
+      })
+      .catch(() => setClustersError("Could not load topic clusters."))
+      .finally(() => setClustersLoading(false));
+  }, [mainView]);
+
+  const handleClusterSourceClick = (sourceTitle: string) => {
+    setMainView("sources");
+    setSearch(sourceTitle);
+  };
 
   const handleSourceDeleted = (source_title: string, chunks_removed: number) => {
     setSources((prev) => prev.filter((s) => s.source_title !== source_title));
@@ -433,9 +652,9 @@ export default function LibraryPage() {
 
             {/* ── Filter tabs + controls ─────────────────────────────────── */}
             <div className="flex items-end justify-between mb-6" style={{ borderBottom: "1px solid #dfe3e2" }}>
-              {/* Underline tabs */}
+              {/* Underline tabs — hidden in Topic Map view */}
               <div className="flex gap-6">
-                {FILTER_TABS.map((tab) => (
+                {mainView === "sources" && FILTER_TABS.map((tab) => (
                   <button
                     key={tab.id}
                     onClick={() => { setFilter(tab.id); setVisibleCount(6); }}
@@ -455,104 +674,142 @@ export default function LibraryPage() {
 
               {/* Right controls */}
               <div className="flex items-center gap-2 pb-3">
-                {/* Filters button */}
-                <button className="flex items-center gap-1.5 text-[12px] text-secondary border border-surface-container-high rounded-lg px-3 py-1.5 hover:border-outline-variant hover:text-on-surface transition-colors bg-surface-container-lowest">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/>
-                  </svg>
-                  Filters
-                </button>
-
-                {/* Sort */}
-                <button
-                  onClick={cycleSortOrder}
-                  className="flex items-center gap-1.5 text-[12px] text-secondary border border-surface-container-high rounded-lg px-3 py-1.5 hover:border-outline-variant hover:text-on-surface transition-colors bg-surface-container-lowest"
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>
-                  </svg>
-                  {sortLabel}
-                </button>
-
-                {/* Grid / List toggle */}
+                {/* Sources / Topic Map toggle */}
                 <div className="flex border border-surface-container-high rounded-lg overflow-hidden">
                   <button
-                    onClick={() => setViewMode("grid")}
-                    className={`px-2.5 py-1.5 transition-colors ${viewMode === "grid" ? "bg-surface-container text-on-surface" : "bg-surface-container-lowest text-outline hover:text-secondary"}`}
+                    onClick={() => setMainView("sources")}
+                    className={`px-3 py-1.5 text-[12px] font-medium transition-colors ${mainView === "sources" ? "bg-surface-container text-on-surface" : "bg-surface-container-lowest text-outline hover:text-secondary"}`}
                   >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
-                    </svg>
+                    Sources
                   </button>
                   <button
-                    onClick={() => setViewMode("list")}
-                    className={`px-2.5 py-1.5 transition-colors border-l border-surface-container-high ${viewMode === "list" ? "bg-surface-container text-on-surface" : "bg-surface-container-lowest text-outline hover:text-secondary"}`}
+                    onClick={() => setMainView("topic-map")}
+                    className={`px-3 py-1.5 text-[12px] font-medium transition-colors border-l border-surface-container-high ${mainView === "topic-map" ? "bg-surface-container text-on-surface" : "bg-surface-container-lowest text-outline hover:text-secondary"}`}
                   >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
-                    </svg>
+                    Topic Map
                   </button>
                 </div>
+
+                {/* Sort + grid/list — only in Sources view */}
+                {mainView === "sources" && (
+                  <>
+                    <button className="flex items-center gap-1.5 text-[12px] text-secondary border border-surface-container-high rounded-lg px-3 py-1.5 hover:border-outline-variant hover:text-on-surface transition-colors bg-surface-container-lowest">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/>
+                      </svg>
+                      Filters
+                    </button>
+
+                    <button
+                      onClick={cycleSortOrder}
+                      className="flex items-center gap-1.5 text-[12px] text-secondary border border-surface-container-high rounded-lg px-3 py-1.5 hover:border-outline-variant hover:text-on-surface transition-colors bg-surface-container-lowest"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>
+                      </svg>
+                      {sortLabel}
+                    </button>
+
+                    <div className="flex border border-surface-container-high rounded-lg overflow-hidden">
+                      <button
+                        onClick={() => setViewMode("grid")}
+                        className={`px-2.5 py-1.5 transition-colors ${viewMode === "grid" ? "bg-surface-container text-on-surface" : "bg-surface-container-lowest text-outline hover:text-secondary"}`}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => setViewMode("list")}
+                        className={`px-2.5 py-1.5 transition-colors border-l border-surface-container-high ${viewMode === "list" ? "bg-surface-container text-on-surface" : "bg-surface-container-lowest text-outline hover:text-secondary"}`}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+                        </svg>
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
-            {/* ── Empty states ───────────────────────────────────────────── */}
-            {sources.length === 0 && (
-              <div className="rounded-2xl bg-surface-container-lowest shadow-card px-6 py-12 text-center">
-                <p className="text-outline text-sm">Your library is empty.</p>
-                <p className="text-outline-variant text-xs mt-1">Add articles, notes, and resources in Feed Memory.</p>
-              </div>
+            {/* ── Topic Map view ─────────────────────────────────────────── */}
+            {mainView === "topic-map" && (
+              <>
+                {clustersError && <p className="text-sm text-error mb-4">{clustersError}</p>}
+                <TopicMapView
+                  clusters={clusters}
+                  unclustered={unclusteredSources}
+                  totalSources={clusterTotalSources}
+                  totalTags={clusterTotalTags}
+                  loading={clustersLoading}
+                  onSourceClick={handleClusterSourceClick}
+                />
+              </>
             )}
 
-            {sources.length > 0 && filtered.length === 0 && (
-              <div className="rounded-2xl bg-surface-container-lowest shadow-card px-6 py-8 text-center">
-                <p className="text-outline text-sm">No {TYPE_LABELS[filter] ?? filter} sources yet.</p>
-              </div>
-            )}
-
-            {/* ── Source grid ────────────────────────────────────────────── */}
-            {filtered.length > 0 && viewMode === "grid" && (
-              <div className="grid grid-cols-3 gap-4">
-                {visibleSources.map((source, i) => (
-                  <SourceCard
-                    key={i}
-                    source={source}
-                    onDelete={handleSourceDeleted}
-                  />
-                ))}
-                <AddSourceCard onClick={() => router.push("/feed-memory")} />
-              </div>
-            )}
-
-            {/* ── Source list (list view) ─────────────────────────────────── */}
-            {filtered.length > 0 && viewMode === "list" && (
-              <div className="grid grid-cols-1 gap-3">
-                {visibleSources.map((source, i) => (
-                  <SourceCard
-                    key={i}
-                    source={source}
-                    onDelete={handleSourceDeleted}
-                  />
-                ))}
-                <AddSourceCard onClick={() => router.push("/feed-memory")} />
-              </div>
-            )}
-
-            {/* ── Pagination ─────────────────────────────────────────────── */}
-            {filtered.length > 0 && (
-              <div className="flex flex-col items-center mt-10 gap-3">
-                <p className="label-caps text-outline">
-                  Showing {Math.min(visibleCount, filtered.length)} of {filtered.length} Sources
-                </p>
-                {visibleCount < filtered.length && (
-                  <button
-                    onClick={() => setVisibleCount(v => v + 6)}
-                    className="rounded-full border border-outline-variant/30 bg-surface-container-lowest px-8 py-2.5 text-[13px] font-medium text-secondary hover:text-on-surface hover:border-outline-variant shadow-card hover:shadow-card-hover transition-all duration-200"
-                  >
-                    Load More Archives
-                  </button>
+            {/* ── Sources view ───────────────────────────────────────────── */}
+            {mainView === "sources" && (
+              <>
+                {/* Empty states */}
+                {sources.length === 0 && (
+                  <div className="rounded-2xl bg-surface-container-lowest shadow-card px-6 py-12 text-center">
+                    <p className="text-outline text-sm">Your library is empty.</p>
+                    <p className="text-outline-variant text-xs mt-1">Add articles, notes, and resources in Feed Memory.</p>
+                  </div>
                 )}
-              </div>
+
+                {sources.length > 0 && filtered.length === 0 && (
+                  <div className="rounded-2xl bg-surface-container-lowest shadow-card px-6 py-8 text-center">
+                    <p className="text-outline text-sm">No {TYPE_LABELS[filter] ?? filter} sources yet.</p>
+                  </div>
+                )}
+
+                {/* Source grid */}
+                {filtered.length > 0 && viewMode === "grid" && (
+                  <div className="grid grid-cols-3 gap-4">
+                    {visibleSources.map((source, i) => (
+                      <SourceCard
+                        key={i}
+                        source={source}
+                        onDelete={handleSourceDeleted}
+                      />
+                    ))}
+                    <AddSourceCard onClick={() => router.push("/feed-memory")} />
+                  </div>
+                )}
+
+                {/* Source list */}
+                {filtered.length > 0 && viewMode === "list" && (
+                  <div className="grid grid-cols-1 gap-3">
+                    {visibleSources.map((source, i) => (
+                      <SourceCard
+                        key={i}
+                        source={source}
+                        onDelete={handleSourceDeleted}
+                      />
+                    ))}
+                    <AddSourceCard onClick={() => router.push("/feed-memory")} />
+                  </div>
+                )}
+
+                {/* Pagination */}
+                {filtered.length > 0 && (
+                  <div className="flex flex-col items-center mt-10 gap-3">
+                    <p className="label-caps text-outline">
+                      Showing {Math.min(visibleCount, filtered.length)} of {filtered.length} Sources
+                    </p>
+                    {visibleCount < filtered.length && (
+                      <button
+                        onClick={() => setVisibleCount(v => v + 6)}
+                        className="rounded-full border border-outline-variant/30 bg-surface-container-lowest px-8 py-2.5 text-[13px] font-medium text-secondary hover:text-on-surface hover:border-outline-variant shadow-card hover:shadow-card-hover transition-all duration-200"
+                      >
+                        Load More Archives
+                      </button>
+                    )}
+                  </div>
+                )}
+              </>
             )}
           </>
         )}

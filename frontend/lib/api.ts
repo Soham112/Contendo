@@ -86,6 +86,26 @@ export interface LibrarySource {
   retrieval_count: number;
 }
 
+export interface ClusterSourceItem {
+  source_title: string;
+  source_type: string;
+  ingested_at: string;
+}
+
+export interface ClusterItem {
+  tag: string;
+  source_count: number;
+  total_chunks: number;
+  sources: ClusterSourceItem[];
+}
+
+export interface LibraryClustersResponse {
+  clusters: ClusterItem[];
+  unclustered_sources: ClusterSourceItem[];
+  total_sources: number;
+  total_tags: number;
+}
+
 export interface ProfileData {
   name?: string;
   role?: string;
@@ -189,6 +209,12 @@ export function useApi() {
 
     // ── Library ───────────────────────────────────────────────────────────
     getLibrary: () => apiFetch("/library"),
+
+    getLibraryClusters: async (): Promise<LibraryClustersResponse> => {
+      const res = await apiFetch("/library/clusters");
+      if (!res.ok) throw new Error(`GET /library/clusters failed with status ${res.status}`);
+      return res.json();
+    },
 
     deleteSource: (source_title: string) =>
       apiFetch("/library/source", {
