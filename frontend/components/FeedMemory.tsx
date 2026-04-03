@@ -6,9 +6,9 @@ import { useApi } from "@/lib/api";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-// Obsidian vault ingestion works via zip upload on production,
-// and via local path on localhost.
-const IS_LOCAL = API.includes("localhost") || API.includes("127.0.0.1");
+const isLocalBackend =
+  process.env.NEXT_PUBLIC_API_URL?.includes("localhost") ||
+  process.env.NEXT_PUBLIC_API_URL?.includes("127.0.0.1");
 
 type SourceType = "article" | "url" | "file" | "youtube" | "image" | "note" | "obsidian";
 
@@ -170,7 +170,7 @@ const TOUR_STEPS: { id: SourceType; label: string; description: string }[] = [
     id: "obsidian",
     label: "Obsidian",
     description:
-      "Import your entire Obsidian vault. Preview how many notes will be ingested before committing — or upload a zipped vault if you're on the web.",
+      "Import your entire Obsidian vault by uploading a zipped vault file. Preview how many notes will be ingested before committing.",
   },
 ];
 
@@ -187,7 +187,7 @@ export default function FeedMemory() {
   const [vaultPreview, setVaultPreview] = useState<VaultStats | null>(null);
   const [obsidianPhase, setObsidianPhase] = useState<"input" | "preview" | "ingesting" | "done">("input");
   const [obsidianResult, setObsidianResult] = useState<ObsidianIngestResult | null>(null);
-  const [obsidianMode, setObsidianMode] = useState<"local" | "zip">("local");
+  const [obsidianMode, setObsidianMode] = useState<"local" | "zip">(isLocalBackend ? "local" : "zip");
   const [zipFile, setZipFile] = useState<File | null>(null);
   const [zipPreview, setZipPreview] = useState<VaultStats | null>(null);
   const [zipIsDragging, setZipIsDragging] = useState(false);
@@ -529,6 +529,7 @@ export default function FeedMemory() {
   };
 
   const currentTab = TABS.find((t) => t.id === activeTab)!;
+  const effectiveObsidianMode: "local" | "zip" = isLocalBackend ? obsidianMode : "zip";
 
   const inputLabel =
     activeTab === "url" ? "SOURCE URL" :
@@ -579,40 +580,34 @@ export default function FeedMemory() {
             {activeTab === "obsidian" ? (
               /* ── Obsidian flow ── */
               <div className="space-y-5">
-                {/* Mode toggle pills (Local path / Upload zip) */}
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setObsidianMode("local")}
-                    className={`px-4 py-2 rounded-full text-[12.5px] font-medium label-caps transition-all ${
-                      obsidianMode === "local"
-                        ? "bg-primary text-white"
-                        : "border border-ghost-border text-secondary hover:text-on-surface"
-                    }`}
-                  >
-                    Local path
-                  </button>
-                  <button
-                    onClick={() => setObsidianMode("zip")}
-                    className={`px-4 py-2 rounded-full text-[12.5px] font-medium label-caps transition-all ${
-                      obsidianMode === "zip"
-                        ? "bg-primary text-white"
-                        : "border border-ghost-border text-secondary hover:text-on-surface"
-                    }`}
-                  >
-                    Upload zip
-                  </button>
-                </div>
+                {isLocalBackend && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setObsidianMode("local")}
+                      className={`px-4 py-2 rounded-full text-[12.5px] font-medium label-caps transition-all ${
+                        obsidianMode === "local"
+                          ? "bg-primary text-white"
+                          : "border border-ghost-border text-secondary hover:text-on-surface"
+                      }`}
+                    >
+                      Local path
+                    </button>
+                    <button
+                      onClick={() => setObsidianMode("zip")}
+                      className={`px-4 py-2 rounded-full text-[12.5px] font-medium label-caps transition-all ${
+                        obsidianMode === "zip"
+                          ? "bg-primary text-white"
+                          : "border border-ghost-border text-secondary hover:text-on-surface"
+                      }`}
+                    >
+                      Upload zip
+                    </button>
+                  </div>
+                )}
 
                 {/* Local path flow */}
-                {obsidianMode === "local" ? (
+                {effectiveObsidianMode === "local" ? (
                   <div className="space-y-5">
-                    {!IS_LOCAL && (
-                      <div className="rounded-lg bg-warning-container/10 px-4 py-3 border border-warning/20">
-                        <p className="text-xs text-warning-dark">
-                          Local vault ingestion only works when running the backend locally. Use <strong>Upload zip</strong> for production.
-                        </p>
-                      </div>
-                    )}
                     {obsidianPhase === "done" && obsidianResult ? (
                       <div className="space-y-3">
                         <p className="label-caps text-secondary">Vault ingested</p>
@@ -908,7 +903,7 @@ export default function FeedMemory() {
             </div>
 
             {activeTab === "obsidian" ? (
-              obsidianMode === "local" ? (
+              effectiveObsidianMode === "local" ? (
                 // Local path flow buttons
                 obsidianPhase === "done" ? (
                   <button
