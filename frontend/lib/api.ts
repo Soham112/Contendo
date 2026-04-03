@@ -178,6 +178,18 @@ export function useApi() {
         body: JSON.stringify({ vault_path }),
       }),
 
+    obsidianPreviewZip: (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      return apiFetch("/obsidian/preview-zip", { method: "POST", body: formData });
+    },
+
+    obsidianIngestZip: (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      return apiFetch("/obsidian/ingest-zip", { method: "POST", body: formData });
+    },
+
     // ── Generate ──────────────────────────────────────────────────────────
     generatePost: (body: GenerateRequest) =>
       apiFetch("/generate", {
