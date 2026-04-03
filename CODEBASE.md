@@ -20,7 +20,7 @@
 | `backend/routers/ingest.py` | `/ingest`, `/ingest-file`, `/scrape-and-ingest`, `/obsidian/preview`, `/obsidian/ingest` |
 | `backend/routers/generate.py` | `/generate`, `/refine`, `/score`, `/generate-visuals` |
 | `backend/routers/history.py` | `GET /history`, `POST /log-post`, `PATCH /history/{id}`, `DELETE /history/{id}`, `POST /history/{id}/restore/{vid}` |
-| `backend/routers/library.py` | `GET /library`, `DELETE /library/source` |
+| `backend/routers/library.py` | `GET /library`, `GET /library/clusters`, `DELETE /library/source` |
 | `backend/routers/ideas.py` | `GET /suggestions` |
 | `backend/routers/stats.py` | `GET /stats` |
 | `backend/routers/profile.py` | `GET /profile`, `POST /profile` — per-user profile read/write; returns `has_profile: bool` so frontend can detect new users needing onboarding; `POST /profile` does a read-back verification after save and returns HTTP 500 if the write didn't land; returns `{"saved": true, "user_id": "..."}` |
@@ -68,7 +68,7 @@
 | **Frontend** | |
 | `frontend/app/layout.tsx` | Root layout — wraps body in `ClerkProvider`; mounts AppShell which renders Sidebar for app routes; `/welcome`, `/onboarding`, `/sign-in`, `/sign-up` bypass sidebar |
 | `frontend/app/page.tsx` | Screen 1: Feed Memory (default route `/`) |
-| `frontend/app/library/page.tsx` | Screen 2: Library (`/library`) — source cards showing chunk count and dynamic retrieval count UX (sage dot marker for 5+ uses), stats bar, text search, filter/sort ("Date Added", "Oldest First", "Most Used"); card placeholder areas use `getTitleGradient()` (deterministic charcode-sum gradient from `TITLE_GRADIENTS`) + `getSourceIcon()` (48px type-specific SVG illustrations) |
+| `frontend/app/library/page.tsx` | Screen 2: Library (`/library`) — two views toggled by a "Sources / Topic Map" segmented control. **Sources view:** source cards with chunk count and retrieval count UX (sage dot marker for 5+ uses), stats bar, text search, filter/sort ("Date Added", "Oldest First", "Most Used"), grid/list toggle; card placeholders use `getTitleGradient()` + `getSourceIcon()`. **Topic Map view:** calls `GET /library/clusters`; renders a proportional tag cloud (3 size tiers) + collapsible cluster sections (tag name in Noto Serif, N sources · N chunks metadata, compact source rows); unclustered section collapsed by default; clicking a source row switches back to Sources view and sets the search filter to that source title. |
 | `frontend/app/create/page.tsx` | Screen 3: Create Post (`/create`) |
 | `frontend/app/ideas/page.tsx` | Screen 4: Get Ideas (`/ideas`) — standalone ideas screen with topic filter, count picker, save-for-later; ideas persisted in localStorage |
 | `frontend/app/history/page.tsx` | Screen 5: Post History (`/history`) — searchable list, expandable post cards, version pills, restore, delete, diagram rendering |
@@ -519,6 +519,32 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
 
 ---
 
+### GET /library/clusters
+**Auth:** `Depends(get_user_id_dep)`
+**Response:**
+```json
+{
+  "clusters": [
+    {
+      "tag": "machine learning",
+      "source_count": 14,
+      "total_chunks": 87,
+      "sources": [
+        { "source_title": "Why RAG fails in production", "source_type": "article", "ingested_at": "2026-03-18T10:22:01+00:00" }
+      ]
+    }
+  ],
+  "unclustered_sources": [
+    { "source_title": "My quick note", "source_type": "note", "ingested_at": "2026-03-20T08:00:00+00:00" }
+  ],
+  "total_sources": 22,
+  "total_tags": 8
+}
+```
+**Notes:** Tags are normalised to lowercase. Only tags appearing in 2+ sources form clusters. `unclustered_sources` contains sources where every tag they have appears in fewer than 2 sources total. Clusters sorted by `source_count` descending. Near-duplicate tag merging is exact lowercase match only — no fuzzy matching.
+
+---
+
 ### GET /library
 **Response:**
 ```json
@@ -708,6 +734,7 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
 | `numpy<2` pinned in requirements.txt | NumPy 2.x is incompatible with the torch version used. After multiple embedding calls, torch raises a fatal ABI mismatch error which crashes the worker process. Pinning to `numpy<2` prevents silent upgrade breakage. |
 | CPU-only `torch==2.2.2` pre-installed in Dockerfile from PyTorch CPU wheel registry | The default PyTorch wheel includes CUDA libraries (~2 GB) and exceeds Railway's 4 GB image limit. Pre-installing from `https://download.pytorch.org/whl/cpu` before `requirements.txt` keeps the image under the limit. This must happen before the pip install step so the CPU wheel is not overwritten. |
 | `query_similar_batch()` used in ideation agent instead of N `query_similar()` calls | The ideation agent generates 8 diversity-sampling queries. Calling `query_similar()` once per query runs 8 separate transformer forward passes (slow on CPU). `query_similar_batch()` embeds all queries in one batched forward pass then queries ChromaDB for each, cutting embedding time by ~7×. |
+| Cluster endpoint uses tag co-occurrence as the clustering signal | Tags appearing in 2+ sources form clusters; tags unique to a single source are filtered out as noise. No ML, no embeddings — simple and fast. Near-duplicate tag merging is exact lowercase match only (no fuzzy matching) to avoid merging semantically distinct tags. |
 | Profile editing via `/settings` — single-page editor, not multi-step | A stepped form makes sense for first-run onboarding; a flat scrollable page is better for incremental edits. The settings page loads all sections at once, shows a sticky save button with an amber dirty indicator, and guards against accidental navigation with `beforeunload`. The `projects` field is not shown in the UI but is loaded and preserved in every save payload so existing project data is never dropped. `voice_descriptors` is the stored field name for "Phrases you use" — the onboarding page maps `phrases_i_use` → `voice_descriptors` on save; the settings page reads and writes `voice_descriptors` directly. `technical_voice_notes` (a `list[str]` in the backend) is shown as a single textarea where each line becomes one list item. |
 | SQLite used for post history | Zero-config, single-file, sufficient for one user — no PostgreSQL needed at MVP |
 | Posts are auto-saved after generation | Frontend calls `POST /log-post` immediately after `POST /generate` completes. The returned `post_id` is stored in `contentOS_current_post_id` sessionStorage. Manual "Save to history" button removed. |
