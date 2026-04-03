@@ -23,7 +23,7 @@ flowchart TD
 
     subgraph API["FastAPI Backend — 19 Endpoints"]
         R1["POST /ingest\nPOST /ingest-file\nPOST /scrape-and-ingest"]
-        R1b["POST /obsidian/preview\nPOST /obsidian/ingest"]
+        R1b["POST /obsidian/preview, /obsidian/ingest (local path)\nPOST /obsidian/preview-zip, /obsidian/ingest-zip (zip upload — production-ready)"]
         R2["POST /generate"]
         R2b["POST /refine"]
         R3["POST /log-post (auto-save)"]
@@ -409,10 +409,10 @@ Vercel runs `npm run build` automatically. No other config needed.
 
 Obsidian vault ingestion reads directly from the local filesystem. It **cannot work** when the backend runs on a remote server (Railway).
 
-- In production (`ENVIRONMENT=production`), the `/obsidian/preview` and `/obsidian/ingest` endpoints return a `400` with a clear explanation.
-- The frontend hides the Obsidian tab automatically when `NEXT_PUBLIC_API_URL` points to a non-localhost backend.
-- To use Obsidian ingestion: run the backend locally, ingest your vault, then deploy the populated data to Railway.
 
+ The Obsidian tab offers two ingestion modes:
+ 1. **Local path:** Read directly from your filesystem. Returns `400` on production (`ENVIRONMENT=production`) since remote servers can't access local files. Frontend shows a notice recommending zip upload on non-localhost deployments.
+ 2. **Upload zip:** Upload a `.zip` of your Obsidian vault. Works on both localhost and production. The `/obsidian/preview-zip` and `/obsidian/ingest-zip` endpoints have no environment guard and are production-ready.
 ---
 
 ### 7 — Post-Deploy Smoke Test Checklist

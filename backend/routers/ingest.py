@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -16,13 +17,19 @@ _OBSIDIAN_DISABLED_MSG = (
 
 from agents.ingestion_agent import ingest_content
 from agents.vision_agent import extract_from_image
-from tools.obsidian_tool import get_vault_stats, read_vault
+from tools.obsidian_tool import (
+    extract_vault_from_zip,
+    get_vault_stats,
+    get_vault_stats_from_dir,
+    read_vault,
+)
 from tools.scraper_tool import scrape_url
 from utils.file_extractor import extract_text_from_file
 
 router = APIRouter()
 
 MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
+MAX_ZIP_BYTES = 50 * 1024 * 1024  # 50 MB
 
 
 class IngestRequest(BaseModel):
@@ -209,3 +216,91 @@ async def obsidian_ingest(
         "skipped_files": len(notes) - processed,
         "all_tags": sorted(all_tags),
     }
+
+
+@router.post("/obsidian/preview-zip")
+async def obsidian_preview_zip(
+    file: UploadFile = File(...),
+) -> dict:
+    """Preview an Obsidian vault from a zip file without ingesting it.
+    
+    Returns vault stats (name, file count, word count, estimated chunks).
+    No environment guard — works on both localhost and production.
+    """
+    raw = await file.read()
+    if len(raw) > MAX_ZIP_BYTES:
+        raise HTTPException(status_code=413, detail="Zip file exceeds 50 MB limit.")
+    if not raw:
+        raise HTTPException(status_code=400, detail="Uploaded zip file is empty.")
+    
+    temp_dir = None
+    try:
+        # Extract zip and get stats
+        temp_dir = extract_vault_from_zip(raw)
+        stats = get_vault_stats_from_dir(temp_dir)
+        return stats
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        # Clean up temp directory
+        if temp_dir:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@router.post("/obsidian/ingest-zip")
+async def obsidian_ingest_zip(
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_user_id_dep),
+) -> dict:
+    """Ingest an Obsidian vault from a zip file into the knowledge base.
+    
+    Extracts the zip, reads all .md files, and ingests the content.
+    No environment guard — works on both localhost and production.
+    """
+    raw = await file.read()
+    if len(raw) > MAX_ZIP_BYTES:
+        raise HTTPException(status_code=413, detail="Zip file exceeds 50 MB limit.")
+    if not raw:
+        raise HTTPException(status_code=400, detail="Uploaded zip file is empty.")
+    
+    temp_dir = None
+    try:
+        # Extract zip and read vault
+        temp_dir = extract_vault_from_zip(raw)
+        notes = list(read_vault(temp_dir))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+    # Ingest all notes
+    total_chunks = 0
+    all_tags: set[str] = set()
+    processed = 0
+
+    try:
+        for note in notes:
+            try:
+                result = ingest_content(
+                    content=note["content"],
+                    source_type="note",
+                    source_title=note["filename"],
+                    user_id=user_id,
+                )
+                total_chunks += result["chunks_stored"]
+                all_tags.update(result["tags"])
+                processed += 1
+            except Exception:
+                continue
+    finally:
+        # Clean up temp directory after ingestion completes or fails
+        if temp_dir:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    return {
+        "total_files_processed": processed,
+        "total_chunks_stored": total_chunks,
+        "total_words_processed": sum(n["word_count"] for n in notes),
+        "skipped_files": len(notes) - processed,
+        "all_tags": sorted(all_tags),
+    }
+
+

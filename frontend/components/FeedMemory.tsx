@@ -6,9 +6,9 @@ import { useApi } from "@/lib/api";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-// Obsidian vault ingestion only works when the backend runs on localhost
-// because it reads directly from the local filesystem.
-const IS_LOCAL = API.includes("localhost") || API.includes("127.0.0.1");
+const isLocalBackend =
+  process.env.NEXT_PUBLIC_API_URL?.includes("localhost") ||
+  process.env.NEXT_PUBLIC_API_URL?.includes("127.0.0.1");
 
 type SourceType = "article" | "url" | "file" | "youtube" | "image" | "note" | "obsidian";
 
@@ -48,14 +48,13 @@ const ALL_TABS: { id: SourceType; label: string; description: string; localOnly?
   {
     id: "obsidian",
     label: "Obsidian",
-    localOnly: true,
     description:
-      "Connect your local Obsidian vault. All notes will be chunked, embedded, and added to your knowledge base.",
+      "Connect your Obsidian vault. All notes will be chunked, embedded, and added to your knowledge base.",
   },
 ];
 
-// Hide local-only tabs when running against a remote backend
-const TABS = ALL_TABS.filter((t) => !t.localOnly || IS_LOCAL);
+// Show all tabs (Obsidian tab now works everywhere)
+const TABS = ALL_TABS;
 
 const FILE_TYPE_LABELS: Record<string, string> = {
   "application/pdf": "PDF",
@@ -167,6 +166,12 @@ const TOUR_STEPS: { id: SourceType; label: string; description: string }[] = [
     label: "Note",
     description: "Write something directly — a half-formed thought, a takeaway, an opinion. Your own words are the strongest signal.",
   },
+  {
+    id: "obsidian",
+    label: "Obsidian",
+    description:
+      "Import your entire Obsidian vault by uploading a zipped vault file. Preview how many notes will be ingested before committing.",
+  },
 ];
 
 export default function FeedMemory() {
@@ -182,6 +187,10 @@ export default function FeedMemory() {
   const [vaultPreview, setVaultPreview] = useState<VaultStats | null>(null);
   const [obsidianPhase, setObsidianPhase] = useState<"input" | "preview" | "ingesting" | "done">("input");
   const [obsidianResult, setObsidianResult] = useState<ObsidianIngestResult | null>(null);
+  const [obsidianMode, setObsidianMode] = useState<"local" | "zip">(isLocalBackend ? "local" : "zip");
+  const [zipFile, setZipFile] = useState<File | null>(null);
+  const [zipPreview, setZipPreview] = useState<VaultStats | null>(null);
+  const [zipIsDragging, setZipIsDragging] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("Reading vault notes...");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ chunks_stored: number; tags: string[]; title?: string; word_count?: number; duplicate?: boolean } | null>(null);
@@ -384,6 +393,84 @@ export default function FeedMemory() {
     }
   };
 
+  const handleZipPreview = async (file: File) => {
+    setError("");
+    setZipPreview(null);
+    if (file.size > 50 * 1024 * 1024) {
+      setError("Zip file exceeds 50 MB limit.");
+      return;
+    }
+    setZipFile(file);
+    setLoading(true);
+    try {
+      const res = await api.obsidianPreviewZip(file);
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail ?? "Preview failed");
+      }
+      const data: VaultStats = await res.json();
+      if (data.total_files === 0) {
+        setError("No markdown files found in the zip. Make sure you uploaded a valid Obsidian vault.");
+        return;
+      }
+      setZipPreview(data);
+      setObsidianPhase("preview");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleZipIngest = async () => {
+    if (!zipFile) return;
+    setError("");
+    setObsidianPhase("ingesting");
+    setLoading(true);
+    try {
+      const res = await api.obsidianIngestZip(zipFile);
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail ?? "Ingest failed");
+      }
+      const data: ObsidianIngestResult = await res.json();
+      setObsidianResult(data);
+      setObsidianPhase("done");
+      await fetchStats();
+    } catch (e: unknown) {
+      setObsidianPhase("preview");
+      setError(e instanceof Error ? e.message : "Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleZipDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setZipIsDragging(true);
+  };
+
+  const handleZipDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setZipIsDragging(false);
+  };
+
+  const handleZipDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setZipIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      handleZipPreview(file);
+    }
+  };
+
+  const resetObsidianZip = () => {
+    setError("");
+    setZipFile(null);
+    setZipPreview(null);
+    setObsidianPhase("input");
+  };
+
   const handleSubmit = async () => {
     setError("");
     setResult(null);
@@ -442,6 +529,7 @@ export default function FeedMemory() {
   };
 
   const currentTab = TABS.find((t) => t.id === activeTab)!;
+  const effectiveObsidianMode: "local" | "zip" = isLocalBackend ? obsidianMode : "zip";
 
   const inputLabel =
     activeTab === "url" ? "SOURCE URL" :
@@ -492,77 +580,190 @@ export default function FeedMemory() {
             {activeTab === "obsidian" ? (
               /* ── Obsidian flow ── */
               <div className="space-y-5">
-                {obsidianPhase === "done" && obsidianResult ? (
-                  <div className="space-y-3">
-                    <p className="label-caps text-secondary">Vault ingested</p>
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center shrink-0">
-                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                          <path d="M3 8.5l3.5 3.5 6.5-7" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                      </div>
-                      <div>
-                        <p className="text-[15px] font-medium text-on-surface">
-                          {obsidianResult.total_files_processed} notes ingested
-                        </p>
-                        <p className="text-sm text-secondary mt-0.5">
-                          {obsidianResult.total_chunks_stored} chunks · {obsidianResult.total_words_processed.toLocaleString()} words
-                        </p>
-                      </div>
-                    </div>
-                    {obsidianResult.all_tags.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 pt-1">
-                        {obsidianResult.all_tags.slice(0, 10).map((tag) => (
-                          <span key={tag} className="text-[11px] px-2.5 py-1 rounded-full bg-primary-container text-on-primary-container font-medium">
-                            #{tag}
-                          </span>
-                        ))}
-                        {obsidianResult.all_tags.length > 10 && (
-                          <span className="text-xs text-outline self-center">+{obsidianResult.all_tags.length - 10} more</span>
+                {isLocalBackend && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setObsidianMode("local")}
+                      className={`px-4 py-2 rounded-full text-[12.5px] font-medium label-caps transition-all ${
+                        obsidianMode === "local"
+                          ? "bg-primary text-white"
+                          : "border border-ghost-border text-secondary hover:text-on-surface"
+                      }`}
+                    >
+                      Local path
+                    </button>
+                    <button
+                      onClick={() => setObsidianMode("zip")}
+                      className={`px-4 py-2 rounded-full text-[12.5px] font-medium label-caps transition-all ${
+                        obsidianMode === "zip"
+                          ? "bg-primary text-white"
+                          : "border border-ghost-border text-secondary hover:text-on-surface"
+                      }`}
+                    >
+                      Upload zip
+                    </button>
+                  </div>
+                )}
+
+                {/* Local path flow */}
+                {effectiveObsidianMode === "local" ? (
+                  <div className="space-y-5">
+                    {obsidianPhase === "done" && obsidianResult ? (
+                      <div className="space-y-3">
+                        <p className="label-caps text-secondary">Vault ingested</p>
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center shrink-0">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                              <path d="M3 8.5l3.5 3.5 6.5-7" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          </div>
+                          <div>
+                            <p className="text-[15px] font-medium text-on-surface">
+                              {obsidianResult.total_files_processed} notes ingested
+                            </p>
+                            <p className="text-sm text-secondary mt-0.5">
+                              {obsidianResult.total_chunks_stored} chunks · {obsidianResult.total_words_processed.toLocaleString()} words
+                            </p>
+                          </div>
+                        </div>
+                        {obsidianResult.all_tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {obsidianResult.all_tags.slice(0, 10).map((tag) => (
+                              <span key={tag} className="text-[11px] px-2.5 py-1 rounded-full bg-primary-container text-on-primary-container font-medium">
+                                #{tag}
+                              </span>
+                            ))}
+                            {obsidianResult.all_tags.length > 10 && (
+                              <span className="text-xs text-outline self-center">+{obsidianResult.all_tags.length - 10} more</span>
+                            )}
+                          </div>
                         )}
                       </div>
+                    ) : obsidianPhase === "ingesting" ? (
+                      <div className="py-8 text-center space-y-3">
+                        <p className="text-[15px] text-muted">Ingesting vault — this may take a minute…</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="space-y-2">
+                          <label className="label-caps text-secondary">Vault folder path</label>
+                          <input
+                            type="text"
+                            value={vaultPath}
+                            onChange={(e) => { setVaultPath(e.target.value); setVaultPreview(null); setObsidianPhase("input"); }}
+                            onKeyDown={(e) => { if (e.key === "Enter" && obsidianPhase === "input") handleVaultPreview(); }}
+                            placeholder="/Users/yourname/Documents/ObsidianVault"
+                            className="w-full bg-surface-container-low px-4 py-3 text-[15px] text-on-surface placeholder:text-outline rounded-lg border-0 border-b-2 border-outline-variant focus:outline-none focus:border-primary transition-colors"
+                          />
+                          <p className="text-xs text-outline">
+                            Open Obsidian → Settings → About to find your vault path.
+                          </p>
+                        </div>
+                        {vaultPreview && obsidianPhase === "preview" && (
+                          <div className="rounded-xl bg-surface-container-low px-5 py-4 space-y-1">
+                            <p className="text-[15px] font-medium text-on-surface">{vaultPreview.vault_name}</p>
+                            <p className="text-sm text-secondary">
+                              {vaultPreview.total_files} notes · {vaultPreview.total_words.toLocaleString()} words
+                            </p>
+                            <p className="text-xs text-outline">
+                              ~{vaultPreview.estimated_chunks} chunks to store
+                            </p>
+                            {vaultPreview.skipped_files > 0 && (
+                              <p className="text-xs text-outline">{vaultPreview.skipped_files} short notes will be skipped</p>
+                            )}
+                            {vaultPreview.total_files > 500 && (
+                              <p className="text-xs text-secondary mt-2">Large vault — ingestion may take 2–3 minutes. Do not close this tab.</p>
+                            )}
+                          </div>
+                        )}
+                      </>
                     )}
-                  </div>
-                ) : obsidianPhase === "ingesting" ? (
-                  <div className="py-8 text-center space-y-3">
-                    <div className="inline-block w-5 h-5 border-2 border-surface-container-high border-t-primary rounded-full animate-spin" />
-                    <p className="text-[15px] text-on-surface font-medium">{loadingMessage}</p>
-                    <p className="text-sm text-secondary">Do not close this tab.</p>
                   </div>
                 ) : (
-                  <>
-                    <div className="space-y-2">
-                      <label className="label-caps text-secondary">Vault folder path</label>
-                      <input
-                        type="text"
-                        value={vaultPath}
-                        onChange={(e) => { setVaultPath(e.target.value); setVaultPreview(null); setObsidianPhase("input"); }}
-                        onKeyDown={(e) => { if (e.key === "Enter" && obsidianPhase === "input") handleVaultPreview(); }}
-                        placeholder="/Users/yourname/Documents/ObsidianVault"
-                        className="w-full bg-surface-container-low px-4 py-3 text-[15px] text-on-surface placeholder:text-outline rounded-lg border-0 border-b-2 border-outline-variant focus:outline-none focus:border-primary transition-colors"
-                      />
-                      <p className="text-xs text-outline">
-                        Open Obsidian → Settings → About to find your vault path.
-                      </p>
-                    </div>
-                    {vaultPreview && obsidianPhase === "preview" && (
-                      <div className="rounded-xl bg-surface-container-low px-5 py-4 space-y-1">
-                        <p className="text-[15px] font-medium text-on-surface">{vaultPreview.vault_name}</p>
-                        <p className="text-sm text-secondary">
-                          {vaultPreview.total_files} notes · {vaultPreview.total_words.toLocaleString()} words
-                        </p>
-                        <p className="text-xs text-outline">
-                          ~{vaultPreview.estimated_chunks} chunks to store
-                        </p>
-                        {vaultPreview.skipped_files > 0 && (
-                          <p className="text-xs text-outline">{vaultPreview.skipped_files} short notes will be skipped</p>
-                        )}
-                        {vaultPreview.total_files > 500 && (
-                          <p className="text-xs text-secondary mt-2">Large vault — ingestion may take 2–3 minutes. Do not close this tab.</p>
+                  /* Zip upload flow */
+                  <div className="space-y-5">
+                    {obsidianPhase === "done" && obsidianResult ? (
+                      <div className="space-y-3">
+                        <p className="label-caps text-secondary">Vault ingested</p>
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center shrink-0">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                              <path d="M3 8.5l3.5 3.5 6.5-7" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          </div>
+                          <div>
+                            <p className="text-[15px] font-medium text-on-surface">
+                              {obsidianResult.total_files_processed} notes ingested
+                            </p>
+                            <p className="text-sm text-secondary mt-0.5">
+                              {obsidianResult.total_chunks_stored} chunks · {obsidianResult.total_words_processed.toLocaleString()} words
+                            </p>
+                          </div>
+                        </div>
+                        {obsidianResult.all_tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {obsidianResult.all_tags.slice(0, 10).map((tag) => (
+                              <span key={tag} className="text-[11px] px-2.5 py-1 rounded-full bg-primary-container text-on-primary-container font-medium">
+                                #{tag}
+                              </span>
+                            ))}
+                            {obsidianResult.all_tags.length > 10 && (
+                              <span className="text-xs text-outline self-center">+{obsidianResult.all_tags.length - 10} more</span>
+                            )}
+                          </div>
                         )}
                       </div>
+                    ) : obsidianPhase === "ingesting" ? (
+                      <div className="py-8 text-center">
+                        <p className="text-[15px] text-muted">Ingesting vault — this may take a minute…</p>
+                      </div>
+                    ) : zipPreview && obsidianPhase === "preview" ? (
+                      <div className="space-y-3">
+                        <div className="rounded-xl bg-surface-container-low px-5 py-4 space-y-1">
+                          <p className="text-[15px] font-medium text-on-surface">{zipPreview.vault_name}</p>
+                          <p className="text-sm text-secondary">
+                            {zipPreview.total_files} notes · {zipPreview.total_words.toLocaleString()} words
+                          </p>
+                          <p className="text-xs text-outline">
+                            ~{zipPreview.estimated_chunks} chunks to store
+                          </p>
+                          {zipPreview.skipped_files > 0 && (
+                            <p className="text-xs text-outline">{zipPreview.skipped_files} short notes will be skipped</p>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <label className="label-caps text-secondary">Vault zip file</label>
+                        <div
+                          onDragOver={handleZipDragOver}
+                          onDragLeave={handleZipDragLeave}
+                          onDrop={handleZipDrop}
+                          onClick={() => docFileInputRef.current?.click()}
+                          className={`rounded-lg border-2 border-dashed p-10 text-center cursor-pointer transition-colors ${
+                            zipIsDragging
+                              ? "border-primary bg-surface-container"
+                              : "border-ghost-border bg-surface-container-low hover:border-primary/30"
+                          }`}
+                        >
+                          <p className="text-[15px] text-secondary">
+                            Drop your vault.zip here or click to browse
+                          </p>
+                          <p className="text-xs text-outline mt-1">Max 50 MB</p>
+                        </div>
+                        <input
+                          ref={docFileInputRef}
+                          type="file"
+                          accept=".zip"
+                          onChange={(e) => {
+                            const file = e.currentTarget.files?.[0];
+                            if (file) handleZipPreview(file);
+                          }}
+                          className="hidden"
+                        />
+                      </div>
                     )}
-                  </>
+                  </div>
                 )}
               </div>
 
@@ -702,38 +903,68 @@ export default function FeedMemory() {
             </div>
 
             {activeTab === "obsidian" ? (
-              obsidianPhase === "done" ? (
-                <button
-                  onClick={() => { setObsidianPhase("input"); setVaultPreview(null); setObsidianResult(null); setVaultPath(""); setError(""); }}
-                  className="px-6 py-2.5 rounded-lg bg-surface-container text-secondary text-[13px] font-medium hover:bg-surface-container-high transition-colors"
-                >
-                  Add another vault
-                </button>
-              ) : obsidianPhase === "ingesting" ? null : obsidianPhase === "preview" ? (
-                <div className="flex gap-3">
+              effectiveObsidianMode === "local" ? (
+                // Local path flow buttons
+                obsidianPhase === "done" ? (
                   <button
-                    onClick={() => { setObsidianPhase("input"); setVaultPreview(null); setError(""); }}
-                    disabled={loading}
-                    className="px-4 py-2.5 rounded-lg bg-surface-container text-secondary text-[13px] font-medium hover:bg-surface-container-high disabled:opacity-50 transition-colors"
+                    onClick={() => { setObsidianPhase("input"); setVaultPreview(null); setObsidianResult(null); setVaultPath(""); setError(""); }}
+                    className="px-6 py-2.5 rounded-lg bg-surface-container text-secondary text-[13px] font-medium hover:bg-surface-container-high transition-colors"
                   >
-                    Cancel
+                    Add another vault
                   </button>
+                ) : obsidianPhase === "ingesting" ? null : obsidianPhase === "preview" ? (
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => { setObsidianPhase("input"); setVaultPreview(null); setError(""); }}
+                      disabled={loading}
+                      className="px-4 py-2.5 rounded-lg bg-surface-container text-secondary text-[13px] font-medium hover:bg-surface-container-high disabled:opacity-50 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleVaultIngest}
+                      disabled={loading}
+                      className="btn-primary px-6 py-2.5 rounded-lg text-white text-[13px] font-semibold uppercase tracking-widest shadow-card hover:opacity-90 disabled:opacity-50 transition-all"
+                    >
+                      Ingest all notes
+                    </button>
+                  </div>
+                ) : (
                   <button
-                    onClick={handleVaultIngest}
+                    onClick={handleVaultPreview}
                     disabled={loading}
                     className="btn-primary px-6 py-2.5 rounded-lg text-white text-[13px] font-semibold uppercase tracking-widest shadow-card hover:opacity-90 disabled:opacity-50 transition-all"
                   >
-                    Ingest all notes
+                    {loading ? "Scanning vault…" : "Preview vault"}
                   </button>
-                </div>
+                )
               ) : (
-                <button
-                  onClick={handleVaultPreview}
-                  disabled={loading}
-                  className="btn-primary px-6 py-2.5 rounded-lg text-white text-[13px] font-semibold uppercase tracking-widest shadow-card hover:opacity-90 disabled:opacity-50 transition-all"
-                >
-                  {loading ? "Scanning vault…" : "Preview vault"}
-                </button>
+                // Zip upload flow buttons
+                obsidianPhase === "done" ? (
+                  <button
+                    onClick={() => resetObsidianZip()}
+                    className="px-6 py-2.5 rounded-lg bg-surface-container text-secondary text-[13px] font-medium hover:bg-surface-container-high transition-colors"
+                  >
+                    Upload another vault
+                  </button>
+                ) : obsidianPhase === "ingesting" ? null : zipPreview && obsidianPhase === "preview" ? (
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => resetObsidianZip()}
+                      disabled={loading}
+                      className="px-4 py-2.5 rounded-lg bg-surface-container text-secondary text-[13px] font-medium hover:bg-surface-container-high disabled:opacity-50 transition-colors"
+                    >
+                      Choose different file
+                    </button>
+                    <button
+                      onClick={handleZipIngest}
+                      disabled={loading}
+                      className="btn-primary px-6 py-2.5 rounded-lg text-white text-[13px] font-semibold uppercase tracking-widest shadow-card hover:opacity-90 disabled:opacity-50 transition-all"
+                    >
+                      Ingest vault
+                    </button>
+                  </div>
+                ) : null
               )
             ) : (
               <button
