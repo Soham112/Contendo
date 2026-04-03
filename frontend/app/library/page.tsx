@@ -319,10 +319,50 @@ function TopicMapView({
     setOpenTags(prev => new Set(Array.from(prev).concat(tag)));
   };
 
-  const pillStyle = (sourceCount: number): { fontSize: string; padding: string } => {
-    if (sourceCount >= 10) return { fontSize: "14px", padding: "6px 14px" };
-    if (sourceCount >= 4) return { fontSize: "12px", padding: "5px 12px" };
-    return { fontSize: "11px", padding: "4px 10px" };
+  const getClusterColor = (index: number): string => {
+    const colors = ["#58614f", "#81543c", "#4a6670", "#6b5e45", "#4d5a4d"];
+    return colors[index % 5];
+  };
+
+  const getSourceTypeDotColor = (sourceType: string): string => {
+    switch (sourceType) {
+      case "note":
+        return "#58614f";
+      case "article":
+        return "#81543c";
+      case "image":
+        return "#4a6670";
+      default:
+        return "#aeb3b2";
+    }
+  };
+
+  const pillStyle = (sourceCount: number): { fontSize: string; padding: string; fontWeight: string; background: string; color: string } => {
+    if (sourceCount >= 7) {
+      return {
+        fontSize: "15px",
+        padding: "8px 16px",
+        fontWeight: "600",
+        background: "rgba(88, 97, 79, 0.12)",
+        color: "#58614f",
+      };
+    }
+    if (sourceCount >= 4) {
+      return {
+        fontSize: "13px",
+        padding: "6px 12px",
+        fontWeight: "500",
+        background: "rgba(100, 94, 87, 0.10)",
+        color: "#645e57",
+      };
+    }
+    return {
+      fontSize: "11px",
+      padding: "4px 10px",
+      fontWeight: "400",
+      background: "#f3f4f3",
+      color: "rgba(47, 51, 51, 0.6)",
+    };
   };
 
   if (loading) {
@@ -348,10 +388,10 @@ function TopicMapView({
     <div className="space-y-8">
       {/* Summary stat pills */}
       <div className="flex gap-3 flex-wrap">
-        <span className="label-caps text-secondary bg-surface-container rounded-full px-4 py-2">
+        <span className="label-caps rounded-full px-4 py-2" style={{ background: "rgba(88, 97, 79, 0.10)", color: "#58614f" }}>
           {totalTags} topic{totalTags !== 1 ? "s" : ""} in your knowledge base
         </span>
-        <span className="label-caps text-secondary bg-surface-container rounded-full px-4 py-2">
+        <span className="label-caps rounded-full px-4 py-2" style={{ background: "rgba(129, 84, 60, 0.08)", color: "#81543c" }}>
           {totalSources} source{totalSources !== 1 ? "s" : ""} across {totalTags} tag{totalTags !== 1 ? "s" : ""}
         </span>
       </div>
@@ -360,16 +400,26 @@ function TopicMapView({
       {clusters.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {clusters.map(cluster => {
-            const { fontSize, padding } = pillStyle(cluster.source_count);
+            const { fontSize, padding, fontWeight, background, color } = pillStyle(cluster.source_count);
             return (
               <button
                 key={cluster.tag}
                 onClick={() => scrollToCluster(cluster.tag)}
-                className="label-caps rounded-full bg-surface-container text-on-surface transition-colors hover:bg-surface-container-high ghost-border"
-                style={{ fontSize, padding }}
+                className="rounded-lg transition-all hover:opacity-80"
+                style={{
+                  fontSize,
+                  padding,
+                  fontWeight,
+                  background,
+                  color,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                }}
               >
                 {cluster.tag}
-                <span className="ml-1.5 opacity-50">{cluster.source_count}</span>
+                <span className="ml-1.5" style={{ opacity: 0.6 }}>
+                  {cluster.source_count}
+                </span>
               </button>
             );
           })}
@@ -378,20 +428,27 @@ function TopicMapView({
 
       {/* Cluster sections */}
       <div className="space-y-3">
-        {clusters.map(cluster => {
+        {clusters.map((cluster, clusterIndex) => {
           const isOpen = openTags.has(cluster.tag);
+          const accentColor = getClusterColor(clusterIndex);
           return (
             <div
               key={cluster.tag}
               id={`cluster-${cluster.tag.replace(/\s+/g, "-")}`}
               className="bg-surface-container-low rounded-lg overflow-hidden"
+              style={{
+                borderLeft: `4px solid ${accentColor}`,
+                paddingLeft: 0,
+              }}
             >
               <button
                 onClick={() => toggleCluster(cluster.tag)}
                 className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-surface-container transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  <span className="font-headline text-[15px] text-on-surface">{cluster.tag}</span>
+                  <span className="font-headline text-[1.1rem] text-on-surface" style={{ fontStyle: "italic" }}>
+                    {cluster.tag}
+                  </span>
                   <span className="label-caps text-outline">
                     {cluster.source_count} source{cluster.source_count !== 1 ? "s" : ""} · {cluster.total_chunks} chunk{cluster.total_chunks !== 1 ? "s" : ""}
                   </span>
@@ -409,6 +466,10 @@ function TopicMapView({
                       onClick={() => onSourceClick(source.source_title)}
                       className="flex items-center gap-3 text-left group"
                     >
+                      <span
+                        className="inline-block w-2 h-2 rounded-full shrink-0"
+                        style={{ background: getSourceTypeDotColor(source.source_type), marginRight: 8 }}
+                      />
                       <span className="text-[13px] text-on-surface group-hover:text-primary transition-colors flex-1 leading-snug">
                         {source.source_title}
                       </span>
@@ -428,13 +489,13 @@ function TopicMapView({
 
         {/* Unclustered section */}
         {unclustered.length > 0 && (
-          <div className="bg-surface-container rounded-lg overflow-hidden">
+          <div className="bg-surface-container rounded-lg overflow-hidden" style={{ borderLeft: `4px solid ${getClusterColor(clusters.length)}` }}>
             <button
               onClick={() => setShowUnclustered(v => !v)}
               className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-surface-container-high transition-colors"
             >
               <div className="flex items-center gap-3">
-                <span className="font-headline text-[15px] text-outline">Unclustered</span>
+                <span className="font-headline text-[1.1rem] text-outline" style={{ fontStyle: "italic" }}>Unclustered</span>
                 <span className="label-caps text-outline-variant">
                   {unclustered.length} source{unclustered.length !== 1 ? "s" : ""} · unique tags only
                 </span>
@@ -452,6 +513,10 @@ function TopicMapView({
                     onClick={() => onSourceClick(source.source_title)}
                     className="flex items-center gap-3 text-left group"
                   >
+                    <span
+                      className="inline-block w-2 h-2 rounded-full shrink-0"
+                      style={{ background: getSourceTypeDotColor(source.source_type), marginRight: 8 }}
+                    />
                     <span className="text-[13px] text-outline group-hover:text-secondary transition-colors flex-1 leading-snug">
                       {source.source_title}
                     </span>
