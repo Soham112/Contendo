@@ -465,11 +465,21 @@ export default function FirstPostPage() {
     if (resolvedTopic) {
       updateAnswers({ topic: resolvedTopic })
       setPrefillTopic(resolvedTopic)
-      sessionStorage.removeItem(WELCOME_TOPIC_PREFILL_KEY)
+      // Keep fallback topic through auth transitions in case query params are dropped.
+      if (queryTopic) {
+        sessionStorage.setItem(WELCOME_TOPIC_PREFILL_KEY, queryTopic)
+      }
     }
 
     setPrefillApplied(true)
   }, [prefillApplied, searchParams])
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return
+    if (!answers.topic.trim()) return
+    // Once signed in and hydrated, clear the continuity fallback to avoid stale prefill.
+    sessionStorage.removeItem(WELCOME_TOPIC_PREFILL_KEY)
+  }, [isLoaded, isSignedIn, answers.topic])
 
   // If the user is already signed in with a completed profile, skip this flow
   useEffect(() => {
