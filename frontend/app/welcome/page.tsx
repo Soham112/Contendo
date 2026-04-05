@@ -50,6 +50,12 @@ function TopNav({ isSignedIn, isLoaded }: { isSignedIn: boolean; isLoaded: boole
           >
             Careers
           </a>
+          <a
+            href="/pricing"
+            className="text-[0.875rem] text-secondary hover:text-on-surface transition-colors"
+          >
+            Pricing
+          </a>
         </div>
 
         {/* Right — auth-aware, unchanged */}
@@ -773,6 +779,13 @@ export default function WelcomePage() {
                   >
                     Get started
                   </Link>
+                  <a
+                    href="/pricing"
+                    className="text-secondary hover:text-on-surface transition-colors"
+                    style={{ fontSize: "0.9rem" }}
+                  >
+                    Pricing
+                  </a>
                 </div>
               </div>
 
