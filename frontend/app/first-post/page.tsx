@@ -37,7 +37,7 @@ interface DraftState {
   postId: number | null
 }
 
-const WELCOME_TOPIC_PREFILL_KEY = 'contentOS_first_post_topic'
+const WELCOME_TOPIC_PREFILL_KEY = 'contendo_topic'
 
 // ── SVG icons for role tiles ──────────────────────────────────────────────────
 function IconDataMl() {
@@ -690,9 +690,21 @@ export default function FirstPostPage() {
       <Wordmark />
 
       {!isSignedIn ? (
-        <AuthScreen prefillTopic={prefillTopic || answers.topic} />
+        <>
+          {answers.topic.trim() && (
+            <p className="text-[11px] text-[#2f3333]/50 label-caps tracking-[0.06em] text-center mb-3">
+              Writing about: {answers.topic.trim()}
+            </p>
+          )}
+          <AuthScreen prefillTopic={prefillTopic || answers.topic} />
+        </>
       ) : (
         <div className="w-full max-w-[600px]">
+          {answers.topic.trim() && (
+            <p className="text-[11px] text-[#2f3333]/50 label-caps tracking-[0.06em] text-center mb-3">
+              Writing about: {answers.topic.trim()}
+            </p>
+          )}
           <div className="bg-white rounded-2xl shadow-[0px_4px_20px_rgba(47,51,51,0.04),0px_12px_40px_rgba(47,51,51,0.06)] px-8 py-10">
             <StepDots total={5} current={screen} />
 
@@ -732,7 +744,6 @@ export default function FirstPostPage() {
                       {[
                         { key: 'linkedin post',  label: 'LinkedIn Post' },
                         { key: 'medium article', label: 'Medium Article' },
-                        { key: 'thread',         label: 'Thread' },
                       ].map(f => (
                         <button
                           key={f.key}

@@ -4,7 +4,7 @@
 > When any prompt needs to be tuned, update this file first, then update the
 > corresponding agent file to match. The two must never be out of sync.
 
-> **Verification note (2026-04-05):** All agent system prompts remain in sync with implementations. The most recent change (`feature/welcome-page-redesign` — redesigned `/welcome` and wired hero topic prefill into `/create` and `/first-post`) touched only frontend routing/UI/state files and required no agent prompt changes.
+> **Verification note (2026-04-05):** All agent system prompts remain in sync with implementations. The most recent change (`feature/welcome-page-redesign` — minimal welcome→first-post continuity update: shared `contendo_topic` handoff key, subtle first-post topic metadata line, and Thread removed from first-post Step 1 format options) touched only frontend routing/UI/state files and required no agent prompt changes.
 
 ---
 

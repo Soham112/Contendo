@@ -34,7 +34,7 @@ const INSPIRATION_TILES = [
 ];
 
 const HERO_DRAFT_KEY = "contentOS_last_topic";
-const FIRST_POST_PREFILL_KEY = "contentOS_first_post_topic";
+const SHARED_TOPIC_KEY = "contendo_topic";
 
 function TopNav({ isSignedIn, isLoaded }: { isSignedIn: boolean; isLoaded: boolean }) {
   return (
@@ -103,6 +103,7 @@ export default function WelcomePage() {
     }
 
     setShowInputError(false);
+    sessionStorage.setItem(SHARED_TOPIC_KEY, topic);
 
     if (isLoaded && isSignedIn) {
       sessionStorage.setItem(HERO_DRAFT_KEY, topic);
@@ -110,7 +111,6 @@ export default function WelcomePage() {
       return;
     }
 
-    sessionStorage.setItem(FIRST_POST_PREFILL_KEY, topic);
     router.push(`/first-post?topic=${encodeURIComponent(topic)}`);
   };
 
