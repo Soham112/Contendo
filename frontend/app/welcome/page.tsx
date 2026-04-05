@@ -601,7 +601,7 @@ export default function WelcomePage() {
                 },
                 {
                   quote:
-                    "I had months of notes and project work sitting unused. Being able to feed all of it in and get posts that reflect how I actually think about data engineering — that's what got me posting consistently.",
+                    "I had months of notes and project work sitting unused. Being able to feed all of it in and get posts that reflect how I actually think about data — that's what got me posting consistently.",
                   name: "Sejal Jagtap",
                   role: "MS Data Science · Duke University",
                 },
