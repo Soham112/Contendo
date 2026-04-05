@@ -4,7 +4,7 @@
 > When any prompt needs to be tuned, update this file first, then update the
 > corresponding agent file to match. The two must never be out of sync.
 
-> **Verification note (2026-04-05):** All agent system prompts remain in sync with implementations. The most recent change (`feature/welcome-page-redesign` — continuity/auth fix: retain `contendo_topic` through auth until first-post hydration and preserve `redirect_url` across Clerk sign-in/sign-up switches) touched only frontend routing/UI/state files and required no agent prompt changes.
+> **Verification note (2026-04-05):** All agent system prompts remain in sync with implementations. The most recent change (`feature/welcome-page-redesign` — first-post conditional rendering tweak: hide "Writing about" on Step 1 and keep it from Step 2 onward) touched only frontend routing/UI/state files and required no agent prompt changes.
 
 ---
 
