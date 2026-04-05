@@ -1,6 +1,19 @@
 import { SignUp } from "@clerk/nextjs";
 
-export default function SignUpPage() {
+interface SignUpPageProps {
+  searchParams?: {
+    redirect_url?: string;
+  };
+}
+
+export default function SignUpPage({ searchParams }: SignUpPageProps) {
+  const requestedRedirect = searchParams?.redirect_url;
+  const redirectTarget =
+    typeof requestedRedirect === "string" && requestedRedirect.startsWith("/")
+      ? requestedRedirect
+      : "/";
+  const signInUrl = `/sign-in?redirect_url=${encodeURIComponent(redirectTarget)}`;
+
   return (
     <div className="min-h-screen bg-[#faf9f8] flex flex-col items-center justify-center gap-8">
       <div className="flex flex-col items-center gap-1">
@@ -12,6 +25,9 @@ export default function SignUpPage() {
         </span>
       </div>
       <SignUp
+        signInUrl={signInUrl}
+        forceRedirectUrl={redirectTarget}
+        fallbackRedirectUrl={redirectTarget}
         appearance={{
           variables: {
             colorPrimary: "#58614f",
