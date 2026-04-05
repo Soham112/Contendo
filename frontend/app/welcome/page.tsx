@@ -6,14 +6,14 @@ import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 
 const MOOD_GRADIENTS = [
-  { label: "Analytical",   from: "#3a4a35", to: "#58614f" },
-  { label: "Poetic",       from: "#6b5b4e", to: "#8a7060" },
-  { label: "Technical",    from: "#2c3e50", to: "#4a6741" },
-  { label: "Narrative",    from: "#5c4a3a", to: "#7a6550" },
-  { label: "Contrarian",   from: "#3d3d3d", to: "#5a5a5a" },
-  { label: "Visionary",    from: "#4a3f5c", to: "#6b5b7a" },
-  { label: "Reflective",   from: "#4a5c4a", to: "#6b8a6b" },
-  { label: "Direct",       from: "#5c4a2a", to: "#8a7040" },
+  { label: "Analytical",   from: "#3a4a35", to: "#58614f", img: "/mood-analytical.png" },
+  { label: "Poetic",       from: "#6b5b4e", to: "#8a7060", img: "/mood-poetic.png" },
+  { label: "Technical",    from: "#2c3e50", to: "#4a6741", img: "/mood-technical.png" },
+  { label: "Narrative",    from: "#5c4a3a", to: "#7a6550", img: "/mood-narrative.png" },
+  { label: "Contrarian",   from: "#3d3d3d", to: "#5a5a5a", img: "/mood-contrarian.png" },
+  { label: "Visionary",    from: "#4a3f5c", to: "#6b5b7a", img: "/mood-visionary.png" },
+  { label: "Reflective",   from: "#4a5c4a", to: "#6b8a6b", img: "/mood-reflective.png" },
+  { label: "Direct",       from: "#5c4a2a", to: "#8a7040", img: "/mood-direct.png" },
 ];
 
 const HERO_DRAFT_KEY = "contentOS_last_topic";
@@ -484,12 +484,19 @@ export default function WelcomePage() {
                 <div
                   key={tile.label}
                   className="rounded-2xl relative overflow-hidden flex items-end p-4"
-                  style={{
-                    minHeight: 160,
-                    background: `linear-gradient(135deg, ${tile.from} 0%, ${tile.to} 100%)`,
-                  }}
+                  style={{ minHeight: 160 }}
                 >
-                  <span className="font-headline italic text-white" style={{ fontSize: "1rem" }}>
+                  <img
+                    src={tile.img}
+                    alt={tile.label}
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                  {/* dark gradient scrim so label stays legible */}
+                  <div
+                    className="absolute inset-0"
+                    style={{ background: "linear-gradient(to top, rgba(0,0,0,0.55) 0%, transparent 55%)" }}
+                  />
+                  <span className="relative font-headline italic text-white" style={{ fontSize: "1rem" }}>
                     {tile.label}
                   </span>
                 </div>
