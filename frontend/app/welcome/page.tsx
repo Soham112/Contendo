@@ -22,7 +22,7 @@ const SHARED_TOPIC_KEY = "contendo_topic";
 function TopNav({ isSignedIn, isLoaded }: { isSignedIn: boolean; isLoaded: boolean }) {
   return (
     <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-md">
-      <div className="max-w-[1200px] mx-auto px-5 sm:px-8 py-4 flex items-center justify-between">
+      <div className="max-w-[1200px] mx-auto px-5 sm:px-8 py-4 flex items-center justify-between relative">
         <Link
           href="/welcome"
           className="font-headline italic text-on-surface text-xl tracking-tight"
@@ -30,8 +30,9 @@ function TopNav({ isSignedIn, isLoaded }: { isSignedIn: boolean; isLoaded: boole
           Contendo
         </Link>
 
-        {/* Center links — hidden on mobile */}
-        <div className="hidden md:flex items-center gap-8">
+        {/* Center links — absolutely centered in the nav */}
+        <div
+          className="hidden md:flex items-center gap-8 absolute left-1/2 -translate-x-1/2">
           <a
             href="#how-it-works"
             className="text-[0.875rem] text-secondary hover:text-on-surface transition-colors"
