@@ -4,7 +4,7 @@
 > When any prompt needs to be tuned, update this file first, then update the
 > corresponding agent file to match. The two must never be out of sync.
 
-> **Verification note (2026-04-05):** All agent system prompts remain in sync with implementations. The most recent change (`feature/first-post-flow` — completed `/first-post` generation/profile-save/draft-handoff UX and navigation updates) touched only frontend routing/UI/state files and required no agent prompt changes.
+> **Verification note (2026-04-05):** All agent system prompts remain in sync with implementations. The most recent change (`feature/welcome-page-redesign` — redesigned `/welcome` and wired hero topic prefill into `/create` and `/first-post`) touched only frontend routing/UI/state files and required no agent prompt changes.
 
 ---
 

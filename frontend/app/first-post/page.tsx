@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useUser, useSignIn } from '@clerk/nextjs'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Sparkles } from 'lucide-react'
 import { useApi } from '@/lib/api'
 import {
@@ -36,6 +36,8 @@ interface DraftState {
   archetype: string
   postId: number | null
 }
+
+const WELCOME_TOPIC_PREFILL_KEY = 'contentOS_first_post_topic'
 
 // ── SVG icons for role tiles ──────────────────────────────────────────────────
 function IconDataMl() {
@@ -345,24 +347,32 @@ function DraftScreen({
 }
 
 // ── Auth screen ───────────────────────────────────────────────────────────────
-function AuthScreen() {
+function AuthScreen({ prefillTopic }: { prefillTopic: string }) {
   const { signIn, isLoaded } = useSignIn()
   const [loading, setLoading] = useState(false)
 
   async function handleGoogle() {
     if (!signIn || !isLoaded) return
     setLoading(true)
+    const redirectTarget = prefillTopic.trim()
+      ? `/first-post?topic=${encodeURIComponent(prefillTopic.trim())}`
+      : '/first-post'
+
     try {
       await signIn.authenticateWithRedirect({
         strategy: 'oauth_google',
         redirectUrl: '/sso-callback',
-        redirectUrlComplete: '/first-post',
+        redirectUrlComplete: redirectTarget,
       })
     } catch (err) {
       console.error('[first-post] Google OAuth error:', err)
       setLoading(false)
     }
   }
+
+  const emailHref = prefillTopic.trim()
+    ? `/sign-up?redirect_url=${encodeURIComponent(`/first-post?topic=${prefillTopic.trim()}`)}`
+    : '/sign-up?redirect_url=/first-post'
 
   return (
     <div className="w-full max-w-[480px] bg-white rounded-2xl shadow-[0px_4px_20px_rgba(47,51,51,0.04),0px_12px_40px_rgba(47,51,51,0.06)] px-8 py-10">
@@ -396,7 +406,7 @@ function AuthScreen() {
       </div>
 
       <a
-        href="/sign-up?redirect_url=/first-post"
+        href={emailHref}
         className="w-full flex items-center justify-center py-3 rounded-xl text-[14px] text-[#2f3333] hover:bg-[#f3f4f3] transition-colors ghost-border"
       >
         Continue with email
@@ -413,6 +423,7 @@ function AuthScreen() {
 export default function FirstPostPage() {
   const { isLoaded, isSignedIn } = useUser()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const api = useApi()
 
   const [screen, setScreen] = useState(0)
@@ -420,6 +431,8 @@ export default function FirstPostPage() {
   const [draftState, setDraftState] = useState<DraftState | null>(null)
   const [copied, setCopied] = useState(false)
   const [profileChecked, setProfileChecked] = useState(false)
+  const [prefillTopic, setPrefillTopic] = useState('')
+  const [prefillApplied, setPrefillApplied] = useState(false)
 
   const [answers, setAnswers] = useState<Answers>({
     role: '',
@@ -442,6 +455,21 @@ export default function FirstPostPage() {
 
   const updateAnswers = (patch: Partial<Answers>) =>
     setAnswers(prev => ({ ...prev, ...patch }))
+
+  useEffect(() => {
+    if (prefillApplied) return
+    const queryTopic = (searchParams.get('topic') || '').trim()
+    const sessionTopic = (sessionStorage.getItem(WELCOME_TOPIC_PREFILL_KEY) || '').trim()
+    const resolvedTopic = queryTopic || sessionTopic
+
+    if (resolvedTopic) {
+      updateAnswers({ topic: resolvedTopic })
+      setPrefillTopic(resolvedTopic)
+      sessionStorage.removeItem(WELCOME_TOPIC_PREFILL_KEY)
+    }
+
+    setPrefillApplied(true)
+  }, [prefillApplied, searchParams])
 
   // If the user is already signed in with a completed profile, skip this flow
   useEffect(() => {
@@ -662,7 +690,7 @@ export default function FirstPostPage() {
       <Wordmark />
 
       {!isSignedIn ? (
-        <AuthScreen />
+        <AuthScreen prefillTopic={prefillTopic || answers.topic} />
       ) : (
         <div className="w-full max-w-[600px]">
           <div className="bg-white rounded-2xl shadow-[0px_4px_20px_rgba(47,51,51,0.04),0px_12px_40px_rgba(47,51,51,0.06)] px-8 py-10">
