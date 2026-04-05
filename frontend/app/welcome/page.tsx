@@ -126,7 +126,15 @@ export default function WelcomePage() {
       <main>
 
         {/* ── Hero ──────────────────────────────────────────────────────────── */}
-        <section className="px-5 sm:px-8 text-center" style={{ paddingTop: 120, paddingBottom: 72 }}>
+        <section
+          className="px-5 sm:px-8 text-center flex flex-col items-center justify-center"
+          style={{
+            minHeight: "100vh",
+            paddingTop: 120,
+            paddingBottom: 72,
+            background: "linear-gradient(to bottom, #faf9f8 85%, #f3f4f3 100%)",
+          }}
+        >
           <div className="max-w-[980px] mx-auto">
             <h1
               className="font-headline font-normal leading-[1.1] tracking-tight mb-5"
