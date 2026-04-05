@@ -45,8 +45,8 @@ learns a user's knowledge base and writes posts in their voice.
 **Current state:** Fully working locally and deployed to production.
 Frontend on Vercel (contendo-six.vercel.app). Backend on Railway
 (contendo-production.up.railway.app). Clerk JWT auth added — multi-user,
-per-user data isolation. Onboarding flow at `/onboarding`. Profile editor
-at `/settings`. Per-user profiles stored at `DATA_DIR/profiles/profile_{user_id}.json`
+per-user data isolation. New-user flow at `/first-post` (`/onboarding` is
+kept as a legacy redirect). Profile editor at `/settings`. Per-user profiles stored at `DATA_DIR/profiles/profile_{user_id}.json`
 on Railway's persistent volume (`/data`). Landing page (`/welcome`) is the
 default entry point — unauthenticated visitors hitting `/` are redirected
 there by middleware; signed-in users can also visit `/welcome` (sidebar
@@ -78,7 +78,7 @@ logo links there) and see auth-aware CTAs ("Open workspace" → `/`).
 - In non-production without a token, `user_id` falls back to `"default"` (local dev convenience)
 - `CLERK_SECRET_KEY` is required in production for JWKS fetching
 - Frontend: all API calls go through `useApi()` from `lib/api.ts` — never raw `fetch()`
-- New users are redirected to `/onboarding` by `useProfileCheck` in AppShell
+- New users are redirected to `/first-post` by `useProfileCheck` in AppShell
 
 **ChromaDB:**
 - Collections are namespaced as `contendo_{user_id}`

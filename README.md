@@ -2,7 +2,7 @@
 
 A personal content generation system that learns your knowledge base and writes in your voice. You feed it articles, YouTube videos, images, and notes — it stores them as semantic memory. When you want to publish, it retrieves the most relevant knowledge, drafts content in your style, humanizes it, scores it, and hands you a final editable post.
 
-Built for a single user. No auth, no bloat — just a fast loop from raw knowledge to publishable content.
+Built for authenticated multi-user usage with per-user data isolation (Clerk + namespaced memory stores) and a fast loop from raw knowledge to publishable content.
 
 ---
 
@@ -11,7 +11,7 @@ Built for a single user. No auth, no bloat — just a fast loop from raw knowled
 ```mermaid
 flowchart TD
     subgraph UI["Frontend (Next.js 14) — 5 Screens + Settings + Landing Page"]
-        NAV["Left Sidebar (Sidebar.tsx)\nFeed Memory / Library / Create Post / Get Ideas / History / Settings"]
+        NAV["Left Sidebar (Sidebar.tsx)\nCreate Post / Feed Memory / Get Ideas / Library / History / Settings"]
         S1["Screen 1: Feed Memory (/)\n(Article / URL / File / YouTube / Image / Note / Obsidian)"]
         S2["Screen 2: Library (/library)\n(Source cards, stats, filter/sort)"]
         S3["Screen 3: Create Post (/create)\n(Settings drawer / Split-screen analysis / Topic header)"]
@@ -21,7 +21,7 @@ flowchart TD
         S6["Landing Page (/welcome)\n(Own top nav, bypasses sidebar)"]
     end
 
-    subgraph API["FastAPI Backend — 19 Endpoints"]
+    subgraph API["FastAPI Backend — 27 Endpoints (includes temporary admin/debug routes)"]
         R1["POST /ingest\nPOST /ingest-file\nPOST /scrape-and-ingest"]
         R1b["POST /obsidian/preview, /obsidian/ingest (local path)\nPOST /obsidian/preview-zip, /obsidian/ingest-zip (zip upload — production-ready)"]
         R2["POST /generate"]
@@ -30,19 +30,21 @@ flowchart TD
         R4["GET /history\nPATCH /history/{id}\nDELETE /history/{id}\nPOST /history/{id}/restore/{vid}"]
         R5["GET /library\nDELETE /library/source"]
         R6["GET /suggestions"]
-        R7["POST /generate-visuals"]
-        R8["GET /stats"]
-        R9["GET /profile\nPOST /profile"]
+        R7["POST /generate-visuals\nPOST /score"]
+        R8["GET /stats\nPOST /feedback"]
+        R9["GET /profile\nPOST /profile\nGET /library/clusters"]
+        R10["GET /debug/profile-paths\nPOST /admin/migrate-profile\nPOST /admin/migrate-user-data"]
     end
 
     subgraph Pipeline["LangGraph Pipeline"]
         N1["1. load_profile_node\nLoad profile + posted topics"]
         N2["2. retrieval_node\nSemantic search ChromaDB"]
         N3["3. draft_node\nInfer archetype (Claude Haiku) → generate initial draft (Claude Sonnet)"]
-        N4["4. humanizer_node\nRemove AI patterns, inject voice"]
-        N5["5. scorer_node\nScore 0–100 across 5 dimensions"]
-        N6{"Quality mode?\ndraft/standard → finalize\npolished → check score + iterations"}
-        N7["finalize_node"]
+        N4["4. critic_node\nDiagnose hook/substance/structure/voice"]
+        N5["5. humanizer_node\nRemove AI patterns, inject voice"]
+        N6["6. scorer_node\nScore 0–100 across 5 dimensions (polished mode)"]
+        N7{"Quality mode?\ndraft/standard → finalize\npolished → check score + iterations"}
+        N8["finalize_node"]
     end
 
     subgraph Agents["Standalone Agents"]
@@ -87,10 +89,12 @@ flowchart TD
     N2 --> N3
     N3 --> N4
     N4 --> N5
-    N5 --> N6
-    N6 -->|"finalize"| N7
-    N6 -->|"retry (polished mode only)"| N4
-    N7 --> DB3
+    N5 --> N7
+    N7 -->|"finalize"| N8
+    N7 -->|"score"| N6
+    N6 -->|"finalize"| N8
+    N6 -->|"retry (polished mode only)"| N5
+    N8 --> DB3
 
     N1 --- DB2
     N2 --- DB1
@@ -101,7 +105,7 @@ flowchart TD
 
 ## The Five Screens + Settings
 
-Navigation is handled by a persistent left sidebar (`Sidebar.tsx`), rendered by `AppShell.tsx` for every route except `/welcome`, `/sign-in`, `/sign-up`, and `/onboarding`. The landing page at `/welcome` has its own top nav and bypasses the sidebar entirely. **`/welcome` is the default entry point and is accessible to all users** — unauthenticated visitors hitting the root URL are redirected there by `middleware.ts`; signed-in users can also visit `/welcome` at any time (e.g. via the sidebar logo link) and see auth-aware CTAs ("Open workspace" instead of sign-up prompts). Clicking "Log in" on the landing page preserves `/welcome` as the post-login destination via `redirect_url`.
+Navigation is handled by a persistent left sidebar (`Sidebar.tsx`), rendered by `AppShell.tsx` for every route except `/welcome`, `/first-post`, `/onboarding`, `/sign-in`, and `/sign-up`. The landing page at `/welcome` has its own top nav and bypasses the sidebar entirely. **`/welcome` is the default entry point and is accessible to all users** — unauthenticated visitors hitting the root URL are redirected there by `middleware.ts`; signed-in users can also visit `/welcome` at any time (e.g. via the sidebar logo link) and see auth-aware CTAs ("Open workspace" instead of sign-up prompts). Clicking "Log in" on the landing page preserves `/welcome` as the post-login destination via `redirect_url`.
 
 **Screen 1 — Feed Memory (`/`):** The user selects an input type (Article/Text, URL, File, YouTube, Image/Diagram, Note, or Obsidian vault) and adds their content. For **URL**, the backend scrapes the page via Jina Reader and stores it automatically. For **File**, PDF, DOCX, and TXT uploads (up to 10 MB) are accepted — text is extracted server-side. For **Image/Diagram**, Claude vision extracts the knowledge as text first. For **Obsidian**, the user enters their local vault folder path; a preview step shows how many notes and words will be ingested before committing. The YouTube tab shows a textarea for manual paste — auto-fetching was removed after YouTube blocked bot-based transcript retrieval. For all types, content is chunked into 500-word overlapping segments, embedded locally with `sentence-transformers`, and upserted into ChromaDB. The response shows how many chunks were stored and what tags were auto-extracted.
 
@@ -126,9 +130,10 @@ Navigation is handled by a persistent left sidebar (`Sidebar.tsx`), rendered by 
 | 1 | `load_profile_node` | Reads `profile.json`, injects user voice and style into state. Also loads all previously posted topics from SQLite to prevent repeated angles. |
 | 2 | `retrieval_node` | Queries ChromaDB for the 8 most semantically relevant chunks; builds a `retrieval_bundle` with source summaries and adjacent sibling chunks from `hierarchy_store`; sets `retrieved_context` (enriched prompt block) and always sets `retrieved_chunks` for backward compat; falls back to flat retrieval if hierarchy_store is empty |
 | 3 | `draft_node` | First calls Claude Haiku (`infer_archetype()`) to classify the topic into one of 7 post archetypes. Then calls Claude Sonnet to produce a draft using the enriched `retrieved_context` (source summaries + sibling chunks for top sources) or flat `retrieved_chunks` as fallback |
-| 4 | `humanizer_node` | Calls Claude to strip AI writing patterns, vary sentence structure, and inject the user's authentic voice. Also exposes `refine_draft()` for targeted post-generation edits via `/refine` |
-| 5 | `scorer_node` | Calls Claude to score the draft 0–100 across 5 dimensions; uses 3-attempt JSON parse to handle markdown-wrapped responses |
-| 6 | Conditional | **draft** mode: skip humanizer and scorer entirely, return raw draft. **standard** mode (default): 1 humanizer pass; scorer skipped during generation — scored lazily on demand via `POST /score` when user clicks the analysis toggle. **polished** mode: up to 3 humanizer passes with scorer running each iteration; retries if score < 75 and iterations < 3. |
+| 4 | `critic_node` | Calls Claude Haiku once to diagnose hook/substance/structure/voice issues and writes `critic_brief` into state |
+| 5 | `humanizer_node` | Calls Claude to strip AI writing patterns, vary sentence structure, inject the user's authentic voice, and apply `critic_brief` fixes when present. Also exposes `refine_draft()` for targeted post-generation edits via `/refine` |
+| 6 | `scorer_node` | Calls Claude to score the draft 0–100 across 5 dimensions; uses 3-attempt JSON parse to handle markdown-wrapped responses |
+| 7 | Conditional | **draft** mode: skip critic, humanizer, and scorer entirely, return raw draft. **standard** mode (default): critic + 1 humanizer pass; scorer skipped during generation — scored lazily on demand via `POST /score` when user clicks the analysis toggle. **polished** mode: critic + up to 3 humanizer passes with scorer running each iteration; retries if score < 75 and iterations < 3. |
 
 ---
 
@@ -190,9 +195,9 @@ npm run dev
 
 The system writes in YOUR voice — but it needs to know who you are first.
 
-**Production (Vercel + Railway):** Sign up at the app URL. New users are automatically redirected to `/onboarding` — a 5-step guided flow that collects your name, role, bio, expertise topics, writing fingerprint, opinions, and writing samples. After completing it, you land in the app. Edit your profile any time at `/settings`.
+**Production (Vercel + Railway):** Sign up at the app URL. New users are automatically redirected to `/first-post` — a guided first-draft flow that captures profile signals and generates a first post. After that, they can move into the main workspace. `/onboarding` remains as a backward-compatible route that immediately redirects to `/first-post`.
 
-**Local dev:** The same onboarding flow works locally. Profiles are saved to `backend/data/profiles/profile_{user_id}.json` (or `backend/data/profile.json` for the legacy `user_id=default` fallback when no auth token is present).
+**Local dev:** The same first-post flow works locally. Profiles are saved to `backend/data/profiles/profile_{user_id}.json` (or `backend/data/profile.json` for the legacy `user_id=default` fallback when no auth token is present).
 
 The more specific you are, the better the output. Generic profile → generic posts. Specific profile → posts that sound like you wrote them.
 
@@ -231,13 +236,15 @@ Note: profile files are gitignored — your personal details never get committed
 │   │       └── page.tsx              # Landing page (/welcome) — own top nav, no sidebar
 │   ├── app/
 │   │   ├── onboarding/
-│   │   │   └── page.tsx              # 5-step onboarding flow — new users only, no sidebar
+│   │   │   └── page.tsx              # Legacy route — immediately redirects to /first-post
+│   │   ├── first-post/
+│   │   │   └── page.tsx              # New-user guided first-post flow
 │   │   └── settings/
 │   │       ├── page.tsx              # Settings hub (/settings) — 6 cards: Profile, Voice, Samples, Memory, Account, Integrations
 │   │       └── profile/
 │   │           └── page.tsx          # Profile editor (/settings/profile) — section nav, summary header, sticky save
 │   ├── components/
-│   │   ├── AppShell.tsx              # Layout wrapper — sidebar for app routes, passthrough for /welcome + /onboarding
+│   │   ├── AppShell.tsx              # Layout wrapper — sidebar for app routes, passthrough for /welcome + /first-post + /onboarding
 │   │   ├── Sidebar.tsx               # Left sidebar — logo, six nav items (+ Settings), user row
 │   │   ├── FeedMemory.tsx            # Feed Memory form — all input types, Obsidian vault flow
 │   │   ├── CreatePost.tsx            # Create Post — 4-state UI, settings drawer, split-screen analysis
@@ -348,7 +355,7 @@ Railway injects `$PORT` automatically — the `CMD` in the Dockerfile uses it.
 > - `/data/chroma_db/` — ChromaDB vector store directory
 > - `/data/posts.db` — post history SQLite database
 > - `/data/hierarchy.db` — hierarchy store SQLite database
-> - `/data/profiles/profile_{user_id}.json` — per-user voice and style profiles (created by onboarding)
+> - `/data/profiles/profile_{user_id}.json` — per-user voice and style profiles (created by first-post flow or profile save)
 > - `/data/profile.json` — legacy single-user profile (still read for `user_id=default` in local dev)
 
 ---
@@ -422,15 +429,15 @@ After deploying:
 - [ ] `GET https://your-backend.up.railway.app/health` returns `{"status": "ok"}`
 - [ ] `GET https://your-backend.up.railway.app/debug/profile-paths` shows `data_dir: "/data"` and `profiles_dir_exists: true`
 - [ ] Frontend loads at your Vercel URL
-- [ ] New user sign-up → redirected to `/onboarding` → fills in name → submits → lands on `/`
-- [ ] Sign out and sign back in → lands on `/` (not onboarding again)
+- [ ] New user sign-up → redirected to `/first-post` and can complete first draft flow
+- [ ] Sign out and sign back in → no forced onboarding loop (`/onboarding` redirects to `/first-post` only when visited)
 - [ ] `/settings` loads with all profile fields populated
 - [ ] **Library** screen shows your existing sources and chunk count
 - [ ] **History** screen shows your existing posts
 - [ ] **Create Post** → generate a post on a test topic — confirm it completes without error
 - [ ] **Get Ideas** → generate a few ideas — confirm they draw from your knowledge base
 - [ ] **Feed Memory** → ingest a test article — confirm chunks stored
-- [ ] Obsidian tab is absent (hidden) on the production frontend
+- [ ] Obsidian tab is present on production with zip-upload flow (local path mode hidden)
 - [ ] No CORS errors in browser DevTools console
 
 ---
