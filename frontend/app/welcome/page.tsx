@@ -23,19 +23,36 @@ function TopNav({ isSignedIn, isLoaded }: { isSignedIn: boolean; isLoaded: boole
   return (
     <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-md">
       <div className="max-w-[1200px] mx-auto px-5 sm:px-8 py-4 flex items-center justify-between">
-        <Link href="/welcome" className="font-headline italic text-on-surface text-xl tracking-tight">
+        <Link
+          href="/welcome"
+          className="font-headline italic text-on-surface text-xl tracking-tight"
+        >
           Contendo
         </Link>
 
+        {/* Center links — hidden on mobile */}
         <div className="hidden md:flex items-center gap-8">
           <a
             href="#how-it-works"
-            className="label-caps text-[10px] text-secondary hover:text-on-surface transition-colors"
+            className="text-[0.875rem] text-secondary hover:text-on-surface transition-colors"
           >
             How it works
           </a>
+          <a
+            href="/about"
+            className="text-[0.875rem] text-secondary hover:text-on-surface transition-colors"
+          >
+            About
+          </a>
+          <a
+            href="/careers"
+            className="text-[0.875rem] text-secondary hover:text-on-surface transition-colors"
+          >
+            Careers
+          </a>
         </div>
 
+        {/* Right — auth-aware, unchanged */}
         <div className="flex items-center gap-2 sm:gap-3">
           {isLoaded && isSignedIn ? (
             <Link
@@ -79,6 +96,7 @@ export default function WelcomePage() {
     return { href: "/first-post", label: "Write your first post" };
   }, [isLoaded, isSignedIn]);
 
+  // ── DO NOT TOUCH — routing + sessionStorage logic ──────────────────────────
   const handleHeroSubmit = (event: FormEvent) => {
     event.preventDefault();
     const topic = topicInput.trim();
@@ -99,6 +117,7 @@ export default function WelcomePage() {
 
     router.push(`/first-post?topic=${encodeURIComponent(topic)}`);
   };
+  // ── END DO NOT TOUCH ───────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-background text-on-surface font-sans">
@@ -107,28 +126,35 @@ export default function WelcomePage() {
       <main>
 
         {/* ── Hero ──────────────────────────────────────────────────────────── */}
-        <section className="px-5 sm:px-8 pt-14 sm:pt-20 pb-16 sm:pb-20 text-center">
+        <section className="px-5 sm:px-8 text-center" style={{ paddingTop: 120, paddingBottom: 72 }}>
           <div className="max-w-[980px] mx-auto">
             <h1
-              className="font-headline leading-[1.12] tracking-tight mb-5"
-              style={{ fontSize: "clamp(2.2rem, 5vw, 3.2rem)", color: "#2f3333" }}
+              className="font-headline font-normal leading-[1.1] tracking-tight mb-5"
+              style={{ fontSize: "clamp(2.8rem, 5vw, 3.8rem)", color: "#2f3333" }}
             >
-              Finally, a LinkedIn post that sounds like you wrote it.
+              Write like yourself. At scale.
             </h1>
+
             <p
-              className="mb-9 max-w-[640px] mx-auto text-secondary"
-              style={{ fontSize: "1.1rem", lineHeight: 1.6 }}
+              className="text-secondary mx-auto"
+              style={{
+                fontSize: "1.1rem",
+                lineHeight: 1.7,
+                maxWidth: "500px",
+                marginBottom: "48px",
+              }}
             >
-              Feed it your notes, articles, and opinions. Get posts that reflect your actual
-              voice — not generic AI filler.
+              Feed it your notes, articles, and opinions.
+              It learns your voice and writes posts you&apos;d actually publish.
             </p>
 
             <form
               onSubmit={handleHeroSubmit}
-              className="max-w-[760px] mx-auto rounded-xl flex flex-col sm:flex-row gap-2 sm:items-center"
+              className="mx-auto rounded-xl flex flex-col sm:flex-row gap-2 sm:items-center"
               style={{
+                maxWidth: "680px",
                 background: "#ffffff",
-                border: "1px solid rgba(174, 179, 178, 0.15)",
+                border: "1px solid rgba(174, 179, 178, 0.25)",
                 padding: "8px 8px 8px 16px",
               }}
               aria-label="Start your first post"
@@ -142,16 +168,17 @@ export default function WelcomePage() {
                   }
                 }}
                 placeholder="What do you want to write about today?"
-                className="flex-1 bg-transparent text-[14px] sm:text-[13px] text-on-surface placeholder:text-outline focus:outline-none py-1.5"
+                className="flex-1 bg-transparent text-[14px] sm:text-[13px] text-on-surface placeholder:text-outline focus:outline-none focus:border-b-2 focus:border-b-[#58614f] py-1.5"
                 aria-label="Topic prompt"
               />
               <button
                 type="submit"
-                className="btn-primary text-white text-[11px] label-caps rounded-lg px-5 py-3 sm:py-2.5 whitespace-nowrap"
+                className="btn-primary text-white text-[13px] font-medium rounded-md px-5 py-3 sm:py-2.5 whitespace-nowrap"
               >
                 Start Writing
               </button>
             </form>
+
             {showInputError && (
               <p className="mt-2 text-[12px] text-secondary/80">Add a topic first to continue.</p>
             )}
@@ -197,7 +224,139 @@ export default function WelcomePage() {
           </div>
         </section>
 
-        {/* ── Philosophy ────────────────────────────────────────────────────── */}
+        {/* ── Before / After ────────────────────────────────────────────────── */}
+        {/*
+          Structural exception to the No-Line Rule:
+          the vertical center divider is a layout separator, not a decorative border.
+        */}
+        <section className="px-5 sm:px-8 py-24" style={{ background: "#ffffff" }}>
+          <div className="max-w-[900px] mx-auto">
+            {/*
+              On desktop: 3-column grid [1fr 1px 1fr].
+              On mobile: 1-column, divider is display:none (no grid participation),
+              gap-10 (40px) between the two content columns.
+            */}
+            <div className="grid md:grid-cols-[1fr_1px_1fr] gap-10 md:gap-0">
+
+              {/* Left — Without */}
+              <div className="md:pr-8">
+                <p
+                  style={{
+                    fontSize: "0.75rem",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05rem",
+                    color: "#81543c",
+                    marginBottom: "24px",
+                  }}
+                >
+                  Without Contendo
+                </p>
+                <p
+                  className="font-headline italic"
+                  style={{ fontSize: "1.15rem", color: "#2f3333", lineHeight: 1.8 }}
+                >
+                  You open LinkedIn. Stare at the blank box.
+                  <br />You have things to say — but turning expertise
+                  <br />into a post takes two hours of editing,
+                  <br />rewriting, second-guessing.
+                  <br />So you close the tab. Again.
+                </p>
+              </div>
+
+              {/* Center divider — desktop only */}
+              <div
+                className="hidden md:block self-stretch"
+                style={{ background: "#e8e8e6" }}
+              />
+
+              {/* Right — With */}
+              <div className="md:pl-8">
+                <p
+                  style={{
+                    fontSize: "0.75rem",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05rem",
+                    color: "#58614f",
+                    marginBottom: "24px",
+                  }}
+                >
+                  With Contendo
+                </p>
+                <p
+                  className="font-headline italic"
+                  style={{ fontSize: "1.15rem", color: "#2f3333", lineHeight: 1.8 }}
+                >
+                  You type a topic. Contendo pulls from what
+                  <br />you&apos;ve actually read and thought about.
+                  <br />A draft comes back in your voice —
+                  <br />specific, grounded, not generic.
+                  <br />You edit two lines. You post.
+                </p>
+              </div>
+
+            </div>
+          </div>
+        </section>
+
+        {/* ── What You Feed It ──────────────────────────────────────────────── */}
+        <section className="px-5 sm:px-8 py-24">
+          <div className="max-w-[1080px] mx-auto">
+            <h2
+              className="font-headline text-center mb-4"
+              style={{ fontSize: "2rem", color: "#2f3333" }}
+            >
+              Everything you know. Finally useful.
+            </h2>
+            <p
+              className="text-secondary text-center mx-auto mb-14"
+              style={{ fontSize: "1rem", lineHeight: 1.7, maxWidth: "480px" }}
+            >
+              Contendo works from your actual knowledge — not from what it was trained on.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {[
+                {
+                  num: "01",
+                  title: "Articles & research",
+                  body: "Paste URLs, upload PDFs, drop in anything you've read. Every source becomes searchable context for your next post.",
+                },
+                {
+                  num: "02",
+                  title: "Your own notes",
+                  body: "Raw thoughts, Obsidian vaults, voice memo transcripts. Your unpolished thinking is the most valuable input Contendo has.",
+                },
+                {
+                  num: "03",
+                  title: "Your opinions",
+                  body: "Tell it what you actually believe. It injects your real takes into every draft — not hedged, not balanced, not generic.",
+                },
+              ].map((card) => (
+                <div
+                  key={card.num}
+                  className="rounded-2xl"
+                  style={{ background: "#f3f4f3", padding: "36px" }}
+                >
+                  <p
+                    className="font-headline italic mb-4"
+                    style={{ fontSize: "2.5rem", color: "#58614f", lineHeight: 1 }}
+                  >
+                    {card.num}
+                  </p>
+                  <p className="font-semibold text-[1rem] text-on-surface mb-2">{card.title}</p>
+                  <p
+                    className="text-secondary"
+                    style={{ fontSize: "0.95rem", lineHeight: 1.7 }}
+                  >
+                    {card.body}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ── Philosophy — NO CHANGES ───────────────────────────────────────── */}
         <section id="atelier" className="px-5 sm:px-8 py-16 sm:py-24">
           <div className="max-w-[1080px] mx-auto grid md:grid-cols-[1fr_1.05fr] gap-8 items-center">
             <div className="rounded-2xl bg-surface-container overflow-hidden shadow-[0px_4px_20px_rgba(47,51,51,0.04),0px_12px_40px_rgba(47,51,51,0.06)] p-3">
@@ -232,7 +391,7 @@ export default function WelcomePage() {
           </div>
         </section>
 
-        {/* ── Craftsman's Toolkit ───────────────────────────────────────────── */}
+        {/* ── Craftsman's Toolkit — NO CHANGES ─────────────────────────────── */}
         <section id="features" className="px-5 sm:px-8 py-16 sm:py-24 bg-surface-container-low">
           <div className="max-w-[1080px] mx-auto">
             <h2 className="font-headline text-[2rem] sm:text-[2.8rem] text-center mb-2">The Craftsman&apos;s Toolkit</h2>
@@ -296,7 +455,7 @@ export default function WelcomePage() {
           </div>
         </section>
 
-        {/* ── Mood grid ─────────────────────────────────────────────────────── */}
+        {/* ── Mood grid — NO CHANGES ────────────────────────────────────────── */}
         <section className="px-5 sm:px-8 py-16 sm:py-24">
           <div className="max-w-[1080px] mx-auto">
             <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-5 mb-8">
@@ -330,13 +489,106 @@ export default function WelcomePage() {
           </div>
         </section>
 
+        {/* ── Testimonials ──────────────────────────────────────────────────── */}
+        <section className="px-5 sm:px-8 py-24 bg-background">
+          <div className="max-w-[1080px] mx-auto">
+            <h2
+              className="font-headline text-center mb-3"
+              style={{ fontSize: "1.8rem", color: "#2f3333" }}
+            >
+              Used by people who know what they&apos;re talking about.
+            </h2>
+            <p
+              className="text-secondary text-center mx-auto mb-14"
+              style={{ fontSize: "0.95rem", lineHeight: 1.6, maxWidth: "540px" }}
+            >
+              Not influencers. Researchers, engineers, and designers
+              who had things to say and kept procrastinating.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {[
+                {
+                  quote:
+                    "I do serious AI research but I've always procrastinated on LinkedIn. Contendo pulls from my actual papers and thinking — the posts come out sounding like me, not like a press release.",
+                  name: "Subho Majumdar",
+                  role: "AI Faculty · IIM Bangalore",
+                },
+                {
+                  quote:
+                    "I had months of notes and project work sitting unused. Being able to feed all of it in and get posts that reflect how I actually think about data engineering — that's what got me posting consistently.",
+                  name: "Sejal Jagtap",
+                  role: "MS Data Science · Duke University",
+                },
+                {
+                  quote:
+                    "As a designer I'm particular about voice and detail. What surprised me was how specific the output was — it picked up on my actual opinions, not just generic design advice.",
+                  name: "Riddhi Chaudhari",
+                  role: "Product Designer · Ex-Dell",
+                },
+              ].map((t) => (
+                <div
+                  key={t.name}
+                  className="rounded-2xl"
+                  style={{
+                    background: "#ffffff",
+                    padding: "36px",
+                    boxShadow:
+                      "0px 4px 20px rgba(47,51,51,0.04), 0px 12px 40px rgba(47,51,51,0.06)",
+                  }}
+                >
+                  <p
+                    className="font-headline italic mb-6"
+                    style={{ fontSize: "1.05rem", color: "#2f3333", lineHeight: 1.8 }}
+                  >
+                    &ldquo;{t.quote}&rdquo;
+                  </p>
+                  <p
+                    className="font-semibold"
+                    style={{ fontSize: "0.9rem", color: "#2f3333" }}
+                  >
+                    {t.name}
+                  </p>
+                  <p
+                    className="mt-1 text-secondary"
+                    style={{
+                      fontSize: "0.75rem",
+                      letterSpacing: "0.04rem",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {t.role}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ── Pull quote ────────────────────────────────────────────────────── */}
+        <section className="px-5 sm:px-8 py-20 text-center">
+          <div className="max-w-[680px] mx-auto">
+            <p
+              className="font-headline italic"
+              style={{ fontSize: "clamp(1.4rem, 3vw, 2rem)", color: "#2f3333", lineHeight: 1.6 }}
+            >
+              Most AI content sounds like AI wrote it.
+              <br />Contendo sounds like you — because it starts
+              <br />from what you actually know.
+            </p>
+          </div>
+        </section>
+
         {/* ── Final CTA ─────────────────────────────────────────────────────── */}
         <section className="px-5 sm:px-8 py-20 sm:py-28 text-center bg-surface-container-low">
           <div className="max-w-[780px] mx-auto">
             <h2 className="font-headline text-[2.5rem] sm:text-[4rem] leading-[1.05] mb-4">
               Craft Your Legacy
             </h2>
-            <p className="text-[13px] text-secondary max-w-[540px] mx-auto mb-8">
+            <p
+              className="text-secondary mx-auto mb-8"
+              style={{ fontSize: "1.05rem", lineHeight: 1.7, maxWidth: "480px" }}
+            >
               Stop procrastinating. Feed it what you know, and publish something that actually
               sounds like you wrote it.
             </p>
@@ -352,26 +604,144 @@ export default function WelcomePage() {
 
       </main>
 
-      <footer className="px-5 sm:px-8 py-8 bg-background">
-        <div className="max-w-[1200px] mx-auto flex flex-col md:flex-row gap-4 md:items-center md:justify-between">
-          <div>
-            <Link href="/welcome" className="font-headline italic text-[1.05rem]">Contendo</Link>
-            <p className="mt-1 text-[10px] label-caps text-outline">© 2026 Contendo. Crafted for the Digital Atelier.</p>
+      {/* ── Footer ────────────────────────────────────────────────────────────── */}
+      <footer style={{ background: "#f3f4f3", paddingTop: "64px", paddingBottom: "48px" }}>
+        <div
+          className="mx-auto px-5 sm:px-8"
+          style={{ maxWidth: "1100px" }}
+        >
+          {/* Top row: brand + link groups */}
+          <div className="flex flex-col md:flex-row md:justify-between gap-8 md:gap-16">
+
+            {/* Brand */}
+            <div className="shrink-0">
+              <Link
+                href="/welcome"
+                className="font-headline italic text-on-surface"
+                style={{ fontSize: "1.1rem" }}
+              >
+                Contendo
+              </Link>
+              <p
+                className="mt-2 text-secondary"
+                style={{ fontSize: "0.875rem" }}
+              >
+                A personal writing atelier for builders and researchers.
+              </p>
+            </div>
+
+            {/* Link groups */}
+            <div className="flex flex-col sm:flex-row gap-10 sm:gap-12">
+
+              <div>
+                <p
+                  className="text-primary mb-3"
+                  style={{
+                    fontSize: "0.75rem",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05rem",
+                  }}
+                >
+                  Company
+                </p>
+                <div className="flex flex-col gap-2.5">
+                  <a
+                    href="/about"
+                    className="text-secondary hover:text-on-surface transition-colors"
+                    style={{ fontSize: "0.9rem" }}
+                  >
+                    About us
+                  </a>
+                  <a
+                    href="/careers"
+                    className="text-secondary hover:text-on-surface transition-colors"
+                    style={{ fontSize: "0.9rem" }}
+                  >
+                    Careers
+                  </a>
+                </div>
+              </div>
+
+              <div>
+                <p
+                  className="text-primary mb-3"
+                  style={{
+                    fontSize: "0.75rem",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05rem",
+                  }}
+                >
+                  Product
+                </p>
+                <div className="flex flex-col gap-2.5">
+                  <a
+                    href="#how-it-works"
+                    className="text-secondary hover:text-on-surface transition-colors"
+                    style={{ fontSize: "0.9rem" }}
+                  >
+                    How it works
+                  </a>
+                  <Link
+                    href="/sign-in"
+                    className="text-secondary hover:text-on-surface transition-colors"
+                    style={{ fontSize: "0.9rem" }}
+                  >
+                    Sign in
+                  </Link>
+                  <Link
+                    href="/first-post"
+                    className="text-secondary hover:text-on-surface transition-colors"
+                    style={{ fontSize: "0.9rem" }}
+                  >
+                    Get started
+                  </Link>
+                </div>
+              </div>
+
+              <div>
+                <p
+                  className="text-primary mb-3"
+                  style={{
+                    fontSize: "0.75rem",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05rem",
+                  }}
+                >
+                  Legal
+                </p>
+                <div className="flex flex-col gap-2.5">
+                  <a
+                    href="/privacy-policy"
+                    className="text-secondary hover:text-on-surface transition-colors"
+                    style={{ fontSize: "0.9rem" }}
+                  >
+                    Privacy Policy
+                  </a>
+                  <a
+                    href="/terms-of-service"
+                    className="text-secondary hover:text-on-surface transition-colors"
+                    style={{ fontSize: "0.9rem" }}
+                  >
+                    Terms of Service
+                  </a>
+                </div>
+              </div>
+
+            </div>
           </div>
 
-          <div className="flex gap-5 text-[10px] label-caps text-secondary">
-            <a href="#" className="hover:text-on-surface transition-colors">Privacy policy</a>
-            <a href="#" className="hover:text-on-surface transition-colors">Terms of service</a>
-            <a href="#" className="hover:text-on-surface transition-colors">Journal</a>
-            <a href="#" className="hover:text-on-surface transition-colors">Contact</a>
-          </div>
-
-          <div className="flex items-center gap-2 text-secondary">
-            <button className="w-8 h-8 rounded-lg ghost-border hover:bg-surface-container-low transition-colors" aria-label="Visit social profile" />
-            <button className="w-8 h-8 rounded-lg ghost-border hover:bg-surface-container-low transition-colors" aria-label="Email us" />
+          {/* Bottom strip */}
+          <div className="mt-12">
+            <p
+              className="text-secondary"
+              style={{ fontSize: "0.8rem" }}
+            >
+              © 2026 Contendo. Crafted for the Digital Atelier.
+            </p>
           </div>
         </div>
       </footer>
+
     </div>
   );
 }
