@@ -75,6 +75,27 @@ body::before {
   background: var(--secondary);
 }
 
+.sage-scrollbar {
+  scrollbar-color: rgba(88, 97, 79, 0.8) transparent;
+}
+
+.sage-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+
+.sage-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sage-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(88, 97, 79, 0.75);
+  border-radius: 4px;
+}
+
+.sage-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(76, 85, 67, 0.9);
+}
+
 /* ── Hide scrollbar utility ─────────────────────────────── */
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
