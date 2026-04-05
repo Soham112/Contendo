@@ -103,10 +103,10 @@ export default function WelcomePage() {
                 Log in
               </Link>
               <Link
-                href="/sign-up"
+                href="/first-post"
                 className="btn-primary text-white text-xs uppercase tracking-widest font-semibold rounded-lg px-5 py-2.5 hover:opacity-90 transition-opacity"
               >
-                Get started
+                Write your first post
               </Link>
             </>
           )}
@@ -145,12 +145,17 @@ export default function WelcomePage() {
               Open workspace
             </Link>
           ) : (
-            <Link
-              href="/sign-up"
-              className="btn-primary text-white text-sm uppercase tracking-widest font-semibold rounded-lg px-9 py-4 hover:opacity-90 transition-opacity"
-            >
-              Start writing for free
-            </Link>
+            <div className="flex flex-col items-center gap-3">
+              <Link
+                href="/first-post"
+                className="btn-primary text-white text-sm uppercase tracking-widest font-semibold rounded-lg px-9 py-4 hover:opacity-90 transition-opacity"
+              >
+                Write your first post →
+              </Link>
+              <p style={{ fontSize: 13, color: "rgba(47,51,51,0.5)" }} className="font-sans text-center">
+                Takes 2 minutes. No setup required.
+              </p>
+            </div>
           )}
           <a
             href="#how-it-works"
