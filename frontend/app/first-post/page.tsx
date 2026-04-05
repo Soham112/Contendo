@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useUser, useSignIn } from '@clerk/nextjs'
 import { useRouter } from 'next/navigation'
 import { Sparkles } from 'lucide-react'
@@ -419,6 +419,7 @@ export default function FirstPostPage() {
   const [flowState, setFlowState] = useState<'form' | 'generating' | 'error' | 'draft'>('form')
   const [draftState, setDraftState] = useState<DraftState | null>(null)
   const [copied, setCopied] = useState(false)
+  const [profileChecked, setProfileChecked] = useState(false)
 
   const [answers, setAnswers] = useState<Answers>({
     role: '',
@@ -442,6 +443,27 @@ export default function FirstPostPage() {
   const updateAnswers = (patch: Partial<Answers>) =>
     setAnswers(prev => ({ ...prev, ...patch }))
 
+  // If the user is already signed in with a completed profile, skip this flow
+  useEffect(() => {
+    if (!isLoaded) return
+    if (!isSignedIn) {
+      setProfileChecked(true)
+      return
+    }
+    api.getProfile()
+      .then(async (res) => {
+        if (res.ok) {
+          const data = await res.json()
+          if (data.has_profile) {
+            router.replace('/')
+            return
+          }
+        }
+        setProfileChecked(true)
+      })
+      .catch(() => setProfileChecked(true))
+  }, [isLoaded, isSignedIn])
+
   // ── Derived values ──────────────────────────────────────────────────────────
   const roleKey = (answers.role || 'other') as RoleKey
   const opinionBucket = ROLE_TO_BUCKET[roleKey]
@@ -457,8 +479,8 @@ export default function FirstPostPage() {
   // ── Can-advance logic per screen ────────────────────────────────────────────
   function canAdvance(): boolean {
     switch (screen) {
-      case 0: return !!answers.role
-      case 1: return answers.topic.trim().length >= 10
+      case 0: return answers.topic.trim().length >= 10
+      case 1: return !!answers.role
       case 2: return !!answers.experienceType
       case 3:
         if (answers.opinionIsCustom) return customOpinion.trim().length > 0
@@ -597,7 +619,7 @@ export default function FirstPostPage() {
   }
 
   // ── Render guards ───────────────────────────────────────────────────────────
-  if (!isLoaded) {
+  if (!isLoaded || (isSignedIn && !profileChecked)) {
     return (
       <div className="min-h-screen bg-[#faf9f8] flex items-center justify-center">
         <div className="w-5 h-5 border-2 border-[#58614f]/30 border-t-[#58614f] rounded-full animate-spin" />
@@ -649,8 +671,60 @@ export default function FirstPostPage() {
             {/* Screen content — key triggers step-animate on transition */}
             <div key={screen} className="step-animate flex flex-col gap-5">
 
-              {/* ── Screen 0: Role picker ───────────────────────────────────── */}
+              {/* ── Screen 0: Topic + Format ────────────────────────────────── */}
               {screen === 0 && (
+                <>
+                  <div>
+                    <h2 className="font-headline text-[1.75rem] text-[#2f3333] mb-2 leading-tight">
+                      What do you want to write about?
+                    </h2>
+                    <p className="text-[0.9rem] text-[#645e57]">
+                      Be specific — the more focused the topic, the stronger the post.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="label-caps text-[#645e57] text-[11px]">
+                      Your Topic
+                    </label>
+                    <input
+                      className="input-editorial w-full px-3 py-2.5 text-[14px] text-[#2f3333] placeholder-[#aeb3b2]"
+                      placeholder="e.g. Why most ML models fail before they reach production"
+                      value={answers.topic}
+                      onChange={e => updateAnswers({ topic: e.target.value })}
+                      autoFocus
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label className="label-caps text-[#645e57] text-[11px]">
+                      Format
+                    </label>
+                    <div className="flex gap-2">
+                      {[
+                        { key: 'linkedin post',  label: 'LinkedIn Post' },
+                        { key: 'medium article', label: 'Medium Article' },
+                        { key: 'thread',         label: 'Thread' },
+                      ].map(f => (
+                        <button
+                          key={f.key}
+                          onClick={() => updateAnswers({ format: f.key })}
+                          className={`px-4 py-2 rounded-full text-[13px] transition-all duration-150 ${
+                            answers.format === f.key
+                              ? 'bg-[#58614f] text-white'
+                              : 'bg-[#edeeed] text-[#2f3333] hover:bg-[#e6e9e8]'
+                          }`}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* ── Screen 1: Role picker ───────────────────────────────────── */}
+              {screen === 1 && (
                 <>
                   <div>
                     <h2 className="font-headline text-[1.75rem] text-[#2f3333] mb-2 leading-tight">
@@ -719,58 +793,6 @@ export default function FirstPostPage() {
                           })
                         }}
                       />
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {/* ── Screen 1: Topic + Format ────────────────────────────────── */}
-              {screen === 1 && (
-                <>
-                  <div>
-                    <h2 className="font-headline text-[1.75rem] text-[#2f3333] mb-2 leading-tight">
-                      What do you want to write about?
-                    </h2>
-                    <p className="text-[0.9rem] text-[#645e57]">
-                      Be specific — the more focused the topic, the stronger the post.
-                    </p>
-                  </div>
-
-                  <div className="flex flex-col gap-1.5">
-                    <label className="label-caps text-[#645e57] text-[11px]">
-                      Your Topic
-                    </label>
-                    <input
-                      className="input-editorial w-full px-3 py-2.5 text-[14px] text-[#2f3333] placeholder-[#aeb3b2]"
-                      placeholder="e.g. Why most ML models fail before they reach production"
-                      value={answers.topic}
-                      onChange={e => updateAnswers({ topic: e.target.value })}
-                      autoFocus
-                    />
-                  </div>
-
-                  <div className="flex flex-col gap-2">
-                    <label className="label-caps text-[#645e57] text-[11px]">
-                      Format
-                    </label>
-                    <div className="flex gap-2">
-                      {[
-                        { key: 'linkedin post',  label: 'LinkedIn Post' },
-                        { key: 'medium article', label: 'Medium Article' },
-                        { key: 'thread',         label: 'Thread' },
-                      ].map(f => (
-                        <button
-                          key={f.key}
-                          onClick={() => updateAnswers({ format: f.key })}
-                          className={`px-4 py-2 rounded-full text-[13px] transition-all duration-150 ${
-                            answers.format === f.key
-                              ? 'bg-[#58614f] text-white'
-                              : 'bg-[#edeeed] text-[#2f3333] hover:bg-[#e6e9e8]'
-                          }`}
-                        >
-                          {f.label}
-                        </button>
-                      ))}
                     </div>
                   </div>
                 </>

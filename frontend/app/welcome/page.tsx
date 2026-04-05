@@ -103,10 +103,10 @@ export default function WelcomePage() {
                 Log in
               </Link>
               <Link
-                href="/sign-up"
+                href="/first-post"
                 className="btn-primary text-white text-xs uppercase tracking-widest font-semibold rounded-lg px-5 py-2.5 hover:opacity-90 transition-opacity"
               >
-                Get started
+                Write your first post
               </Link>
             </>
           )}
@@ -136,31 +136,38 @@ export default function WelcomePage() {
         </p>
 
         {/* CTAs */}
-        <div className="flex flex-col sm:flex-row items-center gap-4">
-          {isLoaded && isSignedIn ? (
-            <Link
-              href="/"
-              className="btn-primary text-white text-sm uppercase tracking-widest font-semibold rounded-lg px-9 py-4 hover:opacity-90 transition-opacity"
+        <div className="flex flex-col items-center gap-3">
+          <div style={{ display: "flex", alignItems: "center", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
+            {isLoaded && isSignedIn ? (
+              <Link
+                href="/"
+                className="btn-primary text-white text-sm uppercase tracking-widest font-semibold rounded-lg px-9 py-4 hover:opacity-90 transition-opacity"
+              >
+                Open workspace
+              </Link>
+            ) : (
+              <Link
+                href="/first-post"
+                className="btn-primary text-white text-sm uppercase tracking-widest font-semibold rounded-lg px-9 py-4 hover:opacity-90 transition-opacity"
+              >
+                Write your first post →
+              </Link>
+            )}
+            <a
+              href="#how-it-works"
+              className="flex items-center gap-2 px-9 py-4 text-sm font-medium text-secondary border border-outline-variant rounded-lg hover:text-on-surface hover:border-outline transition-colors"
             >
-              Open workspace
-            </Link>
-          ) : (
-            <Link
-              href="/sign-up"
-              className="btn-primary text-white text-sm uppercase tracking-widest font-semibold rounded-lg px-9 py-4 hover:opacity-90 transition-opacity"
-            >
-              Start writing for free
-            </Link>
+              See how it works
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 12h14M12 5l7 7-7 7" />
+              </svg>
+            </a>
+          </div>
+          {!(isLoaded && isSignedIn) && (
+            <p style={{ fontSize: 13, color: "rgba(47,51,51,0.5)" }} className="font-sans text-center">
+              Takes 2 minutes. No setup required.
+            </p>
           )}
-          <a
-            href="#how-it-works"
-            className="flex items-center gap-2 px-9 py-4 text-sm font-medium text-secondary border border-outline-variant rounded-lg hover:text-on-surface hover:border-outline transition-colors"
-          >
-            See how it works
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M5 12h14M12 5l7 7-7 7" />
-            </svg>
-          </a>
         </div>
       </section>
 

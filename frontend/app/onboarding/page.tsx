@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useApi } from "@/lib/api";
 import TagInput from "@/components/ui/TagInput";
@@ -78,6 +78,11 @@ export default function OnboardingPage() {
   const router = useRouter();
   const api = useApi();
   const [step, setStep] = useState(0);
+
+  // This flow is replaced by /first-post — redirect immediately
+  useEffect(() => {
+    router.replace("/first-post");
+  }, [router]);
   const [form, setForm] = useState<FormState>(EMPTY);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
