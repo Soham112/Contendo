@@ -367,12 +367,13 @@ export default function WelcomePage() {
         {/* ── Philosophy — NO CHANGES ───────────────────────────────────────── */}
         <section id="atelier" className="px-5 sm:px-8 py-16 sm:py-24">
           <div className="max-w-[1080px] mx-auto grid md:grid-cols-[1fr_1.05fr] gap-8 items-center">
-            <div className="rounded-2xl bg-surface-container overflow-hidden shadow-[0px_4px_20px_rgba(47,51,51,0.04),0px_12px_40px_rgba(47,51,51,0.06)] p-3">
-              <div className="rounded-xl h-[250px] sm:h-[320px] bg-[linear-gradient(145deg,#233131_0%,#50695f_55%,#d8b486_100%)] relative overflow-hidden">
-                <div className="absolute left-5 bottom-5 w-16 h-1.5 bg-white/70 rounded-full" />
-                <div className="absolute left-5 bottom-9 w-24 h-1.5 bg-white/45 rounded-full" />
-                <div className="absolute right-8 top-8 w-14 h-14 rounded-full bg-[#f4debe]/70 blur-sm" />
-              </div>
+            <div className="rounded-2xl overflow-hidden shadow-[0px_4px_20px_rgba(47,51,51,0.04),0px_12px_40px_rgba(47,51,51,0.06)]">
+              <img
+                src="/desk-atelier.png"
+                alt="A quiet writer's desk — monitor, lamp, pencils, coffee"
+                className="w-full h-full object-cover"
+                style={{ display: "block", borderRadius: "1rem" }}
+              />
             </div>
 
             <div>
