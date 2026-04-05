@@ -5,7 +5,7 @@ import { useAuth } from "@clerk/nextjs";
 import { useRouter, usePathname } from "next/navigation";
 import { useApi } from "@/lib/api";
 
-const SKIP_ROUTES = ["/welcome", "/sign-in", "/sign-up", "/onboarding"];
+const SKIP_ROUTES = ["/welcome", "/sign-in", "/sign-up", "/onboarding", "/first-post"];
 
 export function useProfileCheck() {
   const { isSignedIn, isLoaded } = useAuth();
@@ -35,7 +35,7 @@ export function useProfileCheck() {
           setProfile(data.profile);
           setHasProfile(data.has_profile);
           if (!data.has_profile) {
-            router.push("/onboarding");
+            router.push("/first-post");
           }
         }
       })
