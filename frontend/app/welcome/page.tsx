@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 
@@ -88,6 +88,14 @@ export default function WelcomePage() {
   const { isSignedIn, isLoaded } = useUser();
   const [topicInput, setTopicInput] = useState("");
   const [showInputError, setShowInputError] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const SUGGESTION_PILLS = [
+    "Why I changed my mind on...",
+    "What 3 years of X taught me",
+    "The mistake most people make with...",
+    "My honest take on...",
+  ];
 
   const heroPrimaryCta = useMemo(() => {
     if (isLoaded && isSignedIn) {
@@ -168,6 +176,7 @@ export default function WelcomePage() {
               aria-label="Start your first post"
             >
               <input
+                ref={inputRef}
                 value={topicInput}
                 onChange={(event) => {
                   setTopicInput(event.target.value);
@@ -176,12 +185,13 @@ export default function WelcomePage() {
                   }
                 }}
                 placeholder="What do you want to write about today?"
-                className="flex-1 bg-transparent text-[14px] sm:text-[13px] text-on-surface placeholder:text-outline focus:outline-none focus:border-b-2 focus:border-b-[#58614f] py-1.5"
+                className="flex-1 bg-transparent text-[14px] sm:text-[13px] text-on-surface placeholder:text-outline focus:outline-none focus:border-b-2 focus:border-b-[#58614f]"
+                style={{ minHeight: "64px", paddingTop: "20px", paddingBottom: "20px" }}
                 aria-label="Topic prompt"
               />
               <button
                 type="submit"
-                className="btn-primary text-white text-[13px] font-medium rounded-md px-5 py-3 sm:py-2.5 whitespace-nowrap"
+                className="btn-primary text-white text-[13px] font-medium rounded-md px-5 py-3 sm:py-2.5 whitespace-nowrap self-center w-full sm:w-auto"
               >
                 Start Writing
               </button>
@@ -190,6 +200,58 @@ export default function WelcomePage() {
             {showInputError && (
               <p className="mt-2 text-[12px] text-secondary/80">Add a topic first to continue.</p>
             )}
+
+            {/* ── Suggestion pills ──────────────────────────────────────────── */}
+            <div style={{ marginTop: "20px" }}>
+              <p
+                className="text-center mb-3"
+                style={{
+                  fontSize: "0.7rem",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06rem",
+                  color: "rgba(100, 94, 87, 0.5)",
+                }}
+              >
+                Or start from a prompt
+              </p>
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "10px",
+                  justifyContent: "center",
+                }}
+              >
+                {SUGGESTION_PILLS.map((pill) => (
+                  <button
+                    key={pill}
+                    type="button"
+                    onClick={() => {
+                      setTopicInput(pill);
+                      inputRef.current?.focus();
+                    }}
+                    style={{
+                      background: "#ffffff",
+                      border: "1px solid rgba(174, 179, 178, 0.35)",
+                      borderRadius: "9999px",
+                      padding: "8px 16px",
+                      fontSize: "0.8rem",
+                      color: "var(--color-text-secondary, #645e57)",
+                      cursor: "pointer",
+                      transition: "background 0.15s ease",
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.background = "#f3f4f3";
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.background = "#ffffff";
+                    }}
+                  >
+                    {pill}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </section>
 
