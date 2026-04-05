@@ -2,6 +2,9 @@
 
 import { useState } from 'react'
 import { useUser, useSignIn } from '@clerk/nextjs'
+import { useRouter } from 'next/navigation'
+import { Sparkles } from 'lucide-react'
+import { useApi } from '@/lib/api'
 import {
   ROLE_OPTIONS,
   ROLE_TO_BUCKET,
@@ -25,6 +28,13 @@ interface Answers {
   opinionIsCustom: boolean
   audience: string
   voiceSample: string
+}
+
+interface DraftState {
+  post: string
+  score: number
+  archetype: string
+  postId: number | null
 }
 
 // ── SVG icons for role tiles ──────────────────────────────────────────────────
@@ -185,6 +195,23 @@ function StepDots({ total, current }: { total: number; current: number }) {
   )
 }
 
+function buildContext(answers: Answers): string {
+  const parts: string[] = []
+  if (answers.experienceType) {
+    parts.push(`Post should draw from: ${answers.experienceType}`)
+  }
+  if (answers.experienceDetail) {
+    parts.push(`Specific context: ${answers.experienceDetail}`)
+  }
+  if (answers.opinion) {
+    parts.push(`Core opinion/take: ${answers.opinion}`)
+  }
+  if (answers.audience) {
+    parts.push(`Target audience: ${answers.audience}`)
+  }
+  return parts.join('\n')
+}
+
 // ── Generating screen ─────────────────────────────────────────────────────────
 function GeneratingScreen() {
   return (
@@ -200,6 +227,117 @@ function GeneratingScreen() {
         <p className="text-[12px] text-[#2f3333]/50 leading-relaxed">
           This is built from what you just told us. Add sources after to make
           every post more specific to your expertise.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function GenerateErrorScreen({ onGoToWorkspace }: { onGoToWorkspace: () => void }) {
+  return (
+    <div className="min-h-screen bg-[#faf9f8] flex flex-col items-center justify-center px-4 py-12">
+      <Wordmark />
+      <div className="mt-8 text-center max-w-[460px]">
+        <h2 className="font-headline text-[1.7rem] text-[#2f3333] leading-tight mb-3">
+          Something went wrong.
+        </h2>
+        <p className="text-[14px] text-[#645e57] mb-8 leading-relaxed">
+          We couldn&apos;t generate your post. You can try again from the workspace.
+        </p>
+        <button
+          onClick={onGoToWorkspace}
+          className="btn-primary text-white px-6 py-2.5 rounded-xl text-[14px] font-medium"
+        >
+          Go to workspace →
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function DraftScreen({
+  topic,
+  format,
+  post,
+  score,
+  copied,
+  onCopy,
+  onFeedMemory,
+  onCreate,
+}: {
+  topic: string
+  format: string
+  post: string
+  score: number
+  copied: boolean
+  onCopy: () => void
+  onFeedMemory: () => void
+  onCreate: () => void
+}) {
+  return (
+    <div className="min-h-screen bg-[#faf9f8] flex flex-col items-center justify-center px-4 py-12">
+      <Wordmark />
+      <div className="w-full max-w-[680px] bg-white rounded-2xl shadow-[0px_4px_20px_rgba(47,51,51,0.04),0px_12px_40px_rgba(47,51,51,0.06)] px-7 sm:px-9 py-8">
+        <p className="label-caps text-[11px] text-[#645e57] mb-3">YOUR FIRST POST</p>
+
+        <div className="flex flex-wrap gap-2 mb-3">
+          <span className="px-2.5 py-1 rounded-full bg-[#edeeed] text-[11px] label-caps text-[#2f3333]">
+            {format.toUpperCase()}
+          </span>
+          <span className="px-2.5 py-1 rounded-full bg-[#edeeed] text-[11px] label-caps text-[#2f3333]">
+            CASUAL
+          </span>
+        </div>
+
+        <p className="font-headline italic text-[1.1rem] text-[#2f3333]/65 mb-5 leading-relaxed">
+          {topic}
+        </p>
+
+        <div className="sage-scrollbar bg-white rounded-xl shadow-[0px_4px_20px_rgba(47,51,51,0.04),0px_12px_40px_rgba(47,51,51,0.06)] p-6 text-[1rem] leading-[1.7] text-[#2f3333] whitespace-pre-wrap max-h-[60vh] overflow-y-auto">
+          {post}
+        </div>
+
+        {score > 0 && (
+          <p className="mt-2 text-[12px] label-caps text-[#2f3333]/50">
+            Authenticity score: {score}/100
+          </p>
+        )}
+
+        <div className="mt-5 bg-[#f3f4f3] rounded-lg px-4 py-4 flex items-start gap-3">
+          <Sparkles size={16} className="text-[#58614f] mt-[1px] shrink-0" />
+          <p className="text-[13px] text-[#2f3333]/70 leading-relaxed">
+            This post was built from what you just told us — no sources yet. Add
+            articles, notes, and research to your memory and every future post
+            will be grounded in your actual expertise.
+          </p>
+        </div>
+
+        <div className="mt-5 flex justify-center">
+          <button
+            onClick={onCopy}
+            className="px-4 py-1.5 rounded-full text-[11px] label-caps text-[#2f3333] ghost-border hover:bg-[#f3f4f3] transition-colors"
+          >
+            {copied ? 'Copied!' : 'Copy post'}
+          </button>
+        </div>
+
+        <div className="mt-5 w-full max-w-[480px] mx-auto flex flex-col gap-2.5">
+          <button
+            onClick={onFeedMemory}
+            className="btn-primary text-white py-2.5 rounded-xl text-[14px] font-medium w-full"
+          >
+            Add sources and improve →
+          </button>
+          <button
+            onClick={onCreate}
+            className="w-full py-2.5 rounded-xl text-[14px] text-[#2f3333] hover:bg-[#f3f4f3] transition-colors ghost-border"
+          >
+            Go to workspace →
+          </button>
+        </div>
+
+        <p className="mt-3 text-center text-[11px] text-[#2f3333]/40">
+          You can always find this post in History.
         </p>
       </div>
     </div>
@@ -274,9 +412,13 @@ function AuthScreen() {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function FirstPostPage() {
   const { isLoaded, isSignedIn } = useUser()
+  const router = useRouter()
+  const api = useApi()
 
   const [screen, setScreen] = useState(0)
-  const [isGenerating, setIsGenerating] = useState(false)
+  const [flowState, setFlowState] = useState<'form' | 'generating' | 'error' | 'draft'>('form')
+  const [draftState, setDraftState] = useState<DraftState | null>(null)
+  const [copied, setCopied] = useState(false)
 
   const [answers, setAnswers] = useState<Answers>({
     role: '',
@@ -338,14 +480,120 @@ export default function FirstPostPage() {
     setScreen(s => s + 1)
   }
 
-  function handleGenerate() {
+  async function handleGenerate() {
     const combined = [...selectedPills, audienceCustom.trim()]
       .filter(Boolean)
       .join(', ')
     const finalAnswers = { ...answers, audience: combined }
-    console.log('[first-post] answers:', finalAnswers)
     updateAnswers({ audience: combined })
-    setIsGenerating(true)
+    setFlowState('generating')
+
+    const profile = {
+      name: finalAnswers.roleLabel,
+      role: finalAnswers.roleLabel,
+      bio: finalAnswers.experienceDetail || '',
+      location: '',
+      target_audience: finalAnswers.audience,
+      topics_of_expertise: [],
+      voice_descriptors: [],
+      opinions: finalAnswers.opinion ? [finalAnswers.opinion] : [],
+      words_to_avoid: [],
+      writing_rules: [],
+      writing_samples: finalAnswers.voiceSample ? [finalAnswers.voiceSample] : [],
+      linkedin_style_notes: '',
+      medium_style_notes: '',
+      thread_style_notes: '',
+    }
+
+    try {
+      await api.saveProfile(profile)
+    } catch (err) {
+      console.error('[first-post] profile save error:', err)
+    }
+
+    let generatedPost = ''
+    let score = 0
+    let archetype = ''
+
+    try {
+      const res = await api.generatePost({
+        topic: finalAnswers.topic,
+        format: finalAnswers.format,
+        tone: 'casual',
+        context: buildContext(finalAnswers),
+      })
+
+      if (!res.ok) {
+        throw new Error(`POST /generate failed with status ${res.status}`)
+      }
+
+      const data = await res.json()
+      generatedPost = data.post || ''
+      score = data.score || 0
+      archetype = data.archetype || ''
+
+      if (!generatedPost) {
+        throw new Error('Generated post was empty')
+      }
+    } catch (err) {
+      console.error('[first-post] generate error:', err)
+      setFlowState('error')
+      return
+    }
+
+    let postId: number | null = null
+    try {
+      const logRes = await api.logPost({
+        topic: finalAnswers.topic,
+        format: finalAnswers.format,
+        tone: 'casual',
+        content: generatedPost,
+        authenticity_score: score || 0,
+        svg_diagrams: null,
+        archetype: archetype || '',
+      })
+
+      if (logRes.ok) {
+        const logData = await logRes.json()
+        postId = typeof logData?.post_id === 'number' ? logData.post_id : null
+      }
+    } catch (err) {
+      console.error('[first-post] log post error:', err)
+    }
+
+    setDraftState({ post: generatedPost, score, archetype, postId })
+    setFlowState('draft')
+  }
+
+  function persistDraftToSession() {
+    if (!draftState) return
+
+    sessionStorage.setItem('contentOS_last_post', draftState.post)
+    sessionStorage.setItem('contentOS_last_topic', answers.topic)
+    sessionStorage.setItem('contentOS_last_format', answers.format)
+    sessionStorage.setItem('contentOS_last_tone', 'casual')
+    sessionStorage.setItem('contentOS_last_score', String(draftState.score || 0))
+    sessionStorage.setItem('contentOS_last_feedback', JSON.stringify([]))
+    sessionStorage.setItem('contentOS_last_iterations', '1')
+    sessionStorage.setItem('contentOS_last_scored', String((draftState.score || 0) > 0))
+    sessionStorage.setItem('contentOS_last_topic_meta', answers.topic)
+    sessionStorage.setItem('contentOS_last_format_meta', answers.format)
+    sessionStorage.setItem('contentOS_last_tone_meta', 'casual')
+
+    if (draftState.postId) {
+      sessionStorage.setItem('contentOS_current_post_id', String(draftState.postId))
+    }
+  }
+
+  function handleCopyPost() {
+    if (!draftState?.post) return
+
+    navigator.clipboard.writeText(draftState.post).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    }).catch((err) => {
+      console.error('[first-post] copy error:', err)
+    })
   }
 
   // ── Render guards ───────────────────────────────────────────────────────────
@@ -357,8 +605,33 @@ export default function FirstPostPage() {
     )
   }
 
-  if (isGenerating) {
+  if (flowState === 'generating') {
     return <GeneratingScreen />
+  }
+
+  if (flowState === 'error') {
+    return <GenerateErrorScreen onGoToWorkspace={() => router.push('/create')} />
+  }
+
+  if (flowState === 'draft' && draftState) {
+    return (
+      <DraftScreen
+        topic={answers.topic}
+        format={answers.format}
+        post={draftState.post}
+        score={draftState.score}
+        copied={copied}
+        onCopy={handleCopyPost}
+        onFeedMemory={() => {
+          persistDraftToSession()
+          router.push('/')
+        }}
+        onCreate={() => {
+          persistDraftToSession()
+          router.push('/create')
+        }}
+      />
+    )
   }
 
   // ── Main layout ─────────────────────────────────────────────────────────────

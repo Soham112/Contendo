@@ -8,7 +8,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { loading } = useProfileCheck();
 
-  if (pathname === "/welcome" || pathname === "/onboarding" || pathname?.startsWith("/sign-in") || pathname?.startsWith("/sign-up")) {
+  if (pathname === "/welcome" || pathname === "/onboarding" || pathname === "/first-post" || pathname?.startsWith("/sign-in") || pathname?.startsWith("/sign-up")) {
     return <>{children}</>;
   }
 
