@@ -452,6 +452,7 @@ export default function FirstPostPage() {
   const [customOpinion, setCustomOpinion] = useState('')
   const [selectedPills, setSelectedPills] = useState<string[]>([])
   const [audienceCustom, setAudienceCustom] = useState('')
+  const showTopicHeader = Boolean(answers.topic.trim()) && screen > 0
 
   const updateAnswers = (patch: Partial<Answers>) =>
     setAnswers(prev => ({ ...prev, ...patch }))
@@ -701,7 +702,7 @@ export default function FirstPostPage() {
 
       {!isSignedIn ? (
         <>
-          {answers.topic.trim() && (
+          {showTopicHeader && (
             <p className="text-[11px] text-[#2f3333]/50 label-caps tracking-[0.06em] text-center mb-3">
               Writing about: {answers.topic.trim()}
             </p>
@@ -710,7 +711,7 @@ export default function FirstPostPage() {
         </>
       ) : (
         <div className="w-full max-w-[600px]">
-          {answers.topic.trim() && (
+          {showTopicHeader && (
             <p className="text-[11px] text-[#2f3333]/50 label-caps tracking-[0.06em] text-center mb-3">
               Writing about: {answers.topic.trim()}
             </p>
