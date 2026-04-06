@@ -455,7 +455,7 @@ export default function CreatePost() {
   const [interstitialTopic, setInterstitialTopic] = useState("");
   const [interstitialScore, setInterstitialScore] = useState(0);
 
-  const topicRef = useRef<HTMLInputElement>(null);
+  const topicRef = useRef<HTMLTextAreaElement>(null);
   const analysisRef = useRef<HTMLDivElement>(null);
 
   // Responsive width detection
@@ -1720,14 +1720,25 @@ export default function CreatePost() {
                     >
                       THE CENTRAL THEME
                     </label>
-                    <input
+                    <textarea
                       ref={topicRef}
-                      type="text"
+                      rows={1}
                       value={topic}
                       onChange={(e) => setTopic(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && generate()}
+                      onInput={(e) => {
+                        const el = e.currentTarget;
+                        el.style.height = "auto";
+                        el.style.height = el.scrollHeight + "px";
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          generate();
+                        }
+                      }}
                       placeholder="What story are we telling today?"
                       className="w-full px-4 py-3.5 rounded-lg border border-outline-variant bg-surface-container-lowest text-[15px] font-medium text-on-surface placeholder:text-outline-variant focus:outline-none focus:border-primary transition-colors"
+                      style={{ resize: "none", overflow: "hidden" }}
                     />
                   </div>
 
