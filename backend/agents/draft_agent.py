@@ -154,7 +154,11 @@ def draft_node(state: PipelineState) -> PipelineState:
 
     profile = state["profile"]
     profile_context = profile_to_context_string(profile)
-    format_instructions = get_format_instructions(state["format"], state["tone"])
+    format_instructions = get_format_instructions(
+        state["format"],
+        state.get("length", "standard"),
+        state["tone"],
+    )
 
     chunks_text = _format_retrieval_context(state)
 

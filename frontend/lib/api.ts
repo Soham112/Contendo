@@ -32,6 +32,7 @@ export interface GenerateRequest {
   topic: string;
   format: string;
   tone: string;
+  length?: "concise" | "standard" | "long-form";
   context?: string;
   quality?: string;
 }

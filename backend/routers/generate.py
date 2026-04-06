@@ -15,6 +15,7 @@ class GenerateRequest(BaseModel):
     topic: str
     format: str
     tone: str
+    length: str = "standard"
     context: str = ""
     quality: str = "standard"
 
@@ -92,6 +93,7 @@ async def generate(
             topic=req.topic,
             format=req.format,
             tone=req.tone,
+            length=req.length,
             context=req.context,
             quality=req.quality,
             user_id=user_id,
