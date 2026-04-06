@@ -24,6 +24,45 @@ _ARCHETYPE_HUMAN_NAMES = {
 }
 
 
+def _get_grounding_instruction(confidence: str, chunk_count: int) -> str:
+        """Return prompt calibration text based on retrieval confidence.
+
+        High confidence returns an empty string so baseline behavior remains unchanged.
+        """
+        _ = chunk_count  # kept for future calibration tuning by retrieved chunk count
+
+        if confidence == "high":
+                return ""
+
+        if confidence == "medium":
+                return """
+GROUNDING CALIBRATION:
+You have moderate knowledge base coverage on this topic.
+Use what is available. Do not invent specifics not present in the chunks.
+If you lack a concrete example, write from an observational frame:
+"I've seen this pattern" or "this tends to happen when..." rather than
+fabricating a named incident or specific timestamp.
+Target length: aim for the shorter end of the format's range.
+A tighter post with real grounding beats a longer post with filler.
+""".strip()
+
+        return """
+GROUNDING CALIBRATION:
+The knowledge base has limited content on this specific topic.
+Write a focused, honest post based only on what is actually in the chunks.
+Rules for this post:
+- If you only have one real idea from the chunks, write that one idea
+    well and stop. 60 to 100 words is a complete post. Do not stretch.
+- Write from an analytical or observational perspective, not fabricated
+    personal experience
+- No invented numbers, timestamps, colleague names, or specific incidents
+- Do not tell the reader that your knowledge is limited — just write
+    what you know
+- Stopping with something real is always better than padding to a
+    word count with filler
+""".strip()
+
+
 def infer_archetype(topic: str, context: str, tone: str) -> str:
     """Use Claude Haiku to infer the best archetype. Falls back to incident_report on failure."""
     prompt = f"""You are a content strategist. Given a post topic, tone, and \
@@ -80,6 +119,7 @@ Knowledge base (use what's relevant, ignore the rest):
 Topic: {topic}
 {context_section}
 {posted_topics_section}
+{grounding_instruction}
 Write the draft now. Do not add any preamble or explanation; output only the post content itself.
 
 ---
@@ -193,6 +233,11 @@ def draft_node(state: PipelineState) -> PipelineState:
     else:
         posted_topics_section = ""
 
+    grounding_instruction = _get_grounding_instruction(
+        state.get("retrieval_confidence", "medium"),
+        state.get("retrieved_chunk_count", 0),
+    )
+
     prompt = SYSTEM_PROMPT.format(
         profile_context=profile_context,
         format_instructions=format_instructions,
@@ -200,6 +245,7 @@ def draft_node(state: PipelineState) -> PipelineState:
         topic=state["topic"],
         context_section=context_section,
         posted_topics_section=posted_topics_section,
+        grounding_instruction=grounding_instruction,
         archetype_name=archetype_name,
         archetype_instructions=archetype_instructions,
     )

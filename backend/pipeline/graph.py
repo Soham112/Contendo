@@ -117,4 +117,5 @@ def run_pipeline(
         "iterations": result.get("iterations", 1),
         "archetype": result.get("archetype", ""),
         "scored": quality == "polished",
+        "retrieval_confidence": result.get("retrieval_confidence", "medium"),
     }
