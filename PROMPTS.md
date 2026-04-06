@@ -257,9 +257,9 @@ Never force a diagram into opinion pieces or short punchy posts where the words 
 
 | Confidence | Trigger | Instruction |
 |---|---|---|
-| high | 3+ chunks with distance < 0.55 | Empty string — prompt unchanged |
-| medium | 1+ chunk < 0.55, or 3+ chunks < 0.70 | Observational frame reminder, aim for shorter end of format range |
-| low | Fewer than 3 chunks, all distances ≥ 0.55 | Write one idea well and stop. 60–100 words is a complete post. No padding, no fabrication. |
+| high | 3+ chunks with distance < 0.55 (implemented as similarity > 0.45) | Empty string — prompt unchanged |
+| medium | 1+ chunk < 0.55, or 3+ chunks < 0.70 (implemented as similarity > 0.45 / > 0.30) | Observational frame reminder, aim for shorter end of format range |
+| low | Fewer than 3 strong matches, below medium trigger thresholds | Write one idea well and stop. 60–100 words is a complete post. No padding, no fabrication. |
 
 Design principle: always generate. Calibrate output length and frame to available grounding. A 70-word post built on one real idea is better than a 400-word post built on fabrication.
 

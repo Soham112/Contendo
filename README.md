@@ -128,8 +128,8 @@ Navigation is handled by a persistent left sidebar (`Sidebar.tsx`), rendered by 
 | Step | Agent | Job |
 |------|-------|-----|
 | 1 | `load_profile_node` | Reads `profile.json`, injects user voice and style into state. Also loads all previously posted topics from SQLite to prevent repeated angles. |
-| 2 | `retrieval_node` | Queries ChromaDB for the 8 most semantically relevant chunks; builds a `retrieval_bundle` with source summaries and adjacent sibling chunks from `hierarchy_store`; sets `retrieved_context` (enriched prompt block) and always sets `retrieved_chunks` for backward compat; falls back to flat retrieval if hierarchy_store is empty |
-| 3 | `draft_node` | First calls Claude Haiku (`infer_archetype()`) to classify the topic into one of 7 post archetypes. Then calls Claude Sonnet to produce a draft using the enriched `retrieved_context` (source summaries + sibling chunks for top sources) or flat `retrieved_chunks` as fallback |
+| 2 | `retrieval_node` | Queries ChromaDB for the 8 most semantically relevant chunks; builds a `retrieval_bundle` with source summaries and adjacent sibling chunks from `hierarchy_store`; sets `retrieved_context` (enriched prompt block) and always sets `retrieved_chunks` for backward compat; computes internal retrieval calibration fields (`retrieval_confidence`, `retrieved_chunk_count`) from raw retrieval results; falls back to flat retrieval if hierarchy_store is empty |
+| 3 | `draft_node` | First calls Claude Haiku (`infer_archetype()`) to classify the topic into one of 7 post archetypes. Then calls Claude Sonnet to produce a draft using the enriched `retrieved_context` (source summaries + sibling chunks for top sources) or flat `retrieved_chunks` as fallback; injects a dynamic `grounding_instruction` for medium/low retrieval confidence and injects nothing for high confidence (baseline behavior unchanged) |
 | 4 | `critic_node` | Calls Claude Haiku once to diagnose hook/substance/structure/voice issues and writes `critic_brief` into state |
 | 5 | `humanizer_node` | Calls Claude to strip AI writing patterns, vary sentence structure, inject the user's authentic voice, and apply `critic_brief` fixes when present. Also exposes `refine_draft()` for targeted post-generation edits via `/refine` |
 | 6 | `scorer_node` | Calls Claude to score the draft 0–100 across 5 dimensions; uses 3-attempt JSON parse to handle markdown-wrapped responses |
@@ -259,7 +259,7 @@ Note: profile files are gitignored — your personal details never get committed
     ├── main.py                       # FastAPI entry point — CORS, lifespan, router registration, logging config
     ├── routers/
     │   ├── ingest.py                 # /ingest, /ingest-file, /scrape-and-ingest, /obsidian/*
-    │   ├── generate.py               # /generate, /refine, /generate-visuals
+    │   ├── generate.py               # /generate, /refine, /score, /generate-visuals
     │   ├── history.py                # /history, /log-post, PATCH/DELETE/restore history
     │   ├── library.py                # /library, DELETE /library/source
     │   ├── ideas.py                  # /suggestions
@@ -275,12 +275,12 @@ Note: profile files are gitignored — your personal details never get committed
     │   ├── visual_agent.py           # Parses [DIAGRAM:]/[IMAGE:] placeholders; generates SVGs
     │   ├── ideation_agent.py         # Multi-query diversity sampling + idea generation
     │   ├── retrieval_agent.py        # Semantic search node in the LangGraph pipeline
-    │   ├── draft_agent.py            # Generates initial draft via Claude
+    │   ├── draft_agent.py            # Generates initial draft via Claude + confidence-based grounding calibration
     │   ├── humanizer_agent.py        # Rewrites draft to remove AI patterns; exposes refine_draft()
     │   └── scorer_agent.py           # Scores draft 0–100, robust JSON parse with fallback
     ├── pipeline/
     │   ├── state.py                  # TypedDict defining shared LangGraph pipeline state
-    │   └── graph.py                  # LangGraph graph — nodes, edges, quality-aware routing
+    │   └── graph.py                  # LangGraph graph — nodes, edges, quality-aware routing; returns retrieval_confidence in /generate output
     ├── memory/
     │   ├── vector_store.py           # ChromaDB init, upsert, semantic query, get_all_sources, get_adjacent_chunks; per-user collections namespaced as contendo_{user_id}
     │   ├── hierarchy_store.py        # SQLite hierarchy.db — source_nodes + topic_nodes for hierarchical retrieval
