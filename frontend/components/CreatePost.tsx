@@ -1704,7 +1704,7 @@ export default function CreatePost() {
                 {/* Editorial header */}
                 <div className="mb-8">
                   <h1 className="font-headline text-[3rem] text-on-surface leading-tight">
-                    Drafting a new thought
+                    Draft a new thought
                   </h1>
                   <p className="text-sm text-secondary mt-1.5">
                     Shape your idea and let your memory do the rest.
