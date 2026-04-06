@@ -35,10 +35,16 @@ const TONES: { id: Tone; label: string; description: string }[] = [
   { id: "storytelling", label: "Storytelling", description: "Scene-driven, lesson earned" },
 ];
 
+const TONE_DISPLAY_LABELS: Record<Tone, string> = {
+  casual: "Pragmatic",
+  technical: "Evocative",
+  storytelling: "Minimalist",
+};
+
 const TONE_DESCRIPTIONS: Record<Tone, string> = {
-  casual: "Conversational and direct. First-person, short sentences, reads like a message from someone who's lived it. Best for LinkedIn posts that feel human rather than polished.",
-  technical: "Precise and substantive. Uses domain language without over-explaining. Respects the reader's expertise. Best for audiences who want depth over accessibility.",
-  storytelling: "Narrative-first. Opens with a moment, builds tension, lands on a lesson. Best for posts where the experience itself is the argument.",
+  casual: "Conversational and direct. First-person, short sentences. Focus on clarity and utility.",
+  technical: "Precise and substantive. Uses domain language without over-explaining. Respects expertise.",
+  storytelling: "Narrative-first. Opens with a moment, builds tension, lands on a lesson.",
 };
 
 const LENGTHS: { id: Length; label: string }[] = [
@@ -49,14 +55,14 @@ const LENGTHS: { id: Length; label: string }[] = [
 
 const LENGTH_META: Record<Format, Record<Length, string>> = {
   "linkedin post": {
-    concise: "~150 words",
-    standard: "~300 words",
-    "long-form": "~500 words",
+    concise: "~100-150 words",
+    standard: "~200-300 words",
+    "long-form": "~400-600 words",
   },
   "medium article": {
-    concise: "~400 words",
-    standard: "~800 words",
-    "long-form": "~1500 words",
+    concise: "~350-500 words",
+    standard: "~700-900 words",
+    "long-form": "~1200-1600 words",
   },
   thread: {
     concise: "4-5 tweets",
@@ -1697,7 +1703,7 @@ export default function CreatePost() {
               <div style={{ maxWidth: 600, margin: "0 auto" }}>
                 {/* Editorial header */}
                 <div className="mb-8">
-                  <h1 className="font-headline text-3xl text-on-surface leading-tight">
+                  <h1 className="font-headline text-[3rem] text-on-surface leading-tight">
                     Drafting a new thought
                   </h1>
                   <p className="text-sm text-secondary mt-1.5">
@@ -1726,14 +1732,14 @@ export default function CreatePost() {
                   </div>
 
                   {/* Format & Tone side-by-side */}
-                  <div className="flex gap-8 items-start">
+                  <div className="flex gap-12 items-start">
                     {/* Format — vertical pills */}
-                    <div className="w-44 shrink-0">
+                    <div className="w-[38%] shrink-0">
                       <label
                         className="label-caps text-secondary block mb-3"
                         style={{ fontSize: "0.62rem", letterSpacing: "0.09em" }}
                       >
-                        FORMAT &amp; MEDIUM
+                        FORMAT
                       </label>
                       <div className="space-y-2">
                         {FORMATS.map((f) => (
@@ -1750,16 +1756,22 @@ export default function CreatePost() {
                           </button>
                         ))}
                       </div>
+                      <blockquote
+                        className="mt-5 pl-3 italic text-[13px] text-[color:var(--color-text-tertiary)]"
+                        style={{ borderLeft: "2px solid rgba(88, 97, 79, 0.4)" }}
+                      >
+                        The interface should not demand attention; it should provide a vessel for it.
+                      </blockquote>
                     </div>
 
-                    {/* Right column — tone row, length row, tone context line */}
-                    <div className="flex-1 space-y-5">
+                    {/* Right column — tone row, tone context line, length row */}
+                    <div className="w-[62%] shrink-0">
                       <div>
                         <label
                           className="label-caps text-secondary block mb-3"
                           style={{ fontSize: "0.62rem", letterSpacing: "0.09em" }}
                         >
-                          VOICE &amp; RESONANCE
+                          HARMONIC VOICE
                         </label>
                         <div className="flex flex-wrap gap-2">
                           {TONES.map((t) => (
@@ -1777,55 +1789,17 @@ export default function CreatePost() {
                                   : { borderColor: "rgba(174, 179, 178, 0.15)" }
                               }
                             >
-                              {t.label}
+                              {TONE_DISPLAY_LABELS[t.id]}
                             </button>
                           ))}
                         </div>
                       </div>
 
-                      <div>
-                        <label
-                          className="label-caps text-secondary block mb-3"
-                          style={{ fontSize: "0.62rem", letterSpacing: "0.09em" }}
-                        >
-                          LENGTH
-                        </label>
-                        <div className="flex flex-wrap gap-2">
-                          {LENGTHS.map((l) => {
-                            const isActive = length === l.id;
-                            return (
-                              <button
-                                key={l.id}
-                                onClick={() => setLength(l.id)}
-                                className={`min-w-[120px] px-4 py-2 rounded-md transition-all border text-left ${
-                                  isActive
-                                    ? "bg-primary text-white border-transparent"
-                                    : "text-on-surface hover:text-on-surface bg-transparent"
-                                }`}
-                                style={
-                                  isActive
-                                    ? undefined
-                                    : { borderColor: "rgba(174, 179, 178, 0.15)" }
-                              }
-                            >
-                              <div className="text-[13px] font-medium leading-tight">{l.label}</div>
-                              <div
-                                className="text-[10.5px] leading-tight mt-0.5"
-                                style={{ opacity: isActive ? 0.7 : 0.6 }}
-                              >
-                                {LENGTH_META[format][l.id]}
-                              </div>
-                            </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
                       <p
                         style={{
-                          marginTop: 2,
+                          marginTop: 8,
                           fontSize: 12,
-                          color: "var(--color-text-tertiary)",
+                          color: "var(--color-text-variant, var(--color-text-tertiary))",
                           lineHeight: 1.5,
                           maxWidth: 420,
                           opacity: toneDescOpacity,
@@ -1834,6 +1808,44 @@ export default function CreatePost() {
                       >
                         {TONE_DESCRIPTIONS[tone]}
                       </p>
+
+                      <div className="mt-4">
+                        <label
+                          className="label-caps text-secondary block mb-3"
+                          style={{ fontSize: "0.62rem", letterSpacing: "0.09em" }}
+                        >
+                          LENGTH
+                        </label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {LENGTHS.map((l) => {
+                            const isActive = length === l.id;
+                            return (
+                              <button
+                                key={l.id}
+                                onClick={() => setLength(l.id)}
+                                className={`w-full min-h-[54px] px-4 py-2.5 rounded-md transition-all border text-left flex flex-col justify-center ${
+                                  isActive
+                                    ? "bg-primary text-white border-transparent"
+                                    : "text-on-surface hover:text-on-surface bg-transparent"
+                                }`}
+                                style={
+                                  isActive
+                                    ? undefined
+                                    : { borderColor: "rgba(174, 179, 178, 0.15)" }
+                                }
+                              >
+                                <div className="text-[13px] font-medium leading-tight">{l.label}</div>
+                                <div
+                                  className="text-[11px] leading-tight mt-0.5"
+                                  style={{ opacity: isActive ? 0.7 : 0.55 }}
+                                >
+                                  {LENGTH_META[format][l.id]}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -1850,7 +1862,7 @@ export default function CreatePost() {
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M12 2l2.09 6.43H21l-5.47 3.97 2.09 6.43L12 15l-5.62 3.83 2.09-6.43L3 8.43h6.91z" />
                       </svg>
-                      Generate Draft
+                      CREATE POST →
                     </button>
                   </div>
                 </div>
