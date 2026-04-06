@@ -455,8 +455,19 @@ export default function CreatePost() {
   const [interstitialTopic, setInterstitialTopic] = useState("");
   const [interstitialScore, setInterstitialScore] = useState(0);
 
+  const [inlineSelection, setInlineSelection] = useState<{
+    start: number;
+    end: number;
+    text: string;
+    rect: DOMRect | null;
+  } | null>(null);
+  const [inlineInstruction, setInlineInstruction] = useState("");
+  const [inlineLoading, setInlineLoading] = useState(false);
+
   const topicRef = useRef<HTMLTextAreaElement>(null);
   const analysisRef = useRef<HTMLDivElement>(null);
+  const inlineInputRef = useRef<HTMLInputElement>(null);
+  const postTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Responsive width detection
   useEffect(() => {
@@ -802,6 +813,76 @@ export default function CreatePost() {
     }
     await handleRefineWith(refineInstruction);
   };
+
+  const handlePostTextareaMouseUp = () => {
+    const el = postTextareaRef.current;
+    if (!el) return;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    if (start === end) {
+      setInlineSelection(null);
+      return;
+    }
+    const text = el.value.slice(start, end);
+    const rect = el.getBoundingClientRect();
+    setInlineSelection({ start, end, text, rect });
+  };
+
+  const handleInlineEdit = async () => {
+    if (!inlineSelection || !inlineInstruction.trim() || inlineLoading) return;
+    setInlineLoading(true);
+    try {
+      const result = await api.refineSelection(
+        inlineSelection.text,
+        inlineInstruction,
+        editedPost
+      );
+      const rewrittenText = result.rewritten_text;
+      const newPost =
+        editedPost.slice(0, inlineSelection.start) +
+        rewrittenText +
+        editedPost.slice(inlineSelection.end);
+
+      setEditedPost(newPost);
+      try {
+        sessionStorage.setItem(SS_POST, newPost);
+        sessionStorage.setItem("contentOS_last_post", newPost);
+      } catch {
+        // ignore
+      }
+
+      await patchHistory({ content: newPost });
+    } catch (err) {
+      console.error("Inline edit failed:", err);
+    } finally {
+      setInlineLoading(false);
+      setInlineSelection(null);
+      setInlineInstruction("");
+    }
+  };
+
+  const dismissInlineToolbar = () => {
+    setInlineSelection(null);
+    setInlineInstruction("");
+  };
+
+  const handleInlineKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleInlineEdit();
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      dismissInlineToolbar();
+    }
+  };
+
+  useEffect(() => {
+    if (inlineSelection) {
+      const timer = setTimeout(() => inlineInputRef.current?.focus(), 50);
+      return () => clearTimeout(timer);
+    }
+  }, [inlineSelection]);
 
   const handleApplyFeedback = async () => {
     if (!result || result.score_feedback.length === 0) return;
@@ -1375,8 +1456,11 @@ export default function CreatePost() {
                 style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "28px 32px" }}
               >
                 <textarea
+                  ref={postTextareaRef}
                   value={editedPost}
                   onChange={(e) => setEditedPost(e.target.value)}
+                  onMouseUp={handlePostTextareaMouseUp}
+                  onKeyUp={handlePostTextareaMouseUp}
                   className="w-full h-full resize-none outline-none bg-transparent"
                   style={{
                     fontSize: 15.5,
@@ -1490,8 +1574,11 @@ export default function CreatePost() {
                 style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "28px 32px" }}
               >
                 <textarea
+                  ref={postTextareaRef}
                   value={editedPost}
                   onChange={(e) => setEditedPost(e.target.value)}
+                  onMouseUp={handlePostTextareaMouseUp}
+                  onKeyUp={handlePostTextareaMouseUp}
                   className="w-full h-full resize-none outline-none bg-transparent"
                   style={{
                     fontSize: 15.5,
@@ -1959,6 +2046,92 @@ export default function CreatePost() {
           onCancel={() => setDrawerOpen(false)}
           onRegenerate={handleDrawerRegenerate}
         />
+      )}
+
+      {inlineSelection && postGenerated && (
+        <>
+          <div
+            onClick={dismissInlineToolbar}
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 999,
+              background: "transparent",
+            }}
+          />
+
+          <div
+            style={{
+              position: "fixed",
+              top: (inlineSelection.rect?.top ?? 200) - 56,
+              left:
+                (inlineSelection.rect?.left ?? 0) +
+                (inlineSelection.rect?.width ?? 0) / 2,
+              transform: "translateX(-50%)",
+              zIndex: 1000,
+              background: "#3a4a35",
+              borderRadius: "8px",
+              padding: "8px 10px",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              boxShadow:
+                "0px 4px 20px rgba(47,51,51,0.18), 0px 12px 40px rgba(47,51,51,0.12)",
+              minWidth: "260px",
+              maxWidth: "360px",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <input
+              ref={inlineInputRef}
+              value={inlineInstruction}
+              onChange={(e) => setInlineInstruction(e.target.value)}
+              onKeyDown={handleInlineKeyDown}
+              placeholder="Edit instruction..."
+              disabled={inlineLoading}
+              style={{
+                flex: 1,
+                background: "transparent",
+                border: "none",
+                outline: "none",
+                color: "#ffffff",
+                fontSize: "13px",
+                fontFamily: "Inter, sans-serif",
+              }}
+            />
+            <button
+              onClick={handleInlineEdit}
+              disabled={inlineLoading || !inlineInstruction.trim()}
+              style={{
+                background: "rgba(255,255,255,0.15)",
+                border: "none",
+                borderRadius: "5px",
+                color: "#ffffff",
+                fontSize: "13px",
+                padding: "3px 10px",
+                cursor: inlineLoading ? "wait" : "pointer",
+                opacity: !inlineInstruction.trim() || inlineLoading ? 0.5 : 1,
+                fontFamily: "Inter, sans-serif",
+              }}
+            >
+              {inlineLoading ? "..." : "→"}
+            </button>
+            <button
+              onClick={dismissInlineToolbar}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "rgba(255,255,255,0.55)",
+                fontSize: "13px",
+                padding: "3px 6px",
+                cursor: "pointer",
+                fontFamily: "Inter, sans-serif",
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        </>
       )}
 
     </div>

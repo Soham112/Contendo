@@ -166,6 +166,49 @@ def refine_draft(
     return refined_text
 
 
+async def refine_selection(
+    selected_text: str,
+    instruction: str,
+    full_post: str,
+    user_id: str = "default",
+) -> str:
+    """Rewrite only a selected fragment using full-post context for voice matching."""
+    profile = load_profile(user_id)
+    words_to_avoid = ", ".join(profile.get("words_to_avoid", []))
+
+    prompt = f"""You are editing a specific section of a social media post.
+
+User profile — match this person's voice exactly:
+{profile_to_context_string(profile)}
+
+Words this person never uses: {words_to_avoid}
+
+Never use the em dash character (—) anywhere in the output.
+
+Full post for context (do NOT rewrite this — for voice reference only):
+{full_post}
+
+Selected section to rewrite:
+{selected_text}
+
+Instruction: {instruction}
+
+Rules:
+- Rewrite ONLY the selected section according to the instruction
+- Match the voice, tone, and style of the surrounding post exactly
+- Output ONLY the rewritten text — no explanation, no preamble, no quotes
+- Do not add line breaks unless the original had them
+- Keep roughly the same length unless the instruction says otherwise
+- No em dashes anywhere in the output"""
+
+    response = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=500,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return response.content[0].text.strip()
+
+
 def humanizer_node(state: PipelineState) -> PipelineState:
     if state.get("quality") == "draft":
         return state  # pass raw draft through unchanged

@@ -206,6 +206,28 @@ export function useApi() {
         body: JSON.stringify(body),
       }),
 
+    refineSelection: async (
+      selectedText: string,
+      instruction: string,
+      fullPost: string
+    ): Promise<{ rewritten_text: string }> => {
+      const token = await getToken();
+      const res = await fetch(`${API}/refine-selection`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          selected_text: selectedText,
+          instruction,
+          full_post: fullPost,
+        }),
+      });
+      if (!res.ok) throw new Error("refineSelection failed");
+      return res.json();
+    },
+
     scorePost: (post_content: string) =>
       apiFetch("/score", {
         method: "POST",
