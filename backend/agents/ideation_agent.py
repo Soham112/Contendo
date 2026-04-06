@@ -4,7 +4,7 @@ import os
 import random
 from dotenv import load_dotenv
 
-from memory.vector_store import query_similar_batch, get_all_tags, get_all_sources
+from memory.vector_store import query_similar_hybrid_batch, get_all_tags, get_all_sources
 from memory.feedback_store import get_all_topics_posted
 from memory.profile_store import load_profile, profile_to_context_string
 
@@ -95,8 +95,18 @@ def generate_suggestions(count: int = 8, topic: str | None = None, user_id: str 
                     query_texts.append(oldest_title)
                     query_top_ks.append(5)
 
-    # Single batched embed + sequential ChromaDB queries
-    chunks = query_similar_batch(query_texts, query_top_ks, user_id=user_id)
+    # Hybrid BM25 + vector retrieval with RRF, batched across all queries
+    n_results = max(query_top_ks) if query_top_ks else 5
+    per_query_results = query_similar_hybrid_batch(query_texts, user_id=user_id, n_results=n_results)
+    # Flatten to deduplicated list of text strings, preserving discovery order
+    seen_texts: set[str] = set()
+    chunks: list[str] = []
+    for result_list in per_query_results:
+        for chunk_dict in result_list:
+            text = chunk_dict.get("text", "")
+            if text and text not in seen_texts:
+                seen_texts.add(text)
+                chunks.append(text)
 
     posted_topics = get_all_topics_posted(user_id=user_id)
 

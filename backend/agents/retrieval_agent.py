@@ -1,7 +1,11 @@
+import logging
+
 from pipeline.state import PipelineState
-from memory.vector_store import get_adjacent_chunks, query_similar
+from memory.vector_store import get_adjacent_chunks, query_similar, query_similar_hybrid
 from memory.hierarchy_store import get_source_node, get_topic_node
 from memory.retrieval_stats_store import increment_retrieval
+
+logger = logging.getLogger(__name__)
 
 
 def _build_retrieval_bundle(chunks: list[dict], user_id: str) -> dict:
@@ -164,7 +168,8 @@ def retrieval_node(state: PipelineState) -> PipelineState:
 
     bundle: dict = {"chunks": [], "source_contexts": {}, "topic_contexts": []}
     try:
-        chunks = query_similar(query, top_k=8, user_id=user_id)
+        logger.info(f"Hybrid retrieval used for user {user_id}, topic: {topic[:50]}")
+        chunks = query_similar_hybrid(query, user_id=user_id, n_results=8)
         bundle = _build_retrieval_bundle(chunks, user_id)
         state["retrieval_bundle"] = bundle
         state["retrieved_context"] = _format_retrieved_context(bundle)
