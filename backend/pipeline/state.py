@@ -7,6 +7,7 @@ class PipelineState(TypedDict, total=False):
     topic: str
     format: str
     tone: str
+    length: str  # "concise" | "standard" | "long-form" — defaults to "standard" at runtime
     context: Optional[str]
     quality: str  # "draft" | "standard" | "polished" — defaults to "standard" at runtime
     user_id: str  # ChromaDB collection namespace — defaults to "default"; replaced with real user ID when auth is added

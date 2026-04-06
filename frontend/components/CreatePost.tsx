@@ -15,11 +15,13 @@ const SS_CURRENT_POST_ID = "contentOS_current_post_id";
 const SS_TOPIC = "contentOS_last_topic_meta";
 const SS_FORMAT = "contentOS_last_format_meta";
 const SS_TONE = "contentOS_last_tone_meta";
+const SS_LENGTH = "contentOS_last_length";
 const SS_SCORED = "contentOS_last_scored";
 
 
 type Format = "linkedin post" | "medium article" | "thread";
 type Tone = "casual" | "technical" | "storytelling";
+type Length = "concise" | "standard" | "long-form";
 
 const FORMATS: { id: Format; label: string }[] = [
   { id: "linkedin post", label: "LinkedIn Post" },
@@ -33,10 +35,40 @@ const TONES: { id: Tone; label: string; description: string }[] = [
   { id: "storytelling", label: "Storytelling", description: "Scene-driven, lesson earned" },
 ];
 
+const TONE_DISPLAY_LABELS: Record<Tone, string> = {
+  casual: "Casual",
+  technical: "Technical",
+  storytelling: "Storytelling",
+};
+
 const TONE_DESCRIPTIONS: Record<Tone, string> = {
-  casual: "Conversational and direct. First-person, short sentences, reads like a message from someone who's lived it. Best for LinkedIn posts that feel human rather than polished.",
-  technical: "Precise and substantive. Uses domain language without over-explaining. Respects the reader's expertise. Best for audiences who want depth over accessibility.",
-  storytelling: "Narrative-first. Opens with a moment, builds tension, lands on a lesson. Best for posts where the experience itself is the argument.",
+  casual: "Conversational and direct. First-person, short sentences. Focus on clarity and utility.",
+  technical: "Precise and substantive. Uses domain language without over-explaining. Respects expertise.",
+  storytelling: "Narrative-first. Opens with a moment, builds tension, lands on a lesson.",
+};
+
+const LENGTHS: { id: Length; label: string }[] = [
+  { id: "concise", label: "Concise" },
+  { id: "standard", label: "Standard" },
+  { id: "long-form", label: "Long-form" },
+];
+
+const LENGTH_META: Record<Format, Record<Length, string>> = {
+  "linkedin post": {
+    concise: "~100-150 words",
+    standard: "~200-300 words",
+    "long-form": "~400-600 words",
+  },
+  "medium article": {
+    concise: "~350-500 words",
+    standard: "~700-900 words",
+    "long-form": "~1200-1600 words",
+  },
+  thread: {
+    concise: "4-5 tweets",
+    standard: "7-9 tweets",
+    "long-form": "11-14 tweets",
+  },
 };
 
 interface GenerateResult {
@@ -209,15 +241,17 @@ interface DrawerProps {
   initialTopic: string;
   initialFormat: Format;
   initialTone: Tone;
+  initialLength: Length;
   initialContext: string;
   onCancel: () => void;
-  onRegenerate: (overrides: { topic: string; format: Format; tone: Tone; context: string }) => void;
+  onRegenerate: (overrides: { topic: string; format: Format; tone: Tone; length: Length; context: string }) => void;
 }
 
-function SettingsDrawer({ initialTopic, initialFormat, initialTone, initialContext, onCancel, onRegenerate }: DrawerProps) {
+function SettingsDrawer({ initialTopic, initialFormat, initialTone, initialLength, initialContext, onCancel, onRegenerate }: DrawerProps) {
   const [dTopic, setDTopic] = useState(initialTopic);
   const [dFormat, setDFormat] = useState<Format>(initialFormat);
   const [dTone, setDTone] = useState<Tone>(initialTone);
+  const [dLength, setDLength] = useState<Length>(initialLength);
   const [dContext, setDContext] = useState(initialContext);
 
   return (
@@ -301,6 +335,26 @@ function SettingsDrawer({ initialTopic, initialFormat, initialTone, initialConte
             </div>
           </div>
 
+          {/* Length */}
+          <div>
+            <label className="label-caps text-secondary block mb-2">Length</label>
+            <div className="flex flex-wrap gap-2">
+              {LENGTHS.map((l) => (
+                <button
+                  key={l.id}
+                  onClick={() => setDLength(l.id)}
+                  className={`px-4 py-2 rounded-lg text-[13px] transition-all border ${
+                    dLength === l.id
+                      ? "btn-primary text-white border-transparent font-medium"
+                      : "border-outline-variant text-secondary hover:border-outline hover:text-on-surface bg-transparent"
+                  }`}
+                >
+                  {l.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Context */}
           <div>
             <label className="label-caps text-secondary block mb-2">
@@ -329,7 +383,7 @@ function SettingsDrawer({ initialTopic, initialFormat, initialTone, initialConte
             Cancel
           </button>
           <button
-            onClick={() => onRegenerate({ topic: dTopic, format: dFormat, tone: dTone, context: dContext })}
+            onClick={() => onRegenerate({ topic: dTopic, format: dFormat, tone: dTone, length: dLength, context: dContext })}
             className="flex-1 btn-primary rounded-lg text-white text-sm font-medium py-2 hover:opacity-90 transition-opacity"
           >
             Regenerate
@@ -347,6 +401,7 @@ export default function CreatePost() {
   const [topic, setTopic] = useState("");
   const [format, setFormat] = useState<Format>("linkedin post");
   const [tone, setTone] = useState<Tone>("casual");
+  const [length, setLength] = useState<Length>("standard");
   const [context, setContext] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<GenerateResult | null>(null);
@@ -414,6 +469,11 @@ export default function CreatePost() {
   // On mount: show interstitial if a saved post exists, else go to idle with prefill
   useEffect(() => {
     try {
+      const savedLength = sessionStorage.getItem(SS_LENGTH);
+      if (savedLength === "concise" || savedLength === "standard" || savedLength === "long-form") {
+        setLength(savedLength);
+      }
+
       const savedPost = sessionStorage.getItem(SS_POST);
       if (savedPost) {
         // A saved post exists — show the interstitial and defer all restoration
@@ -467,11 +527,12 @@ export default function CreatePost() {
       sessionStorage.setItem(SS_TOPIC, topic);
       sessionStorage.setItem(SS_FORMAT, format);
       sessionStorage.setItem(SS_TONE, tone);
+      sessionStorage.setItem(SS_LENGTH, length);
       sessionStorage.setItem(SS_SCORED, String(result.scored));
     } catch {
       // ignore
     }
-  }, [result, editedPost, visuals, topic, format, tone]);
+  }, [result, editedPost, visuals, topic, format, tone, length]);
 
   // Persist analysisOpen preference
   useEffect(() => {
@@ -501,7 +562,7 @@ export default function CreatePost() {
   }, [result]);
 
   const clearSession = () => {
-    [SS_POST, SS_SCORE, SS_FEEDBACK, SS_ITERATIONS, SS_VISUALS, SS_IDEAS, SS_CURRENT_POST_ID, SS_TOPIC, SS_FORMAT, SS_TONE, SS_SCORED].forEach((k) =>
+    [SS_POST, SS_SCORE, SS_FEEDBACK, SS_ITERATIONS, SS_VISUALS, SS_IDEAS, SS_CURRENT_POST_ID, SS_TOPIC, SS_FORMAT, SS_TONE, SS_LENGTH, SS_SCORED].forEach((k) =>
       sessionStorage.removeItem(k)
     );
     setCurrentPostId(null);
@@ -522,6 +583,7 @@ export default function CreatePost() {
       const savedTopic = sessionStorage.getItem(SS_TOPIC);
       const savedFormat = sessionStorage.getItem(SS_FORMAT);
       const savedTone = sessionStorage.getItem(SS_TONE);
+      const savedLength = sessionStorage.getItem(SS_LENGTH);
       const savedPostId = sessionStorage.getItem(SS_CURRENT_POST_ID);
 
       if (savedPost && savedScore && savedFeedback && savedIterations) {
@@ -541,6 +603,9 @@ export default function CreatePost() {
         if (savedTopic) setTopic(savedTopic);
         if (savedFormat) setFormat(savedFormat as Format);
         if (savedTone) setTone(savedTone as Tone);
+        if (savedLength === "concise" || savedLength === "standard" || savedLength === "long-form") {
+          setLength(savedLength);
+        }
         if (savedPostId) setCurrentPostId(Number(savedPostId));
       }
     } catch {
@@ -552,7 +617,7 @@ export default function CreatePost() {
   // Discard saved session and start blank — called when user clicks "Start fresh"
   const handleStartFresh = () => {
     [SS_POST, SS_SCORE, SS_FEEDBACK, SS_ITERATIONS, SS_VISUALS, SS_IDEAS,
-     SS_CURRENT_POST_ID, SS_TOPIC, SS_FORMAT, SS_TONE, SS_SCORED, SS_SHOW_ANALYSIS].forEach((k) =>
+     SS_CURRENT_POST_ID, SS_TOPIC, SS_FORMAT, SS_TONE, SS_LENGTH, SS_SCORED, SS_SHOW_ANALYSIS].forEach((k) =>
       sessionStorage.removeItem(k)
     );
     sessionStorage.removeItem("contentOS_last_topic");
@@ -565,6 +630,7 @@ export default function CreatePost() {
 
     setResult(null);
     setEditedPost("");
+    setLength("standard");
     setVisuals([]);
     setVisualsVisible(false);
     setAnalysisOpen(false);
@@ -646,11 +712,13 @@ export default function CreatePost() {
     topic?: string;
     format?: Format;
     tone?: Tone;
+    length?: Length;
     context?: string;
   }) => {
     const t = overrides?.topic ?? topic;
     const f = overrides?.format ?? format;
     const tn = overrides?.tone ?? tone;
+    const len = overrides?.length ?? length;
     const ctx = overrides?.context ?? context;
 
     if (!t.trim()) {
@@ -669,10 +737,11 @@ export default function CreatePost() {
     if (overrides?.topic !== undefined) setTopic(overrides.topic);
     if (overrides?.format !== undefined) setFormat(overrides.format);
     if (overrides?.tone !== undefined) setTone(overrides.tone);
+    if (overrides?.length !== undefined) setLength(overrides.length);
     if (overrides?.context !== undefined) setContext(overrides.context);
 
     try {
-      const res = await api.generatePost({ topic: t, format: f, tone: tn, context: ctx });
+      const res = await api.generatePost({ topic: t, format: f, tone: tn, length: len, context: ctx });
 
       if (!res.ok) {
         const err = await res.json();
@@ -829,7 +898,7 @@ export default function CreatePost() {
     try { sessionStorage.removeItem(SS_IDEAS); } catch { /* ignore */ }
   };
 
-  const handleDrawerRegenerate = (overrides: { topic: string; format: Format; tone: Tone; context: string }) => {
+  const handleDrawerRegenerate = (overrides: { topic: string; format: Format; tone: Tone; length: Length; context: string }) => {
     setDrawerOpen(false);
     generate(overrides);
   };
@@ -1099,7 +1168,7 @@ export default function CreatePost() {
       <div className="flex gap-2 mb-2">
         {/* Regenerate */}
         <button
-          onClick={() => generate()}
+          onClick={() => setDrawerOpen(true)}
           disabled={loading}
           className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-surface-container-high text-secondary text-[13px] py-2.5 hover:border-outline-variant hover:text-on-surface transition-colors bg-surface-container-lowest disabled:opacity-50"
         >
@@ -1634,7 +1703,7 @@ export default function CreatePost() {
               <div style={{ maxWidth: 600, margin: "0 auto" }}>
                 {/* Editorial header */}
                 <div className="mb-8">
-                  <h1 className="font-headline text-3xl text-on-surface leading-tight">
+                  <h1 className="font-headline text-[3rem] text-on-surface leading-tight">
                     Drafting a new thought
                   </h1>
                   <p className="text-sm text-secondary mt-1.5">
@@ -1663,14 +1732,14 @@ export default function CreatePost() {
                   </div>
 
                   {/* Format & Tone side-by-side */}
-                  <div className="flex gap-8 items-start">
+                  <div className="flex gap-12 items-start">
                     {/* Format — vertical pills */}
-                    <div className="w-44 shrink-0">
+                    <div className="w-[38%] shrink-0">
                       <label
                         className="label-caps text-secondary block mb-3"
                         style={{ fontSize: "0.62rem", letterSpacing: "0.09em" }}
                       >
-                        FORMAT &amp; MEDIUM
+                        FORMAT
                       </label>
                       <div className="space-y-2">
                         {FORMATS.map((f) => (
@@ -1687,36 +1756,50 @@ export default function CreatePost() {
                           </button>
                         ))}
                       </div>
+                      <blockquote
+                        className="mt-5 pl-3 italic text-[13px] text-[color:var(--color-text-tertiary)]"
+                        style={{ borderLeft: "2px solid rgba(88, 97, 79, 0.4)" }}
+                      >
+                        The interface should not demand attention; it should provide a vessel for it.
+                      </blockquote>
                     </div>
 
-                    {/* Tone — horizontal pills with inline description */}
-                    <div className="flex-1">
-                      <label
-                        className="label-caps text-secondary block mb-3"
-                        style={{ fontSize: "0.62rem", letterSpacing: "0.09em" }}
-                      >
-                        VOICE &amp; RESONANCE
-                      </label>
-                      <div className="flex flex-wrap gap-2">
-                        {TONES.map((t) => (
-                          <button
-                            key={t.id}
-                            onClick={() => setTone(t.id)}
-                            className={`px-4 py-2 rounded-lg text-[13px] transition-all border ${
-                              tone === t.id
-                                ? "btn-primary text-white border-transparent font-medium"
-                                : "border-outline-variant text-secondary hover:border-outline hover:text-on-surface bg-transparent"
-                            }`}
-                          >
-                            {t.label}
-                          </button>
-                        ))}
+                    {/* Right column — tone row, tone context line, length row */}
+                    <div className="w-[62%] shrink-0">
+                      <div>
+                        <label
+                          className="label-caps text-secondary block mb-3"
+                          style={{ fontSize: "0.62rem", letterSpacing: "0.09em" }}
+                        >
+                          VOICE &amp; RESONANCE
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          {TONES.map((t) => (
+                            <button
+                              key={t.id}
+                              onClick={() => setTone(t.id)}
+                              className={`px-4 py-2 rounded-md text-[13px] transition-all border ${
+                                tone === t.id
+                                  ? "bg-primary text-white border-transparent font-medium"
+                                  : "text-on-surface hover:text-on-surface bg-transparent"
+                              }`}
+                              style={
+                                tone === t.id
+                                  ? undefined
+                                  : { borderColor: "rgba(174, 179, 178, 0.15)" }
+                              }
+                            >
+                              {TONE_DISPLAY_LABELS[t.id]}
+                            </button>
+                          ))}
+                        </div>
                       </div>
+
                       <p
                         style={{
                           marginTop: 8,
                           fontSize: 12,
-                          color: "var(--color-text-tertiary)",
+                          color: "var(--color-text-variant, var(--color-text-tertiary))",
                           lineHeight: 1.5,
                           maxWidth: 420,
                           opacity: toneDescOpacity,
@@ -1725,6 +1808,44 @@ export default function CreatePost() {
                       >
                         {TONE_DESCRIPTIONS[tone]}
                       </p>
+
+                      <div className="mt-4">
+                        <label
+                          className="label-caps text-secondary block mb-3"
+                          style={{ fontSize: "0.62rem", letterSpacing: "0.09em" }}
+                        >
+                          LENGTH
+                        </label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {LENGTHS.map((l) => {
+                            const isActive = length === l.id;
+                            return (
+                              <button
+                                key={l.id}
+                                onClick={() => setLength(l.id)}
+                                className={`w-full min-h-[54px] px-4 py-2.5 rounded-md transition-all border text-left flex flex-col justify-center ${
+                                  isActive
+                                    ? "bg-primary text-white border-transparent"
+                                    : "text-on-surface hover:text-on-surface bg-transparent"
+                                }`}
+                                style={
+                                  isActive
+                                    ? undefined
+                                    : { borderColor: "rgba(174, 179, 178, 0.15)" }
+                                }
+                              >
+                                <div className="text-[13px] font-medium leading-tight">{l.label}</div>
+                                <div
+                                  className="text-[11px] leading-tight mt-0.5"
+                                  style={{ opacity: isActive ? 0.7 : 0.55 }}
+                                >
+                                  {LENGTH_META[format][l.id]}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -1741,7 +1862,7 @@ export default function CreatePost() {
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M12 2l2.09 6.43H21l-5.47 3.97 2.09 6.43L12 15l-5.62 3.83 2.09-6.43L3 8.43h6.91z" />
                       </svg>
-                      Generate Draft
+                      CREATE POST →
                     </button>
                   </div>
                 </div>
@@ -1822,6 +1943,7 @@ export default function CreatePost() {
           initialTopic={topic}
           initialFormat={format}
           initialTone={tone}
+          initialLength={length}
           initialContext={context}
           onCancel={() => setDrawerOpen(false)}
           onRegenerate={handleDrawerRegenerate}

@@ -86,11 +86,20 @@ def build_graph() -> StateGraph:
 pipeline = build_graph()
 
 
-def run_pipeline(topic: str, format: str, tone: str, context: str = "", quality: str = "standard", user_id: str = "default") -> dict:
+def run_pipeline(
+    topic: str,
+    format: str,
+    tone: str,
+    length: str = "standard",
+    context: str = "",
+    quality: str = "standard",
+    user_id: str = "default",
+) -> dict:
     initial_state: PipelineState = {
         "topic": topic,
         "format": format,
         "tone": tone,
+        "length": length,
         "context": context,
         "quality": quality,
         "user_id": user_id,

@@ -67,8 +67,9 @@ def get_archetype_instructions(archetype: str) -> str:
     return instructions.get(archetype, instructions["incident_report"])
 
 
-def get_format_instructions(format_type: str, tone: str) -> str:
+def get_format_instructions(format_type: str, length: str, tone: str) -> str:
     format_type = format_type.lower().strip()
+    length = length.lower().strip()
     tone = tone.lower().strip()
 
     tone_map = {
@@ -94,7 +95,6 @@ def get_format_instructions(format_type: str, tone: str) -> str:
     format_map = {
         "linkedin post": (
             "Format: LinkedIn post.\n"
-            "Length: 150–300 words.\n"
             "Structure:\n"
             "  - Line 1: a single-sentence hook that stops the scroll. No clickbait.\n"
             "  - Body: short paragraphs (1–3 lines each), heavy line breaks.\n"
@@ -104,7 +104,6 @@ def get_format_instructions(format_type: str, tone: str) -> str:
         ),
         "medium article": (
             "Format: Medium article.\n"
-            "Length: 600–1000 words.\n"
             "Structure:\n"
             "  - Opening: drop into the middle of a situation or insight, no slow intro.\n"
             "  - Use 3–5 subheadings (## style) to organize sections.\n"
@@ -114,7 +113,6 @@ def get_format_instructions(format_type: str, tone: str) -> str:
         ),
         "thread": (
             "Format: Twitter/X Thread.\n"
-            "Length: 6–10 tweets.\n"
             "Structure:\n"
             "  - Number each tweet: 1/, 2/, etc.\n"
             "  - Tweet 1: the hook — state the big idea or surprising fact.\n"
@@ -125,4 +123,24 @@ def get_format_instructions(format_type: str, tone: str) -> str:
     }
     format_instruction = format_map.get(format_type, format_map["linkedin post"])
 
-    return f"{format_instruction}\n{tone_instruction}"
+    length_map = {
+        "linkedin post": {
+            "concise": "Target length: 100–180 words. Be punchy and tight.",
+            "standard": "Target length: 250–350 words.",
+            "long-form": "Target length: 450–600 words. Build the argument fully.",
+        },
+        "medium article": {
+            "concise": "Target length: 350–500 words. One tight idea.",
+            "standard": "Target length: 700–900 words.",
+            "long-form": "Target length: 1200–1800 words. Go deep.",
+        },
+        "thread": {
+            "concise": "Target: 4–6 tweets. Each tweet one punchy idea.",
+            "standard": "Target: 7–10 tweets.",
+            "long-form": "Target: 10–15 tweets. Full breakdown.",
+        },
+    }
+    format_lengths = length_map.get(format_type, length_map["linkedin post"])
+    length_instruction = format_lengths.get(length, format_lengths["standard"])
+
+    return f"{format_instruction}\n{length_instruction}\n{tone_instruction}"
