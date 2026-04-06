@@ -1,10 +1,15 @@
+import logging
+import re
 import uuid
 from pathlib import Path
 from typing import Optional
 
 import chromadb
 from chromadb.config import Settings
+from rank_bm25 import BM25Okapi
 from sentence_transformers import SentenceTransformer
+
+logger = logging.getLogger(__name__)
 
 from config.paths import CHROMA_DIR as CHROMA_PATH
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
@@ -195,6 +200,193 @@ def query_similar_batch(
             continue
 
     return chunks
+
+
+def _tokenize(text: str) -> list[str]:
+    """Lowercase and split on whitespace + punctuation for BM25 indexing."""
+    return re.split(r"[\s\W]+", text.lower())
+
+
+def query_similar_hybrid(query: str, user_id: str = "default", n_results: int = 8) -> list[dict]:
+    """Hybrid BM25 + vector retrieval merged via Reciprocal Rank Fusion (RRF, k=60).
+
+    Falls back to query_similar() on any exception so the pipeline never breaks.
+    Returns the same format as query_similar(): list of dicts with text, source_type,
+    tags, source_id, source_title, chunk_index, similarity keys.
+    """
+    try:
+        collection = get_collection(user_id)
+
+        # Fetch all chunks; fall back to pure vector if collection is too small
+        all_data = collection.get(include=["documents", "metadatas"])
+        all_docs = all_data.get("documents") or []
+        all_metas = all_data.get("metadatas") or []
+        all_ids = all_data.get("ids") or []
+
+        if len(all_docs) < 3:
+            return query_similar(query, top_k=n_results, user_id=user_id)
+
+        # --- BM25 ranking ---
+        tokenized_corpus = [_tokenize(doc) for doc in all_docs]
+        bm25 = BM25Okapi(tokenized_corpus)
+        bm25_scores = bm25.get_scores(_tokenize(query))
+        # Sort indices by BM25 score descending → (index, rank) mapping
+        bm25_ranked = sorted(range(len(all_docs)), key=lambda i: bm25_scores[i], reverse=True)
+        bm25_rank: dict[int, int] = {idx: rank + 1 for rank, idx in enumerate(bm25_ranked)}
+
+        # --- Vector ranking ---
+        query_embedding = embed_texts([query])[0]
+        vec_n = min(len(all_docs), max(20, n_results * 3))
+        vec_results = collection.query(
+            query_embeddings=[query_embedding],
+            n_results=vec_n,
+            include=["documents", "distances"],
+        )
+        vec_ids = vec_results.get("ids", [[]])[0]
+        # Map chunk id → rank (1-based)
+        id_to_global_idx: dict[str, int] = {cid: i for i, cid in enumerate(all_ids)}
+        vec_rank: dict[int, int] = {}
+        for rank, cid in enumerate(vec_ids):
+            global_idx = id_to_global_idx.get(cid)
+            if global_idx is not None:
+                vec_rank[global_idx] = rank + 1
+
+        # --- Reciprocal Rank Fusion ---
+        k = 60
+        rrf_scores: dict[int, float] = {}
+        all_chunk_indices = set(range(len(all_docs)))
+        for idx in all_chunk_indices:
+            score = 0.0
+            if idx in bm25_rank:
+                score += 1.0 / (k + bm25_rank[idx])
+            if idx in vec_rank:
+                score += 1.0 / (k + vec_rank[idx])
+            if score > 0:
+                rrf_scores[idx] = score
+
+        top_indices = sorted(rrf_scores, key=lambda i: rrf_scores[i], reverse=True)[:n_results]
+
+        # Normalise RRF scores to [0, 1] for the distance field
+        max_rrf = max(rrf_scores[i] for i in top_indices) if top_indices else 1.0
+
+        chunks = []
+        for idx in top_indices:
+            doc = all_docs[idx]
+            meta = all_metas[idx]
+            normalized_rrf = rrf_scores[idx] / max_rrf if max_rrf > 0 else 0.0
+            # Express as "distance" so downstream threshold logic still works
+            # (retrieval_agent filters on similarity >= 0.3; distance = 1 - similarity)
+            similarity = normalized_rrf
+            chunks.append({
+                "text": doc,
+                "source_type": meta.get("source_type", "unknown"),
+                "tags": [t.strip() for t in meta.get("tags", "").split(",") if t.strip()],
+                "source_id": meta.get("source_id", ""),
+                "source_title": meta.get("source_title", ""),
+                "chunk_index": int(meta.get("chunk_index", 0)),
+                "similarity": round(similarity, 4),
+            })
+
+        return chunks
+
+    except Exception as exc:
+        logger.warning(f"[hybrid] query_similar_hybrid failed ({exc}), falling back to vector search")
+        return query_similar(query, top_k=n_results, user_id=user_id)
+
+
+def query_similar_hybrid_batch(
+    queries: list[str],
+    user_id: str = "default",
+    n_results: int = 5,
+) -> list[list[dict]]:
+    """Hybrid BM25 + vector retrieval for multiple queries with a single index build.
+
+    Fetches all chunks once, builds BM25 index once, then for each query:
+    runs BM25 scoring + vector embedding and merges via RRF.
+
+    Returns list[list[dict]] — one result list per query, same format as
+    query_similar_hybrid(). Falls back to query_similar_batch() on any exception.
+    """
+    try:
+        if not queries:
+            return []
+
+        collection = get_collection(user_id)
+        all_data = collection.get(include=["documents", "metadatas"])
+        all_docs = all_data.get("documents") or []
+        all_metas = all_data.get("metadatas") or []
+        all_ids = all_data.get("ids") or []
+
+        if len(all_docs) < 3:
+            return [query_similar(q, top_k=n_results, user_id=user_id) for q in queries]
+
+        # Build BM25 index once for all queries
+        tokenized_corpus = [_tokenize(doc) for doc in all_docs]
+        bm25 = BM25Okapi(tokenized_corpus)
+        id_to_global_idx: dict[str, int] = {cid: i for i, cid in enumerate(all_ids)}
+
+        # Embed all queries in a single batched forward pass
+        query_embeddings = embed_texts(queries)
+
+        k = 60
+        results_per_query: list[list[dict]] = []
+
+        for q_text, q_embedding in zip(queries, query_embeddings):
+            # BM25 ranking
+            bm25_scores = bm25.get_scores(_tokenize(q_text))
+            bm25_ranked = sorted(range(len(all_docs)), key=lambda i: bm25_scores[i], reverse=True)
+            bm25_rank: dict[int, int] = {idx: rank + 1 for rank, idx in enumerate(bm25_ranked)}
+
+            # Vector ranking
+            vec_n = min(len(all_docs), max(20, n_results * 3))
+            vec_results = collection.query(
+                query_embeddings=[q_embedding],
+                n_results=vec_n,
+                include=["documents", "distances"],
+            )
+            vec_ids = vec_results.get("ids", [[]])[0]
+            vec_rank: dict[int, int] = {}
+            for rank, cid in enumerate(vec_ids):
+                global_idx = id_to_global_idx.get(cid)
+                if global_idx is not None:
+                    vec_rank[global_idx] = rank + 1
+
+            # RRF merge
+            rrf_scores: dict[int, float] = {}
+            for idx in range(len(all_docs)):
+                score = 0.0
+                if idx in bm25_rank:
+                    score += 1.0 / (k + bm25_rank[idx])
+                if idx in vec_rank:
+                    score += 1.0 / (k + vec_rank[idx])
+                if score > 0:
+                    rrf_scores[idx] = score
+
+            top_indices = sorted(rrf_scores, key=lambda i: rrf_scores[i], reverse=True)[:n_results]
+            max_rrf = max(rrf_scores[i] for i in top_indices) if top_indices else 1.0
+
+            chunks = []
+            for idx in top_indices:
+                doc = all_docs[idx]
+                meta = all_metas[idx]
+                normalized_rrf = rrf_scores[idx] / max_rrf if max_rrf > 0 else 0.0
+                chunks.append({
+                    "text": doc,
+                    "source_type": meta.get("source_type", "unknown"),
+                    "tags": [t.strip() for t in meta.get("tags", "").split(",") if t.strip()],
+                    "source_id": meta.get("source_id", ""),
+                    "source_title": meta.get("source_title", ""),
+                    "chunk_index": int(meta.get("chunk_index", 0)),
+                    "similarity": round(normalized_rrf, 4),
+                })
+            results_per_query.append(chunks)
+
+        return results_per_query
+
+    except Exception as exc:
+        logger.warning(f"[hybrid] query_similar_hybrid_batch failed ({exc}), falling back to vector search")
+        # Fallback: return per-query results using pure vector search
+        return [query_similar(q, top_k=n_results, user_id=user_id) for q in queries]
 
 
 def get_chunks_for_source(source_id: str, user_id: str = "default") -> list[dict]:
