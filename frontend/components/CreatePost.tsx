@@ -47,6 +47,24 @@ const LENGTHS: { id: Length; label: string }[] = [
   { id: "long-form", label: "Long-form" },
 ];
 
+const LENGTH_META: Record<Format, Record<Length, string>> = {
+  "linkedin post": {
+    concise: "~150 words",
+    standard: "~300 words",
+    "long-form": "~500 words",
+  },
+  "medium article": {
+    concise: "~400 words",
+    standard: "~800 words",
+    "long-form": "~1500 words",
+  },
+  thread: {
+    concise: "4-5 tweets",
+    standard: "7-9 tweets",
+    "long-form": "11-14 tweets",
+  },
+};
+
 interface GenerateResult {
   post: string;
   score: number;
@@ -1734,53 +1752,78 @@ export default function CreatePost() {
                       </div>
                     </div>
 
-                    {/* Tone — horizontal pills with inline description */}
-                    <div className="flex-1">
-                      <label
-                        className="label-caps text-secondary block mb-3"
-                        style={{ fontSize: "0.62rem", letterSpacing: "0.09em" }}
-                      >
-                        VOICE &amp; RESONANCE
-                      </label>
-                      <div className="flex flex-wrap gap-2">
-                        {TONES.map((t) => (
-                          <button
-                            key={t.id}
-                            onClick={() => setTone(t.id)}
-                            className={`px-4 py-2 rounded-lg text-[13px] transition-all border ${
-                              tone === t.id
-                                ? "btn-primary text-white border-transparent font-medium"
-                                : "border-outline-variant text-secondary hover:border-outline hover:text-on-surface bg-transparent"
-                            }`}
-                          >
-                            {t.label}
-                          </button>
-                        ))}
+                    {/* Right column — tone row, length row, tone context line */}
+                    <div className="flex-1 space-y-5">
+                      <div>
+                        <label
+                          className="label-caps text-secondary block mb-3"
+                          style={{ fontSize: "0.62rem", letterSpacing: "0.09em" }}
+                        >
+                          VOICE &amp; RESONANCE
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          {TONES.map((t) => (
+                            <button
+                              key={t.id}
+                              onClick={() => setTone(t.id)}
+                              className={`px-4 py-2 rounded-md text-[13px] transition-all border ${
+                                tone === t.id
+                                  ? "bg-primary text-white border-transparent font-medium"
+                                  : "text-on-surface hover:text-on-surface bg-transparent"
+                              }`}
+                              style={
+                                tone === t.id
+                                  ? undefined
+                                  : { borderColor: "rgba(174, 179, 178, 0.15)" }
+                              }
+                            >
+                              {t.label}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                      <label
-                        className="label-caps text-secondary block mt-4 mb-3"
-                        style={{ fontSize: "0.62rem", letterSpacing: "0.09em" }}
-                      >
-                        LENGTH
-                      </label>
-                      <div className="flex flex-wrap gap-2">
-                        {LENGTHS.map((l) => (
-                          <button
-                            key={l.id}
-                            onClick={() => setLength(l.id)}
-                            className={`px-4 py-2 rounded-lg text-[13px] transition-all border ${
-                              length === l.id
-                                ? "btn-primary text-white border-transparent font-medium"
-                                : "border-outline-variant text-secondary hover:border-outline hover:text-on-surface bg-transparent"
-                            }`}
-                          >
-                            {l.label}
-                          </button>
-                        ))}
+
+                      <div>
+                        <label
+                          className="label-caps text-secondary block mb-3"
+                          style={{ fontSize: "0.62rem", letterSpacing: "0.09em" }}
+                        >
+                          LENGTH
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          {LENGTHS.map((l) => {
+                            const isActive = length === l.id;
+                            return (
+                              <button
+                                key={l.id}
+                                onClick={() => setLength(l.id)}
+                                className={`min-w-[120px] px-4 py-2 rounded-md transition-all border text-left ${
+                                  isActive
+                                    ? "bg-primary text-white border-transparent"
+                                    : "text-on-surface hover:text-on-surface bg-transparent"
+                                }`}
+                                style={
+                                  isActive
+                                    ? undefined
+                                    : { borderColor: "rgba(174, 179, 178, 0.15)" }
+                              }
+                            >
+                              <div className="text-[13px] font-medium leading-tight">{l.label}</div>
+                              <div
+                                className="text-[10.5px] leading-tight mt-0.5"
+                                style={{ opacity: isActive ? 0.7 : 0.6 }}
+                              >
+                                {LENGTH_META[format][l.id]}
+                              </div>
+                            </button>
+                            );
+                          })}
+                        </div>
                       </div>
+
                       <p
                         style={{
-                          marginTop: 8,
+                          marginTop: 2,
                           fontSize: 12,
                           color: "var(--color-text-tertiary)",
                           lineHeight: 1.5,
