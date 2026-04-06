@@ -50,6 +50,12 @@ class RefineResponse(BaseModel):
     score_feedback: list[str]
 
 
+class RefineSelectionRequest(BaseModel):
+    selected_text: str
+    instruction: str
+    full_post: str
+
+
 class GenerateVisualsRequest(BaseModel):
     post_content: str
 
@@ -144,6 +150,22 @@ async def refine(req: RefineRequest) -> RefineResponse:
         score=score,
         score_feedback=score_feedback,
     )
+
+
+@router.post("/refine-selection")
+async def refine_selection(
+    req: RefineSelectionRequest,
+    user_id: str = Depends(get_user_id_dep),
+) -> dict:
+    from agents.humanizer_agent import refine_selection as refine_selection_fn
+
+    rewritten = await refine_selection_fn(
+        selected_text=req.selected_text,
+        instruction=req.instruction,
+        full_post=req.full_post,
+        user_id=user_id,
+    )
+    return {"rewritten_text": rewritten}
 
 
 @router.post("/score", response_model=ScoreResponse)

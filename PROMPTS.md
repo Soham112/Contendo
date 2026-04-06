@@ -470,6 +470,47 @@ Output only the refined post. No commentary. No "Here is the refined version:" p
 - `current_draft` — the draft string passed directly to the function
 - `refinement_instruction` — pre-processed by `_feedback_to_instructions()` in `routers/generate.py` before being passed; each scorer feedback item is prefixed with `"ACTION NEEDED:"` so Claude treats them as directives rather than observations
 
+### Inline Selection Editor — agents/humanizer_agent.py (refine_selection)
+
+**Purpose:** Rewrite a single selected fragment of a post according to a short user instruction. Returns only the rewritten fragment — not the full post.
+
+**Model:** `claude-sonnet-4-6`, `max_tokens=500`
+
+**Prompt:**
+```
+You are editing a specific section of a social media post.
+
+User profile — match this person's voice exactly:
+{profile_context}
+
+Words this person never uses: {words_to_avoid}
+
+Never use the em dash character (—) anywhere in the output.
+
+Full post for context (do NOT rewrite this — for voice reference only):
+{full_post}
+
+Selected section to rewrite:
+{selected_text}
+
+Instruction: {instruction}
+
+Rules:
+- Rewrite ONLY the selected section according to the instruction
+- Match the voice, tone, and style of the surrounding post exactly
+- Output ONLY the rewritten text — no explanation, no preamble, no quotes
+- Do not add line breaks unless the original had them
+- Keep roughly the same length unless the instruction says otherwise
+- No em dashes anywhere in the output
+```
+
+**Input variables:**
+- `profile_context` — `profile_to_context_string(profile)` loaded by `user_id`
+- `words_to_avoid` — comma-separated from `profile["words_to_avoid"]`
+- `full_post` — entire post, context only
+- `selected_text` — the highlighted fragment to rewrite
+- `instruction` — user's short edit instruction
+
 ---
 
 ### Scorer Agent — agents/scorer_agent.py
