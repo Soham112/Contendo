@@ -4,7 +4,7 @@
 > When any prompt needs to be tuned, update this file first, then update the
 > corresponding agent file to match. The two must never be out of sync.
 
-> **Verification note (2026-04-05):** All agent system prompts remain in sync with implementations. The most recent change (`feature/welcome-page-redesign` — first-post conditional rendering tweak: hide "Writing about" on Step 1 and keep it from Step 2 onward) touched only frontend routing/UI/state files and required no agent prompt changes.
+> **Verification note (2026-04-06):** Draft agent prompt updated with {grounding_instruction} variable for retrieval confidence calibration (feature/retrieval-confidence-calibration). All other prompts unchanged.
 
 ---
 
@@ -181,6 +181,7 @@ Knowledge base (use what's relevant, ignore the rest):
 Topic: {topic}
 {context_section}
 {posted_topics_section}
+{grounding_instruction}
 Write the draft now. Do not add any preamble or explanation; output only the post content itself.
 
 ---
@@ -246,8 +247,21 @@ Never force a diagram into opinion pieces or short punchy posts where the words 
 - `topic` — the generation topic
 - `context_section` — optional context string prefixed with "Additional context:", or empty string
 - `posted_topics_section` — bullet list of all previously saved topics from `feedback_store.get_all_topics_posted()`, prefixed with "Topics you have already written about — do not repeat these angles, find a fresh perspective:"; empty string if no posts saved yet
+- `grounding_instruction` — output of `_get_grounding_instruction(retrieval_confidence, retrieved_chunk_count)`; empty string for high confidence (prompt unchanged); calibration text for medium/low; injected between `{posted_topics_section}` and "Write the draft now."
 - `archetype_name` — human-readable archetype name (e.g. "Incident Report / Retrospective"), resolved from the inferred archetype key
 - `archetype_instructions` — structural prompt block for the inferred archetype, returned by `get_archetype_instructions()` in `utils/formatters.py`
+
+### Grounding calibration (dynamic — confidence-dependent)
+
+`{grounding_instruction}` is injected immediately before "Write the draft now."
+
+| Confidence | Trigger | Instruction |
+|---|---|---|
+| high | 3+ chunks with distance < 0.55 | Empty string — prompt unchanged |
+| medium | 1+ chunk < 0.55, or 3+ chunks < 0.70 | Observational frame reminder, aim for shorter end of format range |
+| low | Fewer than 3 chunks, all distances ≥ 0.55 | Write one idea well and stop. 60–100 words is a complete post. No padding, no fabrication. |
+
+Design principle: always generate. Calibrate output length and frame to available grounding. A 70-word post built on one real idea is better than a 400-word post built on fabrication.
 
 ### POST STRUCTURE (Dynamic — Archetype System)
 

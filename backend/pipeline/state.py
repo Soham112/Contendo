@@ -16,6 +16,8 @@ class PipelineState(TypedDict, total=False):
     profile: dict[str, Any]
 
     # Retrieved knowledge
+    retrieval_confidence: str       # "low" | "medium" | "high" — computed after retrieval
+    retrieved_chunk_count: int      # count of chunks actually retrieved
     retrieved_chunks: list[str]       # flat list of "[source_type: X] text" strings — always set for backward compat
     retrieval_bundle: dict            # structured hierarchical bundle {chunks, source_contexts, topic_contexts}
     retrieved_context: str            # pre-formatted text block for draft prompt injection; "" triggers flat fallback

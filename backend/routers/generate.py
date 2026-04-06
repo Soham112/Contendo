@@ -27,6 +27,7 @@ class GenerateResponse(BaseModel):
     iterations: int
     archetype: str = ""
     scored: bool = False
+    retrieval_confidence: str = "medium"
 
 
 class ScoreRequest(BaseModel):
@@ -110,6 +111,7 @@ async def generate(
         iterations=result["iterations"],
         archetype=result.get("archetype", ""),
         scored=result.get("scored", False),
+        retrieval_confidence=result.get("retrieval_confidence", "medium"),
     )
 
 

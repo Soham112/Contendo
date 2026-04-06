@@ -1,11 +1,37 @@
 import logging
 
 from pipeline.state import PipelineState
-from memory.vector_store import get_adjacent_chunks, query_similar, query_similar_hybrid
+from memory.vector_store import (
+    RELEVANCE_THRESHOLD,
+    get_adjacent_chunks,
+    query_similar,
+    query_similar_hybrid,
+)
 from memory.hierarchy_store import get_source_node, get_topic_node
 from memory.retrieval_stats_store import increment_retrieval
 
 logger = logging.getLogger(__name__)
+
+
+def _compute_retrieval_confidence(results: list[dict]) -> str:
+    """Classify retrieval coverage based on unfiltered raw retrieval results.
+
+    vector_store currently returns `similarity` (higher is better), not `distance`.
+    Threshold mapping from cosine distance to similarity:
+    - distance < 0.55  <=>  similarity > 0.45  (strong match)
+    - distance < 0.70  <=>  similarity > 0.30  (any match)
+    """
+    if not results:
+        return "low"
+
+    high_quality = [r for r in results if float(r.get("similarity", 0.0)) > 0.45]
+    any_quality = [r for r in results if float(r.get("similarity", 0.0)) > 0.30]
+
+    if len(high_quality) >= 3:
+        return "high"
+    if len(high_quality) >= 1 or len(any_quality) >= 3:
+        return "medium"
+    return "low"
 
 
 def _build_retrieval_bundle(chunks: list[dict], user_id: str) -> dict:
@@ -167,9 +193,14 @@ def retrieval_node(state: PipelineState) -> PipelineState:
     query = f"{topic}. {context}" if context else topic
 
     bundle: dict = {"chunks": [], "source_contexts": {}, "topic_contexts": []}
+    raw_results: list[dict] = []
     try:
         logger.info(f"Hybrid retrieval used for user {user_id}, topic: {topic[:50]}")
-        chunks = query_similar_hybrid(query, user_id=user_id, n_results=8)
+        raw_results = query_similar_hybrid(query, user_id=user_id, n_results=8)
+        chunks = [
+            r for r in raw_results
+            if float(r.get("similarity", 0.0)) >= RELEVANCE_THRESHOLD
+        ]
         bundle = _build_retrieval_bundle(chunks, user_id)
         state["retrieval_bundle"] = bundle
         state["retrieved_context"] = _format_retrieved_context(bundle)
@@ -187,9 +218,14 @@ def retrieval_node(state: PipelineState) -> PipelineState:
     except Exception as e:
         print(f"[retrieval_node] hierarchical retrieval failed ({e}), falling back to flat")
         try:
-            chunks = query_similar(query, top_k=8, user_id=user_id)
+            raw_results = query_similar(query, top_k=8, user_id=user_id)
+            chunks = [
+                r for r in raw_results
+                if float(r.get("similarity", 0.0)) >= RELEVANCE_THRESHOLD
+            ]
             bundle = {"chunks": chunks, "source_contexts": {}, "topic_contexts": []}
         except Exception:
+            raw_results = []
             bundle = {"chunks": [], "source_contexts": {}, "topic_contexts": []}
         state["retrieval_bundle"] = bundle
         state["retrieved_context"] = ""
@@ -205,6 +241,8 @@ def retrieval_node(state: PipelineState) -> PipelineState:
         retrieved_texts.append(f"[source_type: {source_type}] {chunk['text']}")
 
     state["retrieved_chunks"] = retrieved_texts
+    state["retrieval_confidence"] = _compute_retrieval_confidence(raw_results)
+    state["retrieved_chunk_count"] = len(retrieved_texts)
 
     # Debug: print a sample so attribution labels can be verified at runtime.
     if retrieved_texts:
