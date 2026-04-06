@@ -36,9 +36,9 @@ const TONES: { id: Tone; label: string; description: string }[] = [
 ];
 
 const TONE_DISPLAY_LABELS: Record<Tone, string> = {
-  casual: "Pragmatic",
-  technical: "Evocative",
-  storytelling: "Minimalist",
+  casual: "Casual",
+  technical: "Technical",
+  storytelling: "Storytelling",
 };
 
 const TONE_DESCRIPTIONS: Record<Tone, string> = {
@@ -1771,7 +1771,7 @@ export default function CreatePost() {
                           className="label-caps text-secondary block mb-3"
                           style={{ fontSize: "0.62rem", letterSpacing: "0.09em" }}
                         >
-                          HARMONIC VOICE
+                          VOICE &amp; RESONANCE
                         </label>
                         <div className="flex flex-wrap gap-2">
                           {TONES.map((t) => (
