@@ -471,7 +471,8 @@ export default function CreatePost() {
   const [toneDescOpacity, setToneDescOpacity] = useState(0);
 
   const [analysisOpen, setAnalysisOpen] = useState(false);
-  const [splitRatio, setSplitRatio] = useState(0.55);
+  const [splitRatio, setSplitRatio] = useState(0.75);
+  const [isHandleHovered, setIsHandleHovered] = useState(false);
   const [isWide, setIsWide] = useState(true);
   const [currentPostId, setCurrentPostId] = useState<number | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -976,7 +977,7 @@ export default function CreatePost() {
     const onMouseMove = (ev: MouseEvent) => {
       const delta = ev.clientX - startX;
       const newRatio = startRatio + delta / containerWidth;
-      setSplitRatio(Math.min(0.75, Math.max(0.35, newRatio)));
+      setSplitRatio(Math.min(0.82, Math.max(0.35, newRatio)));
     };
     const onMouseUp = () => {
       document.removeEventListener("mousemove", onMouseMove);
@@ -1027,7 +1028,7 @@ export default function CreatePost() {
               if (current && current !== editedPost) setEditedPost(current);
             }
             setAnalysisOpen(false);
-            setSplitRatio(0.55);
+            setSplitRatio(0.75);
           }}
           className="text-outline hover:text-on-surface transition-colors text-xl leading-none"
           aria-label="Close analysis"
@@ -1228,119 +1229,77 @@ export default function CreatePost() {
     minWidth: 52,
   });
 
-  const actionLabelStyle: React.CSSProperties = {
-    fontSize: 9,
+  const iconSize = splitActive ? 16 : 22;
+  const btnGap = splitActive ? 16 : 32;
+  const btnLabelStyle: React.CSSProperties = {
+    fontSize: splitActive ? 7 : 9,
     letterSpacing: "0.08em",
     textTransform: "uppercase",
     color: "#5b605f",
     fontWeight: 500,
   };
 
-  const collapsedIconStyle = (disabled?: boolean): React.CSSProperties => ({
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "none",
-    border: "none",
-    cursor: disabled ? "not-allowed" : "pointer",
-    opacity: disabled ? 0.4 : 1,
-    padding: 4,
-    borderRadius: 8,
-    transition: "color 0.15s",
-    color: "rgba(91,96,95,0.5)",
-  });
-
-  const postActionButtons = splitActive ? (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20, alignItems: "center" }}>
-      {[
-        {
-          onClick: () => setDrawerOpen(true), disabled: loading, title: "Regenerate",
-          icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 4v6h6" /><path d="M3.51 15a9 9 0 1 0 .49-4" /></svg>,
-        },
-        {
-          onClick: () => { setAnalysisOpen(true); if (!result?.scored && !scoreLoading) handleScore(); else if (!isWide) setTimeout(() => analysisRef.current?.scrollIntoView({ behavior: "smooth" }), 50); },
-          disabled: false, title: "Analyse",
-          icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="12" width="4" height="9" /><rect x="10" y="7" width="4" height="14" /><rect x="17" y="3" width="4" height="18" /></svg>,
-        },
-        {
-          onClick: visuals.length > 0 ? () => { setVisualsVisible(true); setAnalysisOpen(false); } : handleGenerateVisuals,
-          disabled: visualsLoading, title: "Visuals",
-          icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>,
-        },
-        {
-          onClick: handleCopyLinkedIn, disabled: false, title: copiedLinkedIn ? "Copied!" : "Copy for LinkedIn",
-          icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 8a6 6 0 0 0-12 0v8a6 6 0 0 0 12 0" /><path d="M8 8v8" /></svg>,
-        },
-        {
-          onClick: handleCopyMedium, disabled: false, title: copiedMedium ? "Copied!" : "Copy for Medium",
-          icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16v16H4z" /><path d="M8 8l3.5 5L15 8" /></svg>,
-        },
-      ].map(({ onClick, disabled, title, icon }) => (
-        <button
-          key={title}
-          onClick={onClick}
-          disabled={disabled}
-          title={title}
-          style={collapsedIconStyle(disabled)}
-          onMouseEnter={e => { if (!disabled) (e.currentTarget as HTMLButtonElement).style.color = "#58614f"; }}
-          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "rgba(91,96,95,0.5)"; }}
-        >
-          {icon}
-        </button>
-      ))}
-    </div>
-  ) : (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20, alignItems: "center" }}>
-      <button onClick={() => setDrawerOpen(true)} disabled={loading} title="Regenerate" style={actionBtnStyle(loading)}>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2f3333" strokeWidth="2">
+  const postActionButtons = (
+    <div style={{ display: "flex", flexDirection: "column", gap: btnGap, alignItems: "center" }}>
+      <button
+        onClick={() => setDrawerOpen(true)}
+        disabled={loading}
+        title="Regenerate"
+        style={splitActive ? { display: "flex", flexDirection: "column", alignItems: "center", gap: 5, background: "none", border: "none", cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.5 : 1, padding: "4px 6px", borderRadius: 8 } : actionBtnStyle(loading)}
+      >
+        <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke="#2f3333" strokeWidth="2">
           <path d="M1 4v6h6" /><path d="M3.51 15a9 9 0 1 0 .49-4" />
         </svg>
-        <span style={actionLabelStyle}>Regenerate</span>
+        <span style={btnLabelStyle}>Regenerate</span>
       </button>
 
       <button
-        onClick={() => {
-          setAnalysisOpen(true);
-          if (!result?.scored && !scoreLoading) handleScore();
-          else if (!isWide) setTimeout(() => analysisRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
-        }}
+        onClick={() => { setAnalysisOpen(true); if (!result?.scored && !scoreLoading) handleScore(); else if (!isWide) setTimeout(() => analysisRef.current?.scrollIntoView({ behavior: "smooth" }), 50); }}
         title="Analyse"
-        style={actionBtnStyle()}
+        style={splitActive ? { display: "flex", flexDirection: "column", alignItems: "center", gap: 5, background: "none", border: "none", cursor: "pointer", padding: "4px 6px", borderRadius: 8 } : actionBtnStyle()}
       >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2f3333" strokeWidth="2">
+        <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke="#2f3333" strokeWidth="2">
           <rect x="3" y="12" width="4" height="9" /><rect x="10" y="7" width="4" height="14" /><rect x="17" y="3" width="4" height="18" />
         </svg>
-        <span style={actionLabelStyle}>Analyse</span>
+        <span style={btnLabelStyle}>Analyse</span>
       </button>
 
       <button
         onClick={visuals.length > 0 ? () => { setVisualsVisible(true); setAnalysisOpen(false); } : handleGenerateVisuals}
         disabled={visualsLoading}
-        title={visuals.length > 0 ? "Visuals" : "Gen. Visuals"}
-        style={actionBtnStyle(visualsLoading)}
+        title="Visuals"
+        style={splitActive ? { display: "flex", flexDirection: "column", alignItems: "center", gap: 5, background: "none", border: "none", cursor: visualsLoading ? "not-allowed" : "pointer", opacity: visualsLoading ? 0.5 : 1, padding: "4px 6px", borderRadius: 8 } : actionBtnStyle(visualsLoading)}
       >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2f3333" strokeWidth="2">
+        <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke="#2f3333" strokeWidth="2">
           <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
           <circle cx="8.5" cy="8.5" r="1.5" />
           <polyline points="21 15 16 10 5 21" />
         </svg>
-        <span style={actionLabelStyle}>{visuals.length > 0 ? "Visuals" : "Visuals"}</span>
+        <span style={btnLabelStyle}>Visuals</span>
       </button>
 
-      <button onClick={handleCopyLinkedIn} title="Copy for LinkedIn" style={actionBtnStyle()}>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2f3333" strokeWidth="2">
+      <button
+        onClick={handleCopyLinkedIn}
+        title="Copy for LinkedIn"
+        style={splitActive ? { display: "flex", flexDirection: "column", alignItems: "center", gap: 5, background: "none", border: "none", cursor: "pointer", padding: "4px 6px", borderRadius: 8 } : actionBtnStyle()}
+      >
+        <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke="#2f3333" strokeWidth="2">
           <path d="M16 8a6 6 0 0 0-12 0v8a6 6 0 0 0 12 0" />
           <path d="M8 8v8" />
         </svg>
-        <span style={actionLabelStyle}>{copiedLinkedIn ? "Copied!" : "LinkedIn"}</span>
+        <span style={btnLabelStyle}>{copiedLinkedIn ? "Copied!" : "LinkedIn"}</span>
       </button>
 
-      <button onClick={handleCopyMedium} title="Copy for Medium" style={actionBtnStyle()}>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2f3333" strokeWidth="2">
+      <button
+        onClick={handleCopyMedium}
+        title="Copy for Medium"
+        style={splitActive ? { display: "flex", flexDirection: "column", alignItems: "center", gap: 5, background: "none", border: "none", cursor: "pointer", padding: "4px 6px", borderRadius: 8 } : actionBtnStyle()}
+      >
+        <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke="#2f3333" strokeWidth="2">
           <path d="M4 4h16v16H4z" />
           <path d="M8 8l3.5 5L15 8" />
         </svg>
-        <span style={actionLabelStyle}>{copiedMedium ? "Copied!" : "Medium"}</span>
+        <span style={btnLabelStyle}>{copiedMedium ? "Copied!" : "Medium"}</span>
       </button>
     </div>
   );
@@ -1534,17 +1493,35 @@ export default function CreatePost() {
           {/* Drag handle */}
           <div
             onMouseDown={handleDragStart}
+            onMouseEnter={() => setIsHandleHovered(true)}
+            onMouseLeave={() => setIsHandleHovered(false)}
             style={{
-              width: "4px",
+              width: "12px",
               cursor: "col-resize",
               flexShrink: 0,
               alignSelf: "stretch",
-              background: "transparent",
+              background: isHandleHovered ? "rgba(88,97,79,0.06)" : "transparent",
               transition: "background 0.2s",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "4px",
             }}
-            onMouseEnter={e => e.currentTarget.style.background = "rgba(88,97,79,0.15)"}
-            onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-          />
+          >
+            {[0, 1, 2].map(i => (
+              <div
+                key={i}
+                style={{
+                  width: "6px",
+                  height: "1.5px",
+                  borderRadius: "2px",
+                  background: isHandleHovered ? "rgba(88,97,79,0.5)" : "rgba(88,97,79,0.25)",
+                  transition: "background 0.2s",
+                }}
+              />
+            ))}
+          </div>
 
           {/* Right — analysis panel */}
           <div
