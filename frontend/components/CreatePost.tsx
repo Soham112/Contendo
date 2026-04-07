@@ -1533,28 +1533,34 @@ export default function CreatePost() {
               </span>
             </div>
 
-            {/* Post canvas */}
-            <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-              <div className="rounded-[28px] bg-surface-container-lowest shadow-[0px_4px_20px_rgba(47,51,51,0.04),0px_12px_40px_rgba(47,51,51,0.06)] transition-all duration-300" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-                <div className="h-full overflow-y-auto px-7 py-7">
-                  <div
-                    ref={postEditorRef}
-                    contentEditable
-                    suppressContentEditableWarning
-                    role="textbox"
-                    aria-multiline="true"
-                    onInput={handlePostEditorInput}
-                    onMouseUp={handlePostEditorSelection}
-                    onKeyUp={handlePostEditorSelection}
-                    className="min-h-[52vh] outline-none text-[15.5px] leading-[1.9] text-on-surface whitespace-pre-wrap"
-                    style={{ fontFamily: "inherit" }}
-                  />
+            <div className="flex-1 min-h-0 flex gap-6">
+              <div className="hidden xl:block w-[210px] shrink-0 pt-6">
+                {postActionButtons}
+              </div>
+
+              {/* Post canvas */}
+              <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                <div className="rounded-[28px] bg-surface-container-lowest shadow-[0px_4px_20px_rgba(47,51,51,0.04),0px_12px_40px_rgba(47,51,51,0.06)] transition-all duration-300" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+                  <div className="h-full overflow-y-auto px-7 py-7">
+                    <div
+                      ref={postEditorRef}
+                      contentEditable
+                      suppressContentEditableWarning
+                      role="textbox"
+                      aria-multiline="true"
+                      onInput={handlePostEditorInput}
+                      onMouseUp={handlePostEditorSelection}
+                      onKeyUp={handlePostEditorSelection}
+                      className="min-h-[52vh] outline-none text-[15.5px] leading-[1.9] text-on-surface whitespace-pre-wrap"
+                      style={{ fontFamily: "inherit" }}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
 
+            <div className="xl:hidden">{postActionButtons}</div>
             {postMetaBar}
-            {postActionButtons}
 
             <p className="text-xs text-outline-variant shrink-0 mt-2">
               {lastSaved ? saveStatusText : "Auto-saved to history"}
@@ -1603,27 +1609,33 @@ export default function CreatePost() {
               </div>
             </div>
 
-            <div className="flex-1 min-h-0 overflow-hidden">
-              <div className="h-full rounded-[28px] bg-surface-container-lowest shadow-[0px_4px_20px_rgba(47,51,51,0.04),0px_12px_40px_rgba(47,51,51,0.06)] overflow-hidden">
-                <div className="h-full overflow-y-auto px-7 py-7">
-                  <div
-                    ref={postEditorRef}
-                    contentEditable
-                    suppressContentEditableWarning
-                    role="textbox"
-                    aria-multiline="true"
-                    onInput={handlePostEditorInput}
-                    onMouseUp={handlePostEditorSelection}
-                    onKeyUp={handlePostEditorSelection}
-                    className="min-h-[52vh] outline-none text-[15.5px] leading-[1.9] text-on-surface whitespace-pre-wrap"
-                    style={{ fontFamily: "inherit" }}
-                  />
+            <div className="flex-1 min-h-0 flex gap-6">
+              <div className="hidden lg:block w-[210px] shrink-0 pt-6">
+                {postActionButtons}
+              </div>
+
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <div className="h-full rounded-[28px] bg-surface-container-lowest shadow-[0px_4px_20px_rgba(47,51,51,0.04),0px_12px_40px_rgba(47,51,51,0.06)] overflow-hidden">
+                  <div className="h-full overflow-y-auto px-7 py-7">
+                    <div
+                      ref={postEditorRef}
+                      contentEditable
+                      suppressContentEditableWarning
+                      role="textbox"
+                      aria-multiline="true"
+                      onInput={handlePostEditorInput}
+                      onMouseUp={handlePostEditorSelection}
+                      onKeyUp={handlePostEditorSelection}
+                      className="min-h-[52vh] outline-none text-[15.5px] leading-[1.9] text-on-surface whitespace-pre-wrap"
+                      style={{ fontFamily: "inherit" }}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
 
+            <div className="lg:hidden">{postActionButtons}</div>
             {postMetaBar}
-            {postActionButtons}
 
             <p className="text-xs text-outline-variant" style={{ flexShrink: 0, marginTop: 8 }}>
               {lastSaved ? saveStatusText : "Auto-saved to history"}
