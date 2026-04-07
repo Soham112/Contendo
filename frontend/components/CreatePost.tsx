@@ -74,6 +74,50 @@ const LENGTH_META: Record<Format, Record<Length, string>> = {
 interface GenerateResult {
   post: string;
   score: number;
+  score_feedback: string[];
+  iterations: number;
+  scored: boolean;
+}
+
+interface Suggestion {
+  title: string;
+  angle: string;
+  format: string;
+  reasoning: string;
+}
+
+interface Visual {
+  type: "diagram" | "image_reminder";
+  placeholder: string;
+  description: string;
+  position: number;
+  svg_code: string | null;
+  reminder_text: string | null;
+}
+
+const FORMAT_BADGE: Record<string, string> = {
+  "linkedin post": "LinkedIn",
+  "medium article": "Medium",
+  "thread": "Thread",
+};
+
+// ─── Markdown stripping ───────────────────────────────────────────────────────
+
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/\*([^*\n]+)\*/g, "$1")
+    .replace(/_([^_\n]+)_/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "");
+}
+
+// ─── SVG / Visual helpers ─────────────────────────────────────────────────────
+
+function svgToDataURL(svgCode: string): Promise<string> {
+  return new Promise((resolve, reject) => {
     const parser = new DOMParser();
     const doc = parser.parseFromString(svgCode, "image/svg+xml");
     const svgEl = doc.querySelector("svg");
@@ -86,7 +130,10 @@ interface GenerateResult {
     canvas.width = vbW * 2;
     canvas.height = vbH * 2;
     const ctx = canvas.getContext("2d");
-    if (!ctx) { reject(new Error("No canvas context")); return; }
+    if (!ctx) {
+      reject(new Error("No canvas context"));
+      return;
+    }
 
     const img = new Image();
     const blob = new Blob([svgCode], { type: "image/svg+xml" });
@@ -97,7 +144,10 @@ interface GenerateResult {
       URL.revokeObjectURL(url);
       resolve(canvas.toDataURL("image/png"));
     };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Image load failed")); };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Image load failed"));
+    };
     img.src = url;
   });
 }
