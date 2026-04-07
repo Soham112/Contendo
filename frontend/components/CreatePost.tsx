@@ -589,12 +589,19 @@ export default function CreatePost() {
   }, [tone]);
 
   useEffect(() => {
-    const editor = postEditorRef.current;
-    if (!editor) return;
-    if (editedPost && editor.innerText !== editedPost) {
-      editor.innerText = editedPost;
-    }
-  }, [editedPost]);
+    // Use setTimeout(0) so the effect runs after the DOM has committed the new
+    // div instance. This covers the case where splitActive changes and the
+    // contentEditable div remounts — by the time the timer fires the ref is set.
+    const timer = setTimeout(() => {
+      const editor = postEditorRef.current;
+      if (editor && editedPost && editor.innerText !== editedPost) {
+        editor.innerText = editedPost;
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  // analysisOpen + isWide + visualsVisible together determine which branch (split vs single-column)
+  // is rendered — adding them here means the effect re-runs whenever the layout switches.
+  }, [editedPost, analysisOpen, isWide, visualsVisible]);
 
   // Pre-fill refinement instruction from latest feedback
   useEffect(() => {
@@ -1057,7 +1064,16 @@ export default function CreatePost() {
           ANALYSIS &amp; IMPACT
         </span>
         <button
-          onClick={() => setAnalysisOpen(false)}
+          onClick={() => {
+            // Snapshot current DOM content into state before the layout branch
+            // switches. Without this, the remounting single-column div could render
+            // empty if the user edited the post while the analysis panel was open.
+            if (postEditorRef.current) {
+              const current = postEditorRef.current.innerText.replace(/\u00a0/g, " ");
+              if (current && current !== editedPost) setEditedPost(current);
+            }
+            setAnalysisOpen(false);
+          }}
           className="text-outline hover:text-on-surface transition-colors text-xl leading-none"
           aria-label="Close analysis"
         >
