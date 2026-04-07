@@ -74,50 +74,6 @@ const LENGTH_META: Record<Format, Record<Length, string>> = {
 interface GenerateResult {
   post: string;
   score: number;
-  score_feedback: string[];
-  iterations: number;
-  scored: boolean;
-}
-
-interface Suggestion {
-  title: string;
-  angle: string;
-  format: string;
-  reasoning: string;
-}
-
-interface Visual {
-  type: "diagram" | "image_reminder";
-  placeholder: string;
-  description: string;
-  position: number;
-  svg_code: string | null;
-  reminder_text: string | null;
-}
-
-const FORMAT_BADGE: Record<string, string> = {
-  "linkedin post": "LinkedIn",
-  "medium article": "Medium",
-  "thread": "Thread",
-};
-
-// ─── Markdown stripping ───────────────────────────────────────────────────────
-
-function stripMarkdown(text: string): string {
-  return text
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")   // [text](url) → text
-    .replace(/\*\*([^*]+)\*\*/g, "$1")          // **bold** → text
-    .replace(/__([^_]+)__/g, "$1")              // __bold__ → text
-    .replace(/\*([^*\n]+)\*/g, "$1")            // *italic* → text
-    .replace(/_([^_\n]+)_/g, "$1")              // _italic_ → text
-    .replace(/`([^`]+)`/g, "$1")               // `code` → text
-    .replace(/^#{1,6}\s+/gm, "");              // # headings → plain line
-}
-
-// ─── SVG / Visual helpers ─────────────────────────────────────────────────────
-
-function svgToDataURL(svgCode: string): Promise<string> {
-  return new Promise((resolve, reject) => {
     const parser = new DOMParser();
     const doc = parser.parseFromString(svgCode, "image/svg+xml");
     const svgEl = doc.querySelector("svg");
@@ -144,6 +100,27 @@ function svgToDataURL(svgCode: string): Promise<string> {
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Image load failed")); };
     img.src = url;
   });
+}
+
+function getSelectionOffsetsWithin(node: HTMLElement) {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null;
+
+  const range = selection.getRangeAt(0);
+  if (!node.contains(range.commonAncestorContainer)) return null;
+
+  const preRange = document.createRange();
+  preRange.selectNodeContents(node);
+  preRange.setEnd(range.startContainer, range.startOffset);
+
+  const selectedText = range.toString();
+  const start = preRange.toString().length;
+
+  return {
+    start,
+    end: start + selectedText.length,
+    text: selectedText,
+  };
 }
 
 function DiagramCard({ visual }: { visual: Visual }) {
@@ -467,7 +444,7 @@ export default function CreatePost() {
   const topicRef = useRef<HTMLTextAreaElement>(null);
   const analysisRef = useRef<HTMLDivElement>(null);
   const inlineInputRef = useRef<HTMLInputElement>(null);
-  const postTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const postEditorRef = useRef<HTMLDivElement>(null);
 
   // Responsive width detection
   useEffect(() => {
@@ -560,6 +537,14 @@ export default function CreatePost() {
     const t = setTimeout(() => setToneDescOpacity(1), 50);
     return () => clearTimeout(t);
   }, [tone]);
+
+  useEffect(() => {
+    const editor = postEditorRef.current;
+    if (!editor) return;
+    if (editor.innerText !== editedPost) {
+      editor.innerText = editedPost;
+    }
+  }, [editedPost]);
 
   // Pre-fill refinement instruction from latest feedback
   useEffect(() => {
@@ -814,18 +799,29 @@ export default function CreatePost() {
     await handleRefineWith(refineInstruction);
   };
 
-  const handlePostTextareaMouseUp = () => {
-    const el = postTextareaRef.current;
+  const handlePostEditorSelection = () => {
+    const el = postEditorRef.current;
     if (!el) return;
-    const start = el.selectionStart;
-    const end = el.selectionEnd;
-    if (start === end) {
+
+    const domSelection = window.getSelection();
+    const selection = getSelectionOffsetsWithin(el);
+    if (!selection) {
       setInlineSelection(null);
       return;
     }
-    const text = el.value.slice(start, end);
-    const rect = el.getBoundingClientRect();
-    setInlineSelection({ start, end, text, rect });
+
+    const rect = domSelection && domSelection.rangeCount > 0 ? domSelection.getRangeAt(0).getBoundingClientRect() : null;
+    setInlineSelection({
+      start: selection.start,
+      end: selection.end,
+      text: selection.text,
+      rect,
+    });
+  };
+
+  const handlePostEditorInput = (e: React.FormEvent<HTMLDivElement>) => {
+    const nextValue = e.currentTarget.innerText.replace(/\u00a0/g, " ");
+    setEditedPost(nextValue);
   };
 
   const handleInlineEdit = async () => {
@@ -1245,63 +1241,92 @@ export default function CreatePost() {
   // ─── Shared action buttons for post view ─────────────────────────────────
 
   const postActionButtons = (
-    <div style={{ flexShrink: 0, marginTop: 14 }}>
-      <div className="flex gap-2 mb-2">
-        {/* Regenerate */}
-        <button
-          onClick={() => setDrawerOpen(true)}
-          disabled={loading}
-          className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-surface-container-high text-secondary text-[13px] py-2.5 hover:border-outline-variant hover:text-on-surface transition-colors bg-surface-container-lowest disabled:opacity-50"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <div className="mt-5 grid grid-cols-2 gap-2 lg:flex lg:flex-col lg:gap-2">
+      <button
+        onClick={() => setDrawerOpen(true)}
+        disabled={loading}
+        className="group flex items-center gap-3 rounded-full bg-white/78 px-4 py-3 text-left text-[13px] text-secondary backdrop-blur-[20px] transition-all hover:bg-white/90 hover:text-on-surface disabled:opacity-50"
+      >
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-container-low text-on-surface">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M1 4v6h6" /><path d="M3.51 15a9 9 0 1 0 .49-4" />
           </svg>
-          Regenerate
-        </button>
-        {/* Analyse */}
-        <button
-          onClick={() => {
-            setAnalysisOpen(true);
-            if (!result?.scored && !scoreLoading) handleScore();
-            else if (!isWide) setTimeout(() => analysisRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
-          }}
-          disabled={refineLoading}
-          className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-surface-container-high text-secondary text-[13px] py-2.5 hover:border-outline-variant hover:text-on-surface transition-colors bg-surface-container-lowest disabled:opacity-50"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        </span>
+        <span className="flex flex-col">
+          <span className="font-medium text-on-surface">Regenerate</span>
+          <span className="text-[11px] text-outline">Open settings drawer</span>
+        </span>
+      </button>
+
+      <button
+        onClick={() => {
+          setAnalysisOpen(true);
+          if (!result?.scored && !scoreLoading) handleScore();
+          else if (!isWide) setTimeout(() => analysisRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+        }}
+        disabled={refineLoading}
+        className="group flex items-center gap-3 rounded-full bg-white/78 px-4 py-3 text-left text-[13px] text-secondary backdrop-blur-[20px] transition-all hover:bg-white/90 hover:text-on-surface disabled:opacity-50"
+      >
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-container-low text-on-surface">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <rect x="3" y="12" width="4" height="9" /><rect x="10" y="7" width="4" height="14" /><rect x="17" y="3" width="4" height="18" />
           </svg>
-          Analyse
-        </button>
-        {/* Generate Visuals */}
-        <button
-          onClick={visuals.length > 0 ? () => { setVisualsVisible(true); setAnalysisOpen(false); } : handleGenerateVisuals}
-          disabled={visualsLoading}
-          className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-surface-container-high text-secondary text-[13px] py-2.5 hover:border-outline-variant hover:text-on-surface transition-colors bg-surface-container-lowest disabled:opacity-50"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        </span>
+        <span className="flex flex-col">
+          <span className="font-medium text-on-surface">Analyse</span>
+          <span className="text-[11px] text-outline">Check score and feedback</span>
+        </span>
+      </button>
+
+      <button
+        onClick={visuals.length > 0 ? () => { setVisualsVisible(true); setAnalysisOpen(false); } : handleGenerateVisuals}
+        disabled={visualsLoading}
+        className="group flex items-center gap-3 rounded-full bg-white/78 px-4 py-3 text-left text-[13px] text-secondary backdrop-blur-[20px] transition-all hover:bg-white/90 hover:text-on-surface disabled:opacity-50"
+      >
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-container-low text-on-surface">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
             <circle cx="8.5" cy="8.5" r="1.5" />
             <polyline points="21 15 16 10 5 21" />
           </svg>
-          {visuals.length > 0 ? "View Visuals" : "Gen. Visuals"}
-        </button>
-      </div>
-      {/* Copy buttons — LinkedIn (stripped) + Medium (raw markdown) */}
-      <div className="flex gap-2">
-        <button
-          onClick={handleCopyLinkedIn}
-          className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-surface-container-high text-secondary text-[13px] py-2.5 hover:border-outline-variant hover:text-on-surface transition-colors bg-surface-container-lowest"
-        >
-          {copiedLinkedIn ? "Copied!" : "Copy for LinkedIn"}
-        </button>
-        <button
-          onClick={handleCopyMedium}
-          className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-surface-container-high text-secondary text-[13px] py-2.5 hover:border-outline-variant hover:text-on-surface transition-colors bg-surface-container-lowest"
-        >
-          {copiedMedium ? "Copied!" : "Copy for Medium"}
-        </button>
-      </div>
+        </span>
+        <span className="flex flex-col">
+          <span className="font-medium text-on-surface">{visuals.length > 0 ? "Visuals" : "Gen. Visuals"}</span>
+          <span className="text-[11px] text-outline">Diagram and image placeholders</span>
+        </span>
+      </button>
+
+      <button
+        onClick={handleCopyLinkedIn}
+        className="group flex items-center gap-3 rounded-full bg-white/78 px-4 py-3 text-left text-[13px] text-secondary backdrop-blur-[20px] transition-all hover:bg-white/90 hover:text-on-surface"
+      >
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-container-low text-on-surface">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M16 8a6 6 0 0 0-12 0v8a6 6 0 0 0 12 0" />
+            <path d="M8 8v8" />
+          </svg>
+        </span>
+        <span className="flex flex-col">
+          <span className="font-medium text-on-surface">{copiedLinkedIn ? "Copied!" : "Copy LinkedIn"}</span>
+          <span className="text-[11px] text-outline">Markdown stripped</span>
+        </span>
+      </button>
+
+      <button
+        onClick={handleCopyMedium}
+        className="group flex items-center gap-3 rounded-full bg-white/78 px-4 py-3 text-left text-[13px] text-secondary backdrop-blur-[20px] transition-all hover:bg-white/90 hover:text-on-surface"
+      >
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-container-low text-on-surface">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M4 4h16v16H4z" />
+            <path d="M8 8l3.5 5L15 8" />
+          </svg>
+        </span>
+        <span className="flex flex-col">
+          <span className="font-medium text-on-surface">{copiedMedium ? "Copied!" : "Copy Medium"}</span>
+          <span className="text-[11px] text-outline">Raw markdown preserved</span>
+        </span>
+      </button>
     </div>
   );
 
@@ -1316,10 +1341,19 @@ export default function CreatePost() {
   }, [editedPost]);
 
   const postMetaBar = (
-    <p className="shrink-0 text-outline-variant" style={{ fontSize: 12, marginTop: 8 }}>
-      {postStats.wordCount} words · ~{postStats.readingTime} min read
-      {format === "thread" && <> · ~{postStats.tweetCount} tweets</>}
-    </p>
+    <div className="mt-4 flex flex-wrap items-center gap-2 text-[12px] text-outline-variant">
+      <span className="rounded-full bg-surface-container-low px-3 py-1">
+        {postStats.wordCount} words
+      </span>
+      <span className="rounded-full bg-surface-container-low px-3 py-1">
+        ~{postStats.readingTime} min read
+      </span>
+      {format === "thread" && (
+        <span className="rounded-full bg-surface-container-low px-3 py-1">
+          ~{postStats.tweetCount} tweets
+        </span>
+      )}
+    </div>
   );
 
   // ─── Render ───────────────────────────────────────────────────────────────
@@ -1449,29 +1483,23 @@ export default function CreatePost() {
               </span>
             </div>
 
-            {/* Post textarea */}
+            {/* Post canvas */}
             <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-              <div
-                className="rounded-xl bg-surface-container-lowest shadow-card focus-within:shadow-card-hover transition-all duration-300"
-                style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "28px 32px" }}
-              >
-                <textarea
-                  ref={postTextareaRef}
-                  value={editedPost}
-                  onChange={(e) => setEditedPost(e.target.value)}
-                  onMouseUp={handlePostTextareaMouseUp}
-                  onKeyUp={handlePostTextareaMouseUp}
-                  className="w-full h-full resize-none outline-none bg-transparent"
-                  style={{
-                    fontSize: 15.5,
-                    lineHeight: 1.85,
-                    color: "#2f3333",
-                    fontFamily: "inherit",
-                    border: "none",
-                    display: "block",
-                    whiteSpace: "pre-wrap",
-                  }}
-                />
+              <div className="rounded-[28px] bg-surface-container-lowest shadow-[0px_4px_20px_rgba(47,51,51,0.04),0px_12px_40px_rgba(47,51,51,0.06)] transition-all duration-300" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+                <div className="h-full overflow-y-auto px-7 py-7">
+                  <div
+                    ref={postEditorRef}
+                    contentEditable
+                    suppressContentEditableWarning
+                    role="textbox"
+                    aria-multiline="true"
+                    onInput={handlePostEditorInput}
+                    onMouseUp={handlePostEditorSelection}
+                    onKeyUp={handlePostEditorSelection}
+                    className="min-h-[52vh] outline-none text-[15.5px] leading-[1.9] text-on-surface whitespace-pre-wrap"
+                    style={{ fontFamily: "inherit" }}
+                  />
+                </div>
               </div>
             </div>
 
@@ -1499,64 +1527,22 @@ export default function CreatePost() {
 
       ) : postGenerated && !loading && !visualsVisible ? (
         // ── Single-column manuscript (panel closed or narrow) ────────────────
-        <div
-          style={{
-            height: "calc(100vh - 52px)",
-            display: "flex",
-            flexDirection: "column",
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              maxWidth: 820,
-              margin: "0 auto",
-              width: "100%",
-              height: "100%",
-              display: "flex",
-              flexDirection: "column",
-              padding: "28px 32px",
-            }}
-          >
-            {/* Manuscript heading row */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: 16,
-                flexShrink: 0,
-              }}
-            >
-              <h2
-                className="font-headline"
-                style={{ fontSize: 22, fontWeight: 400, color: "#2f3333", margin: 0 }}
-              >
-                The Manuscript
-              </h2>
+        <div style={{ height: "calc(100vh - 52px)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div style={{ maxWidth: 1080, margin: "0 auto", width: "100%", height: "100%", display: "flex", flexDirection: "column", gap: 18, padding: "28px 32px" }}>
+            <div className="flex items-start justify-between gap-4 shrink-0">
+              <div>
+                <p className="label-caps text-secondary" style={{ fontSize: "0.6rem", letterSpacing: "0.1em", marginBottom: 4 }}>
+                  EDITABLE DRAFT
+                </p>
+                <h2 className="font-headline" style={{ fontSize: 22, fontWeight: 400, color: "#2f3333", margin: 0 }}>
+                  The Manuscript
+                </h2>
+                <p className="text-xs text-outline mt-1.5">Select any passage to refine it in place.</p>
+              </div>
               <div className="flex items-center gap-3">
-                <span
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    fontSize: 11,
-                    color: "#777c7b",
-                    background: "#edeeed",
-                    borderRadius: 20,
-                    padding: "3px 11px",
-                    lineHeight: 1.6,
-                  }}
-                >
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "#777c7b", background: "rgba(237,238,237,0.8)", borderRadius: 999, padding: "8px 12px", lineHeight: 1.6, backdropFilter: "blur(18px)" }}>
                   <span style={{ color: "#58614f", fontSize: 10 }}>●</span>
-                  AI Refined:{" "}
-                  <span
-                    className="capitalize"
-                    style={{ fontWeight: 500, color: "#2f3333", marginLeft: 2 }}
-                  >
-                    {tone}
-                  </span>{" "}
-                  Tone
+                  AI Refined: <span className="capitalize" style={{ fontWeight: 500, color: "#2f3333", marginLeft: 2 }}>{tone}</span> Tone
                 </span>
                 <button
                   onClick={() => { setResult(null); setEditedPost(""); setAnalysisOpen(false); }}
@@ -1567,43 +1553,32 @@ export default function CreatePost() {
               </div>
             </div>
 
-            {/* Post textarea */}
-            <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-              <div
-                className="rounded-xl bg-surface-container-lowest shadow-card focus-within:shadow-card-hover transition-all duration-300"
-                style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "28px 32px" }}
-              >
-                <textarea
-                  ref={postTextareaRef}
-                  value={editedPost}
-                  onChange={(e) => setEditedPost(e.target.value)}
-                  onMouseUp={handlePostTextareaMouseUp}
-                  onKeyUp={handlePostTextareaMouseUp}
-                  className="w-full h-full resize-none outline-none bg-transparent"
-                  style={{
-                    fontSize: 15.5,
-                    lineHeight: 1.85,
-                    color: "#2f3333",
-                    fontFamily: "inherit",
-                    border: "none",
-                    display: "block",
-                    whiteSpace: "pre-wrap",
-                  }}
-                />
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <div className="h-full rounded-[28px] bg-surface-container-lowest shadow-[0px_4px_20px_rgba(47,51,51,0.04),0px_12px_40px_rgba(47,51,51,0.06)] overflow-hidden">
+                <div className="h-full overflow-y-auto px-7 py-7">
+                  <div
+                    ref={postEditorRef}
+                    contentEditable
+                    suppressContentEditableWarning
+                    role="textbox"
+                    aria-multiline="true"
+                    onInput={handlePostEditorInput}
+                    onMouseUp={handlePostEditorSelection}
+                    onKeyUp={handlePostEditorSelection}
+                    className="min-h-[52vh] outline-none text-[15.5px] leading-[1.9] text-on-surface whitespace-pre-wrap"
+                    style={{ fontFamily: "inherit" }}
+                  />
+                </div>
               </div>
             </div>
 
             {postMetaBar}
             {postActionButtons}
 
-            <p
-              className="text-xs text-outline-variant"
-              style={{ flexShrink: 0, marginTop: 8 }}
-            >
+            <p className="text-xs text-outline-variant" style={{ flexShrink: 0, marginTop: 8 }}>
               {lastSaved ? saveStatusText : "Auto-saved to history"}
             </p>
 
-            {/* Analysis stacked below post (narrow viewport only) */}
             {analysisOpen && !isWide && (
               <div
                 ref={analysisRef}
@@ -2069,16 +2044,18 @@ export default function CreatePost() {
                 (inlineSelection.rect?.width ?? 0) / 2,
               transform: "translateX(-50%)",
               zIndex: 1000,
-              background: "#3a4a35",
-              borderRadius: "8px",
-              padding: "8px 10px",
+              background: "rgba(243, 244, 243, 0.82)",
+              borderRadius: "999px",
+              padding: "8px 10px 8px 12px",
               display: "flex",
               alignItems: "center",
-              gap: "6px",
+              gap: "8px",
               boxShadow:
-                "0px 4px 20px rgba(47,51,51,0.18), 0px 12px 40px rgba(47,51,51,0.12)",
-              minWidth: "260px",
-              maxWidth: "360px",
+                "0px 4px 20px rgba(47,51,51,0.08), 0px 12px 40px rgba(47,51,51,0.08)",
+              minWidth: "320px",
+              maxWidth: "420px",
+              backdropFilter: "blur(20px)",
+              border: "1px solid rgba(174, 179, 178, 0.18)",
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -2094,7 +2071,7 @@ export default function CreatePost() {
                 background: "transparent",
                 border: "none",
                 outline: "none",
-                color: "#ffffff",
+                color: "#2f3333",
                 fontSize: "13px",
                 fontFamily: "Inter, sans-serif",
               }}
@@ -2103,12 +2080,12 @@ export default function CreatePost() {
               onClick={handleInlineEdit}
               disabled={inlineLoading || !inlineInstruction.trim()}
               style={{
-                background: "rgba(255,255,255,0.15)",
+                background: "linear-gradient(135deg, #58614f 0%, #4c5543 100%)",
                 border: "none",
-                borderRadius: "5px",
+                borderRadius: "999px",
                 color: "#ffffff",
                 fontSize: "13px",
-                padding: "3px 10px",
+                padding: "6px 12px",
                 cursor: inlineLoading ? "wait" : "pointer",
                 opacity: !inlineInstruction.trim() || inlineLoading ? 0.5 : 1,
                 fontFamily: "Inter, sans-serif",
@@ -2121,9 +2098,9 @@ export default function CreatePost() {
               style={{
                 background: "transparent",
                 border: "none",
-                color: "rgba(255,255,255,0.55)",
+                color: "#777c7b",
                 fontSize: "13px",
-                padding: "3px 6px",
+                padding: "4px 6px",
                 cursor: "pointer",
                 fontFamily: "Inter, sans-serif",
               }}
