@@ -1540,106 +1540,105 @@ export default function CreatePost() {
       ) : postGenerated && !loading && !visualsVisible ? (
         // ── Single-column manuscript (panel closed or narrow) ────────────────
         <div style={{ flex: 1, overflowY: "auto" }}>
-          {/* Outer wrapper — full width, no centering */}
-          <div style={{ width: "100%", padding: "40px 2rem 48px" }}>
-            {/* Inner anchor — left-aligned, single source of truth for horizontal alignment */}
-            <div style={{ width: "100%", maxWidth: 720, marginLeft: 0, marginRight: "auto", paddingLeft: 48, position: "relative" }}>
+          <div style={{ width: "100%", display: "flex", justifyContent: "center", padding: "40px 2rem 48px" }}>
+            <div style={{ width: "100%", maxWidth: 860, position: "relative" }}>
 
-              {/* Header — label, serif title, subtitle */}
-              <div>
-                <p className="label-caps text-secondary" style={{ fontSize: "0.6rem", letterSpacing: "0.1em", marginBottom: 6 }}>
-                  MANUSCRIPT DRAFT
-                </p>
-                <h1 style={{ fontFamily: "Noto Serif, serif", fontSize: "2rem", fontWeight: 300, color: "#2f3333", lineHeight: 1.2, margin: "0 0 0.5rem" }}>
-                  {topic || "The Manuscript"}
-                </h1>
-                <p className="text-xs text-outline">Select any passage to refine it in place.</p>
+          {/* Header — label, serif title, subtitle */}
+          <div style={{ width: "100%" }}>
+            <p className="label-caps text-secondary" style={{ fontSize: "0.6rem", letterSpacing: "0.1em", marginBottom: 6 }}>
+              MANUSCRIPT DRAFT
+            </p>
+            <h1 style={{ fontFamily: "Noto Serif, serif", fontSize: "2rem", fontWeight: 300, color: "#2f3333", lineHeight: 1.2, marginBottom: "0.5rem", margin: "0 0 0.5rem" }}>
+              {topic || "The Manuscript"}
+            </h1>
+            <p className="text-xs text-outline">Select any passage to refine it in place.</p>
+          </div>
+
+          {/* Status row — right-aligned, sits directly above the canvas */}
+          <div style={{ width: "100%", display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, marginTop: 16, marginBottom: 8 }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "#777c7b", background: "rgba(237,238,237,0.8)", borderRadius: 999, padding: "6px 12px", lineHeight: 1.6, backdropFilter: "blur(18px)" }}>
+              <span style={{ color: "#58614f", fontSize: 10 }}>●</span>
+              AI Refined:{" "}
+              <span className="capitalize" style={{ fontWeight: 500, color: "#2f3333", marginLeft: 2 }}>{tone}</span>{" "}
+              Tone
+            </span>
+            <button
+              onClick={() => { setResult(null); setEditedPost(""); setAnalysisOpen(false); }}
+              className="text-xs text-outline hover:text-secondary transition-colors"
+            >
+              ← Start over
+            </button>
+          </div>
+
+          {/* Canvas + action stack wrapper */}
+          <div style={{ position: "relative", width: "100%" }}>
+            {/* Action stack — absolute, anchored left of canvas on large screens */}
+            <div
+              className="hidden lg:flex"
+              style={{ position: "absolute", right: "100%", marginRight: 24, top: 0, flexDirection: "column" }}
+            >
+              {postActionButtons}
+            </div>
+
+            {/* Canvas card */}
+            <div
+              style={{
+                borderRadius: 28,
+                background: "#ffffff",
+                boxShadow: "0px 4px 20px rgba(47,51,51,0.04), 0px 12px 40px rgba(47,51,51,0.06)",
+                overflow: "hidden",
+                minHeight: "85vh",
+              }}
+            >
+              <div className="px-8 py-10 md:px-20 md:py-12">
+                  <div
+                    ref={postEditorRef}
+                  contentEditable
+                  suppressContentEditableWarning
+                  role="textbox"
+                  aria-multiline="true"
+                  onInput={handlePostEditorInput}
+                  onMouseUp={handlePostEditorSelection}
+                  onKeyUp={handlePostEditorSelection}
+                    className="manuscript-editor outline-none text-[15.5px] leading-[1.9] text-on-surface whitespace-pre-wrap"
+                  style={{ fontFamily: "inherit", minHeight: "78vh" }}
+                />
               </div>
+            </div>
+          </div>
 
-              {/* Status row — right-aligned above canvas */}
-              <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, marginTop: 16, marginBottom: 8 }}>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "#777c7b", background: "rgba(237,238,237,0.8)", borderRadius: 999, padding: "6px 12px", lineHeight: 1.6, backdropFilter: "blur(18px)" }}>
-                  <span style={{ color: "#58614f", fontSize: 10 }}>●</span>
-                  AI Refined:{" "}
-                  <span className="capitalize" style={{ fontWeight: 500, color: "#2f3333", marginLeft: 2 }}>{tone}</span>{" "}
-                  Tone
-                </span>
-                <button
-                  onClick={() => { setResult(null); setEditedPost(""); setAnalysisOpen(false); }}
-                  className="text-xs text-outline hover:text-secondary transition-colors"
-                >
-                  ← Start over
-                </button>
-              </div>
+          {/* Mobile action buttons */}
+          <div className="lg:hidden" style={{ width: "100%", marginTop: 20 }}>
+            {postActionButtons}
+          </div>
 
-              {/* Canvas + action stack wrapper */}
-              <div style={{ position: "relative" }}>
-                {/* Action stack — 16px left of canvas left edge */}
-                <div
-                  className="hidden lg:flex"
-                  style={{ position: "absolute", right: "100%", marginRight: 16, top: 0, flexDirection: "column" }}
-                >
-                  {postActionButtons}
-                </div>
+          {/* Footer — word count centered, last-edited right */}
+          <div style={{ width: "100%", display: "flex", justifyContent: "center", marginTop: "1.5rem", position: "relative" }}>
+            <span style={{ fontSize: 11, color: "rgba(91,96,95,0.4)", letterSpacing: "0.05em" }}>
+              {postStats.wordCount} words · ~{postStats.readingTime} min read
+              {format === "thread" && ` · ~${postStats.tweetCount} tweets`}
+            </span>
+            <span style={{ position: "absolute", right: 0, fontSize: 10, color: "rgba(91,96,95,0.3)", fontStyle: "italic" }}>
+              {lastSaved ? saveStatusText : "Auto-saved to history"}
+            </span>
+          </div>
 
-                {/* Canvas card */}
-                <div
-                  style={{
-                    borderRadius: 28,
-                    background: "#ffffff",
-                    boxShadow: "0px 4px 20px rgba(47,51,51,0.04), 0px 12px 40px rgba(47,51,51,0.06)",
-                    overflow: "hidden",
-                    minHeight: "85vh",
-                  }}
-                >
-                  <div className="px-8 py-10 md:px-20 md:py-12">
-                    <div
-                      ref={postEditorRef}
-                      contentEditable
-                      suppressContentEditableWarning
-                      role="textbox"
-                      aria-multiline="true"
-                      onInput={handlePostEditorInput}
-                      onMouseUp={handlePostEditorSelection}
-                      onKeyUp={handlePostEditorSelection}
-                      className="manuscript-editor outline-none text-[15.5px] leading-[1.9] text-on-surface whitespace-pre-wrap"
-                      style={{ fontFamily: "inherit", minHeight: "78vh" }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Mobile action buttons */}
-              <div className="lg:hidden" style={{ marginTop: 20 }}>
-                {postActionButtons}
-              </div>
-
-              {/* Footer — word count left, last-edited right */}
-              <div style={{ display: "flex", justifyContent: "space-between", marginTop: "1.5rem" }}>
-                <span style={{ fontSize: 11, color: "rgba(91,96,95,0.4)", letterSpacing: "0.05em" }}>
-                  {postStats.wordCount} words · ~{postStats.readingTime} min read
-                  {format === "thread" && ` · ~${postStats.tweetCount} tweets`}
-                </span>
-                <span style={{ fontSize: 10, color: "rgba(91,96,95,0.3)", fontStyle: "italic" }}>
-                  {lastSaved ? saveStatusText : "Auto-saved to history"}
-                </span>
-              </div>
-
-              {/* Analysis panel (stacked below on narrow viewports) */}
-              {analysisOpen && !isWide && (
-                <div
-                  ref={analysisRef}
-                  style={{
-                    marginTop: 24,
-                    paddingTop: 24,
-                    borderTop: "0.5px solid #dfe3e2",
-                    maxHeight: "50vh",
-                    overflowY: "auto",
-                  }}
-                >
-                  {analysisPanelContent}
-                </div>
-              )}
+          {/* Analysis panel (stacked below on narrow viewports) */}
+          {analysisOpen && !isWide && (
+            <div
+              ref={analysisRef}
+              style={{
+                width: "100%",
+                marginTop: 24,
+                paddingTop: 24,
+                borderTop: "0.5px solid #dfe3e2",
+                maxHeight: "50vh",
+                overflowY: "auto",
+              }}
+            >
+              {analysisPanelContent}
+            </div>
+          )}
 
             </div>
           </div>
