@@ -470,11 +470,8 @@ export default function CreatePost() {
   const [scoreLoading, setScoreLoading] = useState(false);
   const [toneDescOpacity, setToneDescOpacity] = useState(0);
 
-  const [refineInstruction, setRefineInstruction] = useState("");
-  const [refineLoading, setRefineLoading] = useState(false);
-  const [refineError, setRefineError] = useState("");
-
   const [analysisOpen, setAnalysisOpen] = useState(false);
+  const [splitRatio, setSplitRatio] = useState(0.55);
   const [isWide, setIsWide] = useState(true);
   const [currentPostId, setCurrentPostId] = useState<number | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -495,6 +492,7 @@ export default function CreatePost() {
   const analysisRef = useRef<HTMLDivElement>(null);
   const inlineInputRef = useRef<HTMLInputElement>(null);
   const postEditorRef = useRef<HTMLDivElement>(null);
+  const splitContainerRef = useRef<HTMLDivElement>(null);
 
   // Responsive width detection
   useEffect(() => {
@@ -602,17 +600,6 @@ export default function CreatePost() {
   // analysisOpen + isWide + visualsVisible together determine which branch (split vs single-column)
   // is rendered. loading gates post-gen mount after generate, so include it to re-run sync on mount.
   }, [editedPost, analysisOpen, isWide, visualsVisible, loading]);
-
-  // Pre-fill refinement instruction from latest feedback
-  useEffect(() => {
-    if (!result || result.score_feedback.length === 0) return;
-    const items = result.score_feedback.slice(0, 3);
-    setRefineInstruction(
-      "Fix the following issues: " +
-      items.map((f) => f.trim().replace(/\.+$/, "")).join(". ") +
-      "."
-    );
-  }, [result]);
 
   const clearSession = () => {
     [SS_POST, SS_SCORE, SS_FEEDBACK, SS_ITERATIONS, SS_VISUALS, SS_IDEAS, SS_CURRENT_POST_ID, SS_TOPIC, SS_FORMAT, SS_TONE, SS_LENGTH, SS_SCORED].forEach((k) =>
@@ -812,50 +799,6 @@ export default function CreatePost() {
     }
   };
 
-  const handleRefineWith = async (instruction: string) => {
-    setRefineError("");
-    setRefineLoading(true);
-    try {
-      const res = await api.refinePost({
-        current_draft: editedPost,
-        refinement_instruction: instruction,
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail ?? "Refinement failed");
-      }
-      const data: { refined_draft: string; score: number; score_feedback: string[] } = await res.json();
-
-      setEditedPost(data.refined_draft);
-      setResult((prev) =>
-        prev ? { ...prev, score: data.score, score_feedback: data.score_feedback } : prev
-      );
-
-      try {
-        sessionStorage.setItem(SS_POST, data.refined_draft);
-        sessionStorage.setItem(SS_SCORE, String(data.score));
-        sessionStorage.setItem(SS_FEEDBACK, JSON.stringify(data.score_feedback));
-      } catch {
-        // ignore
-      }
-
-      await patchHistory({ content: data.refined_draft, authenticity_score: data.score });
-      setRefineInstruction("");
-    } catch (e: unknown) {
-      setRefineError(e instanceof Error ? e.message : "Something went wrong.");
-    } finally {
-      setRefineLoading(false);
-    }
-  };
-
-  const handleRefine = async () => {
-    if (!refineInstruction.trim()) {
-      setRefineError("Refinement instruction is required.");
-      return;
-    }
-    await handleRefineWith(refineInstruction);
-  };
-
   const handlePostEditorSelection = () => {
     const el = postEditorRef.current;
     if (!el) return;
@@ -936,14 +879,6 @@ export default function CreatePost() {
       return () => clearTimeout(timer);
     }
   }, [inlineSelection]);
-
-  const handleApplyFeedback = async () => {
-    if (!result || result.score_feedback.length === 0) return;
-    const instruction =
-      result.score_feedback.map((f) => f.trim().replace(/\.+$/, "")).join(". ") + ".";
-    setRefineInstruction(instruction);
-    await handleRefineWith(instruction);
-  };
 
   const handleCopyLinkedIn = async () => {
     await navigator.clipboard.writeText(stripMarkdown(editedPost));
@@ -1032,6 +967,25 @@ export default function CreatePost() {
     try { sessionStorage.removeItem(SS_IDEAS); } catch { /* ignore */ }
   };
 
+  const handleDragStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startRatio = splitRatio;
+    const containerWidth = splitContainerRef.current?.offsetWidth ?? window.innerWidth;
+
+    const onMouseMove = (ev: MouseEvent) => {
+      const delta = ev.clientX - startX;
+      const newRatio = startRatio + delta / containerWidth;
+      setSplitRatio(Math.min(0.75, Math.max(0.35, newRatio)));
+    };
+    const onMouseUp = () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  };
+
   const handleDrawerRegenerate = (overrides: { topic: string; format: Format; tone: Tone; length: Length; context: string }) => {
     setDrawerOpen(false);
     generate(overrides);
@@ -1073,6 +1027,7 @@ export default function CreatePost() {
               if (current && current !== editedPost) setEditedPost(current);
             }
             setAnalysisOpen(false);
+            setSplitRatio(0.55);
           }}
           className="text-outline hover:text-on-surface transition-colors text-xl leading-none"
           aria-label="Close analysis"
@@ -1196,56 +1151,6 @@ export default function CreatePost() {
             </div>
           )}
 
-          <div style={{ borderTop: "0.5px solid #dfe3e2", marginBottom: 20 }} />
-
-          {/* Refine section */}
-          <p
-            className="label-caps text-secondary mb-3"
-            style={{ fontSize: "0.58rem", letterSpacing: "0.1em" }}
-          >
-            REFINE DRAFT
-          </p>
-          <textarea
-            value={refineInstruction}
-            onChange={(e) => setRefineInstruction(e.target.value)}
-            placeholder="Describe what to fix — or leave blank to auto-apply the feedback above..."
-            style={{
-              width: "100%",
-              minHeight: 80,
-              fontSize: 13,
-              lineHeight: 1.6,
-              border: "none",
-              borderBottom: "1.5px solid #aeb3b2",
-              borderRadius: 0,
-              padding: "8px 0",
-              resize: "vertical",
-              fontFamily: "inherit",
-              background: "transparent",
-              color: "#2f3333",
-              outline: "none",
-              boxSizing: "border-box",
-              marginBottom: 12,
-            }}
-          />
-          {refineError && (
-            <p className="text-xs text-error mb-2">{refineError}</p>
-          )}
-          <div className="flex gap-2">
-            <button
-              onClick={handleApplyFeedback}
-              disabled={refineLoading}
-              className="flex-1 btn-primary rounded-lg text-white text-[13px] font-medium py-2.5 disabled:opacity-50 hover:opacity-90 transition-opacity"
-            >
-              {refineLoading ? "Refining…" : "Apply feedback"}
-            </button>
-            <button
-              onClick={handleRefine}
-              disabled={refineLoading}
-              className="flex-1 rounded-lg border border-surface-container-high bg-surface-container-lowest text-secondary text-[13px] font-medium py-2.5 disabled:opacity-50 hover:border-outline-variant hover:text-on-surface transition-colors"
-            >
-              Refine with note
-            </button>
-          </div>
         </>
       ) : (
         /* Placeholder — score not yet run */
@@ -1331,7 +1236,60 @@ export default function CreatePost() {
     fontWeight: 500,
   };
 
-  const postActionButtons = (
+  const collapsedIconStyle = (disabled?: boolean): React.CSSProperties => ({
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "none",
+    border: "none",
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.4 : 1,
+    padding: 4,
+    borderRadius: 8,
+    transition: "color 0.15s",
+    color: "rgba(91,96,95,0.5)",
+  });
+
+  const postActionButtons = splitActive ? (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20, alignItems: "center" }}>
+      {[
+        {
+          onClick: () => setDrawerOpen(true), disabled: loading, title: "Regenerate",
+          icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 4v6h6" /><path d="M3.51 15a9 9 0 1 0 .49-4" /></svg>,
+        },
+        {
+          onClick: () => { setAnalysisOpen(true); if (!result?.scored && !scoreLoading) handleScore(); else if (!isWide) setTimeout(() => analysisRef.current?.scrollIntoView({ behavior: "smooth" }), 50); },
+          disabled: false, title: "Analyse",
+          icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="12" width="4" height="9" /><rect x="10" y="7" width="4" height="14" /><rect x="17" y="3" width="4" height="18" /></svg>,
+        },
+        {
+          onClick: visuals.length > 0 ? () => { setVisualsVisible(true); setAnalysisOpen(false); } : handleGenerateVisuals,
+          disabled: visualsLoading, title: "Visuals",
+          icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>,
+        },
+        {
+          onClick: handleCopyLinkedIn, disabled: false, title: copiedLinkedIn ? "Copied!" : "Copy for LinkedIn",
+          icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 8a6 6 0 0 0-12 0v8a6 6 0 0 0 12 0" /><path d="M8 8v8" /></svg>,
+        },
+        {
+          onClick: handleCopyMedium, disabled: false, title: copiedMedium ? "Copied!" : "Copy for Medium",
+          icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16v16H4z" /><path d="M8 8l3.5 5L15 8" /></svg>,
+        },
+      ].map(({ onClick, disabled, title, icon }) => (
+        <button
+          key={title}
+          onClick={onClick}
+          disabled={disabled}
+          title={title}
+          style={collapsedIconStyle(disabled)}
+          onMouseEnter={e => { if (!disabled) (e.currentTarget as HTMLButtonElement).style.color = "#58614f"; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "rgba(91,96,95,0.5)"; }}
+        >
+          {icon}
+        </button>
+      ))}
+    </div>
+  ) : (
     <div style={{ display: "flex", flexDirection: "column", gap: 20, alignItems: "center" }}>
       <button onClick={() => setDrawerOpen(true)} disabled={loading} title="Regenerate" style={actionBtnStyle(loading)}>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2f3333" strokeWidth="2">
@@ -1346,9 +1304,8 @@ export default function CreatePost() {
           if (!result?.scored && !scoreLoading) handleScore();
           else if (!isWide) setTimeout(() => analysisRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
         }}
-        disabled={refineLoading}
         title="Analyse"
-        style={actionBtnStyle(refineLoading)}
+        style={actionBtnStyle()}
       >
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2f3333" strokeWidth="2">
           <rect x="3" y="12" width="4" height="9" /><rect x="10" y="7" width="4" height="14" /><rect x="17" y="3" width="4" height="18" />
@@ -1487,16 +1444,15 @@ export default function CreatePost() {
 
       {/* ── Split layout (wide, post generated, analysis open) ──────────────── */}
       {splitActive ? (
-        <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+        <div ref={splitContainerRef} style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
           {/* Left — manuscript */}
           <div
             style={{
-              flex: "0 0 62%",
+              flex: `0 0 ${splitRatio * 100}%`,
               display: "flex",
               flexDirection: "column",
               padding: "32px 40px",
-              borderRight: "0.5px solid #dfe3e2",
               overflow: "hidden",
             }}
           >
@@ -1575,10 +1531,25 @@ export default function CreatePost() {
             </p>
           </div>
 
+          {/* Drag handle */}
+          <div
+            onMouseDown={handleDragStart}
+            style={{
+              width: "4px",
+              cursor: "col-resize",
+              flexShrink: 0,
+              alignSelf: "stretch",
+              background: "transparent",
+              transition: "background 0.2s",
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = "rgba(88,97,79,0.15)"}
+            onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+          />
+
           {/* Right — analysis panel */}
           <div
             style={{
-              flex: "0 0 38%",
+              flex: `0 0 ${(1 - splitRatio) * 100 - 0.5}%`,
               height: "100%",
               overflowY: "auto",
               padding: "28px 32px",
