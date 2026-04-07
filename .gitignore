@@ -49,3 +49,10 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+
+# AI tool configs — machine-specific, not project-wide
+.cursor/
+.cursorrules
+.windsurfrules
+.opencode.json
+GEMINI.md
