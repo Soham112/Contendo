@@ -8,6 +8,8 @@
 
 > **Verification note (2026-04-07):** Create Post editor sync now re-runs across loading-driven post-gen mount transitions so generated content appears immediately without navigation. No prompt text changed in this pass.
 
+> **Verification note (2026-04-07):** Create Post non-split post-generation layout now uses one centered 860px anchor container so title, action stack, and canvas stay aligned across window sizes. No prompt text changed in this pass.
+
 > **Verification note (2026-04-07):** Create Post post-generation UI redesigned into the Atelier Manuscript canvas with contentEditable editing and frosted action stack. No prompt text changed in this pass.
 
 > **Verification note (2026-04-06):** Draft agent prompt updated with {grounding_instruction} variable for retrieval confidence calibration (feature/retrieval-confidence-calibration). All other prompts unchanged.
