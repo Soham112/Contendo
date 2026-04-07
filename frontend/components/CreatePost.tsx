@@ -600,8 +600,8 @@ export default function CreatePost() {
 
     return () => cancelAnimationFrame(frame);
   // analysisOpen + isWide + visualsVisible together determine which branch (split vs single-column)
-  // is rendered — adding them here means the effect re-runs whenever the layout switches.
-  }, [editedPost, analysisOpen, isWide, visualsVisible]);
+  // is rendered. loading gates post-gen mount after generate, so include it to re-run sync on mount.
+  }, [editedPost, analysisOpen, isWide, visualsVisible, loading]);
 
   // Pre-fill refinement instruction from latest feedback
   useEffect(() => {

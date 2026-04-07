@@ -6,6 +6,8 @@
 
 > **Verification note (2026-04-07):** Create Post canvas timing and manuscript-editor focus/selection styling fixed. No prompt text changed in this pass.
 
+> **Verification note (2026-04-07):** Create Post editor sync now re-runs across loading-driven post-gen mount transitions so generated content appears immediately without navigation. No prompt text changed in this pass.
+
 > **Verification note (2026-04-07):** Create Post post-generation UI redesigned into the Atelier Manuscript canvas with contentEditable editing and frosted action stack. No prompt text changed in this pass.
 
 > **Verification note (2026-04-06):** Draft agent prompt updated with {grounding_instruction} variable for retrieval confidence calibration (feature/retrieval-confidence-calibration). All other prompts unchanged.
