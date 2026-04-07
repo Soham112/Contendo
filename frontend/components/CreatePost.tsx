@@ -591,7 +591,7 @@ export default function CreatePost() {
   useEffect(() => {
     const editor = postEditorRef.current;
     if (!editor) return;
-    if (editor.innerText !== editedPost) {
+    if (editedPost && editor.innerText !== editedPost) {
       editor.innerText = editedPost;
     }
   }, [editedPost]);
