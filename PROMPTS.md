@@ -8,7 +8,7 @@
 
 > **Verification note (2026-04-07):** Create Post editor sync now re-runs across loading-driven post-gen mount transitions so generated content appears immediately without navigation. No prompt text changed in this pass.
 
-> **Verification note (2026-04-07):** Create Post non-split post-generation layout now uses one centered 860px anchor container so title, action stack, and canvas stay aligned across window sizes. No prompt text changed in this pass.
+> **Verification note (2026-04-07):** Create Post non-split post-generation view reverted from the 860px anchor experiment; it now uses the shared 768px manuscript column with the action stack offset from the canvas edge, while split analysis keeps the draggable divider workflow. No prompt text changed in this pass.
 
 > **Verification note (2026-04-07):** Create Post post-generation UI redesigned into the Atelier Manuscript canvas with contentEditable editing and frosted action stack. No prompt text changed in this pass.
 
