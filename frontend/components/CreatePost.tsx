@@ -1539,10 +1539,12 @@ export default function CreatePost() {
 
       ) : postGenerated && !loading && !visualsVisible ? (
         // ── Single-column manuscript (panel closed or narrow) ────────────────
-        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", alignItems: "center", width: "100%", padding: "40px 24px 48px" }}>
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          <div style={{ width: "100%", display: "flex", justifyContent: "center", padding: "40px 2rem 48px" }}>
+            <div style={{ width: "100%", maxWidth: 860, position: "relative" }}>
 
           {/* Header — label, serif title, subtitle */}
-          <div style={{ width: "100%", maxWidth: 768 }}>
+          <div style={{ width: "100%" }}>
             <p className="label-caps text-secondary" style={{ fontSize: "0.6rem", letterSpacing: "0.1em", marginBottom: 6 }}>
               MANUSCRIPT DRAFT
             </p>
@@ -1553,7 +1555,7 @@ export default function CreatePost() {
           </div>
 
           {/* Status row — right-aligned, sits directly above the canvas */}
-          <div style={{ width: "100%", maxWidth: 768, display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, marginTop: 16, marginBottom: 8 }}>
+          <div style={{ width: "100%", display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, marginTop: 16, marginBottom: 8 }}>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "#777c7b", background: "rgba(237,238,237,0.8)", borderRadius: 999, padding: "6px 12px", lineHeight: 1.6, backdropFilter: "blur(18px)" }}>
               <span style={{ color: "#58614f", fontSize: 10 }}>●</span>
               AI Refined:{" "}
@@ -1569,11 +1571,11 @@ export default function CreatePost() {
           </div>
 
           {/* Canvas + action stack wrapper */}
-          <div style={{ position: "relative", width: "100%", maxWidth: 768 }}>
+          <div style={{ position: "relative", width: "100%" }}>
             {/* Action stack — absolute, anchored left of canvas on large screens */}
             <div
               className="hidden lg:flex"
-              style={{ position: "absolute", right: "100%", marginRight: 32, top: 0, flexDirection: "column" }}
+              style={{ position: "absolute", right: "100%", marginRight: 24, top: 0, flexDirection: "column" }}
             >
               {postActionButtons}
             </div>
@@ -1606,12 +1608,12 @@ export default function CreatePost() {
           </div>
 
           {/* Mobile action buttons */}
-          <div className="lg:hidden" style={{ width: "100%", maxWidth: 768, marginTop: 20 }}>
+          <div className="lg:hidden" style={{ width: "100%", marginTop: 20 }}>
             {postActionButtons}
           </div>
 
           {/* Footer — word count centered, last-edited right */}
-          <div style={{ width: "100%", maxWidth: 768, display: "flex", justifyContent: "center", marginTop: "1.5rem", position: "relative" }}>
+          <div style={{ width: "100%", display: "flex", justifyContent: "center", marginTop: "1.5rem", position: "relative" }}>
             <span style={{ fontSize: 11, color: "rgba(91,96,95,0.4)", letterSpacing: "0.05em" }}>
               {postStats.wordCount} words · ~{postStats.readingTime} min read
               {format === "thread" && ` · ~${postStats.tweetCount} tweets`}
@@ -1627,7 +1629,6 @@ export default function CreatePost() {
               ref={analysisRef}
               style={{
                 width: "100%",
-                maxWidth: 768,
                 marginTop: 24,
                 paddingTop: 24,
                 borderTop: "0.5px solid #dfe3e2",
@@ -1638,6 +1639,9 @@ export default function CreatePost() {
               {analysisPanelContent}
             </div>
           )}
+
+            </div>
+          </div>
         </div>
 
       ) : (
