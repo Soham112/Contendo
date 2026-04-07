@@ -153,6 +153,19 @@ body::before {
   animation: step-in 0.2s ease forwards;
 }
 
+/* ── Manuscript editor focus/selection ─────────────────── */
+.manuscript-editor:focus,
+.manuscript-editor:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.manuscript-editor::selection,
+.manuscript-editor *::selection {
+  background: rgba(88, 97, 79, 0.15);
+  color: #2f3333;
+}
+
 /* ── Selection ──────────────────────────────────────────── */
 ::selection {
   background: #dce6ce;

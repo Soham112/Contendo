@@ -589,16 +589,16 @@ export default function CreatePost() {
   }, [tone]);
 
   useEffect(() => {
-    // Use setTimeout(0) so the effect runs after the DOM has committed the new
-    // div instance. This covers the case where splitActive changes and the
-    // contentEditable div remounts — by the time the timer fires the ref is set.
-    const timer = setTimeout(() => {
+    if (!editedPost) return;
+
+    const frame = requestAnimationFrame(() => {
       const editor = postEditorRef.current;
-      if (editor && editedPost && editor.innerText !== editedPost) {
+      if (editor && editor.innerText !== editedPost) {
         editor.innerText = editedPost;
       }
-    }, 0);
-    return () => clearTimeout(timer);
+    });
+
+    return () => cancelAnimationFrame(frame);
   // analysisOpen + isWide + visualsVisible together determine which branch (split vs single-column)
   // is rendered — adding them here means the effect re-runs whenever the layout switches.
   }, [editedPost, analysisOpen, isWide, visualsVisible]);
@@ -1559,7 +1559,7 @@ export default function CreatePost() {
                       onInput={handlePostEditorInput}
                       onMouseUp={handlePostEditorSelection}
                       onKeyUp={handlePostEditorSelection}
-                      className="min-h-[52vh] outline-none text-[15.5px] leading-[1.9] text-on-surface whitespace-pre-wrap"
+                      className="manuscript-editor min-h-[52vh] outline-none text-[15.5px] leading-[1.9] text-on-surface whitespace-pre-wrap"
                       style={{ fontFamily: "inherit" }}
                     />
                   </div>
@@ -1641,8 +1641,8 @@ export default function CreatePost() {
               }}
             >
               <div className="px-8 py-10 md:px-20 md:py-12">
-                <div
-                  ref={postEditorRef}
+                  <div
+                    ref={postEditorRef}
                   contentEditable
                   suppressContentEditableWarning
                   role="textbox"
@@ -1650,7 +1650,7 @@ export default function CreatePost() {
                   onInput={handlePostEditorInput}
                   onMouseUp={handlePostEditorSelection}
                   onKeyUp={handlePostEditorSelection}
-                  className="outline-none text-[15.5px] leading-[1.9] text-on-surface whitespace-pre-wrap"
+                    className="manuscript-editor outline-none text-[15.5px] leading-[1.9] text-on-surface whitespace-pre-wrap"
                   style={{ fontFamily: "inherit", minHeight: "78vh" }}
                 />
               </div>
