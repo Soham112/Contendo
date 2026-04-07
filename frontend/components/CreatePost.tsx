@@ -1290,22 +1290,38 @@ export default function CreatePost() {
 
   // ─── Shared action buttons for post view ─────────────────────────────────
 
+  const actionBtnStyle = (disabled?: boolean): React.CSSProperties => ({
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 6,
+    background: "rgba(255,255,255,0.78)",
+    borderRadius: 14,
+    padding: "12px 14px",
+    border: "none",
+    cursor: disabled ? "not-allowed" : "pointer",
+    backdropFilter: "blur(20px)",
+    opacity: disabled ? 0.5 : 1,
+    transition: "background 0.15s",
+    boxShadow: "0 1px 4px rgba(47,51,51,0.06)",
+    minWidth: 52,
+  });
+
+  const actionLabelStyle: React.CSSProperties = {
+    fontSize: 9,
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
+    color: "#5b605f",
+    fontWeight: 500,
+  };
+
   const postActionButtons = (
-    <div className="mt-5 grid grid-cols-2 gap-2 lg:flex lg:flex-col lg:gap-2">
-      <button
-        onClick={() => setDrawerOpen(true)}
-        disabled={loading}
-        className="group flex items-center gap-3 rounded-full bg-white/78 px-4 py-3 text-left text-[13px] text-secondary backdrop-blur-[20px] transition-all hover:bg-white/90 hover:text-on-surface disabled:opacity-50"
-      >
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-container-low text-on-surface">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M1 4v6h6" /><path d="M3.51 15a9 9 0 1 0 .49-4" />
-          </svg>
-        </span>
-        <span className="flex flex-col">
-          <span className="font-medium text-on-surface">Regenerate</span>
-          <span className="text-[11px] text-outline">Open settings drawer</span>
-        </span>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20, alignItems: "center" }}>
+      <button onClick={() => setDrawerOpen(true)} disabled={loading} title="Regenerate" style={actionBtnStyle(loading)}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2f3333" strokeWidth="2">
+          <path d="M1 4v6h6" /><path d="M3.51 15a9 9 0 1 0 .49-4" />
+        </svg>
+        <span style={actionLabelStyle}>Regenerate</span>
       </button>
 
       <button
@@ -1315,67 +1331,43 @@ export default function CreatePost() {
           else if (!isWide) setTimeout(() => analysisRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
         }}
         disabled={refineLoading}
-        className="group flex items-center gap-3 rounded-full bg-white/78 px-4 py-3 text-left text-[13px] text-secondary backdrop-blur-[20px] transition-all hover:bg-white/90 hover:text-on-surface disabled:opacity-50"
+        title="Analyse"
+        style={actionBtnStyle(refineLoading)}
       >
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-container-low text-on-surface">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="3" y="12" width="4" height="9" /><rect x="10" y="7" width="4" height="14" /><rect x="17" y="3" width="4" height="18" />
-          </svg>
-        </span>
-        <span className="flex flex-col">
-          <span className="font-medium text-on-surface">Analyse</span>
-          <span className="text-[11px] text-outline">Check score and feedback</span>
-        </span>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2f3333" strokeWidth="2">
+          <rect x="3" y="12" width="4" height="9" /><rect x="10" y="7" width="4" height="14" /><rect x="17" y="3" width="4" height="18" />
+        </svg>
+        <span style={actionLabelStyle}>Analyse</span>
       </button>
 
       <button
         onClick={visuals.length > 0 ? () => { setVisualsVisible(true); setAnalysisOpen(false); } : handleGenerateVisuals}
         disabled={visualsLoading}
-        className="group flex items-center gap-3 rounded-full bg-white/78 px-4 py-3 text-left text-[13px] text-secondary backdrop-blur-[20px] transition-all hover:bg-white/90 hover:text-on-surface disabled:opacity-50"
+        title={visuals.length > 0 ? "Visuals" : "Gen. Visuals"}
+        style={actionBtnStyle(visualsLoading)}
       >
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-container-low text-on-surface">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-            <circle cx="8.5" cy="8.5" r="1.5" />
-            <polyline points="21 15 16 10 5 21" />
-          </svg>
-        </span>
-        <span className="flex flex-col">
-          <span className="font-medium text-on-surface">{visuals.length > 0 ? "Visuals" : "Gen. Visuals"}</span>
-          <span className="text-[11px] text-outline">Diagram and image placeholders</span>
-        </span>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2f3333" strokeWidth="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+          <circle cx="8.5" cy="8.5" r="1.5" />
+          <polyline points="21 15 16 10 5 21" />
+        </svg>
+        <span style={actionLabelStyle}>{visuals.length > 0 ? "Visuals" : "Visuals"}</span>
       </button>
 
-      <button
-        onClick={handleCopyLinkedIn}
-        className="group flex items-center gap-3 rounded-full bg-white/78 px-4 py-3 text-left text-[13px] text-secondary backdrop-blur-[20px] transition-all hover:bg-white/90 hover:text-on-surface"
-      >
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-container-low text-on-surface">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M16 8a6 6 0 0 0-12 0v8a6 6 0 0 0 12 0" />
-            <path d="M8 8v8" />
-          </svg>
-        </span>
-        <span className="flex flex-col">
-          <span className="font-medium text-on-surface">{copiedLinkedIn ? "Copied!" : "Copy LinkedIn"}</span>
-          <span className="text-[11px] text-outline">Markdown stripped</span>
-        </span>
+      <button onClick={handleCopyLinkedIn} title="Copy for LinkedIn" style={actionBtnStyle()}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2f3333" strokeWidth="2">
+          <path d="M16 8a6 6 0 0 0-12 0v8a6 6 0 0 0 12 0" />
+          <path d="M8 8v8" />
+        </svg>
+        <span style={actionLabelStyle}>{copiedLinkedIn ? "Copied!" : "LinkedIn"}</span>
       </button>
 
-      <button
-        onClick={handleCopyMedium}
-        className="group flex items-center gap-3 rounded-full bg-white/78 px-4 py-3 text-left text-[13px] text-secondary backdrop-blur-[20px] transition-all hover:bg-white/90 hover:text-on-surface"
-      >
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-container-low text-on-surface">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M4 4h16v16H4z" />
-            <path d="M8 8l3.5 5L15 8" />
-          </svg>
-        </span>
-        <span className="flex flex-col">
-          <span className="font-medium text-on-surface">{copiedMedium ? "Copied!" : "Copy Medium"}</span>
-          <span className="text-[11px] text-outline">Raw markdown preserved</span>
-        </span>
+      <button onClick={handleCopyMedium} title="Copy for Medium" style={actionBtnStyle()}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2f3333" strokeWidth="2">
+          <path d="M4 4h16v16H4z" />
+          <path d="M8 8l3.5 5L15 8" />
+        </svg>
+        <span style={actionLabelStyle}>{copiedMedium ? "Copied!" : "Medium"}</span>
       </button>
     </div>
   );
@@ -1506,7 +1498,7 @@ export default function CreatePost() {
                 className="font-headline"
                 style={{ fontSize: 22, fontWeight: 400, color: "#2f3333", margin: 0 }}
               >
-                The Manuscript
+                {topic || 'The Manuscript'}
               </h2>
               <span
                 style={{
@@ -1583,80 +1575,105 @@ export default function CreatePost() {
 
       ) : postGenerated && !loading && !visualsVisible ? (
         // ── Single-column manuscript (panel closed or narrow) ────────────────
-        <div style={{ height: "calc(100vh - 52px)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <div style={{ maxWidth: 1080, margin: "0 auto", width: "100%", height: "100%", display: "flex", flexDirection: "column", gap: 18, padding: "28px 32px" }}>
-            <div className="flex items-start justify-between gap-4 shrink-0">
-              <div>
-                <p className="label-caps text-secondary" style={{ fontSize: "0.6rem", letterSpacing: "0.1em", marginBottom: 4 }}>
-                  EDITABLE DRAFT
-                </p>
-                <h2 className="font-headline" style={{ fontSize: 22, fontWeight: 400, color: "#2f3333", margin: 0 }}>
-                  The Manuscript
-                </h2>
-                <p className="text-xs text-outline mt-1.5">Select any passage to refine it in place.</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "#777c7b", background: "rgba(237,238,237,0.8)", borderRadius: 999, padding: "8px 12px", lineHeight: 1.6, backdropFilter: "blur(18px)" }}>
-                  <span style={{ color: "#58614f", fontSize: 10 }}>●</span>
-                  AI Refined: <span className="capitalize" style={{ fontWeight: 500, color: "#2f3333", marginLeft: 2 }}>{tone}</span> Tone
-                </span>
-                <button
-                  onClick={() => { setResult(null); setEditedPost(""); setAnalysisOpen(false); }}
-                  className="text-xs text-outline hover:text-secondary transition-colors"
-                >
-                  ← Start over
-                </button>
-              </div>
-            </div>
+        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", alignItems: "center", width: "100%", padding: "40px 24px 48px" }}>
 
-            <div className="flex-1 min-h-0 flex gap-6">
-              <div className="hidden lg:block w-[210px] shrink-0 pt-6">
-                {postActionButtons}
-              </div>
-
-              <div className="flex-1 min-h-0 overflow-hidden">
-                <div className="h-full rounded-[28px] bg-surface-container-lowest shadow-[0px_4px_20px_rgba(47,51,51,0.04),0px_12px_40px_rgba(47,51,51,0.06)] overflow-hidden">
-                  <div className="h-full overflow-y-auto px-7 py-7">
-                    <div
-                      ref={postEditorRef}
-                      contentEditable
-                      suppressContentEditableWarning
-                      role="textbox"
-                      aria-multiline="true"
-                      onInput={handlePostEditorInput}
-                      onMouseUp={handlePostEditorSelection}
-                      onKeyUp={handlePostEditorSelection}
-                      className="min-h-[52vh] outline-none text-[15.5px] leading-[1.9] text-on-surface whitespace-pre-wrap"
-                      style={{ fontFamily: "inherit" }}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="lg:hidden">{postActionButtons}</div>
-            {postMetaBar}
-
-            <p className="text-xs text-outline-variant" style={{ flexShrink: 0, marginTop: 8 }}>
-              {lastSaved ? saveStatusText : "Auto-saved to history"}
+          {/* Header — label, serif title, subtitle */}
+          <div style={{ width: "100%", maxWidth: 768 }}>
+            <p className="label-caps text-secondary" style={{ fontSize: "0.6rem", letterSpacing: "0.1em", marginBottom: 6 }}>
+              MANUSCRIPT DRAFT
             </p>
-
-            {analysisOpen && !isWide && (
-              <div
-                ref={analysisRef}
-                style={{
-                  marginTop: 24,
-                  paddingTop: 24,
-                  borderTop: "0.5px solid #dfe3e2",
-                  flexShrink: 0,
-                  maxHeight: "50vh",
-                  overflowY: "auto",
-                }}
-              >
-                {analysisPanelContent}
-              </div>
-            )}
+            <h1 style={{ fontFamily: "Noto Serif, serif", fontSize: "2rem", fontWeight: 300, color: "#2f3333", lineHeight: 1.2, marginBottom: "0.5rem", margin: "0 0 0.5rem" }}>
+              {topic || "The Manuscript"}
+            </h1>
+            <p className="text-xs text-outline">Select any passage to refine it in place.</p>
           </div>
+
+          {/* Status row — right-aligned, sits directly above the canvas */}
+          <div style={{ width: "100%", maxWidth: 768, display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, marginTop: 16, marginBottom: 8 }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "#777c7b", background: "rgba(237,238,237,0.8)", borderRadius: 999, padding: "6px 12px", lineHeight: 1.6, backdropFilter: "blur(18px)" }}>
+              <span style={{ color: "#58614f", fontSize: 10 }}>●</span>
+              AI Refined:{" "}
+              <span className="capitalize" style={{ fontWeight: 500, color: "#2f3333", marginLeft: 2 }}>{tone}</span>{" "}
+              Tone
+            </span>
+            <button
+              onClick={() => { setResult(null); setEditedPost(""); setAnalysisOpen(false); }}
+              className="text-xs text-outline hover:text-secondary transition-colors"
+            >
+              ← Start over
+            </button>
+          </div>
+
+          {/* Canvas + action stack wrapper */}
+          <div style={{ position: "relative", width: "100%", maxWidth: 768 }}>
+            {/* Action stack — absolute, anchored left of canvas on large screens */}
+            <div
+              className="hidden lg:flex"
+              style={{ position: "absolute", right: "100%", marginRight: 32, top: 0, flexDirection: "column" }}
+            >
+              {postActionButtons}
+            </div>
+
+            {/* Canvas card */}
+            <div
+              style={{
+                borderRadius: 28,
+                background: "#ffffff",
+                boxShadow: "0px 4px 20px rgba(47,51,51,0.04), 0px 12px 40px rgba(47,51,51,0.06)",
+                overflow: "hidden",
+                minHeight: "85vh",
+              }}
+            >
+              <div className="px-8 py-10 md:px-20 md:py-12">
+                <div
+                  ref={postEditorRef}
+                  contentEditable
+                  suppressContentEditableWarning
+                  role="textbox"
+                  aria-multiline="true"
+                  onInput={handlePostEditorInput}
+                  onMouseUp={handlePostEditorSelection}
+                  onKeyUp={handlePostEditorSelection}
+                  className="outline-none text-[15.5px] leading-[1.9] text-on-surface whitespace-pre-wrap"
+                  style={{ fontFamily: "inherit", minHeight: "78vh" }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Mobile action buttons */}
+          <div className="lg:hidden" style={{ width: "100%", maxWidth: 768, marginTop: 20 }}>
+            {postActionButtons}
+          </div>
+
+          {/* Footer — word count centered, last-edited right */}
+          <div style={{ width: "100%", maxWidth: 768, display: "flex", justifyContent: "center", marginTop: "1.5rem", position: "relative" }}>
+            <span style={{ fontSize: 11, color: "rgba(91,96,95,0.4)", letterSpacing: "0.05em" }}>
+              {postStats.wordCount} words · ~{postStats.readingTime} min read
+              {format === "thread" && ` · ~${postStats.tweetCount} tweets`}
+            </span>
+            <span style={{ position: "absolute", right: 0, fontSize: 10, color: "rgba(91,96,95,0.3)", fontStyle: "italic" }}>
+              {lastSaved ? saveStatusText : "Auto-saved to history"}
+            </span>
+          </div>
+
+          {/* Analysis panel (stacked below on narrow viewports) */}
+          {analysisOpen && !isWide && (
+            <div
+              ref={analysisRef}
+              style={{
+                width: "100%",
+                maxWidth: 768,
+                marginTop: 24,
+                paddingTop: 24,
+                borderTop: "0.5px solid #dfe3e2",
+                maxHeight: "50vh",
+                overflowY: "auto",
+              }}
+            >
+              {analysisPanelContent}
+            </div>
+          )}
         </div>
 
       ) : (
