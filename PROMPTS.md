@@ -4,6 +4,8 @@
 > When any prompt needs to be tuned, update this file first, then update the
 > corresponding agent file to match. The two must never be out of sync.
 
+> **Verification note (2026-04-07):** Create Post canvas timing and manuscript-editor focus/selection styling fixed. No prompt text changed in this pass.
+
 > **Verification note (2026-04-07):** Create Post post-generation UI redesigned into the Atelier Manuscript canvas with contentEditable editing and frosted action stack. No prompt text changed in this pass.
 
 > **Verification note (2026-04-06):** Draft agent prompt updated with {grounding_instruction} variable for retrieval confidence calibration (feature/retrieval-confidence-calibration). All other prompts unchanged.
