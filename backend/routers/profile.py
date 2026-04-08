@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 
 import anthropic
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
@@ -93,6 +94,8 @@ Return ONLY valid JSON with exactly these fields, no preamble, no markdown:
 Resume text:
 {resume_text}"""
 
+    logger.info(f"POST /extract-resume: extracted text preview for user_id={user_id}: {resume_text[:200]!r}")
+
     try:
         message = _anthropic_client.messages.create(
             model="claude-sonnet-4-6",
@@ -100,12 +103,45 @@ Resume text:
             messages=[{"role": "user", "content": prompt}],
         )
         raw = message.content[0].text.strip()
-        extracted = json.loads(raw)
-    except (json.JSONDecodeError, Exception) as e:
-        logger.error(f"POST /extract-resume: parse error for user_id={user_id}: {e}")
+    except Exception as e:
+        logger.error(f"POST /extract-resume: Anthropic API error for user_id={user_id}: {e}")
         raise HTTPException(
             status_code=422,
             detail="Resume extraction failed. Please try again or skip.",
+        )
+
+    # 3-attempt JSON parse — same pattern as scorer_agent.py
+    extracted = None
+
+    # Attempt 1: direct parse
+    try:
+        extracted = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Attempt 2: strip markdown code fences
+    if extracted is None:
+        code_block = re.search(r'```(?:json)?\s*(\{.*\})\s*```', raw, re.DOTALL)
+        if code_block:
+            try:
+                extracted = json.loads(code_block.group(1))
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+    # Attempt 3: extract any embedded JSON object
+    if extracted is None:
+        json_match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if json_match:
+            try:
+                extracted = json.loads(json_match.group())
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+    if extracted is None:
+        logger.error(f"POST /extract-resume: all parse attempts failed for user_id={user_id}. raw response: {raw!r}")
+        raise HTTPException(
+            status_code=422,
+            detail="Resume extraction failed — could not parse Claude response. Please try again or skip.",
         )
 
     logger.info(f"POST /extract-resume: success for user_id={user_id}, name={extracted.get('name')!r}")
