@@ -99,10 +99,11 @@ Resume text:
     try:
         message = _anthropic_client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=1024,
+            max_tokens=2048,
             messages=[{"role": "user", "content": prompt}],
         )
         raw = message.content[0].text.strip()
+        logger.info(f"POST /extract-resume: raw response length={len(raw)}, stop_reason={message.stop_reason!r}, preview={raw[:200]!r}")
     except Exception as e:
         logger.error(f"POST /extract-resume: Anthropic API error for user_id={user_id}: {e}")
         raise HTTPException(
