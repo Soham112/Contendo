@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useUser, useSignIn } from '@clerk/nextjs'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Sparkles } from 'lucide-react'
@@ -35,6 +35,18 @@ interface DraftState {
   score: number
   archetype: string
   postId: number | null
+}
+
+// Fields extracted from resume or fallback questions
+interface ExtractedProfile {
+  name?: string | null
+  role?: string | null
+  bio?: string | null
+  location?: string | null
+  topics_of_expertise?: string[]
+  voice_descriptors?: string[]
+  opinions?: string[]
+  writing_samples?: string[]
 }
 
 const WELCOME_TOPIC_PREFILL_KEY = 'contendo_topic'
@@ -154,6 +166,81 @@ function GoogleIcon() {
   )
 }
 
+// ── Upload drop zone (reused in Step 6 and Profile Gate) ──────────────────────
+function ResumeDropZone({
+  resumeFile,
+  isDragging,
+  uploading,
+  onFile,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  fileInputRef,
+}: {
+  resumeFile: File | null
+  isDragging: boolean
+  uploading: boolean
+  onFile: (f: File) => void
+  onDragOver: (e: React.DragEvent) => void
+  onDragLeave: (e: React.DragEvent) => void
+  onDrop: (e: React.DragEvent) => void
+  fileInputRef: React.RefObject<HTMLInputElement>
+}) {
+  return (
+    <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf"
+        className="hidden"
+        onChange={e => {
+          const f = e.target.files?.[0]
+          if (f) onFile(f)
+        }}
+      />
+      <div
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+        onClick={() => !uploading && fileInputRef.current?.click()}
+        className={`rounded-2xl p-8 text-center cursor-pointer transition-all duration-150 ${
+          isDragging
+            ? 'bg-[#edeeed]'
+            : 'bg-[#f3f4f3] hover:bg-[#edeeed]'
+        }`}
+        style={{
+          border: `2px dashed rgba(174, 179, 178, ${isDragging ? '0.5' : '0.25'})`,
+        }}
+      >
+        {uploading ? (
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-5 h-5 border-2 border-[#58614f]/30 border-t-[#58614f] rounded-full animate-spin" />
+            <p className="text-[13px] text-[#645e57]">Reading your resume...</p>
+          </div>
+        ) : resumeFile ? (
+          <div className="flex items-center justify-center gap-2">
+            <span className="text-[#58614f]"><CheckIcon /></span>
+            <span className="text-[14px] text-[#2f3333] font-medium">{resumeFile.name}</span>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-2">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#aeb3b2" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="12" y1="18" x2="12" y2="12" />
+              <line x1="9" y1="15" x2="15" y2="15" />
+            </svg>
+            <p className="text-[13px] text-[#645e57]">
+              Drag &amp; drop your resume here, or <span className="text-[#58614f]">browse</span>
+            </p>
+            <p className="text-[11px] text-[#aeb3b2]">PDF only</p>
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
+
 const ROLE_ICONS: Record<RoleKey, React.ReactNode> = {
   data_ml:    <IconDataMl />,
   data_eng:   <IconDataEng />,
@@ -214,6 +301,22 @@ function buildContext(answers: Answers): string {
   return parts.join('\n')
 }
 
+// Deduplicate and merge string arrays, left-side wins on overlap
+function mergeStringArrays(...arrays: (string[] | undefined | null)[]): string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const arr of arrays) {
+    for (const item of arr ?? []) {
+      const key = item.trim().toLowerCase()
+      if (key && !seen.has(key)) {
+        seen.add(key)
+        result.push(item.trim())
+      }
+    }
+  }
+  return result
+}
+
 // ── Generating screen ─────────────────────────────────────────────────────────
 function GeneratingScreen() {
   return (
@@ -257,6 +360,7 @@ function GenerateErrorScreen({ onGoToWorkspace }: { onGoToWorkspace: () => void 
   )
 }
 
+// ── Draft screen ──────────────────────────────────────────────────────────────
 function DraftScreen({
   topic,
   format,
@@ -346,6 +450,333 @@ function DraftScreen({
   )
 }
 
+// ── Profile Gate (shown only when resumeSkipped=true and user clicks a CTA) ───
+type GatePhase = 'choice' | 'upload' | 'fallback' | 'q1' | 'q2' | 'q3'
+
+function ProfileGate({
+  onDone,
+  onSkip,
+  api,
+  onExtracted,
+}: {
+  onDone: () => void
+  onSkip: () => void
+  api: ReturnType<typeof useApi>
+  onExtracted: (fields: ExtractedProfile) => Promise<void>
+}) {
+  const [phase, setPhase] = useState<GatePhase>('choice')
+  const [resumeFile, setResumeFile] = useState<File | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Fallback Q&A state
+  const [q1Answer, setQ1Answer] = useState('')
+  const [q2Answer, setQ2Answer] = useState('')
+  const [q3Answer, setQ3Answer] = useState('')
+  const [savingFallback, setSavingFallback] = useState(false)
+
+  const SENIORITY_OPTIONS = [
+    'Just starting out',
+    'Mid-level (3-6 years)',
+    'Senior (7+ years)',
+    'Leadership',
+    'Founder',
+  ]
+
+  const DOMAIN_OPTIONS = [
+    'Engineering',
+    'Product',
+    'Data & AI',
+    'Design',
+    'Marketing',
+    'Finance',
+    'Operations',
+    'Other',
+  ]
+
+  function handleFile(f: File) {
+    setResumeFile(f)
+    setUploadError('')
+  }
+
+  async function handleUpload() {
+    if (!resumeFile) return
+    setUploading(true)
+    setUploadError('')
+    try {
+      const res = await api.extractResume(resumeFile)
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Upload failed.' }))
+        throw new Error(err.detail ?? 'Upload failed.')
+      }
+      const extracted: ExtractedProfile = await res.json()
+      await onExtracted(extracted)
+      onDone()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Upload failed.'
+      setUploadError(msg)
+      setUploading(false)
+    }
+  }
+
+  async function handleFallbackDone() {
+    setSavingFallback(true)
+    const fields: ExtractedProfile = {}
+    if (q1Answer) {
+      fields.bio = q1Answer
+    }
+    if (q2Answer) {
+      fields.topics_of_expertise = [q2Answer]
+    }
+    if (q3Answer.trim()) {
+      fields.writing_samples = [q3Answer.trim()]
+    }
+    await onExtracted(fields)
+    onDone()
+  }
+
+  return (
+    <div className="min-h-screen bg-[#faf9f8] flex flex-col items-center justify-center px-4 py-12">
+      <Wordmark />
+
+      <div className="w-full max-w-[520px] bg-white rounded-2xl shadow-[0px_4px_20px_rgba(47,51,51,0.04),0px_12px_40px_rgba(47,51,51,0.06)] px-8 py-10">
+
+        {/* ── Choice ── */}
+        {phase === 'choice' && (
+          <div className="flex flex-col gap-6">
+            <div>
+              <h2 className="font-headline italic text-[2rem] text-[#2f3333] leading-tight mb-2">
+                Before you go in
+              </h2>
+              <p className="text-[0.95rem] text-[#645e57] leading-relaxed">
+                Your profile is almost empty right now. Posts will be generic
+                until we know more about you.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-4">
+              {/* Option A */}
+              <div className="flex flex-col gap-1.5">
+                <button
+                  onClick={() => setPhase('upload')}
+                  className="btn-primary text-white py-3 rounded-2xl text-[14px] font-medium w-full"
+                >
+                  Upload your resume →
+                </button>
+                <p className="text-[12px] text-[#2f3333]/50 text-center">
+                  Takes 10 seconds. We&apos;ll fill everything in.
+                </p>
+              </div>
+
+              {/* Option B */}
+              <div className="flex flex-col gap-1.5">
+                <button
+                  onClick={() => setPhase('q1')}
+                  className="w-full py-3 rounded-2xl text-[14px] text-[#2f3333] bg-[#f3f4f3] hover:bg-[#edeeed] transition-colors"
+                  style={{ border: '2px dashed rgba(174, 179, 178, 0.25)' }}
+                >
+                  Answer 3 quick questions instead →
+                </button>
+                <p className="text-[12px] text-[#2f3333]/50 text-center">
+                  No resume? No problem. 45 seconds.
+                </p>
+              </div>
+
+              {/* Option C */}
+              <button
+                onClick={onSkip}
+                className="text-[12px] text-[#2f3333]/40 hover:text-[#2f3333]/60 transition-colors text-center w-full py-1"
+              >
+                Enter anyway — I&apos;ll improve my profile later
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Upload ── */}
+        {phase === 'upload' && (
+          <div className="flex flex-col gap-5">
+            <div>
+              <h2 className="font-headline italic text-[1.75rem] text-[#2f3333] leading-tight mb-2">
+                Upload your resume
+              </h2>
+              <p className="text-[0.9rem] text-[#645e57]">
+                We&apos;ll extract the key details and fill your profile automatically.
+              </p>
+            </div>
+
+            <ResumeDropZone
+              resumeFile={resumeFile}
+              isDragging={isDragging}
+              uploading={uploading}
+              onFile={handleFile}
+              onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
+              onDragLeave={e => { e.preventDefault(); setIsDragging(false) }}
+              onDrop={e => {
+                e.preventDefault()
+                setIsDragging(false)
+                const f = e.dataTransfer.files?.[0]
+                if (f) handleFile(f)
+              }}
+              fileInputRef={fileInputRef}
+            />
+
+            {uploadError && (
+              <p className="text-[12px] text-[#81543c]">{uploadError}</p>
+            )}
+
+            <div className="flex items-center justify-between gap-3 mt-1">
+              <button
+                onClick={() => setPhase('choice')}
+                className="text-[14px] text-[#645e57] hover:text-[#2f3333] transition-colors"
+              >
+                ← Back
+              </button>
+              <button
+                onClick={handleUpload}
+                disabled={!resumeFile || uploading}
+                className="btn-primary text-white px-6 py-2.5 rounded-xl text-[14px] font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+              >
+                {uploading ? 'Reading...' : resumeFile ? 'Continue →' : 'Upload resume →'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Q1: Seniority ── */}
+        {phase === 'q1' && (
+          <div className="flex flex-col gap-5">
+            <div>
+              <p className="label-caps text-[11px] text-[#645e57] mb-3">QUESTION 1 OF 3</p>
+              <h2 className="font-headline text-[1.5rem] text-[#2f3333] leading-tight">
+                How senior are you in your field?
+              </h2>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {SENIORITY_OPTIONS.map(opt => (
+                <button
+                  key={opt}
+                  onClick={() => setQ1Answer(opt)}
+                  className={`px-4 py-2 rounded-full text-[13px] transition-all duration-150 ${
+                    q1Answer === opt
+                      ? 'bg-[#58614f] text-white'
+                      : 'bg-[#edeeed] text-[#2f3333] hover:bg-[#e6e9e8]'
+                  }`}
+                >
+                  {opt}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center justify-between gap-3 mt-2">
+              <button
+                onClick={() => setPhase('choice')}
+                className="text-[14px] text-[#645e57] hover:text-[#2f3333] transition-colors"
+              >
+                ← Back
+              </button>
+              <button
+                onClick={() => setPhase('q2')}
+                disabled={!q1Answer}
+                className="btn-primary text-white px-6 py-2.5 rounded-xl text-[14px] font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+              >
+                Next →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Q2: Domain ── */}
+        {phase === 'q2' && (
+          <div className="flex flex-col gap-5">
+            <div>
+              <p className="label-caps text-[11px] text-[#645e57] mb-3">QUESTION 2 OF 3</p>
+              <h2 className="font-headline text-[1.5rem] text-[#2f3333] leading-tight">
+                What&apos;s your primary domain?
+              </h2>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {DOMAIN_OPTIONS.map(opt => (
+                <button
+                  key={opt}
+                  onClick={() => setQ2Answer(opt)}
+                  className={`px-4 py-2 rounded-full text-[13px] transition-all duration-150 ${
+                    q2Answer === opt
+                      ? 'bg-[#58614f] text-white'
+                      : 'bg-[#edeeed] text-[#2f3333] hover:bg-[#e6e9e8]'
+                  }`}
+                >
+                  {opt}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center justify-between gap-3 mt-2">
+              <button
+                onClick={() => setPhase('q1')}
+                className="text-[14px] text-[#645e57] hover:text-[#2f3333] transition-colors"
+              >
+                ← Back
+              </button>
+              <button
+                onClick={() => setPhase('q3')}
+                disabled={!q2Answer}
+                className="btn-primary text-white px-6 py-2.5 rounded-xl text-[14px] font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+              >
+                Next →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Q3: Achievement ── */}
+        {phase === 'q3' && (
+          <div className="flex flex-col gap-5">
+            <div>
+              <p className="label-caps text-[11px] text-[#645e57] mb-3">QUESTION 3 OF 3</p>
+              <h2 className="font-headline text-[1.5rem] text-[#2f3333] leading-tight">
+                What&apos;s one thing you&apos;ve done you&apos;re proud of?
+              </h2>
+            </div>
+            <input
+              className="input-editorial w-full px-3 py-2.5 text-[14px] text-[#2f3333] placeholder-[#aeb3b2]"
+              placeholder="e.g. shipped a feature used by 10K people, closed our first enterprise deal"
+              value={q3Answer}
+              onChange={e => setQ3Answer(e.target.value)}
+              autoFocus
+            />
+            <div className="flex items-center justify-between gap-3 mt-2">
+              <button
+                onClick={() => setPhase('q2')}
+                className="text-[14px] text-[#645e57] hover:text-[#2f3333] transition-colors"
+              >
+                ← Back
+              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleFallbackDone}
+                  disabled={savingFallback}
+                  className="text-[12px] text-[#2f3333]/40 hover:text-[#2f3333]/60 transition-colors"
+                >
+                  Skip this one
+                </button>
+                <button
+                  onClick={handleFallbackDone}
+                  disabled={savingFallback}
+                  className="btn-primary text-white px-6 py-2.5 rounded-xl text-[14px] font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+                >
+                  {savingFallback ? 'Saving...' : 'Done →'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+      </div>
+    </div>
+  )
+}
+
 // ── Auth screen ───────────────────────────────────────────────────────────────
 function AuthScreen({ prefillTopic }: { prefillTopic: string }) {
   const { signIn, isLoaded } = useSignIn()
@@ -427,12 +858,26 @@ export default function FirstPostPage() {
   const api = useApi()
 
   const [screen, setScreen] = useState(0)
-  const [flowState, setFlowState] = useState<'form' | 'generating' | 'error' | 'draft'>('form')
+  const [flowState, setFlowState] = useState<'form' | 'generating' | 'error' | 'draft' | 'gate'>('form')
   const [draftState, setDraftState] = useState<DraftState | null>(null)
   const [copied, setCopied] = useState(false)
   const [profileChecked, setProfileChecked] = useState(false)
   const [prefillTopic, setPrefillTopic] = useState('')
   const [prefillApplied, setPrefillApplied] = useState(false)
+
+  // Resume upload (Step 6) state
+  const [resumeFile, setResumeFile] = useState<File | null>(null)
+  const [resumeIsDragging, setResumeIsDragging] = useState(false)
+  const [resumeUploading, setResumeUploading] = useState(false)
+  const [resumeError, setResumeError] = useState('')
+  const [resumeUploaded, setResumeUploaded] = useState(false)
+  const [resumeSkipped, setResumeSkipped] = useState(false)
+  const [resumeExtractedFields, setResumeExtractedFields] = useState<ExtractedProfile>({})
+  const [fallbackExtractedFields, setFallbackExtractedFields] = useState<ExtractedProfile>({})
+  const resumeFileInputRef = useRef<HTMLInputElement>(null)
+
+  // Pending CTA destination — set when user clicks a CTA while resumeSkipped
+  const [pendingDestination, setPendingDestination] = useState<'feed' | 'create' | null>(null)
 
   const [answers, setAnswers] = useState<Answers>({
     role: '',
@@ -466,7 +911,6 @@ export default function FirstPostPage() {
     if (resolvedTopic) {
       updateAnswers({ topic: resolvedTopic })
       setPrefillTopic(resolvedTopic)
-      // Keep fallback topic through auth transitions in case query params are dropped.
       if (queryTopic) {
         sessionStorage.setItem(WELCOME_TOPIC_PREFILL_KEY, queryTopic)
       }
@@ -478,7 +922,6 @@ export default function FirstPostPage() {
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return
     if (!answers.topic.trim()) return
-    // Once signed in and hydrated, clear the continuity fallback to avoid stale prefill.
     sessionStorage.removeItem(WELCOME_TOPIC_PREFILL_KEY)
   }, [isLoaded, isSignedIn, answers.topic])
 
@@ -534,14 +977,79 @@ export default function FirstPostPage() {
 
   // ── Navigation handlers ─────────────────────────────────────────────────────
   function handleNext() {
-    // Flush custom opinion into answers before leaving screen 3
     if (screen === 3 && answers.opinionIsCustom) {
       updateAnswers({ opinion: customOpinion })
     }
     setScreen(s => s + 1)
   }
 
-  async function handleGenerate() {
+  // ── Step 6: Resume upload handler — returns extracted fields or null ────────
+  async function handleResumeUpload(): Promise<ExtractedProfile | null> {
+    if (!resumeFile) return null
+    setResumeUploading(true)
+    setResumeError('')
+    try {
+      const res = await api.extractResume(resumeFile)
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Upload failed.' }))
+        throw new Error(err.detail ?? 'Upload failed.')
+      }
+      const extracted: ExtractedProfile = await res.json()
+      setResumeExtractedFields(extracted)
+      setResumeUploaded(true)
+      return extracted
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Upload failed.'
+      setResumeError(msg)
+      return null
+    } finally {
+      setResumeUploading(false)
+    }
+  }
+
+  // ── Build merged profile from all sources (priority order) ─────────────────
+  function buildMergedProfile(
+    finalAnswers: Answers,
+    resume: ExtractedProfile,
+    fallback: ExtractedProfile,
+  ) {
+    // Priority: onboarding answers > resume extraction > fallback questions
+    return {
+      // Identity: onboarding answers win; resume fills gaps
+      name: finalAnswers.roleLabel || resume.name || '',
+      role: finalAnswers.roleLabel || resume.role || '',
+      bio: finalAnswers.experienceDetail || resume.bio || fallback.bio || '',
+      location: resume.location || '',
+      // Audience: onboarding wins
+      target_audience: finalAnswers.audience,
+      // Lists: concatenate and deduplicate (onboarding > resume > fallback)
+      topics_of_expertise: mergeStringArrays(
+        resume.topics_of_expertise,
+        fallback.topics_of_expertise,
+      ),
+      voice_descriptors: mergeStringArrays(
+        resume.voice_descriptors,
+      ),
+      opinions: mergeStringArrays(
+        finalAnswers.opinion ? [finalAnswers.opinion] : [],
+        resume.opinions,
+      ),
+      words_to_avoid: [],
+      writing_rules: [],
+      writing_samples: mergeStringArrays(
+        finalAnswers.voiceSample ? [finalAnswers.voiceSample] : [],
+        resume.writing_samples,
+        fallback.writing_samples,
+      ),
+      linkedin_style_notes: '',
+      medium_style_notes: '',
+      thread_style_notes: '',
+    }
+  }
+
+  // ── Generate ────────────────────────────────────────────────────────────────
+  // resumeFieldsOverride: pass extracted fields directly to avoid stale closure
+  async function handleGenerate(resumeFieldsOverride?: ExtractedProfile) {
     const combined = [...selectedPills, audienceCustom.trim()]
       .filter(Boolean)
       .join(', ')
@@ -549,22 +1057,8 @@ export default function FirstPostPage() {
     updateAnswers({ audience: combined })
     setFlowState('generating')
 
-    const profile = {
-      name: finalAnswers.roleLabel,
-      role: finalAnswers.roleLabel,
-      bio: finalAnswers.experienceDetail || '',
-      location: '',
-      target_audience: finalAnswers.audience,
-      topics_of_expertise: [],
-      voice_descriptors: [],
-      opinions: finalAnswers.opinion ? [finalAnswers.opinion] : [],
-      words_to_avoid: [],
-      writing_rules: [],
-      writing_samples: finalAnswers.voiceSample ? [finalAnswers.voiceSample] : [],
-      linkedin_style_notes: '',
-      medium_style_notes: '',
-      thread_style_notes: '',
-    }
+    const effectiveResumeFields = resumeFieldsOverride ?? resumeExtractedFields
+    const profile = buildMergedProfile(finalAnswers, effectiveResumeFields, fallbackExtractedFields)
 
     try {
       await api.saveProfile(profile)
@@ -657,6 +1151,41 @@ export default function FirstPostPage() {
     })
   }
 
+  // ── CTA interception ─────────────────────────────────────────────────────────
+  function handleCTA(destination: 'feed' | 'create') {
+    if (resumeSkipped) {
+      setPendingDestination(destination)
+      setFlowState('gate')
+    } else {
+      persistDraftToSession()
+      router.push(destination === 'feed' ? '/' : '/create')
+    }
+  }
+
+  // Called by ProfileGate when extraction is done — pass fields directly to avoid stale closure
+  async function handleGateExtracted(fields: ExtractedProfile) {
+    setFallbackExtractedFields(fields)
+    const combined = [...selectedPills, audienceCustom.trim()].filter(Boolean).join(', ')
+    const finalAnswers = { ...answers, audience: combined }
+    // For gate, the resume slot is already set; fallback fills in the rest
+    const profile = buildMergedProfile(finalAnswers, resumeExtractedFields, fields)
+    try {
+      await api.saveProfile(profile)
+    } catch (err) {
+      console.error('[first-post] gate profile save error:', err)
+    }
+  }
+
+  function handleGateDone() {
+    persistDraftToSession()
+    router.push(pendingDestination === 'feed' ? '/' : '/create')
+  }
+
+  function handleGateSkip() {
+    persistDraftToSession()
+    router.push(pendingDestination === 'feed' ? '/' : '/create')
+  }
+
   // ── Render guards ───────────────────────────────────────────────────────────
   if (!isLoaded || (isSignedIn && !profileChecked)) {
     return (
@@ -674,6 +1203,17 @@ export default function FirstPostPage() {
     return <GenerateErrorScreen onGoToWorkspace={() => router.push('/create')} />
   }
 
+  if (flowState === 'gate') {
+    return (
+      <ProfileGate
+        api={api}
+        onExtracted={handleGateExtracted}
+        onDone={handleGateDone}
+        onSkip={handleGateSkip}
+      />
+    )
+  }
+
   if (flowState === 'draft' && draftState) {
     return (
       <DraftScreen
@@ -683,14 +1223,8 @@ export default function FirstPostPage() {
         score={draftState.score}
         copied={copied}
         onCopy={handleCopyPost}
-        onFeedMemory={() => {
-          persistDraftToSession()
-          router.push('/')
-        }}
-        onCreate={() => {
-          persistDraftToSession()
-          router.push('/create')
-        }}
+        onFeedMemory={() => handleCTA('feed')}
+        onCreate={() => handleCTA('create')}
       />
     )
   }
@@ -717,7 +1251,7 @@ export default function FirstPostPage() {
             </p>
           )}
           <div className="bg-white rounded-2xl shadow-[0px_4px_20px_rgba(47,51,51,0.04),0px_12px_40px_rgba(47,51,51,0.06)] px-8 py-10">
-            <StepDots total={5} current={screen} />
+            <StepDots total={6} current={screen} />
 
             {/* Screen content — key triggers step-animate on transition */}
             <div key={screen} className="step-animate flex flex-col gap-5">
@@ -1081,6 +1615,42 @@ export default function FirstPostPage() {
                   </p>
                 </>
               )}
+
+              {/* ── Screen 5: Resume upload ─────────────────────────────────── */}
+              {screen === 5 && (
+                <>
+                  <div>
+                    <h2 className="font-headline italic text-[1.75rem] text-[#2f3333] mb-2 leading-tight">
+                      One last thing
+                    </h2>
+                    <p className="text-[0.9rem] text-[#645e57] leading-relaxed">
+                      Upload your resume and we&apos;ll fill your profile automatically —
+                      so your first post actually sounds like you.
+                    </p>
+                  </div>
+
+                  <ResumeDropZone
+                    resumeFile={resumeFile}
+                    isDragging={resumeIsDragging}
+                    uploading={resumeUploading}
+                    onFile={f => { setResumeFile(f); setResumeError('') }}
+                    onDragOver={e => { e.preventDefault(); setResumeIsDragging(true) }}
+                    onDragLeave={e => { e.preventDefault(); setResumeIsDragging(false) }}
+                    onDrop={e => {
+                      e.preventDefault()
+                      setResumeIsDragging(false)
+                      const f = e.dataTransfer.files?.[0]
+                      if (f) { setResumeFile(f); setResumeError('') }
+                    }}
+                    fileInputRef={resumeFileInputRef}
+                  />
+
+                  {resumeError && (
+                    <p className="text-[12px] text-[#81543c]">{resumeError}</p>
+                  )}
+                </>
+              )}
+
             </div>
 
             {/* ── Navigation ─────────────────────────────────────────────────── */}
@@ -1106,14 +1676,49 @@ export default function FirstPostPage() {
                 >
                   Next
                 </button>
-              ) : (
+              ) : screen === 4 ? (
                 <button
-                  onClick={handleGenerate}
+                  onClick={handleNext}
                   disabled={!canAdvanceScreen4()}
                   className="btn-primary text-white px-6 py-2.5 rounded-xl text-[14px] font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
                 >
-                  Generate my first post →
+                  Next
                 </button>
+              ) : (
+                /* Screen 5 — resume upload + generate */
+                <div className="flex flex-col items-end gap-3 w-full">
+                  <button
+                    onClick={async () => {
+                      if (resumeFile) {
+                        // Extract fields directly, pass to generate to avoid stale state closure
+                        const fields = await handleResumeUpload()
+                        if (fields !== null) {
+                          await handleGenerate(fields)
+                        }
+                        // if fields is null, extraction failed — stay on screen with error
+                      } else {
+                        await handleGenerate()
+                      }
+                    }}
+                    disabled={resumeUploading}
+                    className="btn-primary text-white px-6 py-2.5 rounded-xl text-[14px] font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+                  >
+                    {resumeUploading
+                      ? 'Reading your resume...'
+                      : resumeFile
+                        ? 'Upload resume →'
+                        : 'Generate my first post →'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setResumeSkipped(true)
+                      handleGenerate()
+                    }}
+                    className="text-[12px] text-[#2f3333]/40 hover:text-[#2f3333]/60 transition-colors"
+                  >
+                    Skip for now
+                  </button>
+                </div>
               )}
             </div>
           </div>

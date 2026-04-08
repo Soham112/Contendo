@@ -303,6 +303,12 @@ export function useApi() {
     // ── Profile ───────────────────────────────────────────────────────────
     getProfile: () => apiFetch("/profile"),
 
+    extractResume: (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      return apiFetch("/extract-resume", { method: "POST", body: formData });
+    },
+
     saveProfile: async (profile: ProfileData) => {
       const res = await apiFetch("/profile", {
         method: "POST",

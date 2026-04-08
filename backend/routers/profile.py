@@ -1,13 +1,19 @@
+import json
 import logging
+import os
 
-from fastapi import APIRouter, Depends, HTTPException
+import anthropic
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 
 from auth.clerk import get_user_id_dep
 from memory.profile_store import load_profile, profile_exists, save_profile
+from utils.file_extractor import extract_from_pdf
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+_anthropic_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
 
 @router.get("/profile")
@@ -38,3 +44,69 @@ async def post_profile(
 
     logger.info(f"POST /profile: saved and verified for user_id={user_id}")
     return {"saved": True, "user_id": user_id}
+
+
+@router.post("/extract-resume")
+async def extract_resume(
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_user_id_dep),
+) -> dict:
+    """
+    Accept a PDF resume, extract text via PyMuPDF, pass to Claude Sonnet to
+    extract structured profile fields, and return the parsed dict.
+    Does NOT save to profile — the frontend merges and saves via POST /profile.
+    """
+    logger.info(f"POST /extract-resume for user_id={user_id}, filename={file.filename!r}")
+
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=422, detail="Only PDF files are supported.")
+
+    file_bytes = await file.read()
+
+    try:
+        resume_text = extract_from_pdf(file_bytes)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    if len(resume_text.strip()) < 100:
+        raise HTTPException(
+            status_code=422,
+            detail="Could not extract text from this PDF. Please try a different file.",
+        )
+
+    prompt = f"""You are extracting structured profile information from a resume to populate a personal content generation platform. The goal is to capture how this person thinks and works, not just their job titles.
+
+Extract the following fields. For fields you cannot find, return null. Do not invent information that is not in the resume.
+
+Return ONLY valid JSON with exactly these fields, no preamble, no markdown:
+{{
+  "name": "full name",
+  "role": "current or most recent job title",
+  "bio": "2-3 sentence professional summary in first person, human-sounding, not corporate. Based only on what is in the resume.",
+  "location": "city and state or country if present, otherwise null",
+  "topics_of_expertise": ["3-6 specific topic areas derived from their actual work, skills, and projects — not generic labels"],
+  "voice_descriptors": ["2-3 phrases reflecting how someone in their specific role and domain naturally speaks — infer from their domain and seniority"],
+  "opinions": ["1-2 specific professional opinions they likely hold based on concrete achievements in the resume — e.g. if they automated a manual pipeline, they probably believe automation beats manual processes. Make them specific, not generic platitudes."],
+  "writing_samples": []
+}}
+
+Resume text:
+{resume_text}"""
+
+    try:
+        message = _anthropic_client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = message.content[0].text.strip()
+        extracted = json.loads(raw)
+    except (json.JSONDecodeError, Exception) as e:
+        logger.error(f"POST /extract-resume: parse error for user_id={user_id}: {e}")
+        raise HTTPException(
+            status_code=422,
+            detail="Resume extraction failed. Please try again or skip.",
+        )
+
+    logger.info(f"POST /extract-resume: success for user_id={user_id}, name={extracted.get('name')!r}")
+    return extracted
