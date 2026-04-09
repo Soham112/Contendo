@@ -87,9 +87,11 @@ Return ONLY valid JSON with exactly these fields, no preamble, no markdown:
   "location": "city and state or country if present, otherwise null",
   "topics_of_expertise": ["3-6 specific topic areas derived from their actual work, skills, and projects — not generic labels"],
   "voice_descriptors": ["2-3 phrases reflecting how someone in their specific role and domain naturally speaks — infer from their domain and seniority"],
-  "opinions": ["1-2 specific professional opinions they likely hold based on concrete achievements in the resume — e.g. if they automated a manual pipeline, they probably believe automation beats manual processes. Make them specific, not generic platitudes."],
+  "opinions": ["1-2 professional opinions they likely hold based on their work — write these as general beliefs, never as specific incidents or stories. Example: 'Feature engineering matters more than model selection in most production ML work' not 'At my last job we improved AUC by switching approaches'"],
   "writing_samples": []
 }}
+
+IMPORTANT: The opinions field must contain general professional beliefs only. Never write opinions as personal anecdotes, specific incidents, or stories with numbers. Those will be fabricated since you are only reading a resume, not the person's actual experience notes.
 
 Resume text:
 {resume_text}"""

@@ -63,6 +63,19 @@ Rules for this post:
 """.strip()
 
 
+_ZERO_NOTES_GUARD = """ZERO PERSONAL NOTES RULE (highest priority — overrides all other instructions):
+This user has no ingested notes yet. You have ZERO first-person source material.
+Do NOT write any personal stories, specific incidents, named colleagues,
+specific numbers (AUC scores, percentages, timeframes), or events presented
+as things that happened to this person.
+Write entirely from an observational or analytical perspective:
+- "Most teams underestimate feature engineering" not "At my last job we saw..."
+- "The pattern I keep seeing is..." not "When we hit 0.71 AUC..."
+- "The instinct is usually to change the model. It's rarely the right call."
+A post that shares a sharp observation is better than one that invents a story
+the user never lived."""
+
+
 def infer_archetype(topic: str, context: str, tone: str) -> str:
     """Use Claude Haiku to infer the best archetype. Falls back to incident_report on failure."""
     prompt = f"""You are a content strategist. Given a post topic, tone, and \
@@ -237,6 +250,11 @@ def draft_node(state: PipelineState) -> PipelineState:
         state.get("retrieval_confidence", "medium"),
         state.get("retrieved_chunk_count", 0),
     )
+
+    if "No relevant knowledge base entries found" in chunks_text:
+        grounding_instruction = (
+            _ZERO_NOTES_GUARD + ("\n\n" + grounding_instruction if grounding_instruction else "")
+        )
 
     prompt = SYSTEM_PROMPT.format(
         profile_context=profile_context,

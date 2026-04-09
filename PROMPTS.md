@@ -271,6 +271,29 @@ Never force a diagram into opinion pieces or short punchy posts where the words 
 
 Design principle: always generate. Calibrate output length and frame to available grounding. A 70-word post built on one real idea is better than a 400-word post built on fabrication.
 
+### Zero-notes guard (injected when retrieved_chunks is empty)
+
+**Trigger condition:** `chunks_text` (the formatted retrieval context passed to the prompt) contains the string `"No relevant knowledge base entries found"` — meaning both `state["retrieved_context"]` and `state["retrieved_chunks"]` are empty. This indicates the user has not ingested any notes yet.
+
+**Behaviour:** Prepended to `grounding_instruction` regardless of retrieval confidence level, before the existing calibration text (if any).
+
+**Full instruction text:**
+```
+ZERO PERSONAL NOTES RULE (highest priority — overrides all other instructions):
+This user has no ingested notes yet. You have ZERO first-person source material.
+Do NOT write any personal stories, specific incidents, named colleagues,
+specific numbers (AUC scores, percentages, timeframes), or events presented
+as things that happened to this person.
+Write entirely from an observational or analytical perspective:
+- "Most teams underestimate feature engineering" not "At my last job we saw..."
+- "The pattern I keep seeing is..." not "When we hit 0.71 AUC..."
+- "The instinct is usually to change the model. It's rarely the right call."
+A post that shares a sharp observation is better than one that invents a story
+the user never lived.
+```
+
+---
+
 ### POST STRUCTURE (Dynamic — Archetype System)
 
 The structure block is no longer hardcoded. `infer_archetype(topic, context, tone)` in `draft_agent.py` calls Claude Haiku (`claude-haiku-4-5-20251001`, `max_tokens=20`) to semantically classify the topic into one of 7 archetypes. Haiku is used because it understands intent beyond keyword matching — e.g. "My experience with Kubernetes after 2 years" is correctly classified as `personal_story`, not `before_after`. Fallback chain: valid archetype key returned → use it; invalid/unrecognised key → `incident_report`; any exception → `incident_report`. The archetype key is stored in pipeline state and returned in the API response.
