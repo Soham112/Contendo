@@ -94,17 +94,6 @@ logo links there) and see auth-aware CTAs ("Open workspace" → `/`).
 
 ---
 
-## What Is Not Built Yet
-
-These are explicitly out of scope until planned:
- LinkedIn / resume / GitHub onboarding flow
- Archetype override UI in Create Post
- 
-
-Do not build these unless explicitly asked.
-
----
-
 ## Current Branch Status
 
 Check `git branch` and `git log --oneline -5` to orient yourself 
@@ -114,19 +103,41 @@ before making changes.
 <!-- code-review-graph MCP tools -->
 ## MCP Tools: code-review-graph
 
-**IMPORTANT: This project has a knowledge graph. ALWAYS use the
-code-review-graph MCP tools BEFORE using Grep/Glob/Read to explore
-the codebase.** The graph is faster, cheaper (fewer tokens), and gives
-you structural context (callers, dependents, test coverage) that file
-scanning cannot.
+MCP GRAPH TOOLS — MANDATORY:
+This project has a code-review-graph knowledge graph.
 
-### When to use graph tools FIRST
+RULE 1 — For targeted fixes on known files:
+Read the files directly. Do not use get_review_context.
+"Read backend/agents/draft_agent.py and make these changes: ..."
 
-- **Exploring code**: `semantic_search_nodes` or `query_graph` instead of Grep
-- **Understanding impact**: `get_impact_radius` instead of manually tracing imports
-- **Code review**: `detect_changes` + `get_review_context` instead of reading entire files
-- **Finding relationships**: `query_graph` with callers_of/callees_of/imports_of/tests_for
-- **Architecture questions**: `get_architecture_overview` + `list_communities`
+RULE 2 — For feature work where you don't know the files yet:
+Use semantic_search_nodes or query_graph to find relevant files first,
+then read only those files.
+"Use semantic_search_nodes to find where X is handled, 
+then read only those files."
+
+RULE 3 — get_review_context is only safe when there is a real git diff.
+Never call it with base: "HEAD" on a clean branch — it scans everything
+and will exceed token limits. Only use it for uncommitted changes or
+a specific commit range.
+
+RULE 4 — Never call get_review_context on more than 2 files at once.
+Scope it to specific functions, not entire files.
+
+Prompt template for new features:
+Feature: [name]
+Context: [1-2 sentences]
+Use semantic_search_nodes for "[keyword]" to find relevant files,
+then read only those files. Do not call get_review_context.
+Changes needed:
+1. ...
+2. ...
+Do not touch any other files.
+
+Rule of thumb:
+- Exploration (what calls this? blast radius?) → graph tools
+- Reading known files → read directly
+- Finding unknown files → semantic_search_nodes first
 
 Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
 
