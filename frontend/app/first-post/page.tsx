@@ -1066,6 +1066,7 @@ export default function FirstPostPage() {
     const profile = { ...rawProfile, name: rawProfile.name || fallbackName }
 
     setProfileSaveError('')
+    console.log('[first-post] Saving profile with name:', profile.name)
     try {
       await api.saveProfile(profile)
       console.log('[first-post] Profile saved successfully for user')

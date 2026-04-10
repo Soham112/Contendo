@@ -87,7 +87,7 @@
 | `frontend/app/sso-callback/page.tsx` | Handles Clerk OAuth redirects from Google SSO — renders `<AuthenticateWithRedirectCallback />` which completes the OAuth handshake and redirects to `redirectUrlComplete` (set to `/first-post` from the first-post auth screen). Public route. |
 | `frontend/lib/first-post-constants.ts` | All hardcoded data for the `/first-post` flow: `ROLE_OPTIONS` (9 roles with keys + labels), `ROLE_TO_BUCKET` mapping (role → data/product/engineering/founder bucket), `OPINION_STATEMENTS` per bucket (5 statements each), `EXPERIENCE_OPTIONS` (5 types with sublabels), `EXPERIENCE_PLACEHOLDER` per role (role-specific example sentences), `CORE_AUDIENCE_PILLS` (6 universal pills), `ROLE_AUDIENCE_PILLS` (role-specific pills shown first in Screen 5). |
 | `frontend/lib/api.ts` | `useApi()` hook — returns all typed API functions with Bearer token pre-attached via `useAuth().getToken()`; single source of truth for all backend calls; replaces raw `fetch()` in all components; `saveProfile()` throws on non-2xx (instead of returning the response) and console.logs status for debugging; `submitFeedback(message, page)` posts to `POST /feedback`; `refineSelection()` calls `POST /refine-selection`; `extractResume(file: File)` sends `multipart/form-data` to `POST /extract-resume` |
-| `frontend/hooks/useProfileCheck.ts` | `useProfileCheck()` hook — runs after Clerk confirms auth, calls `GET /profile`, redirects to `/first-post` if `has_profile === false`; no-op on public routes (`/welcome`, `/sign-in`, `/sign-up`, `/onboarding`, `/first-post`) |
+| `frontend/hooks/useProfileCheck.ts` | `useProfileCheck()` hook — runs after Clerk confirms auth, calls `GET /profile`, redirects to `/first-post` only if `has_profile === false` (file does not exist); `has_profile: true` with empty name (`profile_complete: false`) does NOT redirect — user is allowed into workspace; no-op on public routes (`/welcome`, `/sign-in`, `/sign-up`, `/onboarding`, `/first-post`); exposes `{ loading, hasProfile, profileComplete, profile }` |
 | `frontend/app/sign-in/[[...sign-in]]/page.tsx` | Clerk prebuilt `<SignIn />` page with Editorial Atelier wordmark (Noto Serif italic) and sage `#58614f` primary color; reads `redirect_url` from `searchParams`, passes it through to Clerk (`forceRedirectUrl` + `fallbackRedirectUrl`) and preserves it when switching to sign-up via `signUpUrl` |
 | `frontend/app/sign-up/[[...sign-up]]/page.tsx` | Clerk prebuilt `<SignUp />` page, identical structure to sign-in page; reads `redirect_url` from `searchParams`, passes it through to Clerk (`forceRedirectUrl` + `fallbackRedirectUrl`) and preserves it when switching to sign-in via `signInUrl` |
 | `frontend/app/onboarding/page.tsx` | Legacy 5-step onboarding flow (no longer the new-user entry point) — immediately redirects to `/first-post` via `router.replace()` on mount; route kept for backward compat so old links don't 404 |
@@ -196,10 +196,19 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
 ```json
 {
   "profile": { "name": "Alex Chen", "role": "Staff Engineer", ... },
-  "has_profile": true
+  "has_profile": true,
+  "profile_complete": true
 }
 ```
-**Notes:** Returns the profile for the authenticated user. `has_profile` is `true` if the profile file exists and the `name` field is non-empty. `false` means the user has not completed onboarding. The profile is always returned (falling back to `DEFAULT_PROFILE`) regardless of `has_profile`.
+**Notes:** Returns the profile for the authenticated user. The profile is always returned (falling back to `DEFAULT_PROFILE`) regardless of `has_profile`.
+
+| Field | Meaning | Redirect behaviour |
+|---|---|---|
+| `has_profile: false` | Profile file does not exist on disk | Redirect to `/first-post` (new user) |
+| `has_profile: true, profile_complete: false` | File exists but `name` is empty | Allow into workspace — thin profile, do not redirect |
+| `has_profile: true, profile_complete: true` | File exists and `name` is non-empty | Fully set up — normal workspace access |
+
+`has_profile` uses raw file existence (`_profile_path(user_id).exists()`). `profile_complete` is `bool(profile["name"].strip())`. Only `has_profile === false` triggers the `/first-post` redirect in `useProfileCheck`.
 
 ---
 
@@ -711,7 +720,7 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `name` | str | User's name — `profile_exists()` checks this field is non-empty |
+| `name` | str | User's name — `profile_complete` in `GET /profile` response is true only when non-empty; resolved from resume → Clerk firstName+lastName → email prefix before saving |
 | `role` | str | Role/title — injected into every draft prompt |
 | `bio` | str | 2–3 sentence summary of who they are and what they believe |
 | `location` | str | City, country (optional) |
@@ -888,10 +897,10 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
 | Per-user profile files at `DATA_DIR/profiles/profile_{user_id}.json` | Separates profiles per Clerk `sub` claim. The `"default"` user still falls back to `DATA_DIR/profile.json` if it exists (backward compat for existing local dev data). `PROFILES_DIR` is exposed from `config/paths.py`. |
 | SQLite `ALTER TABLE posts ADD COLUMN user_id` migration is idempotent | Wrapped in try/except in `init_db()`. First deploy after this change adds the column; subsequent deploys silently pass the `except`. Existing rows default to `user_id='default'` (SQLite `DEFAULT 'default'`). No manual migration needed. |
 | All existing rows in posts.db get `user_id='default'` | Railway production: the first deploy after this branch merges runs `init_db()` which adds the column. All pre-existing post history is attributed to `"default"`. If that user later creates a Clerk account, they will not see their old posts (different user_id). Acceptable for MVP. |
-| Onboarding redirect via `useProfileCheck` in AppShell | After Clerk confirms auth, AppShell calls `GET /profile`. If `has_profile === false`, the user is pushed to `/first-post`. Public routes (`/welcome`, `/sign-in`, `/sign-up`, `/onboarding`, `/first-post`) skip the check. The hook exposes `loading` so AppShell can show a spinner while the check is in flight. |
+| Onboarding redirect via `useProfileCheck` in AppShell | After Clerk confirms auth, AppShell calls `GET /profile`. Only redirects to `/first-post` when `has_profile === false` (file does not exist). `has_profile: true` with empty name (`profile_complete: false`) is a returning user with a thin profile — they are allowed into the workspace without redirect. Public routes skip the check. |
 | In the `/first-post` flow, profile is saved before generation | Saving the profile first makes `has_profile` true immediately. If generation fails afterward, the user is still treated as a known user and can enter the workspace without getting trapped in first-run redirects. |
 | The `/first-post` draft is written to sessionStorage before navigating to `/create` | `contentOS_last_post` and related keys are written by first-post CTA buttons; `CreatePost.tsx` already restores these keys on mount, so no additional CreatePost wiring is needed for preloaded draft handoff. |
-| New-user routing via `useProfileCheck` | After Clerk confirms auth, AppShell calls `GET /profile`. If `has_profile === false`, the user is pushed to `/first-post`. Public routes (`/welcome`, `/sign-in`, `/sign-up`, `/onboarding`, `/first-post`) skip the check. The hook exposes `loading` so AppShell can show a spinner while the check is in flight. |
+| New-user routing via `useProfileCheck` | After Clerk confirms auth, AppShell calls `GET /profile`. Only `has_profile === false` triggers a redirect to `/first-post`. A returning user whose profile file exists but has an empty name (`profile_complete: false`) is not redirected — they can access the workspace. |
 | `/onboarding` kept as backward-compat redirect | The old 5-step flow at `/onboarding` is no longer the new-user entry point. The page immediately calls `router.replace('/first-post')` on mount so any bookmarked or hardcoded links still work. The route stays in middleware's public list. `/first-post` is the canonical new-user experience. |
 | In the `/first-post` flow, profile is saved before generation | Saving the profile first makes `has_profile` true immediately. If generation fails afterward, the user is still treated as a known user and can enter the workspace without getting trapped in first-run redirects. |
 | The `/first-post` draft is written to sessionStorage before navigating to `/create` | `contentOS_last_post` and related keys are written by first-post CTA buttons; `CreatePost.tsx` already restores these keys on mount, so no additional CreatePost wiring is needed for preloaded draft handoff. |

@@ -11,6 +11,7 @@ export function useProfileCheck() {
   const { isSignedIn, isLoaded } = useAuth();
   const [loading, setLoading] = useState(true);
   const [hasProfile, setHasProfile] = useState(false);
+  const [profileComplete, setProfileComplete] = useState(false);
   const [profile, setProfile] = useState<Record<string, unknown> | null>(null);
   const router = useRouter();
   const pathname = usePathname();
@@ -34,6 +35,7 @@ export function useProfileCheck() {
           const data = await res.json();
           setProfile(data.profile);
           setHasProfile(data.has_profile);
+          setProfileComplete(data.profile_complete ?? false);
           if (!data.has_profile) {
             router.push("/first-post");
           }
@@ -42,5 +44,5 @@ export function useProfileCheck() {
       .finally(() => setLoading(false));
   }, [isLoaded, isSignedIn, pathname]);
 
-  return { loading, hasProfile, profile };
+  return { loading, hasProfile, profileComplete, profile };
 }

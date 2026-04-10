@@ -7,7 +7,7 @@ import anthropic
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 
 from auth.clerk import get_user_id_dep
-from memory.profile_store import load_profile, profile_exists, save_profile
+from memory.profile_store import load_profile, profile_exists, save_profile, _profile_path
 from utils.file_extractor import extract_from_pdf
 
 logger = logging.getLogger(__name__)
@@ -20,10 +20,14 @@ _anthropic_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 @router.get("/profile")
 async def get_profile(user_id: str = Depends(get_user_id_dep)) -> dict:
     logger.info(f"GET /profile for user_id={user_id}")
-    exists = profile_exists(user_id)
+    file_exists = _profile_path(user_id).exists()
     profile = load_profile(user_id=user_id)
-    logger.info(f"GET /profile: has_profile={exists}, name={profile.get('name', '')!r} for user_id={user_id}")
-    return {"profile": profile, "has_profile": exists}
+    profile_complete = bool(profile.get("name", "").strip())
+    logger.info(
+        f"GET /profile: has_profile={file_exists}, profile_complete={profile_complete}, "
+        f"name={profile.get('name', '')!r} for user_id={user_id}"
+    )
+    return {"profile": profile, "has_profile": file_exists, "profile_complete": profile_complete}
 
 
 @router.post("/profile")
