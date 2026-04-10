@@ -15,6 +15,7 @@ import {
   ROLE_AUDIENCE_PILLS,
   type RoleKey,
 } from '@/lib/first-post-constants'
+import OnboardingIntercept from '@/components/OnboardingIntercept'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Answers {
@@ -858,7 +859,7 @@ export default function FirstPostPage() {
   const api = useApi()
 
   const [screen, setScreen] = useState(0)
-  const [flowState, setFlowState] = useState<'form' | 'generating' | 'error' | 'draft' | 'gate'>('form')
+  const [flowState, setFlowState] = useState<'form' | 'generating' | 'error' | 'draft' | 'gate' | 'intercept'>('form')
   const [draftState, setDraftState] = useState<DraftState | null>(null)
   const [copied, setCopied] = useState(false)
   const [profileChecked, setProfileChecked] = useState(false)
@@ -1169,7 +1170,13 @@ export default function FirstPostPage() {
       setFlowState('gate')
     } else {
       persistDraftToSession()
-      router.push(destination === 'feed' ? '/' : '/create')
+      const interceptDone = typeof window !== 'undefined' && localStorage.getItem('contendo_intercept_done') === '1'
+      if (!interceptDone) {
+        setPendingDestination(destination)
+        setFlowState('intercept')
+      } else {
+        router.push(destination === 'feed' ? '/' : '/create')
+      }
     }
   }
 
@@ -1226,6 +1233,15 @@ export default function FirstPostPage() {
         onExtracted={handleGateExtracted}
         onDone={handleGateDone}
         onSkip={handleGateSkip}
+      />
+    )
+  }
+
+  if (flowState === 'intercept') {
+    const dest = pendingDestination === 'feed' ? '/' : '/create'
+    return (
+      <OnboardingIntercept
+        destination={dest}
       />
     )
   }
