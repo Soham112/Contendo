@@ -3,10 +3,9 @@ __pycache__/
 *.pyc
 *.pyo
 .env
-data/chroma_db/
-data/posts.db
-data/hierarchy.db
-data/profile.json
+# Exclude entire data directory — in production this is a Railway persistent
+# volume mounted at /data (DATA_DIR=/data). Nothing in data/ should be in the image.
+data/
 .git/
 *.egg-info/
 .pytest_cache/
