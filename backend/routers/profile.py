@@ -31,8 +31,17 @@ async def post_profile(
     profile: dict,
     user_id: str = Depends(get_user_id_dep),
 ) -> dict:
-    logger.info(f"POST /profile for user_id={user_id}, name={profile.get('name', '')!r}")
-    save_profile(profile, user_id=user_id)
+    name = profile.get("name", "").strip()
+    logger.info(f"POST /profile: saving for user_id={user_id}, name={name!r}")
+
+    try:
+        save_profile(profile, user_id=user_id)
+        data_dir = os.environ.get("DATA_DIR", "data")
+        profile_path = f"{data_dir}/profiles/profile_{user_id}.json"
+        logger.info(f"POST /profile: saved successfully at {profile_path} for user_id={user_id}")
+    except Exception as e:
+        logger.error(f"POST /profile: save failed for user_id={user_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Profile save failed")
 
     # Read back immediately to verify the write landed on disk
     saved = load_profile(user_id=user_id)

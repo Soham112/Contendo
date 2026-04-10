@@ -852,7 +852,7 @@ function AuthScreen({ prefillTopic }: { prefillTopic: string }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function FirstPostPage() {
-  const { isLoaded, isSignedIn } = useUser()
+  const { isLoaded, isSignedIn, user } = useUser()
   const router = useRouter()
   const searchParams = useSearchParams()
   const api = useApi()
@@ -878,6 +878,7 @@ export default function FirstPostPage() {
 
   // Pending CTA destination — set when user clicks a CTA while resumeSkipped
   const [pendingDestination, setPendingDestination] = useState<'feed' | 'create' | null>(null)
+  const [profileSaveError, setProfileSaveError] = useState('')
 
   const [answers, setAnswers] = useState<Answers>({
     role: '',
@@ -1015,8 +1016,8 @@ export default function FirstPostPage() {
   ) {
     // Priority: onboarding answers > resume extraction > fallback questions
     return {
-      // Identity: onboarding answers win; resume fills gaps
-      name: finalAnswers.roleLabel || resume.name || '',
+      // Identity: resume extraction wins for name; role label for role
+      name: resume.name || fallback.name || '',
       role: finalAnswers.roleLabel || resume.role || '',
       bio: finalAnswers.experienceDetail || resume.bio || fallback.bio || '',
       location: resume.location || '',
@@ -1058,12 +1059,21 @@ export default function FirstPostPage() {
     setFlowState('generating')
 
     const effectiveResumeFields = resumeFieldsOverride ?? resumeExtractedFields
-    const profile = buildMergedProfile(finalAnswers, effectiveResumeFields, fallbackExtractedFields)
+    const rawProfile = buildMergedProfile(finalAnswers, effectiveResumeFields, fallbackExtractedFields)
+    const clerkName = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim()
+    const emailPrefix = user?.primaryEmailAddress?.emailAddress?.split('@')[0] ?? ''
+    const fallbackName = effectiveResumeFields?.name || clerkName || emailPrefix
+    const profile = { ...rawProfile, name: rawProfile.name || fallbackName }
 
+    setProfileSaveError('')
     try {
       await api.saveProfile(profile)
+      console.log('[first-post] Profile saved successfully for user')
     } catch (err) {
       console.error('[first-post] profile save error:', err)
+      setFlowState('form')
+      setProfileSaveError('Profile save failed — please try again.')
+      return
     }
 
     let generatedPost = ''
@@ -1168,9 +1178,14 @@ export default function FirstPostPage() {
     const combined = [...selectedPills, audienceCustom.trim()].filter(Boolean).join(', ')
     const finalAnswers = { ...answers, audience: combined }
     // For gate, the resume slot is already set; fallback fills in the rest
-    const profile = buildMergedProfile(finalAnswers, resumeExtractedFields, fields)
+    const rawProfile = buildMergedProfile(finalAnswers, resumeExtractedFields, fields)
+    const clerkName = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim()
+    const emailPrefix = user?.primaryEmailAddress?.emailAddress?.split('@')[0] ?? ''
+    const fallbackName = fields?.name || resumeExtractedFields?.name || clerkName || emailPrefix
+    const profile = { ...rawProfile, name: rawProfile.name || fallbackName }
     try {
       await api.saveProfile(profile)
+      console.log('[first-post] Gate profile saved successfully for user')
     } catch (err) {
       console.error('[first-post] gate profile save error:', err)
     }
@@ -1687,6 +1702,9 @@ export default function FirstPostPage() {
               ) : (
                 /* Screen 5 — resume upload + generate */
                 <div className="flex flex-col items-end gap-3 w-full">
+                  {profileSaveError && (
+                    <p className="text-[12px] text-red-500 w-full text-right">{profileSaveError}</p>
+                  )}
                   <button
                     onClick={async () => {
                       if (resumeFile) {
