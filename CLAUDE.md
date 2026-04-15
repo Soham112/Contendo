@@ -139,7 +139,22 @@ Rule of thumb:
 - Reading known files → read directly
 - Finding unknown files → semantic_search_nodes first
 
-Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
+## HARD RULE — No Grep/Glob for exploration
+
+NEVER use Grep, Glob, or Read to explore or find code.
+This wastes tokens and is explicitly prohibited.
+
+The only permitted navigation tools are:
+- `semantic_search_nodes` — to find any function, class, or keyword
+- `query_graph` — to trace callers, callees, imports
+- `get_impact_radius` — before touching any shared file
+- `get_architecture_overview` — to orient at session start (replaces reading CODEBASE.md in full)
+
+The ONLY time you may use Read directly is when you already
+know the exact file AND line range from graph tool output.
+
+If you are about to write a Grep or Glob call — STOP.
+Use `semantic_search_nodes` instead. Every time. No exceptions.
 
 ### Key Tools
 
