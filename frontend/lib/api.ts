@@ -283,6 +283,13 @@ export function useApi() {
         method: "POST",
       }),
 
+    markAsPublished: (post_id: number, platform: string, published_content?: string) =>
+      apiFetch(`/history/${post_id}/publish`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platform, published_content: published_content ?? null }),
+      }),
+
     // ── Ideas ─────────────────────────────────────────────────────────────
     getSuggestions: (count: number, topic?: string) =>
       apiFetch(

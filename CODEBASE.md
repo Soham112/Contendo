@@ -19,7 +19,7 @@
 | `backend/routers/__init__.py` | Empty — marks routers/ as a Python package |
 | `backend/routers/ingest.py` | `/ingest`, `/ingest-file`, `/scrape-and-ingest`, `/obsidian/preview`, `/obsidian/ingest` (both with `ENVIRONMENT=production` guard), `/obsidian/preview-zip`, `/obsidian/ingest-zip` (no environment guard — works in production) |
 | `backend/routers/generate.py` | `/generate`, `/refine`, `/refine-selection`, `/score`, `/generate-visuals` |
-| `backend/routers/history.py` | `GET /history`, `POST /log-post`, `PATCH /history/{id}`, `DELETE /history/{id}`, `POST /history/{id}/restore/{vid}` |
+| `backend/routers/history.py` | `GET /history`, `POST /log-post`, `PATCH /history/{id}`, `DELETE /history/{id}`, `POST /history/{id}/restore/{vid}`, `PATCH /history/{id}/publish` |
 | `backend/routers/library.py` | `GET /library`, `GET /library/clusters`, `DELETE /library/source` |
 | `backend/routers/ideas.py` | `GET /suggestions` |
 | `backend/routers/stats.py` | `GET /stats` |
@@ -47,10 +47,10 @@
 | `backend/pipeline/state.py` | TypedDict schema for shared LangGraph pipeline state; includes `length` (`"concise" | "standard" | "long-form"`), `archetype`, `user_id`, `critic_brief`, retrieval calibration fields (`retrieval_confidence`, `retrieved_chunk_count`), `retrieved_chunks` (backward compat flat list), `retrieval_bundle` (full hierarchical bundle), and `retrieved_context` (pre-formatted enriched text for draft prompt) |
 | `backend/pipeline/graph.py` | LangGraph graph definition — nodes, edges, conditional retry loop |
 | `backend/memory/vector_store.py` | ChromaDB init, upsert, semantic query, stats, delete_source, query_by_hash; `query_similar()` returns `source_id` and `chunk_index` per result; `query_similar_batch()` embeds all queries in a single batched forward pass then queries ChromaDB for each (significantly faster than N sequential `query_similar()` calls); `query_similar_hybrid()` and `query_similar_hybrid_batch()` combine BM25 keyword ranking (rank-bm25) with cosine vector search via Reciprocal Rank Fusion (k=60) — both fall back to pure vector search on any exception; `upsert_chunks()` stores `node_type:"chunk"`; `get_chunks_for_source()` and `get_adjacent_chunks()` for hierarchical sibling retrieval; collections namespaced as `contendo_{user_id}` |
-| `backend/memory/profile_store.py` | Per-user profile read/write — `load_profile(user_id)`, `save_profile(profile, user_id)`, `profile_exists(user_id)`; legacy fallback to `data/profile.json` when `user_id="default"`; `DEFAULT_PROFILE` includes bio, location, target_audience, opinions, writing_samples; `profile_to_context_string()` formats all fields for prompt injection; `save_profile()` uses atomic write (`os.replace` from `.tmp`) to prevent corrupt half-writes; all three functions emit INFO-level logs of the exact file path for Railway debugging |
+| `backend/memory/profile_store.py` | Per-user profile read/write — `load_profile(user_id)`, `save_profile(profile, user_id)`, `profile_exists(user_id)`; legacy fallback to `data/profile.json` when `user_id="default"`; `DEFAULT_PROFILE` includes bio, location, target_audience, opinions, writing_samples; `profile_to_context_string()` formats all fields for prompt injection; `save_profile()` uses atomic write (`os.replace` from `.tmp`) to prevent corrupt half-writes; all three functions emit INFO-level logs of the exact file path for Railway debugging; `save_writing_sample(user_id, sample, max_samples=10)` appends a new sample to the user's `writing_samples` list (case-insensitive dedup, oldest dropped when over limit) |
 | `backend/memory/hierarchy_store.py` | SQLite store (path from `config.paths.HIERARCHY_DB_PATH`) for source_nodes and topic_nodes — `upsert_source_node`, `get_source_node`, `source_node_exists`, `upsert_topic_node`, `get_topic_node`, `find_matching_topic` (tag-overlap heuristic), `add_source_to_topic`; initialized in FastAPI lifespan |
 | `backend/memory/retrieval_stats_store.py` | SQLite store for source retrieval counts — `init_retrieval_stats_db`, `increment_retrieval`, `get_retrieval_counts`; uses same `HIERARCHY_DB_PATH` as hierarchy store |
-| `backend/memory/feedback_store.py` | SQLite posts and post_versions tables — all functions accept `user_id` param for per-user isolation; `init_db()` runs idempotent `ALTER TABLE` migration to add `user_id` column; `_post_owned_by()` helper validates post ownership before version operations |
+| `backend/memory/feedback_store.py` | SQLite posts and post_versions tables — all functions accept `user_id` param for per-user isolation; `init_db()` runs idempotent `ALTER TABLE` migrations to add `user_id`, `published_at`, `published_platform`, `published_content` columns; `_post_owned_by()` helper validates post ownership before version operations; `mark_published(post_id, platform, published_content, user_id)` sets `published_at=CURRENT_TIMESTAMP`, `published_platform`, and optionally `published_content` |
 | `backend/tools/scraper_tool.py` | URL scraper using Jina Reader — `is_valid_url()`, `clean_scraped_text()`, `scrape_url()` |
 | `backend/tools/obsidian_tool.py` | Obsidian vault reader — `read_vault()` yields cleaned note dicts from a vault directory; `get_vault_stats()` accepts a path and returns stats (total_files, total_words, estimated_chunks, skipped_files, vault_name); `get_vault_stats_from_dir()` is the refactored core that both local and zip endpoints use; `extract_vault_from_zip(zip_bytes)` extracts a zip file to a temp directory, validates for path traversal attacks (rejects paths starting with `/` or containing `..`), and verifies .md files exist; `clean_obsidian_markdown()` strips wikilinks/frontmatter/Dataview/embeds |
 | `backend/tools/__init__.py` | Empty — tools directory retained for future use |
@@ -71,8 +71,8 @@
 | `frontend/app/library/page.tsx` | Screen 2: Library (`/library`) — two views toggled by a "Sources / Topic Map" segmented control. **Sources view:** source cards with chunk count and retrieval count UX (sage dot marker for 5+ uses), stats bar, text search, filter/sort ("Date Added", "Oldest First", "Most Used"), grid/list toggle; card placeholders use `getTitleGradient()` + `getSourceIcon()`. **Topic Map view:** calls `GET /library/clusters`; renders two tinted summary stat pills (sage and terracotta tints), a color-tiered tag cloud with 3-tier sizing (large ≥7: 15px/600/sage tint, medium 4–6: 13px/500/warm-grey tint, small 2–3: 11px/400/light grey) + collapsible cluster sections with colored left accent bars (5-color cycle: sage, terracotta, slate-blue, warm-brown, dark-sage; deterministic per index % 5). Cluster headers render tag name in Noto Serif italic, 1.1rem. Source rows in clusters (both clustered and unclustered) have 8px color-coded dots before the title (NOTE: sage, ARTICLE: terracotta, IMAGE: slate, default: outline). Unclustered section collapsed by default; clicking a source row switches back to Sources view and sets the search filter to that source title. |
 | `frontend/app/create/page.tsx` | Screen 3: Create Post (`/create`) |
 | `frontend/app/ideas/page.tsx` | Screen 4: Get Ideas (`/ideas`) — standalone ideas screen with topic filter, count picker, save-for-later; ideas persisted in localStorage |
-| `frontend/app/history/page.tsx` | Screen 5: Post History (`/history`) — searchable list, expandable post cards, version pills, restore, delete, diagram rendering |
-| `frontend/app/history/[id]/page.tsx` | Post detail page (`/history/[id]`) — full-page view of a single post with version picker, restore, delete, diagram rendering |
+| `frontend/app/history/page.tsx` | Screen 5: Post History (`/history`) — searchable list, expandable post cards, version pills, restore, delete, diagram rendering; **"Open in editor"** button writes post+topic+format+tone to sessionStorage and navigates to `/create`; **"Mark as published"** button opens a modal (platform pill picker + optional final-version textarea) that calls `PATCH /history/{id}/publish`; published posts show a sage `Published · {Platform}` badge; **All / Published filter toggle** in header bar filters cards client-side |
+| `frontend/app/history/[id]/page.tsx` | Post detail page (`/history/[id]`) — full-page view of a single post with version picker, restore, delete, diagram rendering; **"Open in editor"** button; **"Mark as published"** inline modal; published badge when `published_at` is set |
 | `frontend/app/welcome/page.tsx` | Landing page (`/welcome`) — standalone editorial marketing surface (top nav + hero + how-it-works + philosophy + toolkit + mood grid + final CTA + footer), accessible to both signed-in and signed-out users. Sections alternate bg-background / bg-surface-container-low for tonal rhythm. Functional hero prompt bar: submit writes `sessionStorage.contendo_topic`; signed-in users go to `/create` (also writes `contentOS_last_topic`); signed-out users go to `/first-post?topic=...`. Nav has single "How it works" → `#how-it-works` scroll link; auth-aware CTA ("Get started" → `/first-post` signed-out, "Open workspace" → `/` signed-in). How-it-works section: three prose steps, no icons, step numbers in Noto Serif italic sage. Mood grid: 8 `MOOD_GRADIENTS` tiles with Noto Serif italic labels, `rounded-2xl`, `minHeight: 160`. No fake social proof, no trial/pricing language anywhere. |
 | `frontend/app/globals.css` | Global styles — Tailwind directives, CSS custom properties for design tokens, `.btn-primary` gradient, `.glass` glassmorphism, `.font-headline`/`.serif-text`, grain texture overlay, custom scrollbar, `.input-editorial`, `.label-caps`, `.ghost-border`, `.no-scrollbar` (hides scrollbar on overflow-x-auto nav elements) |
 | `frontend/components/ui/ToastProvider.tsx` | Global custom lightweight React Context for floating success/error notifications |
@@ -438,7 +438,7 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
   ]
 }
 ```
-**Notes:** Returns up to 20 most recent saved posts, newest first. `svg_diagrams` is `null` for posts saved before the visuals feature or saved without diagrams. The JSON string stored in SQLite is parsed back to a list before returning. Each post includes a `versions` array (see `post_versions` schema) with all versions ordered by `version_number` ascending; `svg_diagrams` within each version is also parsed from JSON.
+**Notes:** Returns up to 20 most recent saved posts, newest first. `svg_diagrams` is `null` for posts saved before the visuals feature or saved without diagrams. The JSON string stored in SQLite is parsed back to a list before returning. Each post includes a `versions` array (see `post_versions` schema) with all versions ordered by `version_number` ascending; `svg_diagrams` within each version is also parsed from JSON. Each post also includes `published_at` (ISO timestamp or `null`), `published_platform` (string or `null`), and `published_content` (string or `null`).
 
 ---
 
@@ -453,6 +453,19 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
 }
 ```
 **Notes:** Sets the parent `posts` row `content` and `authenticity_score` to match the specified version. Does not create a new version row. The frontend writes the restored content to `contentOS_last_post` (and related sessionStorage keys) so it appears immediately in Create Post.
+
+---
+
+### PATCH /history/{post_id}/publish
+**Request body:**
+```json
+{ "platform": "linkedin", "published_content": "optional final version text" }
+```
+**Response:**
+```json
+{ "published": true }
+```
+**Notes:** Sets `published_at = CURRENT_TIMESTAMP`, `published_platform`, and optionally `published_content` on the post row. If `published_content` is non-empty, also calls `save_writing_sample(user_id, published_content)` which appends the text to the user's `writing_samples` list (case-insensitive dedup, max 10 kept). Auth: `Depends(get_user_id_dep)`. Returns 404 if post not found or does not belong to user.
 
 ---
 

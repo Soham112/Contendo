@@ -104,6 +104,25 @@ def profile_exists(user_id: str) -> bool:
         return False
 
 
+def save_writing_sample(user_id: str, sample: str, max_samples: int = 10) -> None:
+    """Append a new writing sample to the user's profile (deduplicated, capped at max_samples)."""
+    sample = sample.strip()
+    if not sample:
+        return
+    profile = load_profile(user_id)
+    samples: list[str] = [s for s in profile.get("writing_samples", []) if s]
+    # Deduplicate case-insensitively
+    normalized = [s.lower() for s in samples]
+    if sample.lower() not in normalized:
+        samples.append(sample)
+    # Keep at most max_samples, dropping oldest first
+    if len(samples) > max_samples:
+        samples = samples[-max_samples:]
+    profile["writing_samples"] = samples
+    save_profile(profile, user_id)
+    logger.info(f"save_writing_sample: added sample for user_id={user_id}, total={len(samples)}")
+
+
 def profile_to_context_string(profile: dict[str, Any]) -> str:
     lines = [
         f"Name: {profile.get('name', 'Unknown')}",
