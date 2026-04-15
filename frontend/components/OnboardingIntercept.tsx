@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useApi } from '@/lib/api'
 import type { ProfileData } from '@/lib/api'
@@ -91,6 +91,15 @@ export default function OnboardingIntercept({ destination, onComplete }: Onboard
   const [textValue, setTextValue] = useState('')
   const [saving, setSaving] = useState(false)
 
+  // animation state
+  const [entered, setEntered] = useState(false)
+  const [exiting, setExiting] = useState(false)
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setEntered(true))
+    return () => cancelAnimationFrame(id)
+  }, [])
+
   const q = QUESTIONS[step]
   const isLast = step === QUESTIONS.length - 1
   const currentChipAnswer = q.type === 'chip' ? chipAnswers[step] : null
@@ -133,6 +142,8 @@ export default function OnboardingIntercept({ destination, onComplete }: Onboard
     }
 
     localStorage.setItem('contendo_intercept_done', '1')
+    setExiting(true)
+    await new Promise<void>(resolve => setTimeout(resolve, 150))
     onComplete?.()
     router.push(destination)
   }
@@ -165,46 +176,94 @@ export default function OnboardingIntercept({ destination, onComplete }: Onboard
 
   const canAdvance = q.type === 'chip' ? !!currentChipAnswer : true
 
+  const overlayVisible = entered && !exiting
+
   return (
-    <div className="min-h-screen bg-[#faf9f8] flex items-center justify-center px-4">
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 50,
+        background: 'rgba(47, 51, 51, 0.45)',
+        backdropFilter: 'blur(4px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '0 1rem',
+        opacity: overlayVisible ? 1 : 0,
+        transition: exiting ? 'opacity 150ms ease-in' : 'opacity 250ms ease-out',
+      }}
+    >
       <div
-        className="w-full max-w-lg bg-white rounded-2xl px-10 py-12"
         style={{
+          background: '#ffffff',
+          borderRadius: '1.25rem',
+          padding: '2.5rem',
+          maxWidth: '480px',
+          width: '90vw',
           boxShadow:
-            '0px 4px 20px rgba(47,51,51,0.04), 0px 12px 40px rgba(47,51,51,0.06)',
+            '0px 4px 20px rgba(47,51,51,0.06), 0px 12px 40px rgba(47,51,51,0.10)',
+          transform: overlayVisible ? 'translateY(0)' : 'translateY(12px)',
+          transition: exiting
+            ? 'transform 150ms ease-in'
+            : 'transform 250ms ease-out',
         }}
       >
         {/* Progress dots */}
-        <div className="flex items-center gap-2 justify-center mb-10">
+        <div className="flex items-center justify-center mb-10" style={{ gap: '8px' }}>
           {QUESTIONS.map((_, i) => (
             <div
               key={i}
-              className={`w-2 h-2 rounded-full transition-all duration-200 ${
-                i <= step
-                  ? 'bg-[#58614f]'
-                  : 'border border-[#58614f] opacity-30'
-              }`}
+              style={{
+                width: i <= step ? '8px' : '6px',
+                height: i <= step ? '8px' : '6px',
+                borderRadius: '9999px',
+                background: i <= step ? '#58614f' : '#aeb3b2',
+                opacity: i <= step ? 1 : 0.4,
+                transition: 'all 200ms',
+                flexShrink: 0,
+              }}
             />
           ))}
         </div>
 
         {/* Headline */}
-        <h2 className="font-headline italic text-[1.3rem] text-[#2f3333] mb-8 leading-snug text-center">
+        <h2
+          className="font-headline italic text-[#2f3333] text-center mb-8 mx-auto"
+          style={{ fontSize: '1.4rem', lineHeight: 1.5, maxWidth: '340px' }}
+        >
           {q.headline}
         </h2>
 
         {/* Input area */}
         {q.type === 'chip' ? (
-          <div className="flex flex-wrap gap-2.5 justify-center mb-10">
+          <div className="flex flex-wrap justify-center mb-10" style={{ gap: '8px' }}>
             {q.chips.map(chip => (
               <button
                 key={chip}
                 onClick={() => selectChip(chip)}
-                className={`px-4 py-2 rounded-full text-[13px] transition-all duration-150 ${
-                  currentChipAnswer === chip
-                    ? 'bg-[#58614f] text-white'
-                    : 'bg-[#f3f4f3] text-[#2f3333] hover:bg-[#edeeed]'
-                }`}
+                style={{
+                  padding: '10px 18px',
+                  borderRadius: '9999px',
+                  fontSize: '0.9rem',
+                  border: currentChipAnswer === chip
+                    ? '1px solid #58614f'
+                    : '1px solid transparent',
+                  background: currentChipAnswer === chip ? '#eef0eb' : '#f3f4f3',
+                  color: currentChipAnswer === chip ? '#58614f' : '#2f3333',
+                  cursor: 'pointer',
+                  transition: 'all 150ms',
+                }}
+                onMouseEnter={e => {
+                  if (currentChipAnswer !== chip) {
+                    (e.currentTarget as HTMLButtonElement).style.background = '#edeeed'
+                  }
+                }}
+                onMouseLeave={e => {
+                  if (currentChipAnswer !== chip) {
+                    (e.currentTarget as HTMLButtonElement).style.background = '#f3f4f3'
+                  }
+                }}
               >
                 {chip}
               </button>
@@ -231,7 +290,14 @@ export default function OnboardingIntercept({ destination, onComplete }: Onboard
           <button
             onClick={handleSkip}
             disabled={saving}
-            className="text-[12px] text-[#2f3333]/40 hover:text-[#2f3333]/60 transition-colors disabled:opacity-40"
+            style={{
+              fontSize: '0.85rem',
+              color: '#645e57',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              opacity: saving ? 0.4 : 1,
+            }}
           >
             {isLast && q.type === 'text' ? 'Skip this one →' : 'Skip'}
           </button>
