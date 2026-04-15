@@ -488,6 +488,7 @@ export default function CreatePost() {
   } | null>(null);
   const [inlineInstruction, setInlineInstruction] = useState("");
   const [inlineLoading, setInlineLoading] = useState(false);
+  const [editorHinted, setEditorHinted] = useState(false);
 
   const topicRef = useRef<HTMLTextAreaElement>(null);
   const analysisRef = useRef<HTMLDivElement>(null);
@@ -792,6 +793,7 @@ export default function CreatePost() {
       const data: GenerateResult = await res.json();
       setResult(data);
       setEditedPost(data.post);
+      setEditorHinted(false);
       await autoSavePost(data, data.post);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
@@ -1463,20 +1465,40 @@ export default function CreatePost() {
 
               {/* Post canvas */}
               <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                <div className="rounded-[28px] bg-surface-container-lowest shadow-[0px_4px_20px_rgba(47,51,51,0.04),0px_12px_40px_rgba(47,51,51,0.06)] transition-all duration-300" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+                <div className="rounded-[28px] bg-surface-container-lowest shadow-[0px_4px_20px_rgba(47,51,51,0.04),0px_12px_40px_rgba(47,51,51,0.06)] transition-all duration-300" style={{ flex: 1, minHeight: 0, overflow: "hidden", cursor: "text" }}>
                   <div className="h-full overflow-y-auto px-7 py-7">
-                    <div
-                      ref={postEditorRef}
-                      contentEditable
-                      suppressContentEditableWarning
-                      role="textbox"
-                      aria-multiline="true"
-                      onInput={handlePostEditorInput}
-                      onMouseUp={handlePostEditorSelection}
-                      onKeyUp={handlePostEditorSelection}
-                      className="manuscript-editor min-h-[52vh] outline-none text-[15.5px] leading-[1.9] text-on-surface whitespace-pre-wrap"
-                      style={{ fontFamily: "inherit" }}
-                    />
+                    <div style={{ position: "relative" }}>
+                      {!editorHinted && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                            pointerEvents: "none",
+                            color: "rgba(119,124,123,0.38)",
+                            fontSize: "15.5px",
+                            lineHeight: "1.9",
+                            fontFamily: "inherit",
+                            userSelect: "none",
+                          }}
+                        >
+                          Click to edit…
+                        </div>
+                      )}
+                      <div
+                        ref={postEditorRef}
+                        contentEditable
+                        suppressContentEditableWarning
+                        role="textbox"
+                        aria-multiline="true"
+                        onFocus={() => setEditorHinted(true)}
+                        onInput={handlePostEditorInput}
+                        onMouseUp={handlePostEditorSelection}
+                        onKeyUp={handlePostEditorSelection}
+                        className="manuscript-editor min-h-[52vh] outline-none text-[15.5px] leading-[1.9] text-on-surface whitespace-pre-wrap"
+                        style={{ fontFamily: "inherit" }}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1590,19 +1612,39 @@ export default function CreatePost() {
                 minHeight: "85vh",
               }}
             >
-              <div className="px-8 py-10 md:px-20 md:py-12">
+              <div className="px-8 py-10 md:px-20 md:py-12" style={{ cursor: "text" }}>
+                <div style={{ position: "relative" }}>
+                  {!editorHinted && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        pointerEvents: "none",
+                        color: "rgba(119,124,123,0.38)",
+                        fontSize: "15.5px",
+                        lineHeight: "1.9",
+                        fontFamily: "inherit",
+                        userSelect: "none",
+                      }}
+                    >
+                      Click to edit…
+                    </div>
+                  )}
                   <div
                     ref={postEditorRef}
-                  contentEditable
-                  suppressContentEditableWarning
-                  role="textbox"
-                  aria-multiline="true"
-                  onInput={handlePostEditorInput}
-                  onMouseUp={handlePostEditorSelection}
-                  onKeyUp={handlePostEditorSelection}
+                    contentEditable
+                    suppressContentEditableWarning
+                    role="textbox"
+                    aria-multiline="true"
+                    onFocus={() => setEditorHinted(true)}
+                    onInput={handlePostEditorInput}
+                    onMouseUp={handlePostEditorSelection}
+                    onKeyUp={handlePostEditorSelection}
                     className="manuscript-editor outline-none text-[15.5px] leading-[1.9] text-on-surface whitespace-pre-wrap"
-                  style={{ fontFamily: "inherit", minHeight: "78vh" }}
-                />
+                    style={{ fontFamily: "inherit", minHeight: "78vh" }}
+                  />
+                </div>
               </div>
             </div>
           </div>

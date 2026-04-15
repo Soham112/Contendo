@@ -39,6 +39,18 @@ def init_db() -> None:
         conn.execute("ALTER TABLE posts ADD COLUMN user_id TEXT DEFAULT 'default'")
     except Exception:
         pass  # column already exists
+    try:
+        conn.execute("ALTER TABLE posts ADD COLUMN published_at TIMESTAMP")
+    except Exception:
+        pass  # column already exists
+    try:
+        conn.execute("ALTER TABLE posts ADD COLUMN published_platform TEXT")
+    except Exception:
+        pass  # column already exists
+    try:
+        conn.execute("ALTER TABLE posts ADD COLUMN published_content TEXT")
+    except Exception:
+        pass  # column already exists
     conn.execute("""
         CREATE TABLE IF NOT EXISTS post_versions (
             id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -219,6 +231,33 @@ def get_best_version(post_id: int, user_id: str = "default") -> dict[str, Any] |
     ).fetchone()
     conn.close()
     return dict(row) if row else None
+
+
+def mark_published(
+    post_id: int,
+    platform: str,
+    published_content: str | None = None,
+    user_id: str = "default",
+) -> bool:
+    """Set published_at, published_platform, and optionally published_content on a post."""
+    conn = _connect()
+    if not _post_owned_by(post_id, user_id, conn):
+        conn.close()
+        return False
+    cursor = conn.execute(
+        """
+        UPDATE posts
+        SET published_at = CURRENT_TIMESTAMP,
+            published_platform = ?,
+            published_content = ?
+        WHERE id = ? AND user_id = ?
+        """,
+        (platform, published_content, post_id, user_id),
+    )
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return updated
 
 
 def update_latest_version_svg(post_id: int, svg_diagrams: str | None, user_id: str = "default") -> bool:

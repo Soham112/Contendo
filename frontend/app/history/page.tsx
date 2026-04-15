@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useApi } from "@/lib/api";
 
@@ -10,6 +11,9 @@ const SS_FEEDBACK = "contentOS_last_feedback";
 const SS_ITERATIONS = "contentOS_last_iterations";
 const SS_VISUALS = "contentOS_last_visuals";
 const SS_CURRENT_POST_ID = "contentOS_current_post_id";
+const SS_TOPIC = "contentOS_last_topic_meta";
+const SS_FORMAT = "contentOS_last_format_meta";
+const SS_TONE = "contentOS_last_tone_meta";
 
 interface Diagram {
   position: number;
@@ -38,6 +42,9 @@ interface Post {
   authenticity_score: number;
   svg_diagrams: Diagram[] | null;
   versions: Version[];
+  published_at: string | null;
+  published_platform: string | null;
+  published_content: string | null;
 }
 
 function svgToDataURL(svgCode: string): Promise<string> {
@@ -167,6 +174,7 @@ function scoreColor(score: number | null): string {
 function PostCard({
   post,
   onDelete,
+  onMarkPublished,
   confirmingId,
   setConfirmingId,
   isExpanded,
@@ -174,12 +182,14 @@ function PostCard({
 }: {
   post: Post;
   onDelete: (id: number) => void;
+  onMarkPublished: (id: number) => void;
   confirmingId: number | null;
   setConfirmingId: (id: number | null) => void;
   isExpanded: boolean;
   onToggle: () => void;
 }) {
   const api = useApi();
+  const router = useRouter();
   const hasVersions = post.versions.length > 1;
   const defaultIdx = hasVersions ? bestVersionIndex(post.versions) : 0;
   const [selectedVersionIdx, setSelectedVersionIdx] = useState(defaultIdx);
@@ -190,6 +200,23 @@ function PostCard({
   const { showToast } = useToast();
 
   const isConfirming = confirmingId === post.id;
+
+  const handleOpenInEditor = () => {
+    const content = hasVersions ? post.versions[selectedVersionIdx].content : post.content;
+    const score = hasVersions ? post.versions[selectedVersionIdx].authenticity_score : post.authenticity_score;
+    try {
+      sessionStorage.setItem(SS_POST, content);
+      sessionStorage.setItem(SS_SCORE, String(score ?? 0));
+      sessionStorage.setItem(SS_FEEDBACK, JSON.stringify([]));
+      sessionStorage.setItem(SS_ITERATIONS, "1");
+      sessionStorage.setItem(SS_VISUALS, JSON.stringify([]));
+      sessionStorage.setItem(SS_CURRENT_POST_ID, String(post.id));
+      sessionStorage.setItem(SS_TOPIC, post.topic);
+      sessionStorage.setItem(SS_FORMAT, post.format);
+      sessionStorage.setItem(SS_TONE, post.tone);
+    } catch { /* ignore */ }
+    router.push("/create");
+  };
 
   const activeVersion = hasVersions ? post.versions[selectedVersionIdx] : null;
   const activeContent = activeVersion ? activeVersion.content : post.content;
@@ -261,7 +288,7 @@ function PostCard({
         style={{ boxShadow: "0px 4px 20px rgba(47,51,51,0.04), 0px 12px 40px rgba(47,51,51,0.06)" }}
         onClick={onToggle}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           {/* Badges */}
           <span className="text-[10px] font-semibold tracking-[0.07em] uppercase px-2.5 py-1 rounded-full bg-primary/10 text-primary">
             {FORMAT_LABELS[post.format] ?? post.format}
@@ -269,6 +296,11 @@ function PostCard({
           <span className="text-[10px] font-semibold tracking-[0.07em] uppercase px-2.5 py-1 rounded-full bg-secondary/10 text-secondary">
             {TONE_LABELS[post.tone] ?? post.tone}
           </span>
+          {post.published_at && (
+            <span className="text-[10px] font-semibold tracking-[0.07em] uppercase px-2.5 py-1 rounded-full" style={{ background: "rgba(88,97,79,0.12)", color: "#58614f" }}>
+              Published{post.published_platform ? ` · ${post.published_platform.charAt(0).toUpperCase() + post.published_platform.slice(1)}` : ""}
+            </span>
+          )}
           <span className="text-[11px] text-outline-variant ml-1">{date}</span>
 
           <div className="flex-1 min-w-0 ml-2">
@@ -309,13 +341,18 @@ function PostCard({
       <div className="px-6 pt-6 pb-4">
 
         {/* Row 1: badges + date + score + three-dot */}
-        <div className="flex items-center gap-2 mb-4">
+        <div className="flex items-center gap-2 mb-4 flex-wrap">
           <span className="text-[10px] font-semibold tracking-[0.07em] uppercase px-2.5 py-1 rounded-full bg-primary/10 text-primary">
             {FORMAT_LABELS[post.format] ?? post.format}
           </span>
           <span className="text-[10px] font-semibold tracking-[0.07em] uppercase px-2.5 py-1 rounded-full bg-secondary/10 text-secondary">
             {TONE_LABELS[post.tone] ?? post.tone}
           </span>
+          {post.published_at && (
+            <span className="text-[10px] font-semibold tracking-[0.07em] uppercase px-2.5 py-1 rounded-full" style={{ background: "rgba(88,97,79,0.12)", color: "#58614f" }}>
+              Published{post.published_platform ? ` · ${post.published_platform.charAt(0).toUpperCase() + post.published_platform.slice(1)}` : ""}
+            </span>
+          )}
           <span className="text-[11px] text-outline-variant ml-1">{date}</span>
 
           <div className="flex-1" />
@@ -430,7 +467,7 @@ function PostCard({
 
       {/* ── Card footer ─────────────────────────────────────────────────── */}
       <div
-        className="px-6 py-4 flex items-center gap-4"
+        className="px-6 py-4 flex items-center gap-4 flex-wrap"
         style={{ borderTop: "0.5px solid #dfe3e2" }}
       >
         {/* View Revision History */}
@@ -445,10 +482,35 @@ function PostCard({
           {copied ? "Copied!" : "View Revision History"}
         </button>
 
+        {/* Open in editor */}
+        <button
+          onClick={handleOpenInEditor}
+          className="flex items-center gap-1.5 text-[12px] text-secondary hover:text-on-surface transition-colors"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg>
+          Open in editor
+        </button>
+
+        {/* Mark as published */}
+        {!post.published_at && (
+          <button
+            onClick={() => onMarkPublished(post.id)}
+            className="flex items-center gap-1.5 text-[12px] text-outline-variant hover:text-primary transition-colors"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            Mark as published
+          </button>
+        )}
+
         {/* Delete */}
         <button
           onClick={() => isConfirming ? setConfirmingId(null) : setConfirmingId(post.id)}
-          className="flex items-center gap-1.5 text-[12px] text-outline-variant hover:text-error transition-colors ml-2"
+          className="flex items-center gap-1.5 text-[12px] text-outline-variant hover:text-error transition-colors"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="3 6 5 6 21 6"/>
@@ -490,6 +552,91 @@ function PostCard({
   );
 }
 
+// ─── Publish Modal ────────────────────────────────────────────────────────────
+
+const PLATFORMS = [
+  { id: "linkedin", label: "LinkedIn" },
+  { id: "twitter", label: "X" },
+  { id: "medium", label: "Medium" },
+  { id: "other", label: "Other" },
+];
+
+function PublishModal({
+  onSave,
+  onClose,
+  saving,
+}: {
+  onSave: (platform: string, content: string) => void;
+  onClose: () => void;
+  saving: boolean;
+}) {
+  const [platform, setPlatform] = useState("linkedin");
+  const [finalContent, setFinalContent] = useState("");
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ background: "rgba(47,51,51,0.35)", backdropFilter: "blur(4px)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        className="bg-surface-container-lowest rounded-2xl px-8 py-7 w-full max-w-md mx-4"
+        style={{ boxShadow: "0px 4px 20px rgba(47,51,51,0.08), 0px 24px 60px rgba(47,51,51,0.12)" }}
+      >
+        <h2 className="font-headline text-[1.2rem] text-on-surface mb-1">Mark as published</h2>
+        <p className="text-[12px] text-outline mb-5">Record where this post went live.</p>
+
+        {/* Platform pills */}
+        <p className="label-caps text-outline mb-2">Platform</p>
+        <div className="flex gap-2 flex-wrap mb-5">
+          {PLATFORMS.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => setPlatform(p.id)}
+              className={`px-4 py-1.5 rounded-full text-[12px] font-semibold transition-all duration-150 ${
+                platform === p.id
+                  ? "text-white"
+                  : "bg-surface-container text-secondary hover:bg-surface-container-high"
+              }`}
+              style={platform === p.id ? { background: "linear-gradient(135deg, #58614f, #4c5543)" } : {}}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Final version textarea */}
+        <p className="label-caps text-outline mb-2">Final version <span className="normal-case font-normal">(optional)</span></p>
+        <textarea
+          value={finalContent}
+          onChange={(e) => setFinalContent(e.target.value)}
+          rows={4}
+          placeholder="Paste what you actually posted — your voice model will learn from it."
+          className="input-editorial w-full px-0 py-2 text-sm text-on-surface placeholder:text-outline-variant focus:outline-none resize-none mb-5"
+          style={{ borderBottom: "1px solid #dfe3e2" }}
+        />
+
+        {/* Actions */}
+        <div className="flex items-center gap-3 justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-[13px] text-secondary hover:text-on-surface transition-colors ghost-border rounded-xl"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onSave(platform, finalContent)}
+            disabled={saving}
+            className="btn-primary px-5 py-2 text-[13px] text-white rounded-xl font-semibold disabled:opacity-50 transition-opacity"
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function HistoryPage() {
@@ -500,13 +647,56 @@ export default function HistoryPage() {
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const { showToast } = useToast();
 
   // Pure UI sort state
   const [sort, setSort] = useState<"newest" | "oldest" | "score">("newest");
+  const [publishFilter, setPublishFilter] = useState<"all" | "published">("all");
+
+  // Publish modal state
+  const [publishingPostId, setPublishingPostId] = useState<number | null>(null);
+  const [publishSaving, setPublishSaving] = useState(false);
+  const [publishSuccessMsg, setPublishSuccessMsg] = useState("");
 
   const handleDeletePost = (id: number) => {
     setPosts((prev) => prev.filter((p) => p.id !== id));
     setConfirmingId(null);
+  };
+
+  const handleMarkPublished = (id: number) => {
+    setPublishingPostId(id);
+    setPublishSuccessMsg("");
+  };
+
+  const handlePublishSave = async (platform: string, publishedContent: string) => {
+    if (!publishingPostId) return;
+    setPublishSaving(true);
+    try {
+      const res = await api.markAsPublished(publishingPostId, platform, publishedContent || undefined);
+      if (!res.ok) throw new Error("Failed to mark as published");
+      // Update local post state
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === publishingPostId
+            ? { ...p, published_at: new Date().toISOString(), published_platform: platform, published_content: publishedContent || null }
+            : p
+        )
+      );
+      if (publishedContent.trim()) {
+        setPublishSuccessMsg("Added to your writing samples — your voice model just got sharper.");
+        setTimeout(() => {
+          setPublishingPostId(null);
+          setPublishSuccessMsg("");
+        }, 1500);
+      } else {
+        setPublishingPostId(null);
+      }
+      showToast("Post marked as published", "success");
+    } catch {
+      showToast("Failed to save — please try again", "error");
+    } finally {
+      setPublishSaving(false);
+    }
   };
 
   useEffect(() => {
@@ -522,6 +712,7 @@ export default function HistoryPage() {
 
   const filteredPosts = posts
     .filter(p => {
+      if (publishFilter === "published" && !p.published_at) return false;
       if (!search.trim()) return true;
       const q = search.toLowerCase();
       return p.topic.toLowerCase().includes(q) || p.content.toLowerCase().includes(q);
@@ -558,6 +749,21 @@ export default function HistoryPage() {
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-8 pr-4 py-1.5 text-[13px] bg-surface-container-low rounded-full border border-surface-container-high focus:outline-none focus:border-outline-variant transition-all text-on-surface placeholder:text-outline-variant"
           />
+        </div>
+
+        {/* Filter toggle: All / Published */}
+        <div className="flex items-center gap-1 bg-surface-container rounded-full p-0.5">
+          {(["all", "published"] as const).map((f) => (
+            <button
+              key={f}
+              onClick={() => setPublishFilter(f)}
+              className={`px-3.5 py-1 rounded-full text-[11px] font-semibold capitalize transition-all duration-150 ${
+                publishFilter === f ? "bg-surface-container-lowest text-on-surface shadow-sm" : "text-outline hover:text-secondary"
+              }`}
+            >
+              {f === "all" ? "All" : "Published"}
+            </button>
+          ))}
         </div>
 
         <div className="flex-1" />
@@ -639,6 +845,7 @@ export default function HistoryPage() {
                 key={post.id}
                 post={post}
                 onDelete={handleDeletePost}
+                onMarkPublished={handleMarkPublished}
                 confirmingId={confirmingId}
                 setConfirmingId={setConfirmingId}
                 isExpanded={expandedId === post.id}
@@ -668,6 +875,30 @@ export default function HistoryPage() {
           <path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5z"/>
         </svg>
       </button>
+
+      {/* ── Publish modal ─────────────────────────────────────────────────── */}
+      {publishingPostId !== null && (
+        publishSuccessMsg ? (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center"
+            style={{ background: "rgba(47,51,51,0.35)", backdropFilter: "blur(4px)" }}
+          >
+            <div
+              className="bg-surface-container-lowest rounded-2xl px-8 py-7 flex items-center gap-3"
+              style={{ boxShadow: "0px 4px 20px rgba(47,51,51,0.08), 0px 24px 60px rgba(47,51,51,0.12)" }}
+            >
+              <span style={{ color: "#58614f", fontSize: 18 }}>✓</span>
+              <p className="text-[13px] text-on-surface">{publishSuccessMsg}</p>
+            </div>
+          </div>
+        ) : (
+          <PublishModal
+            onSave={handlePublishSave}
+            onClose={() => setPublishingPostId(null)}
+            saving={publishSaving}
+          />
+        )
+      )}
     </div>
   );
 }

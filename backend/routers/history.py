@@ -10,9 +10,11 @@ from memory.feedback_store import (
     get_recent_posts,
     get_versions,
     log_post,
+    mark_published,
     update_latest_version_svg,
     update_post,
 )
+from memory.profile_store import save_writing_sample
 
 router = APIRouter()
 
@@ -48,6 +50,10 @@ async def history(user_id: str = Depends(get_user_id_dep)) -> dict:
         for v in versions:
             v["svg_diagrams"] = json.loads(v["svg_diagrams"]) if v.get("svg_diagrams") else None
         post["versions"] = versions
+        # Ensure publish fields are present (None if not yet set)
+        post.setdefault("published_at", None)
+        post.setdefault("published_platform", None)
+        post.setdefault("published_content", None)
     return {"posts": posts}
 
 
@@ -122,6 +128,30 @@ async def delete_post_endpoint(
     if not deleted:
         raise HTTPException(status_code=404, detail="Post not found")
     return {"deleted": deleted}
+
+
+class PublishPostRequest(BaseModel):
+    platform: str
+    published_content: str | None = None
+
+
+@router.patch("/history/{post_id}/publish")
+async def publish_post_endpoint(
+    post_id: int,
+    req: PublishPostRequest,
+    user_id: str = Depends(get_user_id_dep),
+) -> dict:
+    updated = mark_published(
+        post_id=post_id,
+        platform=req.platform,
+        published_content=req.published_content or None,
+        user_id=user_id,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if req.published_content and req.published_content.strip():
+        save_writing_sample(user_id, req.published_content)
+    return {"published": True}
 
 
 @router.post("/history/{post_id}/restore/{version_id}")
