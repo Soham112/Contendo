@@ -173,6 +173,276 @@ function getSelectionOffsetsWithin(node: HTMLElement) {
   };
 }
 
+// ─── Placeholder block helpers ────────────────────────────────────────────────
+
+const PLACEHOLDER_RE = /\[(DIAGRAM|IMAGE):([^\]]+)\]/gi;
+
+/** Imperatively populates the contentEditable editor with text + styled placeholder blocks. */
+function setEditorContent(editor: HTMLDivElement, text: string): void {
+  editor.innerHTML = "";
+  PLACEHOLDER_RE.lastIndex = 0;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = PLACEHOLDER_RE.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      editor.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+    }
+    const kind = match[1].toUpperCase();
+    const placeholder = match[0];
+    const labelText =
+      kind === "DIAGRAM" ? "📊 Visual will appear here" : "🖼 Image reminder will appear here";
+
+    const block = document.createElement("div");
+    block.setAttribute("contentEditable", "false");
+    block.setAttribute("data-placeholder", placeholder);
+    block.style.cssText = [
+      "background:#f3f4f3",
+      "border:1.5px dashed rgba(174,179,178,0.4)",
+      "border-radius:0.75rem",
+      "height:120px",
+      "display:flex",
+      "align-items:center",
+      "justify-content:center",
+      "font-family:Inter,sans-serif",
+      "font-size:0.85rem",
+      "color:#645e57",
+      "user-select:none",
+      "cursor:default",
+      "margin:8px 0",
+      "pointer-events:none",
+    ].join(";");
+    block.textContent = labelText;
+    editor.appendChild(block);
+    lastIndex = match.index + placeholder.length;
+  }
+
+  if (lastIndex < text.length) {
+    editor.appendChild(document.createTextNode(text.slice(lastIndex)));
+  }
+}
+
+/** Extracts raw post text from the editor, converting placeholder blocks back to their original text. */
+function extractTextFromEditor(el: HTMLElement): string {
+  // Fast path: no placeholders in the DOM
+  if (!el.querySelector("[data-placeholder]")) {
+    return el.innerText.replace(/\u00a0/g, " ");
+  }
+
+  const parts: string[] = [];
+
+  function traverse(node: Node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      parts.push(node.textContent ?? "");
+    } else if (node instanceof HTMLElement) {
+      const placeholder = node.getAttribute("data-placeholder");
+      if (placeholder !== null) {
+        parts.push(placeholder);
+        return;
+      }
+      if (node.tagName === "BR") {
+        parts.push("\n");
+        return;
+      }
+      // Handle block-level containers inserted by browser (Enter key in contenteditable)
+      const isBlock = node.tagName === "DIV" || node.tagName === "P";
+      if (isBlock && parts.length > 0 && parts[parts.length - 1] !== "\n") {
+        parts.push("\n");
+      }
+      node.childNodes.forEach(traverse);
+      if (isBlock && parts.length > 0 && parts[parts.length - 1] !== "\n") {
+        parts.push("\n");
+      }
+    }
+  }
+
+  el.childNodes.forEach(traverse);
+  return parts.join("").replace(/\u00a0/g, " ");
+}
+
+/** Strip [DIAGRAM:...] and [IMAGE:...] placeholders from text for clipboard. */
+function stripPlaceholders(text: string): string {
+  return text.replace(/\[(DIAGRAM|IMAGE):[^\]]+\]/gi, "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+// ─── DiagramBlock ─────────────────────────────────────────────────────────────
+
+interface DiagramBlockProps {
+  visual: Visual;
+  api: ReturnType<typeof useApi>;
+  onActiveVersionChange: (position: number, svgCode: string) => void;
+}
+
+function DiagramBlock({ visual, api, onActiveVersionChange }: DiagramBlockProps) {
+  const [versions, setVersions] = useState<string[]>(visual.svg_code ? [visual.svg_code] : []);
+  const [activeVersion, setActiveVersion] = useState(0);
+  const [inputValue, setInputValue] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [refinementError, setRefinementError] = useState("");
+  const [inputFocused, setInputFocused] = useState(false);
+
+  if (!visual.svg_code) {
+    return (
+      <div
+        style={{
+          borderRadius: "0.75rem",
+          background: "#f3f4f3",
+          padding: "20px 24px",
+        }}
+      >
+        <p style={{ color: "#81543c", fontSize: "0.85rem", fontFamily: "Inter, sans-serif" }}>
+          Diagram generation failed — try again
+        </p>
+        <p style={{ color: "#81543c", fontSize: "0.75rem", opacity: 0.7, marginTop: 4, fontFamily: "Inter, sans-serif" }}>
+          {visual.description}
+        </p>
+      </div>
+    );
+  }
+
+  const handleVersionClick = (idx: number) => {
+    setActiveVersion(idx);
+    onActiveVersionChange(visual.position, versions[idx]);
+  };
+
+  const handleUpdate = async () => {
+    if (!inputValue.trim() || isLoading) return;
+    setIsLoading(true);
+    setRefinementError("");
+    try {
+      const res = await api.refineVisual(
+        versions[activeVersion],
+        inputValue,
+        visual.description
+      );
+      if (!res.ok) throw new Error("Refinement failed");
+      const data = await res.json();
+      const newSvg: string = data.svg_code;
+      const newVersions = [...versions, newSvg];
+      setVersions(newVersions);
+      const newIdx = newVersions.length - 1;
+      setActiveVersion(newIdx);
+      setInputValue("");
+      onActiveVersionChange(visual.position, newSvg);
+    } catch {
+      setRefinementError("Refinement failed — try again");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        borderRadius: "0.75rem",
+        background: "#ffffff",
+        boxShadow: "0px 4px 20px rgba(47,51,51,0.04), 0px 12px 40px rgba(47,51,51,0.06)",
+        overflow: "hidden",
+      }}
+    >
+      {/* Header */}
+      <div style={{ padding: "12px 16px", borderBottom: "none" }}>
+        <p style={{ fontSize: "0.8rem", color: "#645e57", fontFamily: "Inter, sans-serif" }}>
+          {visual.description.length > 70
+            ? visual.description.slice(0, 70) + "…"
+            : visual.description}
+        </p>
+      </div>
+
+      {/* SVG display */}
+      <div
+        className="p-4 overflow-x-auto"
+        dangerouslySetInnerHTML={{ __html: versions[activeVersion] }}
+      />
+
+      {/* Controls */}
+      <div
+        style={{
+          padding: "12px 16px 16px",
+          background: "#f3f4f3",
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+        }}
+      >
+        {/* Version pills */}
+        {versions.length > 1 && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {versions.map((_, idx) => (
+              <button
+                key={idx}
+                onClick={() => handleVersionClick(idx)}
+                style={{
+                  padding: "4px 12px",
+                  borderRadius: 999,
+                  fontSize: "0.72rem",
+                  border: idx === activeVersion ? "1px solid #58614f" : "none",
+                  background: idx === activeVersion ? "#eef0eb" : "#e8e9e8",
+                  color: idx === activeVersion ? "#58614f" : "#645e57",
+                  cursor: "pointer",
+                  fontFamily: "Inter, sans-serif",
+                  fontWeight: idx === activeVersion ? 500 : 400,
+                }}
+              >
+                v{idx + 1}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Refinement input row */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <input
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleUpdate(); }}
+            onFocus={() => setInputFocused(true)}
+            onBlur={() => setInputFocused(false)}
+            placeholder="Describe what to change…"
+            disabled={isLoading}
+            style={{
+              flex: 1,
+              background: "#f3f4f3",
+              border: "none",
+              borderBottom: inputFocused ? "1.5px solid #58614f" : "1.5px solid #aeb3b2",
+              padding: "6px 0",
+              fontSize: "0.85rem",
+              color: "#2f3333",
+              outline: "none",
+              fontFamily: "Inter, sans-serif",
+              transition: "border-color 0.15s",
+            }}
+          />
+          <button
+            onClick={handleUpdate}
+            disabled={isLoading || !inputValue.trim()}
+            style={{
+              background: "linear-gradient(135deg, #58614f, #4c5543)",
+              color: "#ffffff",
+              border: "none",
+              borderRadius: "0.75rem",
+              padding: "6px 16px",
+              fontSize: "0.8rem",
+              cursor: isLoading || !inputValue.trim() ? "not-allowed" : "pointer",
+              opacity: isLoading || !inputValue.trim() ? 0.5 : 1,
+              fontFamily: "Inter, sans-serif",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {isLoading ? "Updating…" : "Update →"}
+          </button>
+        </div>
+
+        {refinementError && (
+          <p style={{ fontSize: "0.78rem", color: "#81543c", fontFamily: "Inter, sans-serif" }}>
+            {refinementError}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function DiagramCard({ visual }: { visual: Visual }) {
   const [pngState, setPngState] = useState<"idle" | "opened" | "blocked">("idle");
   const [fallbackDataURL, setFallbackDataURL] = useState<string | null>(null);
@@ -496,6 +766,13 @@ export default function CreatePost() {
   const postEditorRef = useRef<HTMLDivElement>(null);
   const splitContainerRef = useRef<HTMLDivElement>(null);
 
+  // Tracks whether the last editedPost change came from user typing (to skip DOM re-sync)
+  const isUserInput = useRef(false);
+  // Tracks what was last programmatically rendered so we don't re-render on unrelated deps changes
+  const lastRenderedPost = useRef<string>("");
+  // Tracks currently-active SVG per diagram position for history patching
+  const activeDiagramSvgsRef = useRef<Record<number, string>>({});
+
   // Responsive width detection
   useEffect(() => {
     const check = () => setIsWide(window.innerWidth >= 900);
@@ -592,9 +869,18 @@ export default function CreatePost() {
     if (!editedPost) return;
 
     const frame = requestAnimationFrame(() => {
+      // Skip DOM re-render when the change came from user typing in the editor.
+      // The browser already updated the DOM; resetting it would disrupt the cursor.
+      if (isUserInput.current) {
+        isUserInput.current = false;
+        return;
+      }
       const editor = postEditorRef.current;
-      if (editor && editor.innerText !== editedPost) {
-        editor.innerText = editedPost;
+      if (!editor) return;
+      // Re-render when content changed OR when editor was remounted (empty after branch switch).
+      if (editedPost !== lastRenderedPost.current || editor.innerHTML === "") {
+        setEditorContent(editor, editedPost);
+        lastRenderedPost.current = editedPost;
       }
     });
 
@@ -823,7 +1109,8 @@ export default function CreatePost() {
   };
 
   const handlePostEditorInput = (e: React.FormEvent<HTMLDivElement>) => {
-    const nextValue = e.currentTarget.innerText.replace(/\u00a0/g, " ");
+    isUserInput.current = true;
+    const nextValue = extractTextFromEditor(e.currentTarget);
     setEditedPost(nextValue);
   };
 
@@ -884,14 +1171,14 @@ export default function CreatePost() {
   }, [inlineSelection]);
 
   const handleCopyLinkedIn = async () => {
-    await navigator.clipboard.writeText(stripMarkdown(editedPost));
+    await navigator.clipboard.writeText(stripMarkdown(stripPlaceholders(editedPost)));
     setCopiedLinkedIn(true);
     showToast("Copied for LinkedIn", "success");
     setTimeout(() => setCopiedLinkedIn(false), 1500);
   };
 
   const handleCopyMedium = async () => {
-    await navigator.clipboard.writeText(editedPost);
+    await navigator.clipboard.writeText(stripPlaceholders(editedPost));
     setCopiedMedium(true);
     showToast("Copied for Medium", "success");
     setTimeout(() => setCopiedMedium(false), 1500);
@@ -918,6 +1205,15 @@ export default function CreatePost() {
       const newVisuals: Visual[] = data.visuals ?? [];
       setVisuals(newVisuals);
 
+      // Seed the active-version tracker with initial SVGs
+      const svgsByPosition: Record<number, string> = {};
+      newVisuals.forEach((v) => {
+        if (v.type === "diagram" && v.svg_code) {
+          svgsByPosition[v.position] = v.svg_code;
+        }
+      });
+      activeDiagramSvgsRef.current = svgsByPosition;
+
       const diagrams = newVisuals
         .filter((v) => v.type === "diagram" && v.svg_code)
         .map((v) => ({ position: v.position, description: v.description, svg_code: v.svg_code }));
@@ -928,6 +1224,22 @@ export default function CreatePost() {
       setVisuals([]);
     } finally {
       setVisualsLoading(false);
+    }
+  };
+
+  const handleDiagramVersionChange = async (position: number, svgCode: string) => {
+    activeDiagramSvgsRef.current[position] = svgCode;
+    // Patch history with the active version for every diagram
+    const diagrams = visuals
+      .filter((v) => v.type === "diagram")
+      .map((v) => ({
+        position: v.position,
+        description: v.description,
+        svg_code: activeDiagramSvgsRef.current[v.position] ?? v.svg_code,
+      }))
+      .filter((d) => d.svg_code !== null);
+    if (diagrams.length > 0) {
+      await patchHistory({ svg_diagrams: diagrams });
     }
   };
 
@@ -1026,7 +1338,7 @@ export default function CreatePost() {
             // switches. Without this, the remounting single-column div could render
             // empty if the user edited the post while the analysis panel was open.
             if (postEditorRef.current) {
-              const current = postEditorRef.current.innerText.replace(/\u00a0/g, " ");
+              const current = extractTextFromEditor(postEditorRef.current);
               if (current && current !== editedPost) setEditedPost(current);
             }
             setAnalysisOpen(false);
@@ -2087,7 +2399,12 @@ export default function CreatePost() {
                 {!visualsLoading &&
                   visuals.map((v, i) =>
                     v.type === "diagram" ? (
-                      <DiagramCard key={i} visual={v} />
+                      <DiagramBlock
+                        key={i}
+                        visual={v}
+                        api={api}
+                        onActiveVersionChange={handleDiagramVersionChange}
+                      />
                     ) : (
                       <ImageReminderCard key={i} visual={v} />
                     )

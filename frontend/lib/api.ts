@@ -242,6 +242,23 @@ export function useApi() {
         body: JSON.stringify({ post_content }),
       }),
 
+    refineVisual: (
+      svgCode: string,
+      refinementInstruction: string,
+      originalDescription: string,
+      styleHint?: string
+    ) =>
+      apiFetch("/refine-visual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          svg_code: svgCode,
+          refinement_instruction: refinementInstruction,
+          original_description: originalDescription,
+          style_hint: styleHint ?? null,
+        }),
+      }),
+
     // ── Library ───────────────────────────────────────────────────────────
     getLibrary: () => apiFetch("/library"),
 
