@@ -288,71 +288,67 @@ export default function IdeasPage() {
         {/* Breadcrumb */}
         <p className="label-caps text-outline mb-8">Workspace / Ideation</p>
 
-        {/* ── Hero + Controls two-column row ─────────────────────────────── */}
-        <div className="flex gap-10 mb-12 items-start">
+        {/* ── Hero — centered ────────────────────────────────────────────── */}
+        <div className="text-center mb-10">
+          <h1 className="font-headline text-[3rem] text-on-surface leading-[1.1] mb-4">
+            Ignite your next<br />
+            <em>literary masterpiece.</em>
+          </h1>
+          <p className="text-secondary text-[15px] leading-relaxed">
+            Input a theme or leave it to chance. Our atelier synthesizes global trends with your unique editorial voice.
+          </p>
+        </div>
 
-          {/* Left: hero text (~55%) */}
-          <div className="flex-1 min-w-0">
-            <h1 className="font-headline text-[3rem] text-on-surface leading-[1.1] mb-4">
-              Ignite your next<br />
-              <em>literary masterpiece.</em>
-            </h1>
-            <p className="text-secondary text-[15px] leading-relaxed max-w-md">
-              Input a theme or leave it to chance. Our atelier synthesizes global trends with your unique editorial voice.
-            </p>
+        {/* ── Controls — centered single column ──────────────────────────── */}
+        <div className="flex flex-col gap-4 mx-auto mb-12" style={{ maxWidth: 420 }}>
+
+          {/* Topic input — pill shape */}
+          <div>
+            <label className="label-caps text-secondary block mb-2 text-center">Topic Filter (Optional)</label>
+            <input
+              type="text"
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && !loading && handleGenerate()}
+              placeholder="e.g. Minimalist Architecture, French..."
+              className="input-editorial w-full px-5 py-3 rounded-full text-[14px] font-medium text-on-surface placeholder:text-outline-variant focus:outline-none"
+            />
           </div>
 
-          {/* Right: controls card (~45%) */}
-          <div className="w-[400px] shrink-0 bg-surface-container-lowest rounded-2xl shadow-card p-6 flex flex-col gap-5">
-
-            {/* Topic input */}
-            <div>
-              <label className="label-caps text-secondary block mb-2">Topic Filter (Optional)</label>
-              <input
-                type="text"
-                value={topic}
-                onChange={(e) => setTopic(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && !loading && handleGenerate()}
-                placeholder="e.g. Minimalist Architecture, French..."
-                className="input-editorial w-full px-0 py-2 text-[14px] font-medium text-on-surface placeholder:text-outline-variant focus:outline-none"
-              />
+          {/* Count pills — centered row */}
+          <div>
+            <label className="label-caps text-secondary block mb-2 text-center">Idea Count</label>
+            <div className="flex gap-2 justify-center">
+              {COUNT_OPTIONS.map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setCount(n)}
+                  className={`flex-1 py-2 rounded-full text-[13px] font-semibold transition-all duration-200 ${
+                    count === n
+                      ? "btn-primary text-white shadow-card"
+                      : "bg-surface-container text-secondary hover:bg-surface-container-high hover:text-on-surface"
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
             </div>
-
-            {/* Count pills */}
-            <div>
-              <label className="label-caps text-secondary block mb-2">Idea Count</label>
-              <div className="flex gap-2">
-                {COUNT_OPTIONS.map((n) => (
-                  <button
-                    key={n}
-                    onClick={() => setCount(n)}
-                    className={`flex-1 py-2 rounded-full text-[13px] font-semibold transition-all duration-200 ${
-                      count === n
-                        ? "btn-primary text-white shadow-card"
-                        : "bg-surface-container text-secondary hover:bg-surface-container-high hover:text-on-surface"
-                    }`}
-                  >
-                    {n}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Generate button */}
-            <button
-              onClick={handleGenerate}
-              disabled={loading}
-              className="btn-primary w-full rounded-xl text-white text-[13px] font-bold tracking-widest uppercase py-3.5 hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed shadow-card hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-2"
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5z"/>
-                <path d="M5 3l.5 2L7 6l-1.5.5L5 9l-.5-2.5L3 6l1.5-.5z"/>
-              </svg>
-              {loading ? "Generating..." : "Generate Ideas"}
-            </button>
-
-            {error && <p className="text-error text-xs -mt-2">{error}</p>}
           </div>
+
+          {/* Generate button — full width */}
+          <button
+            onClick={handleGenerate}
+            disabled={loading}
+            className="btn-primary w-full rounded-xl text-white text-[13px] font-bold tracking-widest uppercase py-3.5 hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed shadow-card hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-2"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5z"/>
+              <path d="M5 3l.5 2L7 6l-1.5.5L5 9l-.5-2.5L3 6l1.5-.5z"/>
+            </svg>
+            {loading ? "Generating..." : "Generate Ideas"}
+          </button>
+
+          {error && <p className="text-error text-xs text-center">{error}</p>}
         </div>
 
         {/* ── Generated ideas grid ───────────────────────────────────────── */}
