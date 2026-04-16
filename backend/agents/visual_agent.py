@@ -40,15 +40,18 @@ Visual style: {style_description}
 
 Requirements:
 - viewBox must be '0 0 680 400' or taller if needed
-- Light white or off-white background
-- Use colored rounded rectangles for components
+- Light white or off-white background (#ffffff or #faf9f8)
+- Use soft, muted colors only — sage greens (#e8ede4, #c5d4be), warm grays (#e8e6e3, #f3f4f3), soft terracotta (#f0e0d6) for highlights; never use bright primary colors (no red, blue, green, yellow in full saturation)
+- Use colored rounded rectangles for components — rx=8 minimum on all rectangles
 - Use arrows with clear direction to show flow
-- Bold title at the top describing the diagram
+- Bold title at the top describing the diagram; add a subtitle line below it in a lighter weight (font-weight 400) and smaller font size (80% of title size)
+- Nodes should have a main label in bold (font-weight 600) and a sublabel in lighter weight (font-weight 400, smaller font-size) below it when appropriate
 - Color code by category — same type of component gets the same color
 - Clean sans-serif labels on every component
-- Group related components inside dashed border containers
+- Group related components inside dashed border containers (stroke-dasharray), not solid borders
+- Add a legend section at the bottom if the diagram has color-coded elements
+- Generous whitespace between elements — do not crowd; minimum 20px between adjacent elements
 - Maximum 12 components — keep it readable
-- No gradients, no shadows, no decorative elements
 - No external fonts, no external images, no CDN links — fully self-contained SVG
 - Output ONLY the raw SVG code starting with <svg — no explanation, no markdown, no backticks"""
 
