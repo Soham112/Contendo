@@ -145,11 +145,9 @@ export default function WelcomePage() {
           className="px-5 sm:px-8 text-center flex flex-col items-center justify-center"
           style={{
             minHeight: "100vh",
-            paddingTop: 48,
+            paddingTop: 120,
             paddingBottom: 72,
             background: "linear-gradient(to bottom, #faf9f8 85%, #f3f4f3 100%)",
-            backgroundImage:
-              "radial-gradient(ellipse at 50% 40%, rgba(88,97,79,0.04) 0%, transparent 70%), linear-gradient(to bottom, #faf9f8 85%, #f3f4f3 100%)",
           }}
         >
           <div className="max-w-[980px] mx-auto">
@@ -157,9 +155,7 @@ export default function WelcomePage() {
               className="font-headline font-normal leading-[1.1] tracking-tight mb-5"
               style={{ fontSize: "clamp(2.8rem, 5vw, 3.8rem)", color: "#2f3333" }}
             >
-              <span>Write like yourself.</span>
-              <br />
-              <span style={{ fontStyle: "italic", color: "#58614f" }}>At scale.</span>
+              Write like yourself. At scale.
             </h1>
 
             <p
@@ -177,13 +173,12 @@ export default function WelcomePage() {
 
             <form
               onSubmit={handleHeroSubmit}
-              className="mx-auto flex flex-col sm:flex-row gap-2 sm:items-center"
+              className="mx-auto rounded-xl flex flex-col sm:flex-row gap-2 sm:items-center"
               style={{
-                maxWidth: "620px",
-                background: "#f3f4f3",
-                borderRadius: 9999,
-                border: "none",
-                padding: "6px 6px 6px 20px",
+                maxWidth: "680px",
+                background: "#ffffff",
+                border: "1px solid rgba(174, 179, 178, 0.25)",
+                padding: "8px 8px 8px 16px",
               }}
               aria-label="Start your first post"
             >
@@ -197,13 +192,13 @@ export default function WelcomePage() {
                   }
                 }}
                 placeholder="What do you want to write about today?"
-                className="flex-1 bg-transparent text-[14px] sm:text-[13px] text-on-surface placeholder:text-outline focus:outline-none"
-                style={{ minHeight: "44px" }}
+                className="flex-1 bg-transparent text-[14px] sm:text-[13px] text-on-surface placeholder:text-outline focus:outline-none focus:border-b-2 focus:border-b-[#58614f]"
+                style={{ minHeight: "64px", paddingTop: "20px", paddingBottom: "20px" }}
                 aria-label="Topic prompt"
               />
               <button
                 type="submit"
-                className="btn-primary text-white text-[13px] font-medium rounded-full px-5 py-3 sm:py-2.5 whitespace-nowrap self-center w-full sm:w-auto"
+                className="btn-primary text-white text-[13px] font-medium rounded-md px-5 py-3 sm:py-2.5 whitespace-nowrap self-center w-full sm:w-auto"
               >
                 Start Writing
               </button>
