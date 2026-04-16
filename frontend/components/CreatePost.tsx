@@ -17,6 +17,7 @@ const SS_FORMAT = "contentOS_last_format_meta";
 const SS_TONE = "contentOS_last_tone_meta";
 const SS_LENGTH = "contentOS_last_length";
 const SS_SCORED = "contentOS_last_scored";
+const SS_RAW_POST = "contentOS_raw_post";
 
 
 type Format = "linkedin post" | "medium article" | "thread";
@@ -717,6 +718,7 @@ export default function CreatePost() {
   const [visuals, setVisuals] = useState<Visual[]>([]);
   const [visualsLoading, setVisualsLoading] = useState(false);
   const [visualsVisible, setVisualsVisible] = useState(false);
+  const [visualsPanelEntered, setVisualsPanelEntered] = useState(false);
 
   const { showToast } = useToast();
   const [lastSaved, setLastSaved] = useState<number | null>(null);
@@ -772,6 +774,9 @@ export default function CreatePost() {
   const lastRenderedPost = useRef<string>("");
   // Tracks currently-active SVG per diagram position for history patching
   const activeDiagramSvgsRef = useRef<Record<number, string>>({});
+  // Stores the original generated post text with [DIAGRAM:/IMAGE:] placeholders intact
+  // (editedPost stores the clean version; rawPostRef is used for /generate-visuals)
+  const rawPostRef = useRef<string>("");
 
   // Responsive width detection
   useEffect(() => {
@@ -835,6 +840,7 @@ export default function CreatePost() {
     if (!result) return;
     try {
       sessionStorage.setItem(SS_POST, editedPost);
+      sessionStorage.setItem(SS_RAW_POST, rawPostRef.current);
       sessionStorage.setItem(SS_SCORE, String(result.score));
       sessionStorage.setItem(SS_FEEDBACK, JSON.stringify(result.score_feedback));
       sessionStorage.setItem(SS_ITERATIONS, String(result.iterations));
@@ -865,6 +871,15 @@ export default function CreatePost() {
     return () => clearTimeout(t);
   }, [tone]);
 
+  // Drive slide-in animation for the visuals panel
+  useEffect(() => {
+    if (visualsVisible) {
+      requestAnimationFrame(() => setVisualsPanelEntered(true));
+    } else {
+      setVisualsPanelEntered(false);
+    }
+  }, [visualsVisible]);
+
   useEffect(() => {
     if (!editedPost) return;
 
@@ -890,7 +905,7 @@ export default function CreatePost() {
   }, [editedPost, analysisOpen, isWide, visualsVisible, loading]);
 
   const clearSession = () => {
-    [SS_POST, SS_SCORE, SS_FEEDBACK, SS_ITERATIONS, SS_VISUALS, SS_IDEAS, SS_CURRENT_POST_ID, SS_TOPIC, SS_FORMAT, SS_TONE, SS_LENGTH, SS_SCORED].forEach((k) =>
+    [SS_POST, SS_SCORE, SS_FEEDBACK, SS_ITERATIONS, SS_VISUALS, SS_IDEAS, SS_CURRENT_POST_ID, SS_TOPIC, SS_FORMAT, SS_TONE, SS_LENGTH, SS_SCORED, SS_RAW_POST].forEach((k) =>
       sessionStorage.removeItem(k)
     );
     setCurrentPostId(null);
@@ -925,8 +940,15 @@ export default function CreatePost() {
         };
         setResult(restoredResult);
         setEditedPost(savedPost);
+        // Restore raw post (with placeholders) for /generate-visuals calls
+        const savedRawPost = sessionStorage.getItem(SS_RAW_POST);
+        rawPostRef.current = savedRawPost ?? savedPost;
         if (savedVisuals) {
-          try { setVisuals(JSON.parse(savedVisuals)); } catch { /* ignore */ }
+          try {
+            const parsedVisuals = JSON.parse(savedVisuals);
+            setVisuals(parsedVisuals);
+            if (parsedVisuals.length > 0) setVisualsVisible(true);
+          } catch { /* ignore */ }
         }
         if (savedTopic) setTopic(savedTopic);
         if (savedFormat) setFormat(savedFormat as Format);
@@ -945,9 +967,10 @@ export default function CreatePost() {
   // Discard saved session and start blank — called when user clicks "Start fresh"
   const handleStartFresh = () => {
     [SS_POST, SS_SCORE, SS_FEEDBACK, SS_ITERATIONS, SS_VISUALS, SS_IDEAS,
-     SS_CURRENT_POST_ID, SS_TOPIC, SS_FORMAT, SS_TONE, SS_LENGTH, SS_SCORED, SS_SHOW_ANALYSIS].forEach((k) =>
+     SS_CURRENT_POST_ID, SS_TOPIC, SS_FORMAT, SS_TONE, SS_LENGTH, SS_SCORED, SS_SHOW_ANALYSIS, SS_RAW_POST].forEach((k) =>
       sessionStorage.removeItem(k)
     );
+    rawPostRef.current = "";
     sessionStorage.removeItem("contentOS_last_topic");
 
     const prefillFormat = sessionStorage.getItem("contentOS_prefill_format");
@@ -1077,10 +1100,13 @@ export default function CreatePost() {
       }
 
       const data: GenerateResult = await res.json();
+      // Store raw post (with placeholders) for /generate-visuals, strip for display/editing
+      rawPostRef.current = data.post;
+      const cleanPost = stripPlaceholders(data.post);
       setResult(data);
-      setEditedPost(data.post);
+      setEditedPost(cleanPost);
       setEditorHinted(false);
-      await autoSavePost(data, data.post);
+      await autoSavePost(data, cleanPost);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
     } finally {
@@ -1186,7 +1212,6 @@ export default function CreatePost() {
 
   const handleGenerateVisuals = async () => {
     setVisualsLoading(true);
-    setVisualsVisible(true);
     setVisuals([]);
     setAnalysisOpen(false);
 
@@ -1199,7 +1224,8 @@ export default function CreatePost() {
     }
 
     try {
-      const res = await api.generateVisuals(editedPost);
+      // Use the raw post (with [DIAGRAM:/IMAGE:] placeholders) so the backend can parse them
+      const res = await api.generateVisuals(rawPostRef.current || editedPost);
       if (!res.ok) throw new Error("Visuals generation failed");
       const data = await res.json();
       const newVisuals: Visual[] = data.visuals ?? [];
@@ -1219,6 +1245,11 @@ export default function CreatePost() {
         .map((v) => ({ position: v.position, description: v.description, svg_code: v.svg_code }));
       if (diagrams.length > 0) {
         await patchHistory({ svg_diagrams: diagrams });
+      }
+
+      // Slide panel in after successful generation
+      if (newVisuals.length > 0) {
+        setVisualsVisible(true);
       }
     } catch {
       setVisuals([]);
@@ -1579,9 +1610,17 @@ export default function CreatePost() {
       </button>
 
       <button
-        onClick={visuals.length > 0 ? () => { setVisualsVisible(true); setAnalysisOpen(false); } : handleGenerateVisuals}
+        onClick={
+          visualsLoading
+            ? undefined
+            : visualsVisible
+            ? () => setVisualsVisible(false)
+            : visuals.length > 0
+            ? () => setVisualsVisible(true)
+            : handleGenerateVisuals
+        }
         disabled={visualsLoading}
-        title="Visuals"
+        title={visualsLoading ? "Generating visuals…" : visualsVisible ? "Hide visuals" : "Generate visuals"}
         style={splitActive ? { display: "flex", flexDirection: "column", alignItems: "center", gap: 5, background: "none", border: "none", cursor: visualsLoading ? "not-allowed" : "pointer", opacity: visualsLoading ? 0.5 : 1, padding: "4px 6px", borderRadius: 8 } : actionBtnStyle(visualsLoading)}
       >
         <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke="#2f3333" strokeWidth="2">
@@ -1589,7 +1628,7 @@ export default function CreatePost() {
           <circle cx="8.5" cy="8.5" r="1.5" />
           <polyline points="21 15 16 10 5 21" />
         </svg>
-        <span style={btnLabelStyle}>Visuals</span>
+        <span style={btnLabelStyle}>{visualsLoading ? "Generating" : visualsVisible ? "Hide" : "Visuals"}</span>
       </button>
 
       <button
@@ -1871,7 +1910,7 @@ export default function CreatePost() {
           </div>
         </div>
 
-      ) : postGenerated && !loading && !visualsVisible ? (
+      ) : postGenerated && !loading ? (
         // ── Single-column manuscript (panel closed or narrow) ────────────────
         <div style={{ flex: 1, overflowY: "auto" }}>
           <div style={{ width: "100%", display: "flex", justifyContent: "center", padding: "40px 2rem 48px" }}>
@@ -1991,6 +2030,117 @@ export default function CreatePost() {
               }}
             >
               {analysisPanelContent}
+            </div>
+          )}
+
+          {/* ── Visuals panel — slides in below post on Generate visuals ──── */}
+          {visualsVisible && (
+            <div
+              style={{
+                marginTop: 40,
+                opacity: visualsPanelEntered ? 1 : 0,
+                transform: visualsPanelEntered ? "translateY(0)" : "translateY(16px)",
+                transition: "opacity 300ms ease-out, transform 300ms ease-out",
+              }}
+            >
+              {/* Panel header */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginBottom: 20,
+                }}
+              >
+                <p
+                  className="label-caps text-secondary"
+                  style={{ fontSize: "0.6rem", letterSpacing: "0.1em" }}
+                >
+                  VISUALS
+                </p>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <button
+                    onClick={handleGenerateVisuals}
+                    disabled={visualsLoading}
+                    style={{
+                      fontSize: "0.78rem",
+                      color: "#645e57",
+                      background: "#f3f4f3",
+                      border: "none",
+                      borderRadius: "0.5rem",
+                      padding: "4px 12px",
+                      cursor: visualsLoading ? "not-allowed" : "pointer",
+                      opacity: visualsLoading ? 0.5 : 1,
+                      fontFamily: "Inter, sans-serif",
+                    }}
+                  >
+                    {visualsLoading ? "Scanning…" : "Regenerate"}
+                  </button>
+                  <button
+                    onClick={() => setVisualsVisible(false)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      color: "#aeb3b2",
+                      fontSize: "1.1rem",
+                      lineHeight: 1,
+                      padding: "2px 4px",
+                    }}
+                    aria-label="Close visuals panel"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+
+              {visualsLoading && (
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    padding: "48px 0",
+                    gap: 12,
+                  }}
+                >
+                  <div className="w-8 h-8 rounded-full border-2 border-surface-container-high border-t-primary animate-spin" />
+                  <p style={{ fontSize: "0.85rem", color: "#645e57", fontFamily: "Inter, sans-serif" }}>
+                    Scanning post for visual opportunities…
+                  </p>
+                </div>
+              )}
+
+              {!visualsLoading && visuals.length === 0 && (
+                <div
+                  style={{
+                    borderRadius: "0.75rem",
+                    background: "#f3f4f3",
+                    padding: "20px 24px",
+                  }}
+                >
+                  <p style={{ fontSize: "0.85rem", color: "#645e57", fontFamily: "Inter, sans-serif" }}>
+                    No visual placeholders found in post.
+                  </p>
+                </div>
+              )}
+
+              {!visualsLoading && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
+                  {visuals.map((v, i) =>
+                    v.type === "diagram" ? (
+                      <DiagramBlock
+                        key={i}
+                        visual={v}
+                        api={api}
+                        onActiveVersionChange={handleDiagramVersionChange}
+                      />
+                    ) : (
+                      <ImageReminderCard key={i} visual={v} />
+                    )
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -2355,60 +2505,6 @@ export default function CreatePost() {
                     Retrieving from memory, composing in your voice, running humanizer pass…
                   </p>
                 </div>
-              </div>
-            )}
-
-            {/* ── Visuals ─────────────────────────────────────────────────── */}
-            {postGenerated && !loading && visualsVisible && (
-              <div className="space-y-5">
-                <div className="flex items-center justify-between">
-                  <button
-                    onClick={() => setVisualsVisible(false)}
-                    className="text-xs text-outline hover:text-secondary transition-colors"
-                  >
-                    ← Back to post
-                  </button>
-                  <button
-                    onClick={handleGenerateVisuals}
-                    disabled={visualsLoading}
-                    className="text-xs border border-surface-container-high rounded-lg px-3 py-1.5 text-secondary hover:border-outline-variant hover:text-on-surface transition-colors bg-surface-container-lowest disabled:opacity-50"
-                  >
-                    {visualsLoading ? "Scanning…" : "Regenerate visuals"}
-                  </button>
-                </div>
-
-                {visualsLoading && (
-                  <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-                    <div className="w-8 h-8 rounded-full border-2 border-surface-container-high border-t-primary animate-spin" />
-                    <p className="text-sm text-outline">Scanning post for visual opportunities…</p>
-                  </div>
-                )}
-
-                {!visualsLoading && visuals.length === 0 && (
-                  <div className="rounded-xl border border-surface-container-high bg-surface-container-lowest px-5 py-5">
-                    <p className="text-sm text-outline leading-relaxed">
-                      No visual placeholders found. Add{" "}
-                      <code className="text-xs bg-surface-container-low px-1 py-0.5 rounded">[DIAGRAM: description]</code>
-                      {" "}or{" "}
-                      <code className="text-xs bg-surface-container-low px-1 py-0.5 rounded">[IMAGE: description]</code>
-                      {" "}to your post and try again.
-                    </p>
-                  </div>
-                )}
-
-                {!visualsLoading &&
-                  visuals.map((v, i) =>
-                    v.type === "diagram" ? (
-                      <DiagramBlock
-                        key={i}
-                        visual={v}
-                        api={api}
-                        onActiveVersionChange={handleDiagramVersionChange}
-                      />
-                    ) : (
-                      <ImageReminderCard key={i} visual={v} />
-                    )
-                  )}
               </div>
             )}
 
