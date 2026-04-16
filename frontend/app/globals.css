@@ -171,3 +171,15 @@ body::before {
   background: #dce6ce;
   color: #394231;
 }
+
+/* ── Living Archive card — mobile stack ─────────────────── */
+@media (max-width: 640px) {
+  .archive-card-inner {
+    flex-direction: column !important;
+  }
+  .archive-card-img {
+    flex: none !important;
+    width: 100% !important;
+    height: 120px !important;
+  }
+}

@@ -477,16 +477,24 @@ export default function WelcomePage() {
 
             <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
               <article className="md:col-span-7 rounded-2xl bg-surface-container p-6 sm:p-7">
-                <p className="font-headline text-[1.55rem] mb-2">The Living Archive</p>
-                <p className="text-[13px] text-secondary leading-relaxed max-w-[560px] mb-5">
-                  Input any source, from PDFs to raw voice notes. Contendo indexes your unique
-                  world-view into a private semantic library.
-                </p>
-                <img
-                  src="/archive-card.png"
-                  alt="The Living Archive"
-                  style={{ width: "100%", height: 160, borderRadius: 12, objectFit: "cover", display: "block" }}
-                />
+                <div
+                  className="archive-card-inner"
+                  style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "1.5rem" }}
+                >
+                  <div style={{ flex: 1 }}>
+                    <p className="font-headline text-[1.55rem] mb-2">The Living Archive</p>
+                    <p className="text-[13px] text-secondary leading-relaxed max-w-[560px]">
+                      Input any source, from PDFs to raw voice notes. Contendo indexes your unique
+                      world-view into a private semantic library.
+                    </p>
+                  </div>
+                  <img
+                    src="/archive-card.png"
+                    alt="The Living Archive"
+                    className="archive-card-img"
+                    style={{ flex: "0 0 45%", height: 140, borderRadius: 12, objectFit: "cover", display: "block", width: "100%" }}
+                  />
+                </div>
               </article>
 
               <article
