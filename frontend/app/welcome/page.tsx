@@ -482,9 +482,11 @@ export default function WelcomePage() {
                   Input any source, from PDFs to raw voice notes. Contendo indexes your unique
                   world-view into a private semantic library.
                 </p>
-                <div className="h-[110px] rounded-xl bg-surface-container-high relative overflow-hidden">
-                  <div className="absolute inset-0 opacity-50 bg-[radial-gradient(circle_at_70%_45%,#2f3333_0%,transparent_45%)]" />
-                </div>
+                <img
+                  src="/archive-card.png"
+                  alt="The Living Archive"
+                  style={{ width: "100%", height: 160, borderRadius: 12, objectFit: "cover", display: "block" }}
+                />
               </article>
 
               <article
@@ -517,6 +519,20 @@ export default function WelcomePage() {
                     profile and scores how well the draft resonates with your intended audience.
                     Every suggestion is grounded in your own writing, not a template.
                   </p>
+                  <div style={{ marginTop: "1rem", display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.875rem", color: "#645e57" }}>
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <polyline points="2,7 5.5,10.5 12,4" stroke="#58614f" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      Tone Consistency Check
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.875rem", color: "#645e57" }}>
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <polyline points="2,7 5.5,10.5 12,4" stroke="#58614f" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      Audience Resonance Scoring
+                    </div>
+                  </div>
                 </div>
                 <div className="glass rounded-xl p-4">
                   <p className="font-headline italic text-[1.05rem] text-secondary mb-4">
@@ -526,6 +542,14 @@ export default function WelcomePage() {
                     <div className="h-1.5 rounded-full bg-surface-container-high w-full" />
                     <div className="h-1.5 rounded-full bg-surface-container-high w-[88%]" />
                     <div className="h-1.5 rounded-full bg-surface-container-high w-[74%]" />
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                    <span style={{ background: "#f0ede8", color: "#645e57", borderRadius: 9999, padding: "6px 14px", fontSize: "0.75rem", letterSpacing: "0.05em" }}>
+                      MORE POETIC
+                    </span>
+                    <span style={{ background: "#f0ede8", color: "#645e57", borderRadius: 9999, padding: "6px 14px", fontSize: "0.75rem", letterSpacing: "0.05em" }}>
+                      FORMALIZE
+                    </span>
                   </div>
                 </div>
               </article>
