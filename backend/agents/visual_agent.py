@@ -10,8 +10,33 @@ client = anthropic.Anthropic(
     max_retries=3,
 )
 
+STYLE_VARIANTS = [
+    {
+        "name": "flowchart",
+        "description": "Left-to-right flowchart with rounded rectangles and directional arrows. Color: sage greens and warm greys.",
+    },
+    {
+        "name": "layered",
+        "description": "Horizontal stacked layers like an architecture diagram. Each layer a different muted tone. Labels left-aligned.",
+    },
+    {
+        "name": "radial",
+        "description": "Central concept with spokes radiating outward to connected nodes. Clean circular layout.",
+    },
+    {
+        "name": "timeline",
+        "description": "Left-to-right timeline with nodes on a horizontal spine. Dates or steps above, descriptions below.",
+    },
+    {
+        "name": "comparison",
+        "description": "Two or three column comparison layout. Each column a distinct muted color. Headers bold at top.",
+    },
+]
+
 DIAGRAM_PROMPT = """Generate a clean SVG diagram for the following concept:
 {description}
+
+Visual style: {style_description}
 
 Requirements:
 - viewBox must be '0 0 680 400' or taller if needed
@@ -26,6 +51,80 @@ Requirements:
 - No gradients, no shadows, no decorative elements
 - No external fonts, no external images, no CDN links — fully self-contained SVG
 - Output ONLY the raw SVG code starting with <svg — no explanation, no markdown, no backticks"""
+
+REFINE_PROMPT = """You are refining an existing SVG diagram based on a user instruction.
+
+Original diagram description:
+{description}
+
+Current SVG:
+{current_svg}
+
+Refinement instruction:
+{instruction}
+
+Modify the diagram based on this instruction. Keep the same viewBox and self-contained SVG rules. Output only raw SVG."""
+
+
+def _select_style_variant(description: str) -> dict:
+    desc_lower = description.lower()
+    if any(word in desc_lower for word in ["flow", "process", "pipeline", "steps", "step"]):
+        return next(v for v in STYLE_VARIANTS if v["name"] == "flowchart")
+    if any(word in desc_lower for word in ["layer", "stack", "architecture", "infrastructure"]):
+        return next(v for v in STYLE_VARIANTS if v["name"] == "layered")
+    if any(word in desc_lower for word in ["compare", "vs", "versus", "difference", "comparison"]):
+        return next(v for v in STYLE_VARIANTS if v["name"] == "comparison")
+    if any(word in desc_lower for word in ["timeline", "history", "evolution", "over time"]):
+        return next(v for v in STYLE_VARIANTS if v["name"] == "timeline")
+    return next(v for v in STYLE_VARIANTS if v["name"] == "radial")
+
+
+def _strip_svg(raw: str) -> str:
+    raw = raw.strip()
+    if raw.startswith("```"):
+        lines = raw.split("\n")
+        raw = "\n".join(
+            line for line in lines
+            if not line.strip().startswith("```")
+        ).strip()
+    if not raw.startswith("<svg"):
+        raise ValueError("Claude returned malformed SVG — does not start with <svg")
+    return raw
+
+
+def generate_svg_for_diagram(
+    description: str,
+    style_hint: str | None = None,
+    current_svg: str | None = None,
+    refinement_instruction: str | None = None,
+) -> str:
+    """Generate or refine an SVG diagram.
+
+    Args:
+        description: The original diagram description.
+        style_hint: Optional explicit style description (overrides auto-selection).
+        current_svg: For refinement — the existing SVG to modify.
+        refinement_instruction: For refinement — what to change.
+    """
+    if refinement_instruction and current_svg:
+        prompt = REFINE_PROMPT.format(
+            description=description,
+            current_svg=current_svg,
+            instruction=refinement_instruction,
+        )
+    else:
+        style_description = style_hint or _select_style_variant(description)["description"]
+        prompt = DIAGRAM_PROMPT.format(
+            description=description,
+            style_description=style_description,
+        )
+
+    message = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=4000,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return _strip_svg(message.content[0].text)
 
 
 def _parse_placeholders(post_content: str) -> list[dict]:
@@ -44,33 +143,6 @@ def _parse_placeholders(post_content: str) -> list[dict]:
     return results
 
 
-def _generate_svg(description: str) -> str:
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=4000,
-        messages=[
-            {
-                "role": "user",
-                "content": DIAGRAM_PROMPT.format(description=description),
-            }
-        ],
-    )
-    raw = message.content[0].text.strip()
-
-    # Strip markdown code fences if Claude wrapped the SVG
-    if raw.startswith("```"):
-        lines = raw.split("\n")
-        raw = "\n".join(
-            line for line in lines
-            if not line.strip().startswith("```")
-        ).strip()
-
-    if not raw.startswith("<svg"):
-        raise ValueError(f"Claude returned malformed SVG — does not start with <svg")
-
-    return raw
-
-
 def generate_visuals(post_content: str) -> list[dict]:
     placeholders = _parse_placeholders(post_content)
     visuals = []
@@ -78,7 +150,7 @@ def generate_visuals(post_content: str) -> list[dict]:
     for item in placeholders:
         if item["type"] == "DIAGRAM":
             try:
-                svg_code = _generate_svg(item["description"])
+                svg_code = generate_svg_for_diagram(item["description"])
                 visuals.append({
                     "type": "diagram",
                     "placeholder": item["placeholder"],

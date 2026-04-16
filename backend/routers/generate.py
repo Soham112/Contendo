@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 from agents.humanizer_agent import refine_draft
 from agents.scorer_agent import score_text
-from agents.visual_agent import generate_visuals
+from agents.visual_agent import generate_visuals, generate_svg_for_diagram
 from auth.clerk import get_user_id_dep
 from pipeline.graph import run_pipeline
 
@@ -58,6 +58,13 @@ class RefineSelectionRequest(BaseModel):
 
 class GenerateVisualsRequest(BaseModel):
     post_content: str
+
+
+class RefineVisualRequest(BaseModel):
+    svg_code: str
+    refinement_instruction: str
+    original_description: str
+    style_hint: str | None = None
 
 
 def _raise_anthropic_error(e: Exception) -> None:
@@ -192,3 +199,26 @@ async def generate_visuals_endpoint(req: GenerateVisualsRequest) -> dict:
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     return {"visuals": visuals}
+
+
+@router.post("/refine-visual")
+async def refine_visual_endpoint(
+    req: RefineVisualRequest,
+    user_id: str = Depends(get_user_id_dep),
+) -> dict:
+    if not req.svg_code.strip():
+        raise HTTPException(status_code=400, detail="svg_code is required")
+    if not req.refinement_instruction.strip():
+        raise HTTPException(status_code=400, detail="refinement_instruction is required")
+    try:
+        svg_code = generate_svg_for_diagram(
+            description=req.original_description,
+            style_hint=req.style_hint,
+            current_svg=req.svg_code,
+            refinement_instruction=req.refinement_instruction,
+        )
+    except (InternalServerError, APIStatusError) as e:
+        _raise_anthropic_error(e)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"svg_code": svg_code}
