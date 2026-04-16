@@ -6,6 +6,7 @@ import Sidebar from "@/components/Sidebar";
 import { useProfileCheck } from "@/hooks/useProfileCheck";
 import OnboardingIntercept from "@/components/OnboardingIntercept";
 import LoadingWordmark from "@/components/LoadingWordmark";
+import PageTransition from "@/components/PageTransition";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -27,7 +28,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     pathname?.startsWith("/sign-in") ||
     pathname?.startsWith("/sign-up")
   ) {
-    return <>{children}</>;
+    return <PageTransition key={pathname}>{children}</PageTransition>;
   }
 
   if (loading || !interceptChecked) {
@@ -38,7 +39,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-background text-on-surface flex">
       <Sidebar />
       <main className="flex-1 min-h-screen overflow-y-auto">
-        <div className="px-10 py-10">{children}</div>
+        <div className="px-10 py-10">
+          <PageTransition key={pathname}>{children}</PageTransition>
+        </div>
       </main>
       {/* Safety net: returning user who completed first-post but never saw the intercept */}
       {hasProfile && !interceptDone && (
