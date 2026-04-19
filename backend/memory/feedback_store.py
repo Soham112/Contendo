@@ -1,72 +1,24 @@
-import sqlite3
-from pathlib import Path
+from datetime import datetime, timezone
 from typing import Any
 
-from config.paths import POSTS_DB_PATH as DB_PATH
+from db.supabase_client import supabase
 
 
-def _connect() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
-
+# ---------------------------------------------------------------------------
+# No-op init functions — tables already exist in Supabase
+# ---------------------------------------------------------------------------
 
 def init_db() -> None:
-    conn = _connect()
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS posts (
-            id                INTEGER PRIMARY KEY AUTOINCREMENT,
-            created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            topic             TEXT NOT NULL,
-            format            TEXT NOT NULL,
-            tone              TEXT NOT NULL,
-            content           TEXT NOT NULL,
-            authenticity_score INTEGER NOT NULL,
-            archetype         TEXT DEFAULT ''
-        )
-    """)
-    try:
-        conn.execute("ALTER TABLE posts ADD COLUMN svg_diagrams TEXT")
-    except Exception:
-        pass  # column already exists
-    try:
-        conn.execute("ALTER TABLE posts ADD COLUMN archetype TEXT DEFAULT ''")
-    except Exception:
-        pass  # column already exists
-    try:
-        conn.execute("ALTER TABLE posts ADD COLUMN user_id TEXT DEFAULT 'default'")
-    except Exception:
-        pass  # column already exists
-    try:
-        conn.execute("ALTER TABLE posts ADD COLUMN published_at TIMESTAMP")
-    except Exception:
-        pass  # column already exists
-    try:
-        conn.execute("ALTER TABLE posts ADD COLUMN published_platform TEXT")
-    except Exception:
-        pass  # column already exists
-    try:
-        conn.execute("ALTER TABLE posts ADD COLUMN published_content TEXT")
-    except Exception:
-        pass  # column already exists
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS post_versions (
-            id                INTEGER PRIMARY KEY AUTOINCREMENT,
-            post_id           INTEGER NOT NULL,
-            version_number    INTEGER NOT NULL,
-            content           TEXT NOT NULL,
-            authenticity_score INTEGER,
-            version_type      TEXT NOT NULL,
-            created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            svg_diagrams      TEXT,
-            FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
-        )
-    """)
-    conn.commit()
-    conn.close()
+    pass
 
+
+def init_retrieval_stats_db() -> None:
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Posts
+# ---------------------------------------------------------------------------
 
 def log_post(
     topic: str,
@@ -78,38 +30,40 @@ def log_post(
     archetype: str = "",
     user_id: str = "default",
 ) -> int:
-    conn = _connect()
-    cursor = conn.execute(
-        """
-        INSERT INTO posts (topic, format, tone, content, authenticity_score, svg_diagrams, archetype, user_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (topic, format, tone, content, authenticity_score, svg_diagrams, archetype, user_id),
-    )
-    post_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    return post_id
+    result = supabase.table("posts").insert({
+        "topic": topic,
+        "format": format,
+        "tone": tone,
+        "content": content,
+        "authenticity_score": authenticity_score,
+        "svg_diagrams": svg_diagrams,
+        "archetype": archetype,
+        "user_id": user_id,
+    }).execute()
+    return result.data[0]["id"] if result.data else 0
 
 
 def get_recent_posts(user_id: str = "default", limit: int = 20) -> list[dict[str, Any]]:
-    conn = _connect()
-    rows = conn.execute(
-        "SELECT * FROM posts WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
-        (user_id, limit),
-    ).fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
+    result = (
+        supabase.table("posts")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return result.data or []
 
 
 def get_all_topics_posted(user_id: str = "default") -> list[str]:
-    conn = _connect()
-    rows = conn.execute(
-        "SELECT topic FROM posts WHERE user_id = ? ORDER BY created_at DESC",
-        (user_id,),
-    ).fetchall()
-    conn.close()
-    return [row["topic"] for row in rows]
+    result = (
+        supabase.table("posts")
+        .select("topic")
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return [row["topic"] for row in (result.data or [])]
 
 
 _UNSET = object()
@@ -123,49 +77,78 @@ def update_post(
     svg_diagrams=_UNSET,
 ) -> bool:
     """Update only the fields that are explicitly provided. _UNSET means skip that field."""
-    fields = []
-    values = []
+    update_data: dict[str, Any] = {}
     if content is not _UNSET:
-        fields.append("content = ?")
-        values.append(content)
+        update_data["content"] = content
     if authenticity_score is not _UNSET:
-        fields.append("authenticity_score = ?")
-        values.append(authenticity_score)
+        update_data["authenticity_score"] = authenticity_score
     if svg_diagrams is not _UNSET:
-        fields.append("svg_diagrams = ?")
-        values.append(svg_diagrams)
-    if not fields:
+        update_data["svg_diagrams"] = svg_diagrams
+    if not update_data:
         return False
-    values.extend([post_id, user_id])
-    conn = _connect()
-    cursor = conn.execute(
-        f"UPDATE posts SET {', '.join(fields)} WHERE id = ? AND user_id = ?",
-        values,
+    result = (
+        supabase.table("posts")
+        .update(update_data)
+        .eq("id", post_id)
+        .eq("user_id", user_id)
+        .execute()
     )
-    updated = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
-    return updated
+    return len(result.data) > 0
 
 
 def delete_post(post_id: int, user_id: str = "default") -> bool:
-    conn = _connect()
-    cursor = conn.execute(
-        "DELETE FROM posts WHERE id = ? AND user_id = ?",
-        (post_id, user_id),
+    result = (
+        supabase.table("posts")
+        .delete()
+        .eq("id", post_id)
+        .eq("user_id", user_id)
+        .execute()
     )
-    deleted = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
-    return deleted
+    return len(result.data) > 0
 
 
-def _post_owned_by(post_id: int, user_id: str, conn: sqlite3.Connection) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM posts WHERE id = ? AND user_id = ?",
-        (post_id, user_id),
-    ).fetchone()
-    return row is not None
+def mark_published(
+    post_id: int,
+    platform: str,
+    published_content: str | None = None,
+    user_id: str = "default",
+) -> bool:
+    ownership = (
+        supabase.table("posts")
+        .select("id")
+        .eq("id", post_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if not ownership.data:
+        return False
+    result = (
+        supabase.table("posts")
+        .update({
+            "published_at": datetime.now(timezone.utc).isoformat(),
+            "published_platform": platform,
+            "published_content": published_content,
+        })
+        .eq("id", post_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    return len(result.data) > 0
+
+
+# ---------------------------------------------------------------------------
+# Post versions
+# ---------------------------------------------------------------------------
+
+def _post_owned_by(post_id: int, user_id: str) -> bool:
+    result = (
+        supabase.table("posts")
+        .select("id")
+        .eq("id", post_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    return bool(result.data)
 
 
 def add_version(
@@ -177,105 +160,146 @@ def add_version(
     user_id: str = "default",
 ) -> int:
     """Insert a new version row for post_id. version_number is auto-incremented per post."""
-    conn = _connect()
-    if not _post_owned_by(post_id, user_id, conn):
-        conn.close()
+    if not _post_owned_by(post_id, user_id):
         return 0
-    row = conn.execute(
-        "SELECT COALESCE(MAX(version_number), 0) FROM post_versions WHERE post_id = ?",
-        (post_id,),
-    ).fetchone()
-    next_version = row[0] + 1
-    cursor = conn.execute(
-        """
-        INSERT INTO post_versions
-            (post_id, version_number, content, authenticity_score, version_type, svg_diagrams)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        (post_id, next_version, content, authenticity_score, version_type, svg_diagrams),
+    max_v = (
+        supabase.table("post_versions")
+        .select("version_number")
+        .eq("post_id", post_id)
+        .order("version_number", desc=True)
+        .limit(1)
+        .execute()
     )
-    version_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    return version_id
+    next_version = (max_v.data[0]["version_number"] if max_v.data else 0) + 1
+    result = supabase.table("post_versions").insert({
+        "post_id": post_id,
+        "version_number": next_version,
+        "content": content,
+        "authenticity_score": authenticity_score,
+        "version_type": version_type,
+        "svg_diagrams": svg_diagrams,
+    }).execute()
+    return result.data[0]["id"] if result.data else 0
 
 
 def get_versions(post_id: int, user_id: str = "default") -> list[dict[str, Any]]:
     """Return all versions for a post ordered by version_number ascending."""
-    conn = _connect()
-    if not _post_owned_by(post_id, user_id, conn):
-        conn.close()
+    if not _post_owned_by(post_id, user_id):
         return []
-    rows = conn.execute(
-        "SELECT * FROM post_versions WHERE post_id = ? ORDER BY version_number ASC",
-        (post_id,),
-    ).fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
+    result = (
+        supabase.table("post_versions")
+        .select("*")
+        .eq("post_id", post_id)
+        .order("version_number", desc=False)
+        .execute()
+    )
+    return result.data or []
 
 
 def get_best_version(post_id: int, user_id: str = "default") -> dict[str, Any] | None:
     """Return the version with the highest authenticity_score; latest version breaks ties."""
-    conn = _connect()
-    if not _post_owned_by(post_id, user_id, conn):
-        conn.close()
+    if not _post_owned_by(post_id, user_id):
         return None
-    row = conn.execute(
-        """
-        SELECT * FROM post_versions
-        WHERE post_id = ?
-        ORDER BY authenticity_score DESC, version_number DESC
-        LIMIT 1
-        """,
-        (post_id,),
-    ).fetchone()
-    conn.close()
-    return dict(row) if row else None
-
-
-def mark_published(
-    post_id: int,
-    platform: str,
-    published_content: str | None = None,
-    user_id: str = "default",
-) -> bool:
-    """Set published_at, published_platform, and optionally published_content on a post."""
-    conn = _connect()
-    if not _post_owned_by(post_id, user_id, conn):
-        conn.close()
-        return False
-    cursor = conn.execute(
-        """
-        UPDATE posts
-        SET published_at = CURRENT_TIMESTAMP,
-            published_platform = ?,
-            published_content = ?
-        WHERE id = ? AND user_id = ?
-        """,
-        (platform, published_content, post_id, user_id),
+    result = (
+        supabase.table("post_versions")
+        .select("*")
+        .eq("post_id", post_id)
+        .order("authenticity_score", desc=True)
+        .order("version_number", desc=True)
+        .limit(1)
+        .execute()
     )
-    updated = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
-    return updated
+    return result.data[0] if result.data else None
+
+
+def restore_version(post_id: int, version_id: int, user_id: str = "default") -> bool:
+    """Restore a post's content to match a specific version."""
+    version = (
+        supabase.table("post_versions")
+        .select("*")
+        .eq("id", version_id)
+        .eq("post_id", post_id)
+        .execute()
+    )
+    if not version.data:
+        return False
+    v = version.data[0]
+    update_data: dict[str, Any] = {"content": v["content"]}
+    if v.get("authenticity_score") is not None:
+        update_data["authenticity_score"] = v["authenticity_score"]
+    if v.get("svg_diagrams") is not None:
+        update_data["svg_diagrams"] = v["svg_diagrams"]
+    result = (
+        supabase.table("posts")
+        .update(update_data)
+        .eq("id", post_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    return len(result.data) > 0
 
 
 def update_latest_version_svg(post_id: int, svg_diagrams: str | None, user_id: str = "default") -> bool:
     """Update svg_diagrams on the most recent version row without creating a new version."""
-    conn = _connect()
-    if not _post_owned_by(post_id, user_id, conn):
-        conn.close()
+    if not _post_owned_by(post_id, user_id):
         return False
-    cursor = conn.execute(
-        """
-        UPDATE post_versions SET svg_diagrams = ?
-        WHERE post_id = ? AND version_number = (
-            SELECT MAX(version_number) FROM post_versions WHERE post_id = ?
-        )
-        """,
-        (svg_diagrams, post_id, post_id),
+    max_v = (
+        supabase.table("post_versions")
+        .select("version_number")
+        .eq("post_id", post_id)
+        .order("version_number", desc=True)
+        .limit(1)
+        .execute()
     )
-    updated = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
-    return updated
+    if not max_v.data:
+        return False
+    max_version = max_v.data[0]["version_number"]
+    result = (
+        supabase.table("post_versions")
+        .update({"svg_diagrams": svg_diagrams})
+        .eq("post_id", post_id)
+        .eq("version_number", max_version)
+        .execute()
+    )
+    return len(result.data) > 0
+
+
+# ---------------------------------------------------------------------------
+# Retrieval stats
+# ---------------------------------------------------------------------------
+
+def increment_retrieval(user_id: str = "default", source_title: str = "") -> None:
+    try:
+        existing = (
+            supabase.table("source_retrieval_stats")
+            .select("retrieval_count")
+            .eq("user_id", user_id)
+            .eq("source_title", source_title)
+            .execute()
+        )
+        now = datetime.now(timezone.utc).isoformat()
+        if existing.data:
+            new_count = existing.data[0]["retrieval_count"] + 1
+            supabase.table("source_retrieval_stats").update({
+                "retrieval_count": new_count,
+                "last_retrieved_at": now,
+            }).eq("user_id", user_id).eq("source_title", source_title).execute()
+        else:
+            supabase.table("source_retrieval_stats").insert({
+                "user_id": user_id,
+                "source_title": source_title,
+                "retrieval_count": 1,
+                "last_retrieved_at": now,
+            }).execute()
+    except Exception:
+        pass  # non-critical stat tracking
+
+
+def get_retrieval_counts(user_id: str = "default") -> dict[str, int]:
+    result = (
+        supabase.table("source_retrieval_stats")
+        .select("source_title,retrieval_count")
+        .eq("user_id", user_id)
+        .execute()
+    )
+    return {row["source_title"]: row["retrieval_count"] for row in (result.data or [])}

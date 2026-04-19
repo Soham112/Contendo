@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { ClerkProvider } from "@clerk/nextjs";
 import AppShell from "@/components/AppShell";
 import { ToastProvider } from "@/components/ui/ToastProvider";
 
@@ -15,14 +14,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <ClerkProvider>
-      <html lang="en">
-        <body className="bg-page text-text-primary">
-          <ToastProvider>
-            <AppShell>{children}</AppShell>
-          </ToastProvider>
-        </body>
-      </html>
-    </ClerkProvider>
+    <html lang="en">
+      <body className="bg-page text-text-primary">
+        <ToastProvider>
+          <AppShell>{children}</AppShell>
+        </ToastProvider>
+      </body>
+    </html>
   );
 }

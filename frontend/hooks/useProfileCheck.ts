@@ -1,14 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAuth } from "@clerk/nextjs";
 import { useRouter, usePathname } from "next/navigation";
+import supabase from "@/lib/supabase";
 import { useApi } from "@/lib/api";
 
 const SKIP_ROUTES = ["/welcome", "/sign-in", "/sign-up", "/onboarding", "/first-post"];
 
 export function useProfileCheck() {
-  const { isSignedIn, isLoaded } = useAuth();
+  const [isSignedIn, setIsSignedIn] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [hasProfile, setHasProfile] = useState(false);
   const [profileComplete, setProfileComplete] = useState(false);
@@ -17,6 +18,15 @@ export function useProfileCheck() {
   const pathname = usePathname();
   const api = useApi();
 
+  // Resolve auth state once on mount
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setIsSignedIn(!!user);
+      setIsLoaded(true);
+    });
+  }, []);
+
+  // Fetch profile once auth state is known
   useEffect(() => {
     if (!isLoaded) return;
     if (!isSignedIn) {

@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useUser } from "@clerk/nextjs";
+import supabase from "@/lib/supabase";
 
 const MOOD_GRADIENTS = [
   { label: "Analytical",   from: "#3a4a35", to: "#58614f", img: "/mood-analytical.png" },
@@ -19,7 +19,7 @@ const MOOD_GRADIENTS = [
 const HERO_DRAFT_KEY = "contentOS_last_topic";
 const SHARED_TOPIC_KEY = "contendo_topic";
 
-function TopNav({ isSignedIn, isLoaded }: { isSignedIn: boolean; isLoaded: boolean }) {
+function TopNav({ isSignedIn, authLoaded }: { isSignedIn: boolean; authLoaded: boolean }) {
   return (
     <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-md">
       <div className="max-w-[1200px] mx-auto px-5 sm:px-8 py-4 flex items-center justify-between relative">
@@ -61,7 +61,7 @@ function TopNav({ isSignedIn, isLoaded }: { isSignedIn: boolean; isLoaded: boole
 
         {/* Right — auth-aware, unchanged */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {isLoaded && isSignedIn ? (
+          {authLoaded && isSignedIn ? (
             <Link
               href="/"
               className="btn-primary text-white text-[11px] label-caps rounded-lg px-4 py-2.5 sm:px-5"
@@ -92,7 +92,15 @@ function TopNav({ isSignedIn, isLoaded }: { isSignedIn: boolean; isLoaded: boole
 
 export default function WelcomePage() {
   const router = useRouter();
-  const { isSignedIn, isLoaded } = useUser();
+  const [isSignedIn, setIsSignedIn] = useState(false);
+  const [authLoaded, setAuthLoaded] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setIsSignedIn(!!session);
+      setAuthLoaded(true);
+    });
+  }, []);
   const [topicInput, setTopicInput] = useState("");
   const [showInputError, setShowInputError] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -105,11 +113,11 @@ export default function WelcomePage() {
   ];
 
   const heroPrimaryCta = useMemo(() => {
-    if (isLoaded && isSignedIn) {
+    if (isSignedIn) {
       return { href: "/", label: "Open workspace" };
     }
     return { href: "/first-post", label: "Write your first post" };
-  }, [isLoaded, isSignedIn]);
+  }, [authLoaded, isSignedIn]);
 
   // ── DO NOT TOUCH — routing + sessionStorage logic ──────────────────────────
   const handleHeroSubmit = (event: FormEvent) => {
@@ -124,7 +132,7 @@ export default function WelcomePage() {
     setShowInputError(false);
     sessionStorage.setItem(SHARED_TOPIC_KEY, topic);
 
-    if (isLoaded && isSignedIn) {
+    if (isSignedIn) {
       sessionStorage.setItem(HERO_DRAFT_KEY, topic);
       router.push("/create");
       return;
@@ -136,7 +144,7 @@ export default function WelcomePage() {
 
   return (
     <div className="min-h-screen bg-background text-on-surface font-sans">
-      <TopNav isSignedIn={!!isSignedIn} isLoaded={!!isLoaded} />
+      <TopNav isSignedIn={isSignedIn} authLoaded={authLoaded} />
 
       <main>
 
@@ -714,7 +722,7 @@ export default function WelcomePage() {
               href={heroPrimaryCta.href}
               className="btn-primary text-white text-[11px] label-caps rounded-lg px-7 py-3 inline-flex"
             >
-              {isLoaded && isSignedIn ? "Open workspace" : "Get started free"}
+              {isSignedIn ? "Open workspace" : "Get started free"}
             </Link>
           </div>
         </section>

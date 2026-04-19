@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useApi } from "@/lib/api";
-import { useUser, useClerk } from "@clerk/nextjs";
+import type { User } from "@supabase/supabase-js";
+import supabase from "@/lib/supabase";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -54,14 +56,18 @@ function ArrowRight() {
 
 export default function SettingsHubPage() {
   const api = useApi();
-  const { user } = useUser();
-  const { signOut } = useClerk();
+  const router = useRouter();
+  const [user, setUser] = useState<User | null>(null);
 
   const [profile, setProfile] = useState<ProfileSnapshot | null>(null);
   const [stats, setStats] = useState<StatsSnapshot | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(true);
   const [signingOut, setSigningOut] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => setUser(user));
+  }, []);
 
   useEffect(() => {
     async function loadProfile() {
@@ -111,7 +117,8 @@ export default function SettingsHubPage() {
   async function handleSignOut() {
     setSigningOut(true);
     try {
-      await signOut({ redirectUrl: "/sign-in" });
+      await supabase.auth.signOut();
+      router.push("/sign-in");
     } catch {
       setSigningOut(false);
     }
@@ -303,26 +310,28 @@ export default function SettingsHubPage() {
       <p className="label-caps text-secondary">Account</p>
       <div className="flex-1 flex flex-col gap-4">
         <div className="flex items-center gap-3">
-          {user?.imageUrl ? (
+          {user?.user_metadata?.avatar_url ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={user.imageUrl}
-              alt={user.fullName ?? "Avatar"}
+              src={user.user_metadata.avatar_url}
+              alt={user.user_metadata?.full_name ?? "Avatar"}
               className="w-10 h-10 rounded-full object-cover shrink-0"
             />
           ) : (
             <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
               <span className="text-primary text-[13px] font-medium">
-                {user?.fullName ? getInitials(user.fullName) : "?"}
+                {user?.user_metadata?.full_name
+                  ? getInitials(user.user_metadata.full_name)
+                  : "?"}
               </span>
             </div>
           )}
           <div className="flex flex-col gap-0.5 min-w-0">
             <span className="text-on-surface font-medium text-[14px] truncate">
-              {user?.fullName ?? ""}
+              {user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? ""}
             </span>
             <span className="text-secondary text-[12px] truncate">
-              {user?.primaryEmailAddress?.emailAddress ?? ""}
+              {user?.email ?? ""}
             </span>
           </div>
         </div>
