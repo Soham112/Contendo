@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { Suspense, useState, useEffect, useRef } from 'react'
 import type { User } from '@supabase/supabase-js'
 import supabase from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -852,7 +852,7 @@ function AuthScreen({ prefillTopic }: { prefillTopic: string }) {
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
-export default function FirstPostPage() {
+function FirstPostContent() {
   const [user, setUser] = useState<User | null>(null)
   const [authLoaded, setAuthLoaded] = useState(false)
   useEffect(() => {
@@ -1769,5 +1769,13 @@ export default function FirstPostPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function FirstPostPage() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: '100vh', background: '#faf9f8' }} />}>
+      <FirstPostContent />
+    </Suspense>
   )
 }
