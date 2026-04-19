@@ -7,7 +7,7 @@ import anthropic
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 
 from auth.clerk import get_user_id_dep
-from memory.profile_store import load_profile, profile_exists, save_profile, _profile_path
+from memory.profile_store import load_profile, profile_exists, save_profile
 from utils.file_extractor import extract_from_pdf
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ _anthropic_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 @router.get("/profile")
 async def get_profile(user_id: str = Depends(get_user_id_dep)) -> dict:
     logger.info(f"GET /profile for user_id={user_id}")
-    file_exists = _profile_path(user_id).exists()
+    file_exists = profile_exists(user_id=user_id)
     profile = load_profile(user_id=user_id)
     profile_complete = bool(profile.get("name", "").strip())
     logger.info(
@@ -40,14 +40,12 @@ async def post_profile(
 
     try:
         save_profile(profile, user_id=user_id)
-        data_dir = os.environ.get("DATA_DIR", "data")
-        profile_path = f"{data_dir}/profiles/profile_{user_id}.json"
-        logger.info(f"POST /profile: saved successfully at {profile_path} for user_id={user_id}")
+        logger.info(f"POST /profile: saved successfully for user_id={user_id}")
     except Exception as e:
         logger.error(f"POST /profile: save failed for user_id={user_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Profile save failed")
 
-    # Read back immediately to verify the write landed on disk
+    # Read back immediately to verify the write landed
     saved = load_profile(user_id=user_id)
     if not saved.get("name", "").strip() == profile.get("name", "").strip():
         logger.error(
