@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useUser, useSignIn } from '@clerk/nextjs'
+import type { User } from '@supabase/supabase-js'
+import supabase from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Sparkles } from 'lucide-react'
 import { useApi } from '@/lib/api'
@@ -780,21 +781,20 @@ function ProfileGate({
 
 // ── Auth screen ───────────────────────────────────────────────────────────────
 function AuthScreen({ prefillTopic }: { prefillTopic: string }) {
-  const { signIn, isLoaded } = useSignIn()
   const [loading, setLoading] = useState(false)
 
   async function handleGoogle() {
-    if (!signIn || !isLoaded) return
     setLoading(true)
     const redirectTarget = prefillTopic.trim()
       ? `/first-post?topic=${encodeURIComponent(prefillTopic.trim())}`
       : '/first-post'
 
     try {
-      await signIn.authenticateWithRedirect({
-        strategy: 'oauth_google',
-        redirectUrl: '/sso-callback',
-        redirectUrlComplete: redirectTarget,
+      await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirectTarget)}`,
+        },
       })
     } catch (err) {
       console.error('[first-post] Google OAuth error:', err)
@@ -853,7 +853,16 @@ function AuthScreen({ prefillTopic }: { prefillTopic: string }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function FirstPostPage() {
-  const { isLoaded, isSignedIn, user } = useUser()
+  const [user, setUser] = useState<User | null>(null)
+  const [authLoaded, setAuthLoaded] = useState(false)
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setUser(user)
+      setAuthLoaded(true)
+    })
+  }, [])
+  const isSignedIn = !!user
+  const isLoaded = authLoaded
   const router = useRouter()
   const searchParams = useSearchParams()
   const api = useApi()
@@ -1061,9 +1070,9 @@ export default function FirstPostPage() {
 
     const effectiveResumeFields = resumeFieldsOverride ?? resumeExtractedFields
     const rawProfile = buildMergedProfile(finalAnswers, effectiveResumeFields, fallbackExtractedFields)
-    const clerkName = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim()
-    const emailPrefix = user?.primaryEmailAddress?.emailAddress?.split('@')[0] ?? ''
-    const fallbackName = effectiveResumeFields?.name || clerkName || emailPrefix
+    const supabaseName = user?.user_metadata?.full_name ?? ''
+    const emailPrefix = user?.email?.split('@')[0] ?? ''
+    const fallbackName = effectiveResumeFields?.name || supabaseName || emailPrefix
     const profile = { ...rawProfile, name: rawProfile.name || fallbackName }
 
     setProfileSaveError('')
@@ -1187,9 +1196,9 @@ export default function FirstPostPage() {
     const finalAnswers = { ...answers, audience: combined }
     // For gate, the resume slot is already set; fallback fills in the rest
     const rawProfile = buildMergedProfile(finalAnswers, resumeExtractedFields, fields)
-    const clerkName = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim()
-    const emailPrefix = user?.primaryEmailAddress?.emailAddress?.split('@')[0] ?? ''
-    const fallbackName = fields?.name || resumeExtractedFields?.name || clerkName || emailPrefix
+    const supabaseName = user?.user_metadata?.full_name ?? ''
+    const emailPrefix = user?.email?.split('@')[0] ?? ''
+    const fallbackName = fields?.name || resumeExtractedFields?.name || supabaseName || emailPrefix
     const profile = { ...rawProfile, name: rawProfile.name || fallbackName }
     try {
       await api.saveProfile(profile)

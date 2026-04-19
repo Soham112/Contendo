@@ -1,55 +1,20 @@
-import sqlite3
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
-from config.paths import HIERARCHY_DB_PATH as DB_PATH
+from db.supabase_client import supabase
 
 
-def _connect() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
-
+# ---------------------------------------------------------------------------
+# No-op init — tables already exist in Supabase
+# ---------------------------------------------------------------------------
 
 def init_db() -> None:
-    conn = _connect()
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS source_nodes (
-            source_id       TEXT PRIMARY KEY,
-            user_id         TEXT NOT NULL DEFAULT 'default',
-            source_title    TEXT,
-            source_type     TEXT,
-            ingested_at     TEXT,
-            tags            TEXT,
-            total_chunks    INTEGER,
-            topic_id        TEXT,
-            source_summary  TEXT,
-            created_at      TEXT
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS topic_nodes (
-            topic_id            TEXT PRIMARY KEY,
-            user_id             TEXT NOT NULL DEFAULT 'default',
-            topic_label         TEXT,
-            topic_summary       TEXT,
-            representative_tags TEXT,
-            child_source_ids    TEXT,
-            created_at          TEXT
-        )
-    """)
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_source_nodes_user_id ON source_nodes(user_id)"
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_topic_nodes_user_id ON topic_nodes(user_id)"
-    )
-    conn.commit()
-    conn.close()
+    pass
 
+
+# ---------------------------------------------------------------------------
+# Source nodes
+# ---------------------------------------------------------------------------
 
 def upsert_source_node(
     source_id: str,
@@ -62,69 +27,64 @@ def upsert_source_node(
     topic_id: str,
     source_summary: str,
 ) -> None:
-    conn = _connect()
-    conn.execute(
-        """
-        INSERT OR REPLACE INTO source_nodes
-            (source_id, user_id, source_title, source_type, ingested_at,
-             tags, total_chunks, topic_id, source_summary, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            source_id,
-            user_id,
-            source_title,
-            source_type,
-            ingested_at,
-            ",".join(tags),
-            total_chunks,
-            topic_id,
-            source_summary,
-            datetime.now(timezone.utc).isoformat(),
-        ),
-    )
-    conn.commit()
-    conn.close()
+    supabase.table("source_nodes").upsert({
+        "source_id": source_id,
+        "user_id": user_id,
+        "source_title": source_title,
+        "source_type": source_type,
+        "ingested_at": ingested_at,
+        "tags": ",".join(tags),
+        "total_chunks": total_chunks,
+        "topic_id": topic_id,
+        "source_summary": source_summary,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }, on_conflict="source_id").execute()
 
 
 def get_source_node(source_id: str, user_id: str = "default") -> dict[str, Any] | None:
-    conn = _connect()
-    row = conn.execute(
-        "SELECT * FROM source_nodes WHERE source_id = ? AND user_id = ?",
-        (source_id, user_id),
-    ).fetchone()
-    conn.close()
-    if not row:
+    result = (
+        supabase.table("source_nodes")
+        .select("*")
+        .eq("source_id", source_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if not result.data:
         return None
-    result = dict(row)
-    result["tags"] = [t.strip() for t in result.get("tags", "").split(",") if t.strip()]
-    return result
+    row = result.data[0]
+    row["tags"] = [t.strip() for t in row.get("tags", "").split(",") if t.strip()]
+    return row
 
 
 def source_node_exists(source_id: str, user_id: str = "default") -> bool:
-    conn = _connect()
-    row = conn.execute(
-        "SELECT 1 FROM source_nodes WHERE source_id = ? AND user_id = ? LIMIT 1",
-        (source_id, user_id),
-    ).fetchone()
-    conn.close()
-    return row is not None
+    result = (
+        supabase.table("source_nodes")
+        .select("source_id")
+        .eq("source_id", source_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    return bool(result.data)
 
 
 def get_sources_for_user(user_id: str = "default") -> list[dict[str, Any]]:
-    conn = _connect()
-    rows = conn.execute(
-        "SELECT * FROM source_nodes WHERE user_id = ? ORDER BY created_at DESC",
-        (user_id,),
-    ).fetchall()
-    conn.close()
+    result = (
+        supabase.table("source_nodes")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .execute()
+    )
     results = []
-    for row in rows:
-        r = dict(row)
-        r["tags"] = [t.strip() for t in r.get("tags", "").split(",") if t.strip()]
-        results.append(r)
+    for row in (result.data or []):
+        row["tags"] = [t.strip() for t in row.get("tags", "").split(",") if t.strip()]
+        results.append(row)
     return results
 
+
+# ---------------------------------------------------------------------------
+# Topic nodes
+# ---------------------------------------------------------------------------
 
 def upsert_topic_node(
     topic_id: str,
@@ -134,64 +94,54 @@ def upsert_topic_node(
     representative_tags: list[str],
     child_source_ids: list[str],
 ) -> None:
-    conn = _connect()
-    conn.execute(
-        """
-        INSERT OR REPLACE INTO topic_nodes
-            (topic_id, user_id, topic_label, topic_summary,
-             representative_tags, child_source_ids, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            topic_id,
-            user_id,
-            topic_label,
-            topic_summary,
-            ",".join(representative_tags),
-            ",".join(child_source_ids),
-            datetime.now(timezone.utc).isoformat(),
-        ),
-    )
-    conn.commit()
-    conn.close()
+    supabase.table("topic_nodes").upsert({
+        "topic_id": topic_id,
+        "user_id": user_id,
+        "topic_label": topic_label,
+        "topic_summary": topic_summary,
+        "representative_tags": ",".join(representative_tags),
+        "child_source_ids": ",".join(child_source_ids),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }, on_conflict="topic_id").execute()
 
 
 def get_topic_node(topic_id: str, user_id: str = "default") -> dict[str, Any] | None:
-    conn = _connect()
-    row = conn.execute(
-        "SELECT * FROM topic_nodes WHERE topic_id = ? AND user_id = ?",
-        (topic_id, user_id),
-    ).fetchone()
-    conn.close()
-    if not row:
+    result = (
+        supabase.table("topic_nodes")
+        .select("*")
+        .eq("topic_id", topic_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if not result.data:
         return None
-    result = dict(row)
-    result["representative_tags"] = [
-        t.strip() for t in result.get("representative_tags", "").split(",") if t.strip()
+    row = result.data[0]
+    row["representative_tags"] = [
+        t.strip() for t in row.get("representative_tags", "").split(",") if t.strip()
     ]
-    result["child_source_ids"] = [
-        s.strip() for s in result.get("child_source_ids", "").split(",") if s.strip()
+    row["child_source_ids"] = [
+        s.strip() for s in row.get("child_source_ids", "").split(",") if s.strip()
     ]
-    return result
+    return row
 
 
 def get_topics_for_user(user_id: str = "default") -> list[dict[str, Any]]:
-    conn = _connect()
-    rows = conn.execute(
-        "SELECT * FROM topic_nodes WHERE user_id = ? ORDER BY created_at DESC",
-        (user_id,),
-    ).fetchall()
-    conn.close()
+    result = (
+        supabase.table("topic_nodes")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .execute()
+    )
     results = []
-    for row in rows:
-        r = dict(row)
-        r["representative_tags"] = [
-            t.strip() for t in r.get("representative_tags", "").split(",") if t.strip()
+    for row in (result.data or []):
+        row["representative_tags"] = [
+            t.strip() for t in row.get("representative_tags", "").split(",") if t.strip()
         ]
-        r["child_source_ids"] = [
-            s.strip() for s in r.get("child_source_ids", "").split(",") if s.strip()
+        row["child_source_ids"] = [
+            s.strip() for s in row.get("child_source_ids", "").split(",") if s.strip()
         ]
-        results.append(r)
+        results.append(row)
     return results
 
 
@@ -221,10 +171,6 @@ def add_source_to_topic(topic_id: str, source_id: str, user_id: str = "default")
     if source_id in existing:
         return
     updated = existing + [source_id]
-    conn = _connect()
-    conn.execute(
-        "UPDATE topic_nodes SET child_source_ids = ? WHERE topic_id = ? AND user_id = ?",
-        (",".join(updated), topic_id, user_id),
-    )
-    conn.commit()
-    conn.close()
+    supabase.table("topic_nodes").update({
+        "child_source_ids": ",".join(updated),
+    }).eq("topic_id", topic_id).eq("user_id", user_id).execute()

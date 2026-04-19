@@ -1,10 +1,7 @@
-import json
 import logging
-import os
-from pathlib import Path
 from typing import Any
 
-from config.paths import PROFILE_PATH, PROFILES_DIR
+from db.supabase_client import supabase
 
 logger = logging.getLogger(__name__)
 
@@ -38,29 +35,18 @@ DEFAULT_PROFILE: dict[str, Any] = {
 }
 
 
-def _profile_path(user_id: str = "default") -> Path:
-    """Return the correct profile file path for the given user_id.
-
-    For user_id="default", tries the legacy single-file location first
-    (backward compat for existing local dev data), then falls back to
-    the per-user profiles directory.
-    For all other users, uses PROFILES_DIR/profile_{user_id}.json.
-    """
-    if user_id == "default" and PROFILE_PATH.exists():
-        return PROFILE_PATH
-    PROFILES_DIR.mkdir(parents=True, exist_ok=True)
-    return PROFILES_DIR / f"profile_{user_id}.json"
-
-
 def load_profile(user_id: str = "default") -> dict[str, Any]:
-    path = _profile_path(user_id)
-    logger.info(f"load_profile: reading path={path} (exists={path.exists()}) for user_id={user_id}")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if not path.exists():
-        logger.info(f"load_profile: no file found for user_id={user_id}, returning DEFAULT_PROFILE")
+    logger.info(f"load_profile: fetching from Supabase for user_id={user_id}")
+    result = (
+        supabase.table("profiles")
+        .select("data")
+        .eq("id", user_id)
+        .execute()
+    )
+    if not result.data:
+        logger.info(f"load_profile: no row found for user_id={user_id}, returning DEFAULT_PROFILE")
         return DEFAULT_PROFILE.copy()
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    data: dict[str, Any] = result.data[0]["data"]
     # Merge any missing keys from defaults so profile stays forward-compatible
     changed = False
     for key, value in DEFAULT_PROFILE.items():
@@ -73,35 +59,23 @@ def load_profile(user_id: str = "default") -> dict[str, Any]:
 
 
 def save_profile(profile: dict[str, Any], user_id: str = "default") -> None:
-    # Ensure directory exists before any write attempt
-    os.makedirs(PROFILES_DIR, exist_ok=True)
-    path = _profile_path(user_id)
-    logger.info(f"save_profile: writing to path={path} for user_id={user_id}")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # Atomic write: write to temp file then replace, preventing corrupt half-writes
-    tmp_path = Path(str(path) + ".tmp")
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(profile, f, indent=2, ensure_ascii=False)
-    os.replace(tmp_path, path)
-    logger.info(f"save_profile: successfully wrote profile for user_id={user_id} to path={path}")
+    logger.info(f"save_profile: upserting to Supabase for user_id={user_id}")
+    supabase.table("profiles").upsert({"id": user_id, "data": profile}).execute()
+    logger.info(f"save_profile: successfully saved profile for user_id={user_id}")
 
 
 def profile_exists(user_id: str) -> bool:
-    """Return True if the user has completed onboarding (non-empty name field)."""
-    path = _profile_path(user_id)
-    logger.info(f"profile_exists: checking path={path} (exists={path.exists()}) for user_id={user_id}")
-    if not path.exists():
-        logger.info(f"profile_exists: False (file not found) for user_id={user_id}")
-        return False
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        result = bool(data.get("name", "").strip())
-        logger.info(f"profile_exists: {result} (name={data.get('name', '')!r}) for user_id={user_id}")
-        return result
-    except Exception as e:
-        logger.warning(f"profile_exists: exception reading profile for user_id={user_id}: {e}")
-        return False
+    """Return True if a profile row exists for this user in Supabase."""
+    logger.info(f"profile_exists: checking Supabase for user_id={user_id}")
+    result = (
+        supabase.table("profiles")
+        .select("id")
+        .eq("id", user_id)
+        .execute()
+    )
+    exists = bool(result.data)
+    logger.info(f"profile_exists: {exists} for user_id={user_id}")
+    return exists
 
 
 def save_writing_sample(user_id: str, sample: str, max_samples: int = 10) -> None:
@@ -111,11 +85,9 @@ def save_writing_sample(user_id: str, sample: str, max_samples: int = 10) -> Non
         return
     profile = load_profile(user_id)
     samples: list[str] = [s for s in profile.get("writing_samples", []) if s]
-    # Deduplicate case-insensitively
     normalized = [s.lower() for s in samples]
     if sample.lower() not in normalized:
         samples.append(sample)
-    # Keep at most max_samples, dropping oldest first
     if len(samples) > max_samples:
         samples = samples[-max_samples:]
     profile["writing_samples"] = samples

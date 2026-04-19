@@ -1,6 +1,6 @@
 "use client";
 
-import { useAuth } from "@clerk/nextjs";
+import supabase from "@/lib/supabase";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -125,18 +125,19 @@ export interface ProfileData {
 // ── Core Hook ────────────────────────────────────────────────────────────────
 
 /**
- * Returns typed API functions with the Clerk Bearer token pre-attached.
- * Falls back gracefully when no token is present (backend allows this in
+ * Returns typed API functions with the Supabase Bearer token pre-attached.
+ * Falls back gracefully when no session is present (backend allows this in
  * non-production via the dev fallback to user_id="default").
  */
 export function useApi() {
-  const { getToken } = useAuth();
-
   async function apiFetch(
     path: string,
     options: RequestInit = {}
   ): Promise<Response> {
-    const token = await getToken();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const token = session?.access_token ?? null;
     const headers: Record<string, string> = {
       ...(options.headers as Record<string, string> ?? {}),
     };
@@ -211,7 +212,10 @@ export function useApi() {
       instruction: string,
       fullPost: string
     ): Promise<{ rewritten_text: string }> => {
-      const token = await getToken();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token ?? null;
       const res = await fetch(`${API}/refine-selection`, {
         method: "POST",
         headers: {

@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useUser, useClerk } from "@clerk/nextjs";
+import { usePathname, useRouter } from "next/navigation";
+import type { User } from "@supabase/supabase-js";
+import supabase from "@/lib/supabase";
 import FeedbackModal from "@/components/ui/FeedbackButton";
 
 const NAV_ITEMS = [
@@ -70,9 +71,31 @@ const NAV_ITEMS = [
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { user } = useUser();
-  const { signOut } = useClerk();
+  const router = useRouter();
+  const [user, setUser] = useState<User | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => setUser(user));
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_, session) => {
+      setUser(session?.user ?? null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    router.push("/sign-in");
+  }
+
+  const displayName =
+    user?.user_metadata?.full_name ??
+    user?.user_metadata?.name ??
+    "User";
+  const email = user?.email ?? "";
+  const avatarUrl = user?.user_metadata?.avatar_url ?? null;
 
   return (
     <>
@@ -152,30 +175,31 @@ export default function Sidebar() {
         {user && (
           <div className="px-3 py-2.5 rounded-lg bg-surface-container">
             <div className="flex items-center gap-2.5 mb-2">
-              {user.imageUrl ? (
+              {avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={user.imageUrl}
-                  alt={user.fullName ?? "User"}
+                  src={avatarUrl}
+                  alt={displayName}
                   className="w-7 h-7 rounded-full shrink-0 object-cover"
                 />
               ) : (
                 <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
                   <span className="text-[11px] font-semibold text-primary">
-                    {(user.fullName ?? user.emailAddresses[0]?.emailAddress ?? "?")[0].toUpperCase()}
+                    {(displayName ?? email ?? "?")[0].toUpperCase()}
                   </span>
                 </div>
               )}
               <div className="flex flex-col min-w-0">
                 <span className="text-[13px] font-medium text-on-surface truncate leading-tight">
-                  {user.fullName ?? "User"}
+                  {displayName}
                 </span>
                 <span className="text-[11px] text-secondary truncate leading-tight">
-                  {user.emailAddresses[0]?.emailAddress ?? ""}
+                  {email}
                 </span>
               </div>
             </div>
             <button
-              onClick={() => signOut({ redirectUrl: "/sign-in" })}
+              onClick={handleSignOut}
               className="flex items-center gap-2 w-full text-[12px] text-secondary hover:text-on-surface transition-colors duration-150"
             >
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
