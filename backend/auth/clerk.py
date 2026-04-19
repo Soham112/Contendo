@@ -33,7 +33,7 @@ def get_user_id(authorization: str | None) -> str:
         except Exception:
             pass
 
-    # Try RS256 via Supabase JWKS
+    # Try ES256 via Supabase JWKS
     if SUPABASE_URL:
         try:
             header = jwt.get_unverified_header(token)
@@ -55,13 +55,13 @@ def get_user_id(authorization: str | None) -> str:
                 raise ValueError("No matching key found in JWKS")
 
             # Use PyJWT's algorithm to load the key
-            from jwt.algorithms import RSAAlgorithm
-            public_key = RSAAlgorithm.from_jwk(matching_key)
+            from jwt.algorithms import ECAlgorithm
+            public_key = ECAlgorithm.from_jwk(matching_key)
 
             payload = jwt.decode(
                 token,
                 public_key,
-                algorithms=["RS256"],
+                algorithms=["ES256"],
                 audience="authenticated",
                 options={"verify_exp": True}
             )
