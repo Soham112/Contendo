@@ -59,22 +59,20 @@ def init_chroma(user_id: str = "default"):
 
 def upsert_chunks(
     chunks: list[str],
-    metadatas: list[dict],
-    ids: list[str],
+    source_type: str = "",
+    tags: list[str] | None = None,
+    source_id: str | None = None,
+    source_title: str = "",
+    ingested_at: str = "",
     user_id: str = "default",
-    **kwargs,
+    content_hash: str = "",
 ) -> int:
     """Embed chunks locally and upsert rows into the embeddings table.
 
-    Args:
-        chunks:    List of text strings to embed and store.
-        metadatas: Parallel list of metadata dicts (one per chunk).
-                   Expected keys: source_type, source_title, source_id,
-                   chunk_index, total_chunks, tags, content_hash,
-                   ingested_at, node_type.
-        ids:       Parallel list of unique row IDs (one per chunk).
-        user_id:   Supabase user ID used for data isolation.
-        **kwargs:  Absorbs any extra keyword arguments from callers.
+    Signature matches the call in ingestion_agent.py:
+        upsert_chunks(chunks, source_type=..., tags=..., source_id=...,
+                      source_title=..., ingested_at=..., user_id=...,
+                      content_hash=...)
 
     Returns:
         Number of rows upserted.
@@ -82,24 +80,29 @@ def upsert_chunks(
     if not chunks:
         return 0
 
+    import uuid as _uuid
+    resolved_source_id = source_id or str(_uuid.uuid4())
+    resolved_tags = ",".join(tags) if tags else ""
+    total = len(chunks)
+
     embeddings = embed_texts(chunks)
 
     rows = []
-    for chunk, meta, chunk_id, embedding in zip(chunks, metadatas, ids, embeddings):
+    for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
         rows.append({
-            "id": chunk_id,
+            "id": f"{resolved_source_id}_{i}",
             "user_id": user_id,
             "content": chunk,
             "embedding": embedding,
-            "source_id": meta.get("source_id", ""),
-            "source_title": meta.get("source_title", ""),
-            "source_type": meta.get("source_type", ""),
-            "tags": meta.get("tags", ""),
-            "chunk_index": meta.get("chunk_index", 0),
-            "total_chunks": meta.get("total_chunks", len(chunks)),
-            "content_hash": meta.get("content_hash", ""),
-            "node_type": meta.get("node_type", "chunk"),
-            "ingested_at": meta.get("ingested_at") or None,
+            "source_id": resolved_source_id,
+            "source_title": source_title,
+            "source_type": source_type,
+            "tags": resolved_tags,
+            "chunk_index": i,
+            "total_chunks": total,
+            "content_hash": content_hash,
+            "node_type": "chunk",
+            "ingested_at": ingested_at or None,
         })
 
     supabase.table("embeddings").upsert(rows).execute()
