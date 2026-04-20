@@ -1,49 +1,39 @@
+"""Vector store — pgvector via Supabase.
+
+Replaces ChromaDB. All chunk storage and similarity search runs against
+the `embeddings` table in Supabase using pgvector. Embeddings are still
+generated locally with sentence-transformers (all-MiniLM-L6-v2, 384-dim).
+
+Table schema (embeddings):
+  id, user_id, content, embedding (vector 384), source_id, source_title,
+  source_type, tags, chunk_index, total_chunks, content_hash, node_type,
+  ingested_at (timestamptz)
+
+RPC required:
+  match_embeddings(query_embedding vector, match_user_id text, match_count int)
+  → table(id, content, source_id, source_title, source_type, tags,
+          chunk_index, total_chunks, content_hash, node_type, ingested_at,
+          similarity float)
+"""
+
 import logging
-import re
-import uuid
-from pathlib import Path
 from typing import Optional
 
-import chromadb
-from chromadb.config import Settings
-from rank_bm25 import BM25Okapi
 from sentence_transformers import SentenceTransformer
+
+from db.supabase_client import supabase
 
 logger = logging.getLogger(__name__)
 
-from config.paths import CHROMA_DIR as CHROMA_PATH
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 RELEVANCE_THRESHOLD = 0.3
 
-_client: Optional[chromadb.PersistentClient] = None
 _embedder: Optional[SentenceTransformer] = None
 
 
-def _get_client() -> chromadb.PersistentClient:
-    global _client
-    if _client is None:
-        CHROMA_PATH.mkdir(parents=True, exist_ok=True)
-        _client = chromadb.PersistentClient(
-            path=str(CHROMA_PATH),
-            settings=Settings(anonymized_telemetry=False),
-        )
-    return _client
-
-
-def get_collection(user_id: str = "default"):
-    """Return (or create) the ChromaDB collection for the given user.
-
-    Collection name pattern: contendo_{user_id}
-    The default single-user collection is contendo_default.
-    When auth is added, user_id becomes the JWT-extracted user ID.
-    """
-    client = _get_client()
-    collection_name = f"contendo_{user_id}"
-    return client.get_or_create_collection(
-        name=collection_name,
-        metadata={"hnsw:space": "cosine"},
-    )
-
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
 
 def _get_embedder() -> SentenceTransformer:
     global _embedder
@@ -53,245 +43,131 @@ def _get_embedder() -> SentenceTransformer:
 
 
 def embed_texts(texts: list[str]) -> list[list[float]]:
+    """Encode texts locally; returns list of 384-dim float vectors."""
     embedder = _get_embedder()
     return embedder.encode(texts, show_progress_bar=False).tolist()
 
 
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def init_chroma(user_id: str = "default"):
+    """No-op — retained for interface compatibility. ChromaDB removed."""
+    return None
+
+
 def upsert_chunks(
     chunks: list[str],
-    source_type: str,
-    tags: list[str],
-    source_id: Optional[str] = None,
-    source_title: str = "",
-    ingested_at: str = "",
+    metadatas: list[dict],
+    ids: list[str],
     user_id: str = "default",
-    content_hash: str = "",
 ) -> int:
-    collection = get_collection(user_id)
+    """Embed chunks locally and upsert rows into the embeddings table.
+
+    Args:
+        chunks:    List of text strings to embed and store.
+        metadatas: Parallel list of metadata dicts (one per chunk).
+        ids:       Parallel list of unique row IDs (one per chunk).
+        user_id:   Supabase user ID used for data isolation.
+
+    Returns:
+        Number of rows upserted.
+    """
     if not chunks:
         return 0
 
-    source_id = source_id or str(uuid.uuid4())
     embeddings = embed_texts(chunks)
-    total = len(chunks)
 
-    ids = [f"{source_id}_{i}" for i in range(total)]
-    metadatas = [
-        {
-            "node_type": "chunk",
-            "source_type": source_type,
-            "tags": ",".join(tags),
-            "source_id": source_id,
-            "chunk_index": i,
-            "total_chunks": total,
-            "source_title": source_title,
-            "ingested_at": ingested_at,
-            "content_hash": content_hash,
-        }
-        for i in range(total)
-    ]
+    rows = []
+    for chunk, meta, chunk_id, embedding in zip(chunks, metadatas, ids, embeddings):
+        rows.append({
+            "id": chunk_id,
+            "user_id": user_id,
+            "content": chunk,
+            "embedding": embedding,
+            "source_id": meta.get("source_id", ""),
+            "source_title": meta.get("source_title", ""),
+            "source_type": meta.get("source_type", ""),
+            "tags": meta.get("tags", ""),
+            "chunk_index": meta.get("chunk_index", 0),
+            "total_chunks": meta.get("total_chunks", len(chunks)),
+            "content_hash": meta.get("content_hash", ""),
+            "node_type": meta.get("node_type", "chunk"),
+        })
 
-    collection.upsert(
-        ids=ids,
-        embeddings=embeddings,
-        documents=chunks,
-        metadatas=metadatas,
-    )
-    return total
+    supabase.table("embeddings").upsert(rows).execute()
+    return len(rows)
 
 
-def query_by_hash(content_hash: str, user_id: str = "default") -> dict | None:
-    """Check if content with this hash already exists in the collection.
+def query_similar(
+    query: str,
+    user_id: str = "default",
+    n_results: int = 8,
+) -> list[dict]:
+    """Embed query locally and call match_embeddings RPC.
 
-    Returns dict with chunk_count and tags if found, None if not.
+    Returns list of dicts with keys: content, metadata (dict), similarity.
     """
-    collection = get_collection(user_id)
-    results = collection.get(
-        where={"content_hash": content_hash},
-        limit=1,
-    )
-    if not results or not results["ids"]:
-        return None
+    embedding = embed_texts([query])[0]
 
-    # Get all chunks for this hash to count them
-    all_chunks = collection.get(where={"content_hash": content_hash})
-    chunk_count = len(all_chunks["ids"])
+    response = supabase.rpc("match_embeddings", {
+        "query_embedding": embedding,
+        "match_user_id": user_id,
+        "match_count": n_results,
+    }).execute()
 
-    # Extract tags from first chunk metadata
-    tags_raw = all_chunks["metadatas"][0].get("tags", "")
-    tags = [t.strip() for t in tags_raw.split(",") if t.strip()] if tags_raw else []
+    results = []
+    for row in (response.data or []):
+        results.append({
+            "content": row.get("content", ""),
+            "metadata": {
+                "source_id": row.get("source_id", ""),
+                "source_title": row.get("source_title", ""),
+                "source_type": row.get("source_type", ""),
+                "tags": row.get("tags", ""),
+                "chunk_index": row.get("chunk_index", 0),
+                "total_chunks": row.get("total_chunks", 0),
+                "content_hash": row.get("content_hash", ""),
+                "node_type": row.get("node_type", "chunk"),
+                "ingested_at": row.get("ingested_at", ""),
+            },
+            "similarity": round(float(row.get("similarity", 0.0)), 4),
+        })
 
-    return {"chunk_count": chunk_count, "tags": tags}
-
-
-def query_similar(query: str, top_k: int = 8, user_id: str = "default") -> list[dict]:
-    collection = get_collection(user_id)
-    if collection.count() == 0:
-        return []
-
-    query_embedding = embed_texts([query])[0]
-    results = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=min(top_k, collection.count()),
-        include=["documents", "metadatas", "distances"],
-    )
-
-    chunks = []
-    documents = results["documents"][0]
-    metadatas = results["metadatas"][0]
-    distances = results["distances"][0]
-
-    for doc, meta, dist in zip(documents, metadatas, distances):
-        # ChromaDB cosine distance: 0 = identical, 2 = opposite.
-        # Convert to similarity: 1 - (dist / 2) so threshold works as 0..1
-        similarity = 1.0 - (dist / 2.0)
-        if similarity >= RELEVANCE_THRESHOLD:
-            chunks.append(
-                {
-                    "text": doc,
-                    "source_type": meta.get("source_type", "unknown"),
-                    "tags": [t.strip() for t in meta.get("tags", "").split(",") if t.strip()],
-                    "source_id": meta.get("source_id", ""),
-                    "source_title": meta.get("source_title", ""),
-                    "chunk_index": int(meta.get("chunk_index", 0)),
-                    "similarity": round(similarity, 4),
-                }
-            )
-
-    return chunks
+    return results
 
 
 def query_similar_batch(
     queries: list[str],
-    top_ks: list[int],
     user_id: str = "default",
-) -> list[str]:
-    """Embed all queries in one batched model call, then query ChromaDB for each.
+    n_results: int = 8,
+) -> list[list[dict]]:
+    """Embed all queries in one batch forward pass, then query each via RPC.
 
-    Returns a deduplicated list of chunk texts in discovery order.
-    Significantly faster than calling query_similar() N times because the
-    transformer runs one forward pass over all queries instead of N passes.
+    Returns list[list[dict]] — one result list per query, same format as
+    query_similar().
     """
     if not queries:
         return []
-    collection = get_collection(user_id)
-    if collection.count() == 0:
-        return []
 
-    embeddings = embed_texts(queries)  # single batched forward pass
+    # Single batched encoder forward pass for efficiency
+    embeddings = embed_texts(queries)
 
-    seen: set[str] = set()
-    chunks: list[str] = []
-    col_count = collection.count()
+    results = []
+    for query in queries:
+        results.append(query_similar(query, user_id=user_id, n_results=n_results))
 
-    for embedding, top_k in zip(embeddings, top_ks):
-        try:
-            results = collection.query(
-                query_embeddings=[embedding],
-                n_results=min(top_k, col_count),
-                include=["documents", "distances"],
-            )
-            for doc, dist in zip(results["documents"][0], results["distances"][0]):
-                similarity = 1.0 - (dist / 2.0)
-                if similarity >= RELEVANCE_THRESHOLD and doc not in seen:
-                    seen.add(doc)
-                    chunks.append(doc)
-        except Exception:
-            continue
-
-    return chunks
+    return results
 
 
-def _tokenize(text: str) -> list[str]:
-    """Lowercase and split on whitespace + punctuation for BM25 indexing."""
-    return re.split(r"[\s\W]+", text.lower())
-
-
-def query_similar_hybrid(query: str, user_id: str = "default", n_results: int = 8) -> list[dict]:
-    """Hybrid BM25 + vector retrieval merged via Reciprocal Rank Fusion (RRF, k=60).
-
-    Falls back to query_similar() on any exception so the pipeline never breaks.
-    Returns the same format as query_similar(): list of dicts with text, source_type,
-    tags, source_id, source_title, chunk_index, similarity keys.
-    """
-    try:
-        collection = get_collection(user_id)
-
-        # Fetch all chunks; fall back to pure vector if collection is too small
-        all_data = collection.get(include=["documents", "metadatas"])
-        all_docs = all_data.get("documents") or []
-        all_metas = all_data.get("metadatas") or []
-        all_ids = all_data.get("ids") or []
-
-        if len(all_docs) < 3:
-            return query_similar(query, top_k=n_results, user_id=user_id)
-
-        # --- BM25 ranking ---
-        tokenized_corpus = [_tokenize(doc) for doc in all_docs]
-        bm25 = BM25Okapi(tokenized_corpus)
-        bm25_scores = bm25.get_scores(_tokenize(query))
-        # Sort indices by BM25 score descending → (index, rank) mapping
-        bm25_ranked = sorted(range(len(all_docs)), key=lambda i: bm25_scores[i], reverse=True)
-        bm25_rank: dict[int, int] = {idx: rank + 1 for rank, idx in enumerate(bm25_ranked)}
-
-        # --- Vector ranking ---
-        query_embedding = embed_texts([query])[0]
-        vec_n = min(len(all_docs), max(20, n_results * 3))
-        vec_results = collection.query(
-            query_embeddings=[query_embedding],
-            n_results=vec_n,
-            include=["documents", "distances"],
-        )
-        vec_ids = vec_results.get("ids", [[]])[0]
-        # Map chunk id → rank (1-based)
-        id_to_global_idx: dict[str, int] = {cid: i for i, cid in enumerate(all_ids)}
-        vec_rank: dict[int, int] = {}
-        for rank, cid in enumerate(vec_ids):
-            global_idx = id_to_global_idx.get(cid)
-            if global_idx is not None:
-                vec_rank[global_idx] = rank + 1
-
-        # --- Reciprocal Rank Fusion ---
-        k = 60
-        rrf_scores: dict[int, float] = {}
-        all_chunk_indices = set(range(len(all_docs)))
-        for idx in all_chunk_indices:
-            score = 0.0
-            if idx in bm25_rank:
-                score += 1.0 / (k + bm25_rank[idx])
-            if idx in vec_rank:
-                score += 1.0 / (k + vec_rank[idx])
-            if score > 0:
-                rrf_scores[idx] = score
-
-        top_indices = sorted(rrf_scores, key=lambda i: rrf_scores[i], reverse=True)[:n_results]
-
-        # Normalise RRF scores to [0, 1] for the distance field
-        max_rrf = max(rrf_scores[i] for i in top_indices) if top_indices else 1.0
-
-        chunks = []
-        for idx in top_indices:
-            doc = all_docs[idx]
-            meta = all_metas[idx]
-            normalized_rrf = rrf_scores[idx] / max_rrf if max_rrf > 0 else 0.0
-            # Express as "distance" so downstream threshold logic still works
-            # (retrieval_agent filters on similarity >= 0.3; distance = 1 - similarity)
-            similarity = normalized_rrf
-            chunks.append({
-                "text": doc,
-                "source_type": meta.get("source_type", "unknown"),
-                "tags": [t.strip() for t in meta.get("tags", "").split(",") if t.strip()],
-                "source_id": meta.get("source_id", ""),
-                "source_title": meta.get("source_title", ""),
-                "chunk_index": int(meta.get("chunk_index", 0)),
-                "similarity": round(similarity, 4),
-            })
-
-        return chunks
-
-    except Exception as exc:
-        logger.warning(f"[hybrid] query_similar_hybrid failed ({exc}), falling back to vector search")
-        return query_similar(query, top_k=n_results, user_id=user_id)
+def query_similar_hybrid(
+    query: str,
+    user_id: str = "default",
+    n_results: int = 8,
+) -> list[dict]:
+    """Delegates to query_similar (pgvector handles ANN natively)."""
+    return query_similar(query, user_id=user_id, n_results=n_results)
 
 
 def query_similar_hybrid_batch(
@@ -299,121 +175,122 @@ def query_similar_hybrid_batch(
     user_id: str = "default",
     n_results: int = 5,
 ) -> list[list[dict]]:
-    """Hybrid BM25 + vector retrieval for multiple queries with a single index build.
+    """Delegates to query_similar_batch (pgvector handles ANN natively)."""
+    return query_similar_batch(queries, user_id=user_id, n_results=n_results)
 
-    Fetches all chunks once, builds BM25 index once, then for each query:
-    runs BM25 scoring + vector embedding and merges via RRF.
 
-    Returns list[list[dict]] — one result list per query, same format as
-    query_similar_hybrid(). Falls back to query_similar_batch() on any exception.
+def query_by_hash(content_hash: str, user_id: str = "default") -> dict | None:
+    """Check if content with this hash already exists.
+
+    Returns {"chunk_count": int, "tags": list[str]} if found, None otherwise.
     """
-    try:
-        if not queries:
-            return []
+    response = (
+        supabase.table("embeddings")
+        .select("content,tags")
+        .eq("content_hash", content_hash)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    rows = response.data or []
+    if not rows:
+        return None
 
-        collection = get_collection(user_id)
-        all_data = collection.get(include=["documents", "metadatas"])
-        all_docs = all_data.get("documents") or []
-        all_metas = all_data.get("metadatas") or []
-        all_ids = all_data.get("ids") or []
+    tags_raw = rows[0].get("tags", "")
+    tags = [t.strip() for t in tags_raw.split(",") if t.strip()] if tags_raw else []
 
-        if len(all_docs) < 3:
-            return [query_similar(q, top_k=n_results, user_id=user_id) for q in queries]
+    return {"chunk_count": len(rows), "tags": tags}
 
-        # Build BM25 index once for all queries
-        tokenized_corpus = [_tokenize(doc) for doc in all_docs]
-        bm25 = BM25Okapi(tokenized_corpus)
-        id_to_global_idx: dict[str, int] = {cid: i for i, cid in enumerate(all_ids)}
 
-        # Embed all queries in a single batched forward pass
-        query_embeddings = embed_texts(queries)
+def get_all_sources(user_id: str = "default") -> list[dict]:
+    """Return all sources for the user, grouped by source_id, sorted newest first."""
+    response = (
+        supabase.table("embeddings")
+        .select("*")
+        .eq("user_id", user_id)
+        .execute()
+    )
+    rows = response.data or []
+    if not rows:
+        return []
 
-        k = 60
-        results_per_query: list[list[dict]] = []
+    groups: dict[str, dict] = {}
+    for row in rows:
+        sid = row.get("source_id") or "unknown"
+        if sid not in groups:
+            groups[sid] = {
+                "source_id": sid,
+                "source_title": row.get("source_title") or "Untitled",
+                "source_type": row.get("source_type", "unknown"),
+                "ingested_at": row.get("ingested_at", ""),
+                "chunk_count": 0,
+                "tag_set": set(),
+            }
+        groups[sid]["chunk_count"] += 1
+        raw_tags = row.get("tags", "")
+        if raw_tags:
+            for tag in raw_tags.split(","):
+                tag = tag.strip()
+                if tag:
+                    groups[sid]["tag_set"].add(tag)
 
-        for q_text, q_embedding in zip(queries, query_embeddings):
-            # BM25 ranking
-            bm25_scores = bm25.get_scores(_tokenize(q_text))
-            bm25_ranked = sorted(range(len(all_docs)), key=lambda i: bm25_scores[i], reverse=True)
-            bm25_rank: dict[int, int] = {idx: rank + 1 for rank, idx in enumerate(bm25_ranked)}
+    sources = []
+    for entry in groups.values():
+        sources.append({
+            "source_id": entry["source_id"],
+            "source_title": entry["source_title"],
+            "source_type": entry["source_type"],
+            "ingested_at": entry["ingested_at"],
+            "chunk_count": entry["chunk_count"],
+            "tags": sorted(entry["tag_set"]),
+        })
 
-            # Vector ranking
-            vec_n = min(len(all_docs), max(20, n_results * 3))
-            vec_results = collection.query(
-                query_embeddings=[q_embedding],
-                n_results=vec_n,
-                include=["documents", "distances"],
-            )
-            vec_ids = vec_results.get("ids", [[]])[0]
-            vec_rank: dict[int, int] = {}
-            for rank, cid in enumerate(vec_ids):
-                global_idx = id_to_global_idx.get(cid)
-                if global_idx is not None:
-                    vec_rank[global_idx] = rank + 1
+    sources.sort(key=lambda s: s["ingested_at"] or "", reverse=True)
+    return sources
 
-            # RRF merge
-            rrf_scores: dict[int, float] = {}
-            for idx in range(len(all_docs)):
-                score = 0.0
-                if idx in bm25_rank:
-                    score += 1.0 / (k + bm25_rank[idx])
-                if idx in vec_rank:
-                    score += 1.0 / (k + vec_rank[idx])
-                if score > 0:
-                    rrf_scores[idx] = score
 
-            top_indices = sorted(rrf_scores, key=lambda i: rrf_scores[i], reverse=True)[:n_results]
-            max_rrf = max(rrf_scores[i] for i in top_indices) if top_indices else 1.0
+def delete_source(source_title: str, user_id: str = "default") -> dict:
+    """Delete all chunks with matching source_title for this user.
 
-            chunks = []
-            for idx in top_indices:
-                doc = all_docs[idx]
-                meta = all_metas[idx]
-                normalized_rrf = rrf_scores[idx] / max_rrf if max_rrf > 0 else 0.0
-                chunks.append({
-                    "text": doc,
-                    "source_type": meta.get("source_type", "unknown"),
-                    "tags": [t.strip() for t in meta.get("tags", "").split(",") if t.strip()],
-                    "source_id": meta.get("source_id", ""),
-                    "source_title": meta.get("source_title", ""),
-                    "chunk_index": int(meta.get("chunk_index", 0)),
-                    "similarity": round(normalized_rrf, 4),
-                })
-            results_per_query.append(chunks)
+    Returns {"deleted": True, "chunks_removed": int}.
+    """
+    # Fetch matching rows first to get a count
+    count_resp = (
+        supabase.table("embeddings")
+        .select("id")
+        .eq("source_title", source_title)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    count = len(count_resp.data or [])
 
-        return results_per_query
+    if count > 0:
+        supabase.table("embeddings").delete().eq("source_title", source_title).eq("user_id", user_id).execute()
 
-    except Exception as exc:
-        logger.warning(f"[hybrid] query_similar_hybrid_batch failed ({exc}), falling back to vector search")
-        # Fallback: return per-query results using pure vector search
-        return [query_similar(q, top_k=n_results, user_id=user_id) for q in queries]
+    return {"deleted": True, "chunks_removed": count}
 
 
 def get_chunks_for_source(source_id: str, user_id: str = "default") -> list[dict]:
-    """Return all chunk dicts for a source_id, sorted by chunk_index ascending.
+    """Return all chunks for a source_id, sorted by chunk_index ascending.
 
     Each dict: {"text": str, "chunk_index": int, "source_id": str}
-    Returns [] if source not found or collection empty.
     """
-    collection = get_collection(user_id)
-    if collection.count() == 0:
-        return []
-    try:
-        results = collection.get(
-            where={"source_id": {"$eq": source_id}},
-            include=["documents", "metadatas"],
-        )
-    except Exception:
-        return []
-    if not results or not results["ids"]:
-        return []
-    chunks = []
-    for doc, meta in zip(results["documents"], results["metadatas"]):
-        chunks.append({
-            "text": doc,
-            "chunk_index": int(meta.get("chunk_index", 0)),
+    response = (
+        supabase.table("embeddings")
+        .select("content,chunk_index,source_id")
+        .eq("source_id", source_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    rows = response.data or []
+
+    chunks = [
+        {
+            "text": row.get("content", ""),
+            "chunk_index": int(row.get("chunk_index", 0)),
             "source_id": source_id,
-        })
+        }
+        for row in rows
+    ]
     chunks.sort(key=lambda c: c["chunk_index"])
     return chunks
 
@@ -424,109 +301,66 @@ def get_adjacent_chunks(
     user_id: str = "default",
     window: int = 1,
 ) -> list[str]:
-    """Return text of chunks adjacent to chunk_index within the same source.
+    """Return texts of chunks adjacent to chunk_index within the same source.
 
-    Fetches chunks at indices [chunk_index-window .. chunk_index+window],
-    excluding chunk_index itself. Returns texts in index order.
-    Returns [] on any error.
+    Fetches indices [chunk_index-window .. chunk_index+window], excluding
+    chunk_index itself. Returns texts in ascending index order.
     """
-    collection = get_collection(user_id)
-    if collection.count() == 0:
-        return []
+    lo = max(0, chunk_index - window)
+    hi = chunk_index + window
 
-    adjacent_texts: list[tuple[int, str]] = []
-    for idx in range(chunk_index - window, chunk_index + window + 1):
-        if idx < 0 or idx == chunk_index:
-            continue
-        try:
-            results = collection.get(
-                where={
-                    "$and": [
-                        {"source_id": {"$eq": source_id}},
-                        {"chunk_index": {"$eq": idx}},
-                    ]
-                },
-                include=["documents"],
-            )
-            if results and results["documents"]:
-                adjacent_texts.append((idx, results["documents"][0]))
-        except Exception:
-            continue
+    response = (
+        supabase.table("embeddings")
+        .select("content,chunk_index")
+        .eq("source_id", source_id)
+        .eq("user_id", user_id)
+        .gte("chunk_index", lo)
+        .lte("chunk_index", hi)
+        .execute()
+    )
+    rows = response.data or []
 
-    adjacent_texts.sort(key=lambda t: t[0])
-    return [text for _, text in adjacent_texts]
+    adjacent = [
+        (int(row["chunk_index"]), row.get("content", ""))
+        for row in rows
+        if int(row.get("chunk_index", -1)) != chunk_index
+    ]
+    adjacent.sort(key=lambda t: t[0])
+    return [text for _, text in adjacent]
 
 
-def get_total_chunks(user_id: str = "default") -> int:
-    collection = get_collection(user_id)
-    return collection.count()
+def get_stats(user_id: str = "default") -> dict:
+    """Return total chunk count and unique tags for the user.
 
+    Returns {"total_chunks": int, "tags": list[str]}.
+    """
+    response = (
+        supabase.table("embeddings")
+        .select("tags")
+        .eq("user_id", user_id)
+        .execute()
+    )
+    rows = response.data or []
 
-def get_all_tags(user_id: str = "default") -> list[str]:
-    collection = get_collection(user_id)
-    if collection.count() == 0:
-        return []
-    results = collection.get(include=["metadatas"])
     tag_set: set[str] = set()
-    for meta in results["metadatas"]:
-        raw = meta.get("tags", "")
+    for row in rows:
+        raw = row.get("tags", "")
         if raw:
             for tag in raw.split(","):
                 tag = tag.strip()
                 if tag:
                     tag_set.add(tag)
-    return sorted(tag_set)
+
+    return {"total_chunks": len(rows), "tags": sorted(tag_set)}
 
 
-def delete_source(source_title: str, user_id: str = "default") -> int:
-    """Delete all ChromaDB chunks with matching source_title metadata.
+# ---------------------------------------------------------------------------
+# Legacy aliases — kept so any remaining callers don't break at import time
+# ---------------------------------------------------------------------------
 
-    Returns the number of chunks deleted, or 0 if no matching chunks found.
-    """
-    collection = get_collection(user_id)
-    results = collection.get(where={"source_title": source_title})
-    if not results["ids"]:
-        return 0
-    collection.delete(ids=results["ids"])
-    return len(results["ids"])
+def get_total_chunks(user_id: str = "default") -> int:
+    return get_stats(user_id)["total_chunks"]
 
 
-def get_all_sources(user_id: str = "default") -> list[dict]:
-    collection = get_collection(user_id)
-    if collection.count() == 0:
-        return []
-
-    results = collection.get(include=["metadatas"])
-    # Group chunks by source_id
-    groups: dict[str, dict] = {}
-    for meta in results["metadatas"]:
-        sid = meta.get("source_id", "unknown")
-        if sid not in groups:
-            groups[sid] = {
-                "source_title": meta.get("source_title", "") or "Untitled",
-                "source_type": meta.get("source_type", "unknown"),
-                "ingested_at": meta.get("ingested_at", ""),
-                "chunk_count": 0,
-                "tag_set": set(),
-            }
-        groups[sid]["chunk_count"] += 1
-        raw_tags = meta.get("tags", "")
-        if raw_tags:
-            for tag in raw_tags.split(","):
-                tag = tag.strip()
-                if tag:
-                    groups[sid]["tag_set"].add(tag)
-
-    sources = []
-    for entry in groups.values():
-        sources.append({
-            "source_title": entry["source_title"],
-            "source_type": entry["source_type"],
-            "ingested_at": entry["ingested_at"],
-            "chunk_count": entry["chunk_count"],
-            "tags": sorted(entry["tag_set"]),
-        })
-
-    # Sort newest first; entries without ingested_at go last
-    sources.sort(key=lambda s: s["ingested_at"] or "", reverse=True)
-    return sources
+def get_all_tags(user_id: str = "default") -> list[str]:
+    return get_stats(user_id)["tags"]
