@@ -321,9 +321,69 @@ async def migrate_to_supabase(
         logger.exception(f"migrate_to_supabase: posts migration failed for {old_clerk_id}")
         raise HTTPException(status_code=500, detail=f"Posts migration failed: {str(exc)}")
 
+    # ── STEP 3: Migrate ChromaDB chunks → Supabase embeddings ──────────────
+    chunks_migrated = 0
+    try:
+        import chromadb
+        from chromadb.config import Settings as ChromaSettings
+
+        CHROMA_DIR.mkdir(parents=True, exist_ok=True)
+        chroma_client = chromadb.PersistentClient(
+            path=str(CHROMA_DIR),
+            settings=ChromaSettings(anonymized_telemetry=False),
+        )
+
+        collection_name = f"contendo_{old_clerk_id}"
+        try:
+            src_collection = chroma_client.get_collection(collection_name)
+        except Exception:
+            logger.info(f"migrate_to_supabase: ChromaDB collection {collection_name!r} not found, skipping chunks")
+            src_collection = None
+
+        if src_collection is not None and src_collection.count() > 0:
+            result = src_collection.get(include=["documents", "metadatas", "embeddings"])
+            ids = result["ids"]
+            documents = result["documents"]
+            metadatas = result["metadatas"]
+            embeddings = result["embeddings"]
+
+            from db.supabase_client import supabase
+            rows = []
+            for chunk_id, doc, meta, embedding in zip(ids, documents, metadatas, embeddings):
+                rows.append({
+                    "id": chunk_id,
+                    "user_id": new_supabase_id,
+                    "content": doc,
+                    "embedding": embedding if isinstance(embedding, list) else list(embedding),
+                    "source_id": meta.get("source_id", ""),
+                    "source_title": meta.get("source_title", ""),
+                    "source_type": meta.get("source_type", ""),
+                    "tags": meta.get("tags", ""),
+                    "chunk_index": int(meta.get("chunk_index", 0)),
+                    "total_chunks": int(meta.get("total_chunks", 0)),
+                    "content_hash": meta.get("content_hash", ""),
+                    "node_type": meta.get("node_type", "chunk"),
+                    "ingested_at": meta.get("ingested_at") or None,
+                })
+
+            # Upsert in batches of 100 to avoid request size limits
+            batch_size = 100
+            for i in range(0, len(rows), batch_size):
+                batch = rows[i : i + batch_size]
+                supabase.table("embeddings").upsert(batch).execute()
+                chunks_migrated += len(batch)
+
+            logger.info(f"migrate_to_supabase: {chunks_migrated} chunks migrated for {new_supabase_id}")
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception(f"migrate_to_supabase: embeddings migration failed for {old_clerk_id}")
+        raise HTTPException(status_code=500, detail=f"Embeddings migration failed: {str(exc)}")
+
     logger.info(
         f"migrate_to_supabase: completed for {old_clerk_id} → {new_supabase_id} "
-        f"(profile={profile_migrated}, posts={posts_migrated}, versions={post_versions_migrated})"
+        f"(profile={profile_migrated}, posts={posts_migrated}, versions={post_versions_migrated}, chunks={chunks_migrated})"
     )
     return {
         "migrated": True,
@@ -332,4 +392,5 @@ async def migrate_to_supabase(
         "profile_migrated": profile_migrated,
         "posts_migrated": posts_migrated,
         "post_versions_migrated": post_versions_migrated,
+        "chunks_migrated": chunks_migrated,
     }

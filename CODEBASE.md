@@ -119,7 +119,7 @@
 ### vector_store.py — get_all_sources()
 | | |
 |---|---|
-| **Reads** | All ChromaDB chunk metadatas via `collection.get()` |
+| **Reads** | All rows from `embeddings` table for the user via `supabase.table("embeddings").select("*").eq("user_id", user_id)` |
 | **Returns** | `list[dict]` — one entry per unique `source_id` with `source_title`, `source_type`, `ingested_at`, `chunk_count`, `tags` (deduplicated) |
 | **Sort** | Newest `ingested_at` first; sources without timestamp sort last |
 
@@ -128,7 +128,7 @@
 |---|---|
 | **Reads** | `content_hash: str`, `user_id: str = "default"` |
 | **Returns** | `{ chunk_count: int, tags: list[str] }` if hash found; `None` if not found |
-| **Side effects** | Two `collection.get()` calls with a metadata filter — no vector search |
+| **Side effects** | Single `supabase.table("embeddings").select("content,tags").eq("content_hash", ...).eq("user_id", ...)` — no vector search |
 
 ### vision_agent.py
 | | |
@@ -142,7 +142,7 @@
 |---|---|
 | **Reads from state** | `topic`, `context`, `user_id` (defaults to `"default"` if absent) |
 | **Writes to state** | `retrieved_chunks: list[str]` |
-| **Side effects** | Queries the `contendo_{user_id}` ChromaDB collection; filters below 0.3 cosine similarity |
+| **Side effects** | Calls `match_embeddings` Supabase RPC with a locally-generated embedding; pgvector returns similarity-ranked rows |
 
 ### draft_node (draft_agent.py)
 | | |
@@ -777,24 +777,31 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
 
 ---
 
-### ChromaDB collection
+### pgvector embeddings table (Supabase)
 | Property | Value |
 |----------|-------|
-| Collection name | `contendo_{user_id}` (e.g. `contendo_default` for the default single user) |
-| Distance metric | cosine |
+| Table | `embeddings` in Supabase Postgres |
+| Vector column | `embedding vector(384)` — cosine similarity via pgvector |
 | Embedding model | `all-MiniLM-L6-v2` (local, sentence-transformers) |
-| Storage path | `backend/data/chroma_db/` |
+| Data isolation | `user_id` column; all queries filter by `user_id` |
+| RPC | `match_embeddings(query_embedding, match_user_id, match_count)` — returns similarity-ranked rows |
 
-**Metadata fields per chunk:**
-| Field | Type | Description |
-|-------|------|-------------|
-| `source_type` | str | `article`, `youtube`, `image`, or `note` |
-| `tags` | str | Comma-separated tag list |
-| `source_id` | str | UUID grouping all chunks from one ingest call |
+**Columns:**
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | text PK | `{source_id}_{chunk_index}` |
+| `user_id` | text | Supabase user ID for data isolation |
+| `content` | text | Chunk text |
+| `embedding` | vector(384) | Local sentence-transformer embedding |
+| `source_type` | text | `article`, `youtube`, `image`, or `note` |
+| `tags` | text | Comma-separated tag list |
+| `source_id` | text | UUID grouping all chunks from one ingest call |
 | `chunk_index` | int | Position of this chunk within its source |
 | `total_chunks` | int | Total number of chunks from this source |
-| `source_title` | str | First 80 chars of first line of content — used as display title in Library |
-| `ingested_at` | str | UTC ISO timestamp of when the source was ingested |
+| `source_title` | text | First 80 chars of first line of content — display title in Library |
+| `content_hash` | text | SHA-256 of normalised content for dedup |
+| `node_type` | text | `chunk` |
+| `ingested_at` | timestamptz | UTC timestamp of ingest |
 
 ---
 
@@ -845,13 +852,13 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
 
 | Decision | Why |
 |----------|-----|
-| ChromaDB uses `upsert`, never `add` | Prevents duplicate chunks if the same content is re-ingested |
+| pgvector uses `upsert`, never `insert` | Prevents duplicate chunks if the same content is re-ingested; Supabase `upsert()` resolves on the `id` primary key |
 | Score threshold is 75 | Defined in `pipeline/graph.py` as `SCORE_THRESHOLD = 75` |
 | Humanizer retries capped at 3 (`MAX_ITERATIONS`) | Guarantees the pipeline always terminates; surfaces best attempt regardless |
 | Embeddings are local (sentence-transformers) | No API key required, no per-call cost, adequate quality for retrieval |
 | YouTube auto-fetch removed | `youtube-transcript-api` was blocked by YouTube bot detection in testing. Replaced with manual paste — the YouTube tab now shows a textarea with instructions to copy from YouTube's built-in transcript feature |
 | Claude model selection | Draft generation and all main pipeline calls use `claude-sonnet-4-6`. Archetype inference (`infer_archetype()` in `draft_agent.py`) uses `claude-haiku-4-5-20251001` (`max_tokens=20`) for low-latency classification before the Sonnet draft call. |
-| ChromaDB similarity threshold is 0.3 | Cosine similarity — chunks below this are too semantically distant to help |
+| Similarity threshold is 0.3 | Cosine similarity returned by `match_embeddings` RPC — chunks below this are too semantically distant to help |
 | profile.json has auto-merge on load | Ensures new profile fields added in code appear without manual migration |
 | CORS: production origin set via `FRONTEND_ORIGIN` env var | Starlette does NOT support glob patterns in `allow_origins` — `https://*.vercel.app` is treated as a literal string and won't match real requests. The Railway env var `FRONTEND_ORIGIN` is appended to the allow-list at startup. The list also always includes `http://localhost:3000` and `https://localhost:3000` for local dev. Never add trailing slashes to `FRONTEND_ORIGIN` or `NEXT_PUBLIC_API_URL` — trailing slash causes origin mismatches. |
 | All data paths derived from `DATA_DIR` env var | `backend/config/paths.py` is the single source of truth. `DATA_DIR` defaults to `backend/data/` for local dev (identical to the previous hardcoded relative paths). On Railway, set `DATA_DIR=/data` and mount the persistent volume at `/data`. All four memory modules import from `config.paths` — no path logic elsewhere. |
@@ -860,8 +867,8 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
 | Backend Docker image does not pre-bake the sentence-transformers model | Model pre-loading was removed from the Dockerfile because it caused Railway build timeouts. The `all-MiniLM-L6-v2` model (~90 MB) is downloaded by `sentence-transformers` on first use and cached inside the container. Build times stay fast; only the very first embedding call (ingest or generate) on a fresh container is slow. |
 | `numpy<2` pinned in requirements.txt | NumPy 2.x is incompatible with the torch version used. After multiple embedding calls, torch raises a fatal ABI mismatch error which crashes the worker process. Pinning to `numpy<2` prevents silent upgrade breakage. |
 | CPU-only `torch==2.2.2` pre-installed in Dockerfile from PyTorch CPU wheel registry | The default PyTorch wheel includes CUDA libraries (~2 GB) and exceeds Railway's 4 GB image limit. Pre-installing from `https://download.pytorch.org/whl/cpu` before `requirements.txt` keeps the image under the limit. This must happen before the pip install step so the CPU wheel is not overwritten. |
-| `query_similar_batch()` used in ideation agent instead of N `query_similar()` calls | The ideation agent generates 8 diversity-sampling queries. Calling `query_similar()` once per query runs 8 separate transformer forward passes (slow on CPU). `query_similar_batch()` embeds all queries in one batched forward pass then queries ChromaDB for each, cutting embedding time by ~7×. |
-| Hybrid BM25 + vector retrieval via RRF | Pure vector search misses exact-term matches when a topic has low chunk density in the collection. BM25 (rank-bm25 library) provides keyword/term-frequency ranking; cosine vector search provides semantic similarity. Reciprocal Rank Fusion (k=60) merges both ranked lists into a single ranking. BM25 index is built in-memory per query from `collection.get()` — acceptable at current collection sizes. Both `query_similar_hybrid()` and `query_similar_hybrid_batch()` fall back to pure vector search on any exception so the pipeline never breaks. |
+| `query_similar_batch()` used in ideation agent instead of N `query_similar()` calls | The ideation agent generates 8 diversity-sampling queries. Calling `query_similar()` once per query runs 8 separate transformer forward passes (slow on CPU). `query_similar_batch()` embeds all queries in one batched forward pass then calls the `match_embeddings` RPC for each, cutting embedding time by ~7×. |
+| `query_similar_hybrid()` and `query_similar_hybrid_batch()` delegate to vector search | BM25 hybrid is not implemented for pgvector; both hybrid functions are thin wrappers over `query_similar` and `query_similar_batch`. pgvector's ANN index provides good enough semantic retrieval without BM25. |
 | Retrieval confidence calibration — always generate, never block | After retrieval, `_compute_retrieval_confidence()` classifies coverage as high/medium/low from raw retrieval results. Decision thresholds are equivalent to: high (3+ chunks with distance < 0.55), medium (1+ chunk < 0.55 or 3+ chunks < 0.70), low (everything else). Implementation uses the returned `similarity` key with mapped cutoffs (`> 0.45` and `> 0.30`) because vector_store returns similarity values. High confidence injects nothing into the draft prompt — identical to baseline. Medium injects an observational framing reminder. Low injects a full calibration block telling the model to write one idea well and stop — 60 to 100 words is a complete post, do not pad. The signal is internal only; the user never sees it. Generation always proceeds regardless of confidence level. |
 | Inline selection editor uses a dedicated `/refine-selection` endpoint | Inline edits go through `POST /refine-selection` rather than a direct browser-to-Anthropic call because CLAUDE.md mandates all API calls go through `useApi()` from `lib/api.ts`. The endpoint loads the user's profile server-side (voice matching), calls `claude-sonnet-4-6` with `max_tokens=500`, and returns only the rewritten fragment. The frontend splices it back using `selectionStart`/`selectionEnd` offsets captured at mouseup. |
 | Cluster endpoint uses tag co-occurrence as the clustering signal | Tags appearing in 2+ sources form clusters; tags unique to a single source are filtered out as noise. No ML, no embeddings — simple and fast. Near-duplicate tag merging is exact lowercase match only (no fuzzy matching) to avoid merging semantically distinct tags. |
@@ -877,7 +884,7 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
 | Placeholders never auto-stripped from post textarea | `[DIAGRAM:]` and `[IMAGE:]` remain in the editable textarea — user removes them manually before copying |
 | SVG diagrams saved to SQLite alongside post text | `svg_diagrams` column stores a JSON array of `{position, description, svg_code}` objects; nullable — posts without diagrams store NULL |
 | Create Post session state persists in sessionStorage | Post text, score, feedback, iterations, and visuals are written to `contentOS_last_*` keys; restored on page mount; cleared on Regenerate or banner dismiss |
-| Library screen groups chunks by source | `get_all_sources()` groups ChromaDB chunks by `source_id` so the user sees one card per ingested item, not raw chunk counts |
+| Library screen groups chunks by source | `get_all_sources()` groups `embeddings` table rows by `source_id` in Python so the user sees one card per ingested item, not raw chunk counts |
 | Ideation agent uses multi-query diversity sampling | 8 queries (5 broad + 2 random tags + 1 oldest source) prevent recency bias; chunk cap raised to 30; diversity rules added to system prompt |
 | Default idea count is 8 | Raised from 5 — more ideas needed to span different knowledge base topics after diversity sampling |
 | Refinements update the existing history entry in place | After `/refine`, frontend calls `PATCH /history/{post_id}` with new content + score. After visuals generation, calls `PATCH` with `svg_diagrams`. No new history rows are created — one entry per generation session. |
@@ -905,12 +912,12 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
 | Uploaded files are ingested as `source_type="article"` | PDF/DOCX/TXT content is plain text after extraction — same chunking and embedding pipeline applies; no need for a new source type |
 | Scanned/image-only PDFs are rejected with 422 | PyMuPDF returns < 100 characters for image-only PDFs; a clear error message is returned rather than silently ingesting empty chunks |
 | File drag-and-drop uses native HTML5 events only | No external DnD library added; `onDragOver`, `onDragLeave`, `onDrop` on the drop zone div are sufficient and keep the bundle small |
-| Library delete removes all ChromaDB chunks with matching `source_title` | `delete_source()` does `collection.get(where={"source_title": ...})` then bulk-deletes by ID. If two sources share the same title, both are deleted — acceptable trade-off given source titles are derived from content and rarely collide. |
+| Library delete removes all pgvector rows with matching `source_title` | `delete_source()` counts matching rows first, then calls `supabase.table("embeddings").delete().eq("source_title", ...).eq("user_id", ...)`. Returns `{"deleted": True, "chunks_removed": count}`. If two sources share the same title, both are deleted — acceptable trade-off given source titles are derived from content and rarely collide. |
 | Captcha/bot-protection detection uses a 2-signal threshold | `detect_captcha()` in `scraper_tool.py` checks for 2+ matches from `CAPTCHA_SIGNALS` before raising an error. A single match (e.g., an article that mentions "Cloudflare") is not flagged; 2+ matches means the page is almost certainly a bot-challenge page. |
 | URL scraping uses Jina Reader, not Tavily | Jina Reader (`r.jina.ai`) is free, requires no API key, and returns clean markdown. The `scrape_url()` docstring documents the upgrade path to Tavily for higher quality if an API key is available. |
 | Obsidian integration reads local `.md` files directly — no plugin or API needed | FastAPI runs locally and has filesystem access. The vault path is entered as a plain text string because browser security prevents JS from accessing local file paths. This only works on localhost — not after cloud deployment. |
 | Obsidian-specific syntax is stripped before ingestion | `clean_obsidian_markdown()` removes YAML frontmatter, `[[wikilinks]]`, `^block-references`, `==highlights==` markers, `![[embedded files]]`, and Dataview query blocks. Plain text content is preserved. |
-| Re-ingesting the same Obsidian vault is safe | ChromaDB uses upsert so running `/obsidian/ingest` a second time updates existing chunks rather than creating duplicates. Users can safely re-run after adding new notes. |
+| Re-ingesting the same Obsidian vault is safe | pgvector uses upsert (on `id` PK) so running `/obsidian/ingest` a second time updates existing chunks rather than creating duplicates. Users can safely re-run after adding new notes. |
 | Vault notes shorter than 100 characters are skipped | Set as `MIN_CONTENT_LENGTH` in `obsidian_tool.py`. Skips daily journal stubs, empty notes, and template files that contain no usable knowledge. `.obsidian`, `.trash`, `templates`, `Templates`, and `.git` folders are always excluded. |
 | URL success card shows `word_count → chunks_stored` | Gives the user a concrete sense of how much was extracted before chunking — more meaningful than just a chunk count |
 | Post versioning uses a parent + child table design | The `posts` table is the parent record (one row per generation session); `post_versions` stores every historical version. Every generation creates v1; every refinement creates the next version. SVG diagram updates do not create new versions — `update_latest_version_svg()` stamps diagrams onto the current version row in place. |
@@ -919,7 +926,7 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
 | Post archetypes system — 7 structural patterns inferred from topic/tone | `infer_archetype()` in `draft_agent.py` uses Claude Haiku to semantically classify the topic + context into one of 7 archetype keys (`incident_report`, `contrarian_take`, `personal_story`, `teach_me_something`, `list_that_isnt`, `prediction_bet`, `before_after`). The archetype key is stored in pipeline state, returned in the `/generate` response, and saved to the `posts` SQLite table. Structural instructions are injected into the draft prompt via `get_archetype_instructions()` in `formatters.py`. |
 | `infer_archetype()` uses Claude Haiku, not regex | Haiku (`claude-haiku-4-5-20251001`, `max_tokens=20`) classifies the topic semantically — understands intent beyond keyword matching (e.g. "after 2 years" doesn't incorrectly trigger `before_after`). Fallback chain: valid key → use it; invalid/empty key → `incident_report`; any exception → `incident_report`. |
 | `main.py` split into focused `APIRouter` files under `backend/routers/` | Each router owns its endpoints and imports only what it needs. `main.py` now registers 10 routers (ingest, generate, history, library, ideas, stats, profile, feedback, debug, admin) and remains focused on CORS, lifespan, and router registration. Pydantic models used by only one router live in that router file; no shared `models.py` is required. |
-| ChromaDB collections namespaced per user as `contendo_{user_id}` | Data isolation is active. `vector_store.py` functions accept `user_id: str = "default"` for compatibility, while router endpoints pass authenticated IDs via `Depends(get_user_id_dep)`. `contendo_default` remains valid for local-dev fallback (`ENVIRONMENT != production` with no token). Existing data in the old `"contendo"` collection is not auto-migrated; re-ingestion or migration is required. |
+| pgvector data isolated by `user_id` column | All `embeddings` table queries filter by `user_id`. `vector_store.py` functions accept `user_id: str = "default"` for compatibility; router endpoints pass authenticated IDs via `Depends(get_user_id_dep)`. `"default"` remains valid for local-dev fallback (`ENVIRONMENT != production` with no token). |
 | Chunks prefixed with `[source_type: X]` before reaching draft agent | `retrieval_node` prepends `[source_type: article]`, `[source_type: note]`, `[source_type: youtube]`, or `[source_type: image]` to each chunk string. Preserves attribution metadata without changing the `list[str]` schema of `retrieved_chunks` in `PipelineState`. The draft agent's SOURCE ATTRIBUTION RULES use this label to distinguish content the user personally wrote (notes — attributable to direct experience) from content they read or watched (articles, youtube, images — must be framed as external references, never as first-person claims). Prevents the fabrication of personal experiences by combining the user's employer/role from their profile with technical details from external chunks. Missing or `"unknown"` source_type defaults to `"article"` as the safe assumption. |
 | Critic agent runs once per generation, not per retry iteration | The retry loop in polished mode routes back to `humanizer_node` only. Re-running the critic on each iteration would add a Haiku call per retry pass and is redundant — the critic already diagnosed the initial draft's structural issues; subsequent humanizer passes are language refinements on an already-diagnosed foundation. The critic brief from iteration 1 remains in state for all retry passes. |
 | Critic agent receives all retrieved chunks, not a subset | `critic_node` passes all `retrieved_chunks` to the prompt — no slicing. This matches exactly what `draft_agent` received, so the critic can accurately assess whether claims in the draft are grounded. Passing only a subset (e.g. the first 5) risked false "substance: needs_work" verdicts for claims that were actually supported by chunks the critic was never shown. |
@@ -927,7 +934,7 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
 | Critic brief fallback is a neutral brief, not an exception | If the Haiku call fails or JSON parsing fails after 3 attempts, `critic_node` sets `critic_brief=_NEUTRAL_BRIEF` (all "strong") or `{}` depending on failure type. This ensures the humanizer always receives a safe input — the pipeline never breaks due to a failed critic call. |
 | Critic brief is `{}` for draft mode, neutral dict for standard/polished parse failure | An empty dict `{}` from draft-mode bypass means "critic was skipped intentionally." `_format_critic_brief({})` returns empty critic_section — humanizer behaves as pre-critic for backward compat. |
 | Anthropic client is instantiated at module level in each agent file | Client is created once at import time and reused across all calls — not re-instantiated on every function invocation. `max_retries=3` enables the SDK's built-in retry logic for 429 rate limit errors and transient network failures at no extra code cost. No shared `llm_client.py` — module-level per file is sufficient at current codebase size. Applies to all 7 agent files: `draft_agent.py`, `humanizer_agent.py`, `scorer_agent.py`, `ingestion_agent.py`, `vision_agent.py`, `visual_agent.py`, `ideation_agent.py`. |
-| Ingestion deduplication uses SHA-256 hash of normalised content | `compute_content_hash()` in `ingestion_agent.py` strips and lowercases the content string before hashing. On every `ingest_content()` call, `query_by_hash()` checks for an existing match in ChromaDB metadata before the Claude tag extraction call runs. Duplicate content returns immediately with the existing chunk count and tags — zero Claude API calls. The hash is stored in each chunk's `content_hash` metadata field so future checks can find it. Content ingested before this feature was added has no `content_hash` in metadata and will not be deduplicated retroactively. Obsidian vault ingest (`/obsidian/ingest`) is excluded — its upsert-based flow already handles re-ingestion safely. |
+| Ingestion deduplication uses SHA-256 hash of normalised content | `compute_content_hash()` in `ingestion_agent.py` strips and lowercases the content string before hashing. On every `ingest_content()` call, `query_by_hash()` checks for an existing match in the `embeddings` table before the Claude tag extraction call runs. Duplicate content returns immediately with the existing chunk count and tags — zero Claude API calls. The hash is stored in the `content_hash` column so future checks can find it. Obsidian vault ingest (`/obsidian/ingest`) is excluded — its upsert-based flow already handles re-ingestion safely. |
 
 ---
 
