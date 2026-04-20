@@ -884,14 +884,19 @@ export default function CreatePost() {
     if (!editedPost) return;
 
     const frame = requestAnimationFrame(() => {
+      const editor = postEditorRef.current;
+      if (!editor) return;
       // Skip DOM re-render when the change came from user typing in the editor.
       // The browser already updated the DOM; resetting it would disrupt the cursor.
-      if (isUserInput.current) {
+      // EXCEPTION: if the editor is empty (e.g. it was just remounted after a layout
+      // branch switch), we must always repopulate — otherwise the canvas stays blank
+      // even though editedPost has content (the flag was never reset because the
+      // previous RAF was cancelled by the effect cleanup when analysisOpen changed).
+      if (isUserInput.current && editor.innerHTML !== "") {
         isUserInput.current = false;
         return;
       }
-      const editor = postEditorRef.current;
-      if (!editor) return;
+      isUserInput.current = false;
       // Re-render when content changed OR when editor was remounted (empty after branch switch).
       if (editedPost !== lastRenderedPost.current || editor.innerHTML === "") {
         setEditorContent(editor, editedPost);
@@ -929,14 +934,23 @@ export default function CreatePost() {
       const savedLength = sessionStorage.getItem(SS_LENGTH);
       const savedPostId = sessionStorage.getItem(SS_CURRENT_POST_ID);
 
-      if (savedPost && savedScore && savedFeedback && savedIterations) {
+      // Only require the post text itself. Secondary keys (score, feedback,
+      // iterations) are provided as graceful defaults when missing — e.g. when
+      // SS_POST was written by handleInlineEdit but a full persistence-effect
+      // flush hadn't run yet. Without this, postGenerated stays false and the
+      // post canvas never renders.
+      if (savedPost) {
         const restoredResult: GenerateResult = {
           post: savedPost,
-          score: Number(savedScore),
-          score_feedback: JSON.parse(savedFeedback),
-          iterations: Number(savedIterations),
-          // null = old session before lazy scoring — treat as scored for back-compat
-          scored: savedScored === null ? true : savedScored === "true",
+          score: Number(savedScore) || 0,
+          score_feedback: (() => {
+            try { return savedFeedback ? JSON.parse(savedFeedback) : []; }
+            catch { return []; }
+          })(),
+          iterations: Number(savedIterations) || 1,
+          // null = old session before lazy scoring — default to unscored so the
+          // user can still run analysis; true = previously scored, preserve that.
+          scored: savedScored === "true",
         };
         setResult(restoredResult);
         setEditedPost(savedPost);
@@ -1599,7 +1613,18 @@ export default function CreatePost() {
       </button>
 
       <button
-        onClick={() => { setAnalysisOpen(true); if (!result?.scored && !scoreLoading) handleScore(); else if (!isWide) setTimeout(() => analysisRef.current?.scrollIntoView({ behavior: "smooth" }), 50); }}
+        onClick={() => {
+            // Snapshot current DOM content before the layout branch switches.
+            // Without this, content typed-but-not-yet-persisted would be lost
+            // when the split layout remounts the editor div.
+            if (postEditorRef.current) {
+              const current = extractTextFromEditor(postEditorRef.current);
+              if (current && current !== editedPost) setEditedPost(current);
+            }
+            setAnalysisOpen(true);
+            if (!result?.scored && !scoreLoading) handleScore();
+            else if (!isWide) setTimeout(() => analysisRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+          }}
         title="Analyse"
         style={splitActive ? { display: "flex", flexDirection: "column", alignItems: "center", gap: 5, background: "none", border: "none", cursor: "pointer", padding: "4px 6px", borderRadius: 8 } : actionBtnStyle()}
       >
