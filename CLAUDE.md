@@ -89,8 +89,6 @@ logo links there) and see auth-aware CTAs ("Open workspace" → `/`).
 - Endpoints live in backend/routers/ — not in main.py
 - main.py is CORS, lifespan, router registration, and logging config
 - Each router imports only what it needs
-- `backend/routers/debug.py` and `backend/routers/admin.py` are TEMPORARY —
-  remove after Railway persistence is confirmed and all user profiles are migrated
 
 ---
 

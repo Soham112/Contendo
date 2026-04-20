@@ -24,9 +24,7 @@
 | `backend/routers/ideas.py` | `GET /suggestions` |
 | `backend/routers/stats.py` | `GET /stats` |
 | `backend/routers/profile.py` | `GET /profile`, `POST /profile`, `POST /extract-resume` — per-user profile read/write plus resume extraction; `POST /profile` does a read-back verification after save and returns HTTP 500 if the write didn't land; `POST /extract-resume` accepts `multipart/form-data` with a single `file` (PDF only), extracts text via PyMuPDF (`extract_from_pdf`), sends to Claude Sonnet 4.6 to produce structured `{ name, role, bio, location, topics_of_expertise, voice_descriptors, opinions, writing_samples }` JSON, and returns the parsed dict — does NOT auto-save to profile (frontend merges and saves via `POST /profile`); returns 422 if file is not a PDF, extracted text < 100 chars, or JSON parse fails |
-| `backend/routers/debug.py` | **TEMPORARY** — `GET /debug/profile-paths` (no auth); returns `data_dir`, `profiles_dir`, `profiles_dir_exists`, `profile_files`, `environment`; used to verify Railway volume mount; remove once persistence is confirmed |
 | `backend/routers/feedback.py` | `POST /feedback` — accepts `{ message: str, page: str }` body; `user_id` from `Depends(get_user_id_dep)`; appends a JSON line to `DATA_DIR/feedback.jsonl` with fields `user_id`, `message`, `page`, `submitted_at` (UTC ISO); returns `{"received": true}`; after writing, fires `_notify_telegram()` via `asyncio.create_task()` (fire-and-forget, never blocks response); `_notify_telegram()` reads `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` from env — if either is absent, logs a warning and returns silently; on Telegram API failure, catches all exceptions and logs a warning (non-fatal); uses `httpx.AsyncClient(timeout=10)` for the Telegram `sendMessage` call with HTML parse mode |
-| `backend/routers/admin.py` | **TEMPORARY** — `POST /admin/migrate-profile` and `POST /admin/migrate-user-data` (both protected by `x-migration-secret` header matching `MIGRATION_SECRET` env var, no Clerk auth); `migrate-profile` accepts `target_user_id` + optional `profile` dict (falls back to legacy `profile.json`); `migrate-user-data` copies ChromaDB chunks, SQLite posts, and hierarchy nodes from `user_id="default"` to a real Clerk user ID — `contendo_default` collection preserved as backup; remove both after all users migrated |
 | `backend/db/__init__.py` | Empty — marks db/ as a Python package |
 | `backend/db/supabase_client.py` | Module-level Supabase client — `create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)`; exported as `supabase`; imported by all memory stores |
 | `backend/requirements.txt` | All Python dependencies pinned — includes rank-bm25>=0.2.2 for hybrid BM25 retrieval, supabase>=2.0.0, asyncpg>=0.29.0 |
@@ -702,49 +700,6 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
   "tags": ["ai", "machine learning", "product strategy", "startups"]
 }
 ```
-
----
-
-### POST /admin/migrate-profile *(TEMPORARY)*
-**Auth:** `x-migration-secret` header must match `MIGRATION_SECRET` env var. No Clerk auth.
-**Request body:**
-```json
-{
-  "target_user_id": "user_3BYsin1Q4qNbSpkYOKnhPCTTarN",
-  "profile": { ... }  // optional — if omitted, reads legacy DATA_DIR/profile.json
-}
-```
-**Response:**
-```json
-{
-  "migrated": true,
-  "source": "/data/profile.json",
-  "to": "/data/profiles/profile_user_3BYsin1Q4qNbSpkYOKnhPCTTarN.json",
-  "name": "Soham Patil"
-}
-```
-**Notes:** Writes a profile for any user ID without requiring Clerk auth. If `profile` is provided in the body, that data is used directly. Otherwise falls back to reading `DATA_DIR/profile.json`. Returns 403 if secret is wrong, 404 if no legacy profile exists and no inline `profile` was provided, 500 if `MIGRATION_SECRET` is unset.
-
----
-
-### POST /admin/migrate-user-data *(TEMPORARY)*
-**Auth:** `x-migration-secret` header must match `MIGRATION_SECRET` env var. No Clerk auth.
-**Request body:**
-```json
-{ "target_user_id": "user_3BYsin1Q4qNbSpkYOKnhPCTTarN" }
-```
-**Response:**
-```json
-{
-  "migrated": true,
-  "target_user_id": "user_3BYsin1Q4qNbSpkYOKnhPCTTarN",
-  "chunks_migrated": 312,
-  "posts_migrated": 47,
-  "hierarchy": "18 nodes migrated",
-  "note": "contendo_default collection preserved as backup. Profile migration is separate — run /admin/migrate-profile too."
-}
-```
-**Notes:** One-time migration that copies all data from `user_id="default"` to a real Clerk user ID. Three steps: (1) gets `contendo_default` ChromaDB collection and upserts all chunks + embeddings + metadata into `contendo_{target_user_id}` — `contendo_default` is NOT deleted (backup); (2) updates `posts` table in `posts.db` WHERE `user_id='default'`; (3) updates `source_nodes` and `topic_nodes` in `hierarchy.db` if a `user_id` column exists (skipped with message if not). Returns 403 if secret is wrong, 404 if `contendo_default` not found, 500 with `{"step": "chromadb"|"posts"|"hierarchy", "error": "..."}` on any step failure. Profile must be migrated separately via `/admin/migrate-profile`.
 
 ---
 

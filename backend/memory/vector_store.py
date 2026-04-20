@@ -62,6 +62,7 @@ def upsert_chunks(
     metadatas: list[dict],
     ids: list[str],
     user_id: str = "default",
+    **kwargs,
 ) -> int:
     """Embed chunks locally and upsert rows into the embeddings table.
 
