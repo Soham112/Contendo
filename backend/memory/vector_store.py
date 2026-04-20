@@ -69,8 +69,12 @@ def upsert_chunks(
     Args:
         chunks:    List of text strings to embed and store.
         metadatas: Parallel list of metadata dicts (one per chunk).
+                   Expected keys: source_type, source_title, source_id,
+                   chunk_index, total_chunks, tags, content_hash,
+                   ingested_at, node_type.
         ids:       Parallel list of unique row IDs (one per chunk).
         user_id:   Supabase user ID used for data isolation.
+        **kwargs:  Absorbs any extra keyword arguments from callers.
 
     Returns:
         Number of rows upserted.
@@ -95,6 +99,7 @@ def upsert_chunks(
             "total_chunks": meta.get("total_chunks", len(chunks)),
             "content_hash": meta.get("content_hash", ""),
             "node_type": meta.get("node_type", "chunk"),
+            "ingested_at": meta.get("ingested_at") or None,
         })
 
     supabase.table("embeddings").upsert(rows).execute()
