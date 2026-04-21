@@ -1778,70 +1778,176 @@ export default function CreatePost() {
         </div>
       </div>
 
-      {/* ── Split layout (wide, post generated, analysis open) ──────────────── */}
-      {splitActive ? (
-        <div ref={splitContainerRef} style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-
-          {/* Left — manuscript */}
+      {/* ── Post layout: unified split / single-column ───────────────────────── */}
+      {/* The <div ref={postEditorRef}> lives at a STABLE unconditional tree     */}
+      {/* position inside this single branch. When splitActive toggles, only CSS  */}
+      {/* changes — React reuses the editor DOM node and its innerHTML is never    */}
+      {/* lost, eliminating the blank-canvas flash caused by branch-switching.    */}
+      {postGenerated && !loading ? (
+        <div
+          ref={splitContainerRef}
+          style={{
+            display: "flex",
+            flex: 1,
+            overflow: splitActive ? "hidden" : undefined,
+          }}
+        >
+          {/* ── Post area ──────────────────────────────────────────────────── */}
           <div
-            style={{
+            style={splitActive ? {
               flex: `0 0 ${splitRatio * 100}%`,
               display: "flex",
               flexDirection: "column",
               padding: "32px 40px",
               overflow: "hidden",
+            } : {
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              overflowY: "auto",
             }}
           >
-            {/* Manuscript heading row */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: 16,
-                flexShrink: 0,
-              }}
-            >
-              <h2
-                className="font-headline"
-                style={{ fontSize: 22, fontWeight: 400, color: "#2f3333", margin: 0 }}
-              >
-                {topic || 'The Manuscript'}
-              </h2>
-              <span
+            {/* Split mode: manuscript heading row (sibling, not ancestor of editor) */}
+            {splitActive && (
+              <div
                 style={{
-                  display: "inline-flex",
+                  display: "flex",
                   alignItems: "center",
-                  gap: 6,
-                  fontSize: 11,
-                  color: "#777c7b",
-                  background: "#edeeed",
-                  borderRadius: 20,
-                  padding: "3px 11px",
-                  lineHeight: 1.6,
+                  justifyContent: "space-between",
+                  marginBottom: 16,
+                  flexShrink: 0,
                 }}
               >
-                <span style={{ color: "#58614f", fontSize: 10 }}>●</span>
-                AI Refined:{" "}
-                <span
-                  className="capitalize"
-                  style={{ fontWeight: 500, color: "#2f3333", marginLeft: 2 }}
+                <h2
+                  className="font-headline"
+                  style={{ fontSize: 22, fontWeight: 400, color: "#2f3333", margin: 0 }}
                 >
-                  {tone}
-                </span>{" "}
-                Tone
-              </span>
-            </div>
-
-            <div className="flex-1 min-h-0 flex gap-6">
-              <div className="hidden xl:block w-[210px] shrink-0 pt-6">
-                {postActionButtons}
+                  {topic || 'The Manuscript'}
+                </h2>
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontSize: 11,
+                    color: "#777c7b",
+                    background: "#edeeed",
+                    borderRadius: 20,
+                    padding: "3px 11px",
+                    lineHeight: 1.6,
+                  }}
+                >
+                  <span style={{ color: "#58614f", fontSize: 10 }}>●</span>
+                  AI Refined:{" "}
+                  <span
+                    className="capitalize"
+                    style={{ fontWeight: 500, color: "#2f3333", marginLeft: 2 }}
+                  >
+                    {tone}
+                  </span>{" "}
+                  Tone
+                </span>
               </div>
+            )}
 
-              {/* Post canvas */}
-              <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                <div className="rounded-[28px] bg-surface-container-lowest shadow-[0px_4px_20px_rgba(47,51,51,0.04),0px_12px_40px_rgba(47,51,51,0.06)] transition-all duration-300" style={{ flex: 1, minHeight: 0, overflow: "hidden", cursor: "text" }}>
-                  <div className="h-full overflow-y-auto px-7 py-7">
+            {/* Single-column mode: header + status row (sibling, not ancestor of editor) */}
+            {!splitActive && (
+              <div style={{ flexShrink: 0, padding: "40px 2rem 0", display: "flex", justifyContent: "center" }}>
+                <div style={{ width: "100%", maxWidth: 860 }}>
+                  <p className="label-caps text-secondary" style={{ fontSize: "0.6rem", letterSpacing: "0.1em", marginBottom: 6 }}>
+                    MANUSCRIPT DRAFT
+                  </p>
+                  <h1 style={{ fontFamily: "Noto Serif, serif", fontSize: "2rem", fontWeight: 300, color: "#2f3333", lineHeight: 1.2, margin: "0 0 0.5rem" }}>
+                    {topic || "The Manuscript"}
+                  </h1>
+                  <p className="text-xs text-outline">Select any passage to refine it in place.</p>
+                  <div style={{ width: "100%", display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, marginTop: 16, marginBottom: 8 }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "#777c7b", background: "rgba(237,238,237,0.8)", borderRadius: 999, padding: "6px 12px", lineHeight: 1.6, backdropFilter: "blur(18px)" }}>
+                      <span style={{ color: "#58614f", fontSize: 10 }}>●</span>
+                      AI Refined:{" "}
+                      <span className="capitalize" style={{ fontWeight: 500, color: "#2f3333", marginLeft: 2 }}>{tone}</span>{" "}
+                      Tone
+                    </span>
+                    <button
+                      onClick={() => { setResult(null); setEditedPost(""); setAnalysisOpen(false); }}
+                      className="text-xs text-outline hover:text-secondary transition-colors"
+                    >
+                      ← Start over
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Canvas + actions ─────────────────────────────────────────────
+                Every div from here down to <div ref={postEditorRef}> is
+                UNCONDITIONAL — no ternary or && in the ancestor chain.
+                React therefore reuses the same DOM nodes on every layout
+                switch and the editor innerHTML is always preserved.          */}
+            <div
+              style={splitActive ? {
+                flex: "1 1 0",
+                minHeight: 0,
+                display: "flex",
+                gap: 24,
+              } : {
+                display: "flex",
+                justifyContent: "center",
+                padding: "0 2rem 48px",
+              }}
+            >
+              {/* Action buttons column — split mode sidebar (sibling of canvas wrapper) */}
+              {splitActive && (
+                <div className="hidden xl:block w-[210px] shrink-0 pt-6">
+                  {postActionButtons}
+                </div>
+              )}
+
+              {/* Canvas wrapper — always at a stable child index */}
+              <div
+                style={splitActive ? {
+                  flex: 1,
+                  minHeight: 0,
+                  overflow: "hidden",
+                  display: "flex",
+                  flexDirection: "column",
+                } : {
+                  width: "100%",
+                  maxWidth: 860,
+                  position: "relative",
+                }}
+              >
+                {/* Action buttons — single-column: absolute left of canvas (sibling of card) */}
+                {!splitActive && (
+                  <div
+                    className="hidden lg:flex"
+                    style={{ position: "absolute", right: "100%", marginRight: 24, top: 0, flexDirection: "column" }}
+                  >
+                    {postActionButtons}
+                  </div>
+                )}
+
+                {/* ── Canvas card — same element type, stable child index, only CSS changes */}
+                <div
+                  className={splitActive ? "rounded-[28px] bg-surface-container-lowest shadow-[0px_4px_20px_rgba(47,51,51,0.04),0px_12px_40px_rgba(47,51,51,0.06)] transition-all duration-300" : ""}
+                  style={splitActive ? {
+                    flex: 1,
+                    minHeight: 0,
+                    overflow: "hidden",
+                    cursor: "text",
+                  } : {
+                    borderRadius: 28,
+                    background: "#ffffff",
+                    boxShadow: "0px 4px 20px rgba(47,51,51,0.04), 0px 12px 40px rgba(47,51,51,0.06)",
+                    overflow: "hidden",
+                    minHeight: "85vh",
+                  }}
+                >
+                  {/* Scroll / padding area — same element type, only className changes */}
+                  <div
+                    className={splitActive ? "h-full overflow-y-auto px-7 py-7" : "px-8 py-10 md:px-20 md:py-12"}
+                    style={{ cursor: "text" }}
+                  >
                     <div style={{ position: "relative" }}>
                       {!editorHinted && (
                         <div
@@ -1860,6 +1966,7 @@ export default function CreatePost() {
                           Click to edit…
                         </div>
                       )}
+                      {/* Single editor div — React reuses this DOM node on every layout switch */}
                       <div
                         ref={postEditorRef}
                         contentEditable
@@ -1870,306 +1977,228 @@ export default function CreatePost() {
                         onInput={handlePostEditorInput}
                         onMouseUp={handlePostEditorSelection}
                         onKeyUp={handlePostEditorSelection}
-                        className="manuscript-editor min-h-[52vh] outline-none text-[15.5px] leading-[1.9] text-on-surface whitespace-pre-wrap"
-                        style={{ fontFamily: "inherit" }}
+                        className="manuscript-editor outline-none text-[15.5px] leading-[1.9] text-on-surface whitespace-pre-wrap"
+                        style={{ fontFamily: "inherit", minHeight: splitActive ? "52vh" : "78vh" }}
                       />
                     </div>
                   </div>
                 </div>
+                {/* END canvas card */}
+
+                {/* Below-canvas content — single-column only */}
+                {!splitActive && (
+                  <>
+                    <div className="lg:hidden" style={{ width: "100%", marginTop: 20 }}>
+                      {postActionButtons}
+                    </div>
+
+                    {/* Footer — word count centered, last-edited right */}
+                    <div style={{ width: "100%", display: "flex", justifyContent: "center", marginTop: "1.5rem", position: "relative" }}>
+                      <span style={{ fontSize: 11, color: "rgba(91,96,95,0.4)", letterSpacing: "0.05em" }}>
+                        {postStats.wordCount} words · ~{postStats.readingTime} min read
+                        {format === "thread" && ` · ~${postStats.tweetCount} tweets`}
+                      </span>
+                      <span style={{ position: "absolute", right: 0, fontSize: 10, color: "rgba(91,96,95,0.3)", fontStyle: "italic" }}>
+                        {lastSaved ? saveStatusText : "Auto-saved to history"}
+                      </span>
+                    </div>
+
+                    {/* Analysis panel stacked below on narrow viewports */}
+                    {analysisOpen && !isWide && (
+                      <div
+                        ref={analysisRef}
+                        style={{
+                          width: "100%",
+                          marginTop: 24,
+                          paddingTop: 24,
+                          borderTop: "0.5px solid #dfe3e2",
+                          maxHeight: "50vh",
+                          overflowY: "auto",
+                        }}
+                      >
+                        {analysisPanelContent}
+                      </div>
+                    )}
+
+                    {/* Visuals panel */}
+                    {visualsVisible && (
+                      <div
+                        style={{
+                          marginTop: 40,
+                          opacity: visualsPanelEntered ? 1 : 0,
+                          transform: visualsPanelEntered ? "translateY(0)" : "translateY(16px)",
+                          transition: "opacity 300ms ease-out, transform 300ms ease-out",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            marginBottom: 20,
+                          }}
+                        >
+                          <p
+                            className="label-caps text-secondary"
+                            style={{ fontSize: "0.6rem", letterSpacing: "0.1em" }}
+                          >
+                            VISUALS
+                          </p>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <button
+                              onClick={handleGenerateVisuals}
+                              disabled={visualsLoading}
+                              style={{
+                                fontSize: "0.78rem",
+                                color: "#645e57",
+                                background: "#f3f4f3",
+                                border: "none",
+                                borderRadius: "0.5rem",
+                                padding: "4px 12px",
+                                cursor: visualsLoading ? "not-allowed" : "pointer",
+                                opacity: visualsLoading ? 0.5 : 1,
+                                fontFamily: "Inter, sans-serif",
+                              }}
+                            >
+                              {visualsLoading ? "Scanning…" : "Regenerate"}
+                            </button>
+                            <button
+                              onClick={() => setVisualsVisible(false)}
+                              style={{
+                                background: "none",
+                                border: "none",
+                                cursor: "pointer",
+                                color: "#aeb3b2",
+                                fontSize: "1.1rem",
+                                lineHeight: 1,
+                                padding: "2px 4px",
+                              }}
+                              aria-label="Close visuals panel"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        </div>
+
+                        {visualsLoading && (
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "center",
+                              padding: "48px 0",
+                              gap: 12,
+                            }}
+                          >
+                            <div className="w-8 h-8 rounded-full border-2 border-surface-container-high border-t-primary animate-spin" />
+                            <p style={{ fontSize: "0.85rem", color: "#645e57", fontFamily: "Inter, sans-serif" }}>
+                              Scanning post for visual opportunities…
+                            </p>
+                          </div>
+                        )}
+
+                        {!visualsLoading && visuals.length === 0 && (
+                          <div
+                            style={{
+                              borderRadius: "0.75rem",
+                              background: "#f3f4f3",
+                              padding: "20px 24px",
+                            }}
+                          >
+                            <p style={{ fontSize: "0.85rem", color: "#645e57", fontFamily: "Inter, sans-serif" }}>
+                              No visual placeholders found in post.
+                            </p>
+                          </div>
+                        )}
+
+                        {!visualsLoading && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
+                            {visuals.map((v, i) =>
+                              v.type === "diagram" ? (
+                                <DiagramBlock
+                                  key={i}
+                                  visual={v}
+                                  api={api}
+                                  onActiveVersionChange={handleDiagramVersionChange}
+                                />
+                              ) : (
+                                <ImageReminderCard key={i} visual={v} />
+                              )
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {/* END visuals panel */}
+                  </>
+                )}
               </div>
+              {/* END canvas wrapper */}
             </div>
+            {/* END canvas + actions */}
 
-            <div className="xl:hidden">{postActionButtons}</div>
-            {postMetaBar}
-
-            <p className="text-xs text-outline-variant shrink-0 mt-2">
-              {lastSaved ? saveStatusText : "Auto-saved to history"}
-            </p>
+            {/* Split mode: footer */}
+            {splitActive && (
+              <>
+                <div className="xl:hidden">{postActionButtons}</div>
+                {postMetaBar}
+                <p className="text-xs text-outline-variant shrink-0 mt-2">
+                  {lastSaved ? saveStatusText : "Auto-saved to history"}
+                </p>
+              </>
+            )}
           </div>
+          {/* END post area */}
 
-          {/* Drag handle */}
-          <div
-            onMouseDown={handleDragStart}
-            onMouseEnter={() => setIsHandleHovered(true)}
-            onMouseLeave={() => setIsHandleHovered(false)}
-            style={{
-              width: "12px",
-              cursor: "col-resize",
-              flexShrink: 0,
-              alignSelf: "stretch",
-              background: isHandleHovered ? "rgba(88,97,79,0.06)" : "transparent",
-              transition: "background 0.2s",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "4px",
-            }}
-          >
-            {[0, 1, 2].map(i => (
-              <div
-                key={i}
-                style={{
-                  width: "6px",
-                  height: "1.5px",
-                  borderRadius: "2px",
-                  background: isHandleHovered ? "rgba(88,97,79,0.5)" : "rgba(88,97,79,0.25)",
-                  transition: "background 0.2s",
-                }}
-              />
-            ))}
-          </div>
-
-          {/* Right — analysis panel */}
-          <div
-            style={{
-              flex: `0 0 ${(1 - splitRatio) * 100 - 0.5}%`,
-              height: "100%",
-              overflowY: "auto",
-              padding: "28px 32px",
-              background: "#faf9f8",
-            }}
-          >
-            {analysisPanelContent}
-          </div>
-        </div>
-
-      ) : postGenerated && !loading ? (
-        // ── Single-column manuscript (panel closed or narrow) ────────────────
-        <div style={{ flex: 1, overflowY: "auto" }}>
-          <div style={{ width: "100%", display: "flex", justifyContent: "center", padding: "40px 2rem 48px" }}>
-            <div style={{ width: "100%", maxWidth: 860, position: "relative" }}>
-
-          {/* Header — label, serif title, subtitle */}
-          <div style={{ width: "100%" }}>
-            <p className="label-caps text-secondary" style={{ fontSize: "0.6rem", letterSpacing: "0.1em", marginBottom: 6 }}>
-              MANUSCRIPT DRAFT
-            </p>
-            <h1 style={{ fontFamily: "Noto Serif, serif", fontSize: "2rem", fontWeight: 300, color: "#2f3333", lineHeight: 1.2, marginBottom: "0.5rem", margin: "0 0 0.5rem" }}>
-              {topic || "The Manuscript"}
-            </h1>
-            <p className="text-xs text-outline">Select any passage to refine it in place.</p>
-          </div>
-
-          {/* Status row — right-aligned, sits directly above the canvas */}
-          <div style={{ width: "100%", display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, marginTop: 16, marginBottom: 8 }}>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "#777c7b", background: "rgba(237,238,237,0.8)", borderRadius: 999, padding: "6px 12px", lineHeight: 1.6, backdropFilter: "blur(18px)" }}>
-              <span style={{ color: "#58614f", fontSize: 10 }}>●</span>
-              AI Refined:{" "}
-              <span className="capitalize" style={{ fontWeight: 500, color: "#2f3333", marginLeft: 2 }}>{tone}</span>{" "}
-              Tone
-            </span>
-            <button
-              onClick={() => { setResult(null); setEditedPost(""); setAnalysisOpen(false); }}
-              className="text-xs text-outline hover:text-secondary transition-colors"
-            >
-              ← Start over
-            </button>
-          </div>
-
-          {/* Canvas + action stack wrapper */}
-          <div style={{ position: "relative", width: "100%" }}>
-            {/* Action stack — absolute, anchored left of canvas on large screens */}
+          {/* Drag handle — split only */}
+          {splitActive && (
             <div
-              className="hidden lg:flex"
-              style={{ position: "absolute", right: "100%", marginRight: 24, top: 0, flexDirection: "column" }}
-            >
-              {postActionButtons}
-            </div>
-
-            {/* Canvas card */}
-            <div
+              onMouseDown={handleDragStart}
+              onMouseEnter={() => setIsHandleHovered(true)}
+              onMouseLeave={() => setIsHandleHovered(false)}
               style={{
-                borderRadius: 28,
-                background: "#ffffff",
-                boxShadow: "0px 4px 20px rgba(47,51,51,0.04), 0px 12px 40px rgba(47,51,51,0.06)",
-                overflow: "hidden",
-                minHeight: "85vh",
+                width: "12px",
+                cursor: "col-resize",
+                flexShrink: 0,
+                alignSelf: "stretch",
+                background: isHandleHovered ? "rgba(88,97,79,0.06)" : "transparent",
+                transition: "background 0.2s",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "4px",
               }}
             >
-              <div className="px-8 py-10 md:px-20 md:py-12" style={{ cursor: "text" }}>
-                <div style={{ position: "relative" }}>
-                  {!editorHinted && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        pointerEvents: "none",
-                        color: "rgba(119,124,123,0.38)",
-                        fontSize: "15.5px",
-                        lineHeight: "1.9",
-                        fontFamily: "inherit",
-                        userSelect: "none",
-                      }}
-                    >
-                      Click to edit…
-                    </div>
-                  )}
-                  <div
-                    ref={postEditorRef}
-                    contentEditable
-                    suppressContentEditableWarning
-                    role="textbox"
-                    aria-multiline="true"
-                    onFocus={() => setEditorHinted(true)}
-                    onInput={handlePostEditorInput}
-                    onMouseUp={handlePostEditorSelection}
-                    onKeyUp={handlePostEditorSelection}
-                    className="manuscript-editor outline-none text-[15.5px] leading-[1.9] text-on-surface whitespace-pre-wrap"
-                    style={{ fontFamily: "inherit", minHeight: "78vh" }}
-                  />
-                </div>
-              </div>
+              {[0, 1, 2].map(i => (
+                <div
+                  key={i}
+                  style={{
+                    width: "6px",
+                    height: "1.5px",
+                    borderRadius: "2px",
+                    background: isHandleHovered ? "rgba(88,97,79,0.5)" : "rgba(88,97,79,0.25)",
+                    transition: "background 0.2s",
+                  }}
+                />
+              ))}
             </div>
-          </div>
+          )}
 
-          {/* Mobile action buttons */}
-          <div className="lg:hidden" style={{ width: "100%", marginTop: 20 }}>
-            {postActionButtons}
-          </div>
-
-          {/* Footer — word count centered, last-edited right */}
-          <div style={{ width: "100%", display: "flex", justifyContent: "center", marginTop: "1.5rem", position: "relative" }}>
-            <span style={{ fontSize: 11, color: "rgba(91,96,95,0.4)", letterSpacing: "0.05em" }}>
-              {postStats.wordCount} words · ~{postStats.readingTime} min read
-              {format === "thread" && ` · ~${postStats.tweetCount} tweets`}
-            </span>
-            <span style={{ position: "absolute", right: 0, fontSize: 10, color: "rgba(91,96,95,0.3)", fontStyle: "italic" }}>
-              {lastSaved ? saveStatusText : "Auto-saved to history"}
-            </span>
-          </div>
-
-          {/* Analysis panel (stacked below on narrow viewports) */}
-          {analysisOpen && !isWide && (
+          {/* Analysis panel — split only */}
+          {splitActive && (
             <div
-              ref={analysisRef}
               style={{
-                width: "100%",
-                marginTop: 24,
-                paddingTop: 24,
-                borderTop: "0.5px solid #dfe3e2",
-                maxHeight: "50vh",
+                flex: `0 0 ${(1 - splitRatio) * 100 - 0.5}%`,
+                height: "100%",
                 overflowY: "auto",
+                padding: "28px 32px",
+                background: "#faf9f8",
               }}
             >
               {analysisPanelContent}
             </div>
           )}
-
-          {/* ── Visuals panel — slides in below post on Generate visuals ──── */}
-          {visualsVisible && (
-            <div
-              style={{
-                marginTop: 40,
-                opacity: visualsPanelEntered ? 1 : 0,
-                transform: visualsPanelEntered ? "translateY(0)" : "translateY(16px)",
-                transition: "opacity 300ms ease-out, transform 300ms ease-out",
-              }}
-            >
-              {/* Panel header */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  marginBottom: 20,
-                }}
-              >
-                <p
-                  className="label-caps text-secondary"
-                  style={{ fontSize: "0.6rem", letterSpacing: "0.1em" }}
-                >
-                  VISUALS
-                </p>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <button
-                    onClick={handleGenerateVisuals}
-                    disabled={visualsLoading}
-                    style={{
-                      fontSize: "0.78rem",
-                      color: "#645e57",
-                      background: "#f3f4f3",
-                      border: "none",
-                      borderRadius: "0.5rem",
-                      padding: "4px 12px",
-                      cursor: visualsLoading ? "not-allowed" : "pointer",
-                      opacity: visualsLoading ? 0.5 : 1,
-                      fontFamily: "Inter, sans-serif",
-                    }}
-                  >
-                    {visualsLoading ? "Scanning…" : "Regenerate"}
-                  </button>
-                  <button
-                    onClick={() => setVisualsVisible(false)}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      color: "#aeb3b2",
-                      fontSize: "1.1rem",
-                      lineHeight: 1,
-                      padding: "2px 4px",
-                    }}
-                    aria-label="Close visuals panel"
-                  >
-                    ×
-                  </button>
-                </div>
-              </div>
-
-              {visualsLoading && (
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    padding: "48px 0",
-                    gap: 12,
-                  }}
-                >
-                  <div className="w-8 h-8 rounded-full border-2 border-surface-container-high border-t-primary animate-spin" />
-                  <p style={{ fontSize: "0.85rem", color: "#645e57", fontFamily: "Inter, sans-serif" }}>
-                    Scanning post for visual opportunities…
-                  </p>
-                </div>
-              )}
-
-              {!visualsLoading && visuals.length === 0 && (
-                <div
-                  style={{
-                    borderRadius: "0.75rem",
-                    background: "#f3f4f3",
-                    padding: "20px 24px",
-                  }}
-                >
-                  <p style={{ fontSize: "0.85rem", color: "#645e57", fontFamily: "Inter, sans-serif" }}>
-                    No visual placeholders found in post.
-                  </p>
-                </div>
-              )}
-
-              {!visualsLoading && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
-                  {visuals.map((v, i) =>
-                    v.type === "diagram" ? (
-                      <DiagramBlock
-                        key={i}
-                        visual={v}
-                        api={api}
-                        onActiveVersionChange={handleDiagramVersionChange}
-                      />
-                    ) : (
-                      <ImageReminderCard key={i} visual={v} />
-                    )
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-            </div>
-          </div>
         </div>
 
       ) : (
