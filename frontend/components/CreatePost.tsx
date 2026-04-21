@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useApi } from "@/lib/api";
 
@@ -880,33 +880,32 @@ export default function CreatePost() {
     }
   }, [visualsVisible]);
 
-  useEffect(() => {
+  // useLayoutEffect (not useEffect) so the editor is populated synchronously
+  // after every DOM commit — before the browser paints. This eliminates the
+  // blank-canvas flash that occurred when analysisOpen or other deps caused a
+  // branch switch (split ↔ single-column), because the new editor div is always
+  // empty on mount and a deferred requestAnimationFrame could fire too late or
+  // be cancelled by the effect cleanup when the layout changed quickly.
+  useLayoutEffect(() => {
     if (!editedPost) return;
-
-    const frame = requestAnimationFrame(() => {
-      const editor = postEditorRef.current;
-      if (!editor) return;
-      // Skip DOM re-render when the change came from user typing in the editor.
-      // The browser already updated the DOM; resetting it would disrupt the cursor.
-      // EXCEPTION: if the editor is empty (e.g. it was just remounted after a layout
-      // branch switch), we must always repopulate — otherwise the canvas stays blank
-      // even though editedPost has content (the flag was never reset because the
-      // previous RAF was cancelled by the effect cleanup when analysisOpen changed).
-      if (isUserInput.current && editor.innerHTML !== "") {
-        isUserInput.current = false;
-        return;
-      }
+    const editor = postEditorRef.current;
+    if (!editor) return;
+    // Skip DOM re-sync when the change came from user typing in the editor.
+    // The browser already updated the DOM; overwriting it would disrupt the cursor.
+    // EXCEPTION: if the editor is empty (just remounted after a layout branch switch),
+    // always repopulate regardless — otherwise the canvas stays blank.
+    if (isUserInput.current && editor.innerHTML !== "") {
       isUserInput.current = false;
-      // Re-render when content changed OR when editor was remounted (empty after branch switch).
-      if (editedPost !== lastRenderedPost.current || editor.innerHTML === "") {
-        setEditorContent(editor, editedPost);
-        lastRenderedPost.current = editedPost;
-      }
-    });
-
-    return () => cancelAnimationFrame(frame);
-  // analysisOpen + isWide + visualsVisible together determine which branch (split vs single-column)
-  // is rendered. loading gates post-gen mount after generate, so include it to re-run sync on mount.
+      return;
+    }
+    isUserInput.current = false;
+    // Re-render when content changed OR when editor was remounted (empty after branch switch).
+    if (editedPost !== lastRenderedPost.current || editor.innerHTML === "") {
+      setEditorContent(editor, editedPost);
+      lastRenderedPost.current = editedPost;
+    }
+  // analysisOpen + isWide + visualsVisible determine which branch (split vs single-column)
+  // is rendered. loading gates post-gen mount after generate.
   }, [editedPost, analysisOpen, isWide, visualsVisible, loading]);
 
   const clearSession = () => {
