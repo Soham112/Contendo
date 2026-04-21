@@ -1798,7 +1798,7 @@ export default function CreatePost() {
               flex: `0 0 ${splitRatio * 100}%`,
               display: "flex",
               flexDirection: "column",
-              padding: "32px 40px",
+              padding: "32px 16px 32px 8px",
               overflow: "hidden",
             } : {
               flex: 1,
