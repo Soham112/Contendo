@@ -81,10 +81,10 @@ logo links there) and see auth-aware CTAs ("Open workspace" → `/`).
 - Frontend: all API calls go through `useApi()` from `lib/api.ts` — never raw `fetch()`
 - New users are redirected to `/first-post` by `useProfileCheck` in AppShell
 
-**ChromaDB:**
-- Collections are namespaced as `contendo_{user_id}`
-- Default collection is `contendo_default`
-- Never use the old `contendo` collection name
+**Vector storage:**
+- Embeddings are stored in Supabase `embeddings` (pgvector) and always scoped by `user_id`
+- Use `memory/vector_store.py` helpers for retrieval and upsert logic
+- Do not reintroduce ChromaDB collection-based storage
 
 **Backend structure:**
 - Endpoints live in backend/routers/ — not in main.py

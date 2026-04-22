@@ -98,7 +98,7 @@ Return nothing outside the JSON array.
 **Input variables injected:**
 - `count` — number of ideas requested (1–15), injected into both system prompt and user message
 - `profile_context` — string-formatted output of `profile_to_context_string(profile)`
-- `knowledge_section` — up to 30 diverse ChromaDB chunks sampled across 8 queries: 5 broad topic sweeps + 2 random tag queries + 1 oldest-source query to counteract recency bias; numbered and separated by `---`
+- `knowledge_section` — up to 30 diverse stored knowledge chunks sampled across 8 queries: 5 broad topic sweeps + 2 random tag queries + 1 oldest-source query to counteract recency bias; numbered and separated by `---`
 - `posted_section` — bullet list of all topics previously saved to feedback_store via `get_all_topics_posted()`
 
 ---
@@ -154,14 +154,14 @@ Be thorough. Every detail that carries information should make it into your outp
 
 ### Retrieval Agent — agents/retrieval_agent.py
 
-**Purpose:** Surface semantically relevant chunks from ChromaDB for a given topic and optional context. This agent does not call Claude — it is a pure retrieval node.
+**Purpose:** Surface semantically relevant chunks from the stored knowledge base for a given topic and optional context. This agent does not call Claude — it is a pure retrieval node.
 
 **System prompt:**
 ```
 You are a retrieval agent. You surface semantically relevant chunks from a personal knowledge base to support content generation. Chunks are pre-filtered by cosine similarity — you receive only the most relevant ones.
 ```
 
-*(Note: This prompt is defined as a docstring/comment for documentation purposes. The retrieval_node function does not pass it to Claude — it calls ChromaDB directly.)*
+*(Note: This prompt is defined as a docstring/comment for documentation purposes. The retrieval_node function does not pass it to Claude — it calls vector-store retrieval directly.)*
 
 **Input variables injected:**
 - `topic` — the generation topic from pipeline state

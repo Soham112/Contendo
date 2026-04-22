@@ -34,11 +34,11 @@
 | `backend/.dockerignore` | Excludes venv, pycache, local data files, .env from Docker build context |
 | `backend/config/__init__.py` | Empty — marks config/ as a Python package |
 | `backend/config/paths.py` | Single source of truth for all data paths; reads `DATA_DIR` env var, falls back to `backend/data/` for local dev; exposes `CHROMA_DIR`, `POSTS_DB_PATH`, `HIERARCHY_DB_PATH`, `PROFILE_PATH`, `PROFILES_DIR`, `FEEDBACK_PATH` |
-| `backend/agents/ideation_agent.py` | Generates N content ideas from ChromaDB sample, profile, and posted topic history; accepts `user_id` param for per-user data isolation |
+| `backend/agents/ideation_agent.py` | Generates N content ideas from the user's stored knowledge sample, profile, and posted topic history; accepts `user_id` param for per-user data isolation |
 | `backend/auth/__init__.py` | Empty — marks auth/ as a Python package |
 | `backend/auth/clerk.py` | Supabase JWT verification — `get_user_id(authorization)` verifies Bearer token via HS256 using `SUPABASE_JWT_SECRET` env var (audience `"authenticated"`); falls back to `user_id="default"` in non-production when no token; `get_user_id_dep` is the FastAPI `Depends()` dependency used by all protected endpoints |
 | `backend/agents/visual_agent.py` | Parses [DIAGRAM:] and [IMAGE:] placeholders from post; calls Claude to generate SVG for diagrams; returns reminder text for images. `STYLE_VARIANTS` (5 named styles: flowchart, layered, radial, timeline, comparison) are auto-selected based on keyword matching in the description. `generate_svg_for_diagram(description, style_hint, current_svg, refinement_instruction)` is the unified public function for both generation (no current_svg) and refinement (with current_svg + refinement_instruction). `DIAGRAM_PROMPT` requires Editorial Atelier aesthetic: soft muted colors (sage greens #e8ede4/#c5d4be, warm grays, soft terracotta #f0e0d6), bold+sublabel node text, dashed container borders, legend section for color-coded elements, generous whitespace, rx=8 minimum on all rectangles, title+subtitle layout. `REFINE_PROMPT` applies targeted modifications to existing SVG. |
-| `backend/agents/ingestion_agent.py` | Chunks content, extracts tags via Claude Sonnet, upserts to ChromaDB; after successful upsert: generates a 2-3 sentence source summary via Claude Haiku and writes a source_node + topic_node to hierarchy_store (wrapped in try/except — never blocks ingestion); SHA-256 dedup via `query_by_hash()` before any Claude call |
+| `backend/agents/ingestion_agent.py` | Chunks content, extracts tags via Claude Sonnet, upserts to Supabase `embeddings` (pgvector); after successful upsert: generates a 2-3 sentence source summary via Claude Haiku and writes a source_node + topic_node to hierarchy_store (wrapped in try/except — never blocks ingestion); SHA-256 dedup via `query_by_hash()` before any Claude call |
 | `backend/agents/vision_agent.py` | Sends base64 images to Claude vision, returns extracted text |
 | `backend/agents/retrieval_agent.py` | Semantic search node in the LangGraph pipeline; builds a `retrieval_bundle` (chunks + source_contexts + topic_contexts) from hierarchy_store; sets `retrieved_context` (pre-formatted enriched text block) and always sets `retrieved_chunks` for backward compat; computes internal coverage signal via `_compute_retrieval_confidence()` and stores `retrieval_confidence` + `retrieved_chunk_count` in pipeline state; falls back to flat retrieval if hierarchy_store is empty; calls `increment_retrieval()` for each unique source title in a try/except block. Exports `resolve_attribution_frames(chunks, profile) -> str` and `infer_seniority_level(profile) -> str` — see function entries below. |
 | `backend/agents/draft_agent.py` | Calls Claude Haiku via `infer_archetype()` to classify the topic into one of 7 post archetypes, then generates the initial draft via Claude Sonnet; `_format_retrieval_context()` now calls `resolve_attribution_frames()` when `retrieval_bundle` chunks are available, producing a pre-labeled PERSONAL / EXPERT OUTSIDER / LEARNING block; falls back to flat `retrieved_chunks` for backward compat; injects `_get_grounding_instruction(retrieval_confidence, retrieved_chunk_count)` for medium/low confidence calibration; passes `state.get("length", "standard")` into `get_format_instructions()` |
@@ -49,7 +49,7 @@
 | `backend/agents/scorer_agent.py` | Scores draft 0–100 across 5 dimensions, returns flagged sentences |
 | `backend/pipeline/state.py` | TypedDict schema for shared LangGraph pipeline state; includes `length` (`"concise" | "standard" | "long-form"`), `archetype`, `user_id`, `critic_brief`, retrieval calibration fields (`retrieval_confidence`, `retrieved_chunk_count`), `retrieved_chunks` (backward compat flat list), `retrieval_bundle` (full hierarchical bundle), and `retrieved_context` (pre-formatted enriched text for draft prompt) |
 | `backend/pipeline/graph.py` | LangGraph graph definition — nodes, edges, conditional retry loop. Pipeline order: load_profile → retrieval → draft → critic → humanizer → predictability_audit → word_count_enforcer (standard/draft) OR scorer → word_count_enforcer (polished) → finalize. word_count_enforcer always runs exactly once, as the final gate before finalize. |
-| `backend/memory/vector_store.py` | ChromaDB init, upsert, semantic query, stats, delete_source, query_by_hash; `query_similar()` returns `source_id` and `chunk_index` per result; `query_similar_batch()` embeds all queries in a single batched forward pass then queries ChromaDB for each (significantly faster than N sequential `query_similar()` calls); `query_similar_hybrid()` and `query_similar_hybrid_batch()` combine BM25 keyword ranking (rank-bm25) with cosine vector search via Reciprocal Rank Fusion (k=60) — both fall back to pure vector search on any exception; `upsert_chunks()` stores `node_type:"chunk"`; `get_chunks_for_source()` and `get_adjacent_chunks()` for hierarchical sibling retrieval; collections namespaced as `contendo_{user_id}` |
+| `backend/memory/vector_store.py` | Supabase pgvector store for embeddings; local sentence-transformer encoding + Supabase RPC retrieval (`match_embeddings`), upsert/delete/list helpers, dedup via `query_by_hash`, and source-level aggregation helpers. `query_similar_batch()` embeds all queries in one batched forward pass for speed. |
 | `backend/memory/usage_store.py` | Fire-and-forget Claude API usage logging to Supabase `usage_events` table; `log_usage_event(user_id, event_type, input_tokens, output_tokens, metadata={}, model="sonnet")` is the only public function; calculates `estimated_cost_usd` using per-token pricing (Sonnet: $0.000003/$0.000015 in/out; Haiku: $0.00000025/$0.00000125); posts via `httpx.AsyncClient`; never raises; intended for `asyncio.get_running_loop().create_task()` call sites; wraps the HTTP call in try/except and logs warnings on failure |
 | `backend/memory/profile_store.py` | Per-user profile read/write backed by Supabase `profiles` table — `load_profile(user_id)` selects row and merges missing keys from `DEFAULT_PROFILE`; `save_profile(profile, user_id)` upserts `{"id": user_id, "data": profile}`; `profile_exists(user_id)` returns True if a row exists; `DEFAULT_PROFILE` includes bio, location, target_audience, opinions, writing_samples; `profile_to_context_string()` formats all fields for prompt injection; `save_writing_sample(user_id, sample, max_samples=10)` appends a new sample (case-insensitive dedup, oldest dropped when over limit) |
 | `backend/memory/hierarchy_store.py` | Supabase Postgres store for `source_nodes` and `topic_nodes` tables — `upsert_source_node`, `get_source_node`, `source_node_exists`, `get_sources_for_user`, `upsert_topic_node`, `get_topic_node`, `get_topics_for_user`, `find_matching_topic` (tag-overlap heuristic), `add_source_to_topic`; `init_db()` is a no-op; tags and child_source_ids stored as comma-separated TEXT |
@@ -61,11 +61,11 @@
 | `backend/utils/chunker.py` | 500-word chunks with 50-word overlap |
 | `backend/utils/formatters.py` | Format + tone instruction strings per output type; `get_format_instructions(format_type, length, tone)` appends length-target guidance by format (`concise`/`standard`/`long-form`); `get_archetype_instructions()` returns structural prompt block for each of 7 post archetypes |
 | `backend/utils/file_extractor.py` | Extracts plain text from PDF (PyMuPDF), DOCX (python-docx), and TXT files; raises ValueError on unsupported types, scanned PDFs, password-protected PDFs, and empty files |
-| `backend/data/profile.json` | User voice and style profile — **gitignored**, never committed. Copy from `profile.template.json` to create. |
+| `backend/data/profile.json` | Legacy local profile file retained for migration/backward compatibility; active profile data is stored in Supabase `profiles` table |
 | `backend/data/profile.template.json` | Committed template with placeholder values — starting point for new users |
-| `backend/data/chroma_db/` | ChromaDB persistent storage (gitignored) |
-| `backend/data/posts.db` | SQLite post history (gitignored) |
-| `backend/data/hierarchy.db` | SQLite hierarchy store — source_nodes + topic_nodes (gitignored) |
+| `backend/data/chroma_db/` | Legacy local vector-store directory retained for historical migrations (gitignored) |
+| `backend/data/posts.db` | Legacy local post-history DB retained for migration tooling (gitignored) |
+| `backend/data/hierarchy.db` | Legacy local hierarchy DB retained for migration tooling (gitignored) |
 | `backend/data/feedback.jsonl` | Append-only feedback log (gitignored) — one JSON object per line: `{ user_id, message, page, submitted_at }`; created on first submission; readable on Railway via the persistent `/data` volume |
 | `scripts/migrate_hierarchy.py` | One-time migration script: backfills hierarchy_store from existing ChromaDB data; idempotent; run with `python scripts/migrate_hierarchy.py [--dry_run] [--force] [--user_id default]` |
 | `scripts/migrate_to_supabase.py` | One-time migration script: copies profile JSON + SQLite posts/versions for a user from local Railway storage into Supabase Postgres; run with `--old_clerk_id`, `--new_supabase_id`, `--data_dir`; profile upserted (safe to re-run), posts inserted fresh |
@@ -117,7 +117,7 @@
 |---|---|
 | **Reads** | `content: str`, `source_type: str` (passed directly, not from pipeline state) |
 | **Writes** | Returns `{ chunks_stored: int, tags: list[str] }` on new content; `{ chunks_stored: int, tags: list[str], duplicate: True }` if content already exists — not a pipeline node |
-| **Side effects** | Computes SHA-256 hash of normalised content and calls `query_by_hash()` before any Claude call. If duplicate: returns immediately. If new: calls Claude for tag extraction, upserts chunks to ChromaDB with `source_title`, `ingested_at`, and `content_hash` in metadata. |
+| **Side effects** | Computes SHA-256 hash of normalised content and calls `query_by_hash()` before any Claude call. If duplicate: returns immediately. If new: calls Claude for tag extraction, upserts chunks to Supabase `embeddings` with `source_title`, `ingested_at`, and `content_hash` metadata. |
 
 **`source_type` value documentation (`embeddings` table):**
 
@@ -254,7 +254,7 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
 ### load_profile_node (graph.py inline)
 | | |
 |---|---|
-| **Reads** | `profile.json` from disk; calls `get_all_topics_posted()` from feedback_store |
+| **Reads** | Profile from Supabase `profiles` table via `load_profile(user_id)`; calls `get_all_topics_posted()` from feedback_store |
 | **Writes to state** | `profile: dict`, `iterations: 0`, `posted_topics: list[str]` |
 
 ### finalize_node (graph.py inline)
@@ -284,17 +284,17 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
 | `has_profile: true, profile_complete: false` | File exists but `name` is empty | Allow into workspace — thin profile, do not redirect |
 | `has_profile: true, profile_complete: true` | File exists and `name` is non-empty | Fully set up — normal workspace access |
 
-`has_profile` uses raw file existence (`_profile_path(user_id).exists()`). `profile_complete` is `bool(profile["name"].strip())`. Only `has_profile === false` triggers the `/first-post` redirect in `useProfileCheck`.
+`has_profile` uses `profile_exists(user_id)` against Supabase. `profile_complete` is `bool(profile["name"].strip())`. Only `has_profile === false` triggers the `/first-post` redirect in `useProfileCheck`.
 
 ---
 
 ### POST /profile
-**Request body:** Full profile object (see profile.json schema below)
+**Request body:** Full profile object (see profile data schema below)
 **Response:**
 ```json
 { "saved": true }
 ```
-**Notes:** Saves the profile to `DATA_DIR/profiles/profile_{user_id}.json`. Creates the `profiles/` directory if it does not exist.
+**Notes:** Upserts the profile into Supabase `profiles` table (`id=user_id`, `data=<profile JSON>`).
 
 ---
 
@@ -356,7 +356,7 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
   "all_tags": ["ai", "machine learning", "product strategy"]
 }
 ```
-**Notes:** Ingests all vault notes via `read_vault()` → `ingest_content()` with `source_type="note"` and `source_title` set to the note filename stem. Per-note errors are caught and skipped; `skipped_files` counts notes that errored during ingestion (not the same as `get_vault_stats` skipped count which refers to short notes). Re-ingesting the same vault is safe — ChromaDB upsert prevents duplicate chunks. Can take 30–120 seconds for large vaults. **Environment guard:** This endpoint returns 400 with a message on production (`ENVIRONMENT=production`). Local path ingestion only works on localhost.
+**Notes:** Ingests all vault notes via `read_vault()` → `ingest_content()` with `source_type="note"` and `source_title` set to the note filename stem. Per-note errors are caught and skipped; `skipped_files` counts notes that errored during ingestion (not the same as `get_vault_stats` skipped count which refers to short notes). Re-ingesting the same vault is safe — Supabase upsert prevents duplicate chunks. Can take 30–120 seconds for large vaults. **Environment guard:** This endpoint returns 400 with a message on production (`ENVIRONMENT=production`). Local path ingestion only works on localhost.
 
 ---
 
@@ -513,7 +513,7 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
   ]
 }
 ```
-**Notes:** Returns up to 20 most recent saved posts, newest first. `svg_diagrams` is `null` for posts saved before the visuals feature or saved without diagrams. The JSON string stored in SQLite is parsed back to a list before returning. Each post includes a `versions` array (see `post_versions` schema) with all versions ordered by `version_number` ascending; `svg_diagrams` within each version is also parsed from JSON. Each post also includes `published_at` (ISO timestamp or `null`), `published_platform` (string or `null`), and `published_content` (string or `null`).
+**Notes:** Returns up to 20 most recent saved posts, newest first. `svg_diagrams` is `null` for posts saved before the visuals feature or saved without diagrams. The JSON string stored in Supabase rows is parsed back to a list before returning. Each post includes a `versions` array (see `post_versions` schema) with all versions ordered by `version_number` ascending; `svg_diagrams` within each version is also parsed from JSON. Each post also includes `published_at` (ISO timestamp or `null`), `published_platform` (string or `null`), and `published_content` (string or `null`).
 
 ---
 
@@ -562,7 +562,7 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
   ]
 }
 ```
-**Notes:** Calls ideation_agent. If `topic` is provided: uses 3 focused queries (topic, topic + "lessons learned", topic + "failure or mistake") plus 1 random tag for diversity; injects a topic focus instruction into the prompt. If `topic` is omitted: existing multi-query diversity sampling (8 queries: 5 broad topics + 2 random tags + 1 oldest-source query) across up to 30 ChromaDB chunks. All previously posted topics are always excluded.
+**Notes:** Calls ideation_agent. If `topic` is provided: uses 3 focused queries (topic, topic + "lessons learned", topic + "failure or mistake") plus 1 random tag for diversity; injects a topic focus instruction into the prompt. If `topic` is omitted: existing multi-query diversity sampling (8 queries: 5 broad topics + 2 random tags + 1 oldest-source query) across up to 30 stored knowledge chunks. All previously posted topics are always excluded.
 
 ---
 
@@ -622,7 +622,7 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
 ```json
 { "deleted": true }
 ```
-**Notes:** Deletes the post with the given id from SQLite. Returns `deleted: false` if the id does not exist.
+**Notes:** Deletes the post with the given id from Supabase `posts`. Returns `deleted: false` if the id does not exist.
 
 ---
 
@@ -639,7 +639,7 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
 ```json
 { "updated": true }
 ```
-**Notes:** Partial update — uses Pydantic `model_fields_set` to identify which fields were explicitly provided; only those fields are written to SQLite. Called by the frontend after refinement (content + score) and after visuals generation (svg_diagrams only). A request with no fields returns `updated: false` without touching the DB.
+**Notes:** Partial update — uses Pydantic `model_fields_set` to identify which fields were explicitly provided; only those fields are written to Supabase. Called by the frontend after refinement (content + score) and after visuals generation (svg_diagrams only). A request with no fields returns `updated: false` without touching the DB.
 
 ---
 
@@ -710,7 +710,7 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
   "message": "Removed 5 chunks"
 }
 ```
-**Notes:** Deletes all ChromaDB chunks with matching `source_title` metadata via `delete_source()` in `vector_store.py`. Returns 404 if no chunks found with that title. The frontend removes the card from the UI immediately and subtracts `chunks_removed` from the displayed total.
+**Notes:** Deletes all `embeddings` rows with matching `source_title` metadata for the current `user_id` via `delete_source()` in `vector_store.py`. Returns 404 if no chunks found with that title. The frontend removes the card from the UI immediately and subtracts `chunks_removed` from the displayed total.
 
 ---
 
@@ -758,7 +758,7 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
   "total_sources": 9
 }
 ```
-**Notes:** Groups all ChromaDB chunks by `source_id`. Sources without `ingested_at` (ingested before this feature) sort last. Source titles derived from first 80 chars of ingested content.
+**Notes:** Groups all user-scoped `embeddings` rows by `source_id`. Sources without `ingested_at` (ingested before this feature) sort last. Source titles derived from first 80 chars of ingested content.
 
 ---
 
@@ -775,17 +775,16 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
 
 ## 4. DATA SCHEMAS
 
-### profile.json (full structure)
+### profile data (full structure)
 
-**Location:** `DATA_DIR/profiles/profile_{user_id}.json` (per-user); legacy `DATA_DIR/profile.json` for `user_id="default"` if it exists
-**Gitignored:** Yes — personal details never committed.
-**Auto-created:** `load_profile()` returns `DEFAULT_PROFILE` copy if the file does not exist.
+**Location:** Supabase `profiles` table (`id`, `data` JSON); legacy local files may exist only for migration/backward compatibility.
+**Auto-created behavior:** `load_profile()` returns `DEFAULT_PROFILE` when no row exists.
 **Forward-compatible:** Missing keys are filled in from `DEFAULT_PROFILE` on load — adding new fields never breaks existing profiles.
-**New users:** Redirected to `/first-post` after Clerk sign-up (`/onboarding` is a legacy redirect route); `POST /profile` creates their profile file.
+**New users:** Redirected to `/first-post` until a profile row is created; `POST /profile` upserts the row.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `name` | str | User's name — `profile_complete` in `GET /profile` response is true only when non-empty; resolved from resume → Clerk firstName+lastName → email prefix before saving |
+| `name` | str | User's name — `profile_complete` in `GET /profile` response is true only when non-empty |
 | `role` | str | Role/title — injected into every draft prompt |
 | `bio` | str | 2–3 sentence summary of who they are and what they believe |
 | `location` | str | City, country (optional) |
@@ -846,7 +845,7 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
 | `authenticity_score` | INTEGER | Score of current content (0–100) |
 | `svg_diagrams` | TEXT | JSON array of `{position, description, svg_code}` objects; NULL if no diagrams |
 | `archetype` | TEXT | Post archetype key inferred at generation time (e.g. `"incident_report"`); default empty string |
-| `user_id` | TEXT | Clerk user ID (`sub` claim); defaults to `'default'` for rows inserted before auth was added; added via idempotent `ALTER TABLE` in `init_db()` |
+| `user_id` | TEXT | Supabase user ID (`sub` claim) |
 
 **Table:** `post_versions`
 
@@ -866,7 +865,7 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | INTEGER PK | Auto-increment |
-| `user_id` | TEXT | Clerk user ID |
+| `user_id` | TEXT | Supabase user ID |
 | `source_title` | TEXT | Unique per user_id |
 | `retrieval_count` | INTEGER | Times retrieved in generation |
 | `last_retrieved_at` | TIMESTAMP | Last updated time |
@@ -909,7 +908,7 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
 | Image placeholders are not auto-generated | `[IMAGE:]` placeholders return reminder cards so the user adds real photos or screenshots — Claude is not called for these |
 | PNG exported at 2x resolution | Canvas dimensions are set to 2× the SVG viewBox width/height, parsed dynamically from the returned SVG element |
 | Placeholders never auto-stripped from post textarea | `[DIAGRAM:]` and `[IMAGE:]` remain in the editable textarea — user removes them manually before copying |
-| SVG diagrams saved to SQLite alongside post text | `svg_diagrams` column stores a JSON array of `{position, description, svg_code}` objects; nullable — posts without diagrams store NULL |
+| SVG diagrams saved alongside post text in Supabase | `svg_diagrams` column stores a JSON array of `{position, description, svg_code}` objects; nullable — posts without diagrams store NULL |
 | Create Post session state persists in sessionStorage | Post text, score, feedback, iterations, and visuals are written to `contentOS_last_*` keys; restored on page mount; cleared on Regenerate or banner dismiss |
 | Library screen groups chunks by source | `get_all_sources()` groups `embeddings` table rows by `source_id` in Python so the user sees one card per ingested item, not raw chunk counts |
 | Ideation agent uses multi-query diversity sampling | 8 queries (5 broad + 2 random tags + 1 oldest source) prevent recency bias; chunk cap raised to 30; diversity rules added to system prompt |
@@ -929,7 +928,7 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
 | Settings drawer for regeneration replaces inline form | After a post is generated, the topic/format/tone/context inputs are hidden. Clicking "Regenerate" opens a right-side drawer (`SettingsDrawer`) where the user edits settings and confirms. This keeps the post content area clean and uncluttered after generation. |
 | Topic displayed above post content box after generation | In both split and stacked layouts, after generation the current topic is shown as a small `TOPIC` label + value line above the post textarea. This is display-only; topic changes go through the settings drawer. |
 | Post detail page at `/history/[id]` | Individual posts have a dedicated full-page view accessible via the dynamic route `/history/[id]`. The page fetches from `GET /history`, finds the matching post by id, and renders the full content with version picker, restore, delete, and diagrams — same features as the expanded card in `/history` but with more space. |
-| User can delete posts from History | `DELETE /history/{post_id}` removes the SQLite row; frontend filters the card from state without a page reload. |
+| User can delete posts from History | `DELETE /history/{post_id}` removes the Supabase row; frontend filters the card from state without a page reload. |
 | `/refine` does not run the full pipeline | Refinement is a targeted one-pass fix: `refine_draft()` + `score_text()` only. No retrieval, no draft agent, no retry loop — running the full pipeline would discard the user's manual edits |
 | `score_text()` extracted from `scorer_node` | Scoring logic lives in exactly one place (`scorer_agent.py`); both the LangGraph pipeline (`scorer_node`) and the standalone `/refine` endpoint call `score_text()` internally — no duplication |
 | Default generation quality is standard | Standard runs 1 critic pass + 1 humanizer pass, skips scorer during generation, and performs no retry loop. The previous polished-by-default behavior was removed to reduce latency/cost. Users can score on demand (`POST /score`) and refine manually. |
@@ -950,7 +949,7 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
 | Post versioning uses a parent + child table design | The `posts` table is the parent record (one row per generation session); `post_versions` stores every historical version. Every generation creates v1; every refinement creates the next version. SVG diagram updates do not create new versions — `update_latest_version_svg()` stamps diagrams onto the current version row in place. |
 | Best version tracked by highest authenticity_score | `get_best_version()` orders by `authenticity_score DESC, version_number DESC` so ties go to the latest version. The History UI highlights the best version with a green "Best" badge. |
 | Restore writes to sessionStorage, not a new PATCH | Restoring a version calls `POST /history/{post_id}/restore/{version_id}`, which updates the `posts` row. The frontend then writes the restored content to `contentOS_last_post` and related keys so Create Post picks it up immediately without an extra fetch. |
-| Post archetypes system — 7 structural patterns inferred from topic/tone | `infer_archetype()` in `draft_agent.py` uses Claude Haiku to semantically classify the topic + context into one of 7 archetype keys (`incident_report`, `contrarian_take`, `personal_story`, `teach_me_something`, `list_that_isnt`, `prediction_bet`, `before_after`). The archetype key is stored in pipeline state, returned in the `/generate` response, and saved to the `posts` SQLite table. Structural instructions are injected into the draft prompt via `get_archetype_instructions()` in `formatters.py`. |
+| Post archetypes system — 7 structural patterns inferred from topic/tone | `infer_archetype()` in `draft_agent.py` uses Claude Haiku to semantically classify the topic + context into one of 7 archetype keys (`incident_report`, `contrarian_take`, `personal_story`, `teach_me_something`, `list_that_isnt`, `prediction_bet`, `before_after`). The archetype key is stored in pipeline state, returned in the `/generate` response, and saved to Supabase `posts`. Structural instructions are injected into the draft prompt via `get_archetype_instructions()` in `formatters.py`. |
 | `infer_archetype()` uses Claude Haiku, not regex | Haiku (`claude-haiku-4-5-20251001`, `max_tokens=20`) classifies the topic semantically — understands intent beyond keyword matching (e.g. "after 2 years" doesn't incorrectly trigger `before_after`). Fallback chain: valid key → use it; invalid/empty key → `incident_report`; any exception → `incident_report`. |
 | `main.py` split into focused `APIRouter` files under `backend/routers/` | Each router owns its endpoints and imports only what it needs. `main.py` now registers 10 routers (ingest, generate, history, library, ideas, stats, profile, feedback, debug, admin) and remains focused on CORS, lifespan, and router registration. Pydantic models used by only one router live in that router file; no shared `models.py` is required. |
 | pgvector data isolated by `user_id` column | All `embeddings` table queries filter by `user_id`. `vector_store.py` functions accept `user_id: str = "default"` for compatibility; router endpoints pass authenticated IDs via `Depends(get_user_id_dep)`. `"default"` remains valid for local-dev fallback (`ENVIRONMENT != production` with no token). |
@@ -968,9 +967,7 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
 | `/first-post` is a standalone conversion-focused route with full generation completion | The flow now does real work, not just a placeholder: it saves a minimal profile first, generates the first draft, auto-logs to history, and shows an in-page draft review screen with copy + workspace navigation. This closes the first-run loop without dropping users into an empty workspace. |
 | Supabase JWT auth via PyJWT HS256 | `auth/clerk.py` decodes Bearer tokens with `jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], audience="authenticated")`; returns `payload["sub"]` as `user_id`. `SUPABASE_JWT_SECRET` is required in production. No JWKS fetch or RSA key rotation needed. Any exception → 401. |
 | Dev fallback to `user_id="default"` | When `ENVIRONMENT != "production"` and no Authorization header is present, `get_user_id()` returns `"default"` instead of raising 401. This preserves full local dev convenience — no token needed. Production always requires a valid token. |
-| Per-user profile files at `DATA_DIR/profiles/profile_{user_id}.json` | Separates profiles per Clerk `sub` claim. The `"default"` user still falls back to `DATA_DIR/profile.json` if it exists (backward compat for existing local dev data). `PROFILES_DIR` is exposed from `config/paths.py`. |
-| SQLite `ALTER TABLE posts ADD COLUMN user_id` migration is idempotent | Wrapped in try/except in `init_db()`. First deploy after this change adds the column; subsequent deploys silently pass the `except`. Existing rows default to `user_id='default'` (SQLite `DEFAULT 'default'`). No manual migration needed. |
-| All existing rows in posts.db get `user_id='default'` | Railway production: the first deploy after this branch merges runs `init_db()` which adds the column. All pre-existing post history is attributed to `"default"`. If that user later creates a Clerk account, they will not see their old posts (different user_id). Acceptable for MVP. |
+| Per-user profile rows in Supabase `profiles` table | Profiles are keyed by `id = user_id` and stored as JSON in `data`; `load_profile()` returns defaults when a row is absent; local file fallbacks are legacy-only for migration paths. |
 | Onboarding redirect via `useProfileCheck` in AppShell | After `supabase.auth.getUser()` confirms auth, AppShell calls `GET /profile`. Only redirects to `/first-post` when `has_profile === false` (row does not exist). `has_profile: true` with empty name (`profile_complete: false`) is a returning user with a thin profile — they are allowed into the workspace without redirect. Public routes skip the check. |
 | `contendo_intercept_done` localStorage key | Set to `"1"` by `OnboardingIntercept` on completion (or full skip). Checked by (1) `handleCTA()` in `first-post/page.tsx` — if absent, intercept is shown before navigating to the workspace; (2) `AppShell.tsx` safety net — if absent after `has_profile === true`, intercept is shown before rendering workspace children. Once set, both checks pass through immediately. Never expires — deliberately permanent per device. |
 | In the `/first-post` flow, profile is saved before generation | Saving the profile first makes `has_profile` true immediately. If generation fails afterward, the user is still treated as a known user and can enter the workspace without getting trapped in first-run redirects. |
@@ -991,6 +988,6 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
 
 - Vercel and Railway/Render deployment config files
 - YouTube transcript auto-fetching (removed — manual paste only)
-- Tag filtering in Library (can't filter ChromaDB chunks by tag in the UI — only source-type filter exists)
+- Tag filtering in Library (can't filter stored chunks by tag in the UI — only source-type filter exists)
 - Bulk clear memory (individual sources can be deleted via the Library delete button, but there is no "clear all" option)
 - Multi-format regeneration (regenerate always uses same format/tone)
