@@ -7,7 +7,7 @@ import { useApi } from "@/lib/api";
 
 // Extension ID from chrome://extensions (load unpacked → copy the ID).
 // The ID is stable for a given unpacked extension directory.
-const CONTENDO_EXTENSION_ID = "YOUR_EXTENSION_ID_HERE";
+const CONTENDO_EXTENSION_ID = "nlfgeodogbhnningocmjcjdndgcimbon";
 
 const SKIP_ROUTES = ["/welcome", "/sign-in", "/sign-up", "/onboarding", "/first-post"];
 
