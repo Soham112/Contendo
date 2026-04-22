@@ -20,10 +20,54 @@ if (!window.__contendo_injected) {
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
     if (message.action === "getPageContent") {
-      const title = document.title || "";
-      // Limit body text to 8000 chars — keeps the request payload reasonable
-      // and stays well within the ingestion agent's chunking capacity.
-      const text = (document.body?.innerText || "").trim().slice(0, 8000);
+      // ── Title: strip site name suffix after | or – or — ──────────────────
+      const rawTitle = document.title || "";
+      const title = rawTitle.replace(/\s*[|–—-]\s+[^|–—-]+$/, "").trim() || rawTitle;
+
+      // ── Body: priority-based selector, then stripped fallback ─────────────
+      const SELECTORS = [
+        "article",
+        '[role="main"]',
+        "main",
+        ".post-content",
+        ".article-content",
+        ".entry-content",
+        ".prose",
+        "#content",
+        ".content",
+      ];
+
+      let text = "";
+
+      for (const sel of SELECTORS) {
+        const el = document.querySelector(sel);
+        if (el) {
+          const candidate = el.innerText.trim();
+          if (candidate.length > 200) {
+            text = candidate;
+            break;
+          }
+        }
+      }
+
+      if (!text) {
+        // Fallback: clone body, strip chrome elements, extract remaining text.
+        const STRIP = [
+          "nav", "header", "footer", "aside",
+          '[role="navigation"]', '[role="banner"]',
+          ".sidebar", "script", "style",
+        ];
+        const clone = document.body.cloneNode(true);
+        STRIP.forEach((sel) => {
+          clone.querySelectorAll(sel).forEach((el) => el.remove());
+        });
+        text = clone.innerText.trim();
+      }
+
+      // Limit to 8000 chars — keeps the payload reasonable and well within
+      // the ingestion agent's chunking capacity.
+      text = text.slice(0, 8000);
+
       const url = window.location.href;
       sendResponse({ title, text, url });
 
