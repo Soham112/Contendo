@@ -12,6 +12,19 @@ from memory.usage_store import log_usage_event
 
 load_dotenv()
 
+
+def _source_label(source_type: str) -> str:
+    if source_type == "personal_note":
+        return "[from: personal experience]"
+    if source_type in ("article", "saved_content"):
+        return "[from: article/saved content]"
+    if source_type == "youtube":
+        return "[from: video/talk]"
+    if source_type == "note":
+        return "[from: note]"
+    return "[from: general knowledge]"
+
+
 client = anthropic.Anthropic(
     api_key=os.environ["ANTHROPIC_API_KEY"],
     max_retries=3,
@@ -20,30 +33,66 @@ client = anthropic.Anthropic(
 SYSTEM_PROMPT = """You are a content strategist who generates specific, fresh content ideas for a creator.
 
 You will be given:
-1. A sample of their knowledge base — what they have been reading, watching, and learning
-2. Topics they have already written about — you must not repeat these
+1. A sample of their knowledge base — labelled by source type so you know where each piece of knowledge came from
+2. Topics they have already written about — do not repeat these angles
 3. Their profile — who they are, their expertise, their voice
 
-Your job: generate exactly {count} content ideas they have NOT written about yet, grounded in their actual knowledge.
+Your job: generate exactly {count} content ideas grounded in their actual knowledge.
 
-Rules for good ideas:
-- Each title must be specific and punchy — "Why I stopped using feature stores after 3 production projects" not "Best practices for ML"
-- Each idea must come from something in their knowledge base — no generic filler ideas
-- The angle must be contrarian, personal, or surprising — not "here's how to do X"
-- No idea should repeat or closely overlap with their previously posted topics
-- Format suggestions must match the idea's natural shape: personal stories → linkedin post, deep dives → medium article, rapid insights → thread
+The same topic can appear more than once if the angle and frame are genuinely different.
+What must never repeat is the writing posture — the combination of frame + angle.
 
-Diversity rules (mandatory):
-- Generate ideas that span DIFFERENT topics from the knowledge base — do not cluster ideas around the same theme
-- Each idea should draw from a different area of the knowledge base where possible
-- Actively look for unexpected connections between different topics in the knowledge base
-- If the knowledge base covers 5 topics, your ideas should touch at least 4 of them
+WRITING FRAME RULES — mandatory, this overrides all other diversity rules:
 
-Return ONLY a valid JSON array with exactly {count} objects. Each object must have these fields:
-- "title": string — specific, catchy, ready to use as-is
-- "angle": string — the unique hook or perspective in one sentence
+Each idea must be assigned one of these five frames. If count >= 5, all five frames must appear at least once. If count < 5, use the most distinct frames possible — never use the same frame more than twice.
+
+FRAME: personal_experience
+For chunks labelled [from: personal experience].
+The idea comes from something the creator lived, decided, or got wrong.
+Angle shape: "the moment X happened / the decision I regret / what broke before it worked"
+Title must not say "I learned" or "lesson" — name the event or the outcome directly.
+
+FRAME: absorbed_insight
+For chunks labelled [from: article/saved content] or [from: video/talk] or [from: note].
+The creator read or watched something, and it changed how they think. The idea is their perspective now — the source is never mentioned in the title or angle.
+Angle shape: "the idea that reframes how I think about X / what most people miss about Y / the thing Z gets wrong"
+Never write "I read a paper" or "I watched a video" — the knowledge belongs to them now.
+
+FRAME: observed_pattern
+For any chunk, any source type.
+Something the creator keeps noticing in their industry, in other people's work, in how teams or systems behave — without it being their own story.
+Angle shape: "why most teams do X wrong / the quiet failure mode nobody names / what separates X from Y in practice"
+
+FRAME: contrarian_take
+For any chunk, any source type.
+A specific belief that is widely held in their field that they think is wrong or dangerously incomplete.
+Angle shape: "everyone says X — here is why that breaks / the advice that sounds right but costs you in production"
+Must be specific and defensible — not vague disagreement.
+
+FRAME: forward_prediction
+For any chunk, any source type.
+Where something in their field is heading, grounded in what is already visible in their knowledge base — not speculation.
+Angle shape: "the shift already happening that nobody is writing about / what X looks like in two years if Y keeps going"
+
+TITLE RULES:
+- Specific and punchy — name the thing, not the category
+- No "best practices", no "lessons learned", no "a guide to"
+- No "I read / I watched / I came across" in absorbed_insight titles
+- The title should be publishable as-is
+
+FORMAT MATCHING:
+- personal_experience → linkedin post
+- absorbed_insight → linkedin post or thread depending on depth
+- observed_pattern → thread or medium article
+- contrarian_take → linkedin post or thread
+- forward_prediction → medium article or thread
+
+Return ONLY a valid JSON array with exactly {count} objects. Each object:
+- "title": string
+- "angle": string — the unique hook in one sentence
 - "format": string — exactly one of: "linkedin post", "medium article", "thread"
-- "reasoning": string — one sentence on why this will resonate with their audience
+- "frame": string — exactly one of: "personal_experience", "absorbed_insight", "observed_pattern", "contrarian_take", "forward_prediction"
+- "reasoning": string — one sentence on why this will resonate
 
 Return nothing outside the JSON array."""
 
@@ -100,20 +149,26 @@ def generate_suggestions(count: int = 8, topic: str | None = None, user_id: str 
     # Hybrid BM25 + vector retrieval with RRF, batched across all queries
     n_results = max(query_top_ks) if query_top_ks else 5
     per_query_results = query_similar_hybrid_batch(query_texts, user_id=user_id, n_results=n_results)
-    # Flatten to deduplicated list of text strings, preserving discovery order
+    # Flatten to deduplicated list, preserving discovery order
     seen_texts: set[str] = set()
-    chunks: list[str] = []
+    chunks: list[dict] = []
     for result_list in per_query_results:
         for chunk_dict in result_list:
             text = chunk_dict.get("text", "")
             if text and text not in seen_texts:
                 seen_texts.add(text)
-                chunks.append(text)
+                chunks.append({
+                    "text": text,
+                    "source_type": chunk_dict.get("source_type", ""),
+                })
 
     posted_topics = get_all_topics_posted(user_id=user_id)
 
     knowledge_section = (
-        "\n\n---\n\n".join(f"[Chunk {i+1}]\n{chunk}" for i, chunk in enumerate(chunks[:30]))
+        "\n\n---\n\n".join(
+            f"[Chunk {i+1}] {_source_label(c['source_type'])}\n{c['text']}"
+            for i, c in enumerate(chunks[:30])
+        )
         if chunks
         else "No knowledge base entries yet."
     )
@@ -177,11 +232,12 @@ TOPICS ALREADY WRITTEN ABOUT (do not repeat these):
         # Validate and sanitize each idea
         valid = []
         for idea in ideas:
-            if all(k in idea for k in ("title", "angle", "format", "reasoning")):
+            if all(k in idea for k in ("title", "angle", "format", "frame", "reasoning")):
                 valid.append({
                     "title": str(idea["title"]),
                     "angle": str(idea["angle"]),
                     "format": str(idea["format"]).lower(),
+                    "frame": str(idea["frame"]).lower(),
                     "reasoning": str(idea["reasoning"]),
                 })
         return valid[:count]
