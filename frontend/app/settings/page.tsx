@@ -7,6 +7,8 @@ import { useApi } from "@/lib/api";
 import type { User } from "@supabase/supabase-js";
 import supabase from "@/lib/supabase";
 
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface ProfileSnapshot {
@@ -25,6 +27,15 @@ interface ProfileSnapshot {
 interface StatsSnapshot {
   total_chunks: number;
   tags: string[];
+}
+
+interface UsageSnapshot {
+  total_calls: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cost_usd: number;
+  calls_this_week: number;
+  cost_this_week: number;
 }
 
 // ── Helper ────────────────────────────────────────────────────────────────────
@@ -61,8 +72,10 @@ export default function SettingsHubPage() {
 
   const [profile, setProfile] = useState<ProfileSnapshot | null>(null);
   const [stats, setStats] = useState<StatsSnapshot | null>(null);
+  const [usage, setUsage] = useState<UsageSnapshot | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(true);
+  const [usageLoading, setUsageLoading] = useState(true);
   const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
@@ -109,8 +122,34 @@ export default function SettingsHubPage() {
       }
     }
 
+    async function loadUsage() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const headers: Record<string, string> = {};
+        if (session?.access_token) {
+          headers["Authorization"] = `Bearer ${session.access_token}`;
+        }
+        const res = await fetch(`${API}/usage/me`, { headers });
+        if (!res.ok) throw new Error("Failed");
+        const data = await res.json();
+        setUsage({
+          total_calls: data.total_calls ?? 0,
+          total_input_tokens: data.total_input_tokens ?? 0,
+          total_output_tokens: data.total_output_tokens ?? 0,
+          total_cost_usd: data.total_cost_usd ?? 0,
+          calls_this_week: data.calls_this_week ?? 0,
+          cost_this_week: data.cost_this_week ?? 0,
+        });
+      } catch {
+        setUsage(null);
+      } finally {
+        setUsageLoading(false);
+      }
+    }
+
     loadProfile();
     loadStats();
+    loadUsage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -353,6 +392,70 @@ export default function SettingsHubPage() {
     </div>
   );
 
+  // ── Usage & Tokens card ──────────────────────────────────────────────────────
+
+  const totalTokens = (usage?.total_input_tokens ?? 0) + (usage?.total_output_tokens ?? 0);
+  const generateCalls =
+    usage?.total_calls != null ? usage.total_calls : null;
+
+  const usageCard = (
+    <div className="bg-surface-container-low rounded-2xl p-6 h-full flex flex-col gap-4">
+      <div className="flex items-center gap-2">
+        <p className="label-caps text-secondary">Usage &amp; Tokens</p>
+        {/* Pulse icon */}
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" className="text-primary opacity-70">
+          <path d="M1 6h2l1.5-4L7 10l1.5-4H11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </div>
+
+      <div className="flex-1 flex flex-col gap-3">
+        {usageLoading ? (
+          <div className="flex flex-col gap-2.5">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="flex items-center justify-between">
+                <SkeletonBar w="w-1/2" />
+                <div className="bg-surface-container animate-pulse rounded h-3.5 w-12" />
+              </div>
+            ))}
+          </div>
+        ) : usage == null ? (
+          <p className="text-[12px] text-outline">Usage data unavailable.</p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {/* Primary stats — leads with posts, not cost */}
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[11px] text-secondary uppercase tracking-wide">Posts generated</span>
+                <span className="text-[28px] font-headline text-on-surface leading-none">
+                  {(generateCalls ?? 0).toLocaleString()}
+                </span>
+              </div>
+              <div className="flex flex-col gap-0.5 text-right">
+                <span className="text-[11px] text-secondary uppercase tracking-wide">This week</span>
+                <span className="text-[28px] font-headline text-on-surface leading-none">
+                  {usage.calls_this_week.toLocaleString()}
+                </span>
+              </div>
+            </div>
+
+            {/* Token count */}
+            <p className="text-[13px] text-secondary">
+              Estimated tokens used:{" "}
+              <span className="text-on-surface font-medium tabular-nums">
+                {totalTokens.toLocaleString()}
+              </span>
+            </p>
+
+            {/* Cost — de-emphasised */}
+            <p className="text-[11px] text-outline" style={{ fontSize: "0.78rem" }}>
+              API cost to date: ${usage.total_cost_usd.toFixed(4)}
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   // ── Integrations card ────────────────────────────────────────────────────────
 
   const integrationsCard = (
@@ -401,6 +504,7 @@ export default function SettingsHubPage() {
         {voiceCard}
         {samplesCard}
         {memoryCard}
+        {usageCard}
         {accountCard}
         {integrationsCard}
       </div>
