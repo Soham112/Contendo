@@ -8,6 +8,7 @@ from agents.draft_agent import draft_node
 from agents.critic_agent import critic_node
 from agents.humanizer_agent import humanizer_node
 from agents.predictability_audit_agent import predictability_audit_node
+from agents.word_count_enforcer_agent import word_count_enforcer_node
 from agents.scorer_agent import scorer_node
 
 SCORE_THRESHOLD = 75
@@ -30,20 +31,25 @@ def finalize_node(state: PipelineState) -> PipelineState:
 
 
 def should_score(state: PipelineState) -> str:
-    """Route after humanizer: only run scorer for polished mode.
+    """Route after predictability_audit.
 
-    standard and draft skip scorer entirely and go straight to finalize.
+    polished → scorer (word_count_enforcer runs after all scoring iterations, via should_retry)
+    standard / draft → word_count_enforcer (runs once as the final gate before finalize)
     """
     if state.get("quality", "standard") == "polished":
         return "scorer"
-    return "finalize"
+    return "word_count_enforcer"
 
 
 def should_retry(state: PipelineState) -> str:
-    """Route after scorer: only called for polished mode."""
+    """Route after scorer: only called for polished mode.
+
+    Retry loop (humanizer → predictability_audit → scorer) never passes through
+    word_count_enforcer — it runs exactly once when scoring is finished.
+    """
     if state.get("score", 0) < SCORE_THRESHOLD and state.get("iterations", 0) < MAX_ITERATIONS:
         return "humanizer"
-    return "finalize"
+    return "word_count_enforcer"
 
 
 def build_graph() -> StateGraph:
@@ -55,6 +61,7 @@ def build_graph() -> StateGraph:
     graph.add_node("critic", critic_node)
     graph.add_node("humanizer", humanizer_node)
     graph.add_node("predictability_audit", predictability_audit_node)
+    graph.add_node("word_count_enforcer", word_count_enforcer_node)
     graph.add_node("scorer", scorer_node)
     graph.add_node("finalize", finalize_node)
 
@@ -69,7 +76,7 @@ def build_graph() -> StateGraph:
         should_score,
         {
             "scorer": "scorer",
-            "finalize": "finalize",
+            "word_count_enforcer": "word_count_enforcer",
         },
     )
     graph.add_conditional_edges(
@@ -77,9 +84,10 @@ def build_graph() -> StateGraph:
         should_retry,
         {
             "humanizer": "humanizer",
-            "finalize": "finalize",
+            "word_count_enforcer": "word_count_enforcer",
         },
     )
+    graph.add_edge("word_count_enforcer", "finalize")
     graph.add_edge("finalize", END)
 
     return graph.compile()
