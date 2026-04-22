@@ -8,13 +8,12 @@
     "https://contendo-production.up.railway.app/*",
     "https://contendo-six.vercel.app/*"
   ],
+  "externally_connectable": {
+    "matches": ["https://contendo-six.vercel.app/*"]
+  },
   "content_scripts": [
     {
-      "matches": [
-        "https://contendo-six.vercel.app/*",
-        "http://*/*",
-        "https://*/*"
-      ],
+      "matches": ["https://contendo-six.vercel.app/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }

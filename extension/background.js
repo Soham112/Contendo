@@ -2,89 +2,33 @@
 // Owns the POST /ingest call so the popup stays lightweight and the fetch
 // runs in the extension's privileged context (no CORS issues).
 //
-// Also owns token acquisition: polls the Contendo tab for the Supabase
-// access_token and caches it in chrome.storage.local under "contendo_token".
-// The popup reads from storage only — it never touches the Contendo tab.
+// Token acquisition uses a push model: the Contendo web app calls
+// chrome.runtime.sendMessage(EXTENSION_ID, { action: 'setToken', token })
+// via externally_connectable, and this worker saves it to storage.
+// The popup reads from storage only.
+
+console.log('Contendo background worker started');
 
 const API_BASE = "https://contendo-production.up.railway.app";
-const CONTENDO_ORIGIN = "https://contendo-six.vercel.app";
 
-// ── Token polling ──────────────────────────────────────────────────────────
+// ── External message listener (push from Contendo web app) ────────────────
 
-let _pollInterval = null;
-
-// Inject content.js into the Contendo tab (if open) and read the Supabase
-// token from localStorage. On success, persist to storage and stop polling.
-async function tryReadToken() {
-  try {
-    const { contendo_token } = await chrome.storage.local.get("contendo_token");
-    if (contendo_token) {
-      // Already have a token — stop the polling loop.
-      _stopPolling();
-      return;
-    }
-
-    const tabs = await chrome.tabs.query({ url: `${CONTENDO_ORIGIN}/*` });
-    if (!tabs.length) return; // Contendo tab not open yet — try again next tick.
-
-    for (const tab of tabs) {
-      try {
-        // Programmatic injection handles tabs that were open before the
-        // extension loaded (declarative content_scripts don't cover those).
-        await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
-        const response = await chrome.tabs.sendMessage(tab.id, { action: "getSupabaseToken" });
-        if (response?.token) {
-          await chrome.storage.local.set({ contendo_token: response.token });
-          _stopPolling();
-          return;
-        }
-      } catch (_) {
-        // This tab wasn't ready — try the next one (or wait for next tick).
-      }
-    }
-  } catch (_) {
-    // Swallow unexpected errors so the polling loop stays alive.
+chrome.runtime.onMessageExternal.addListener((message, _sender, sendResponse) => {
+  if (message.action === 'setToken' && message.token) {
+    chrome.storage.local.set({ contendo_token: message.token });
+    console.log('Token received from Contendo web app');
+    sendResponse({ ok: true });
   }
-}
-
-function _stopPolling() {
-  if (_pollInterval !== null) {
-    clearInterval(_pollInterval);
-    _pollInterval = null;
-  }
-}
-
-function _startPolling() {
-  if (_pollInterval !== null) return; // Already running.
-  tryReadToken(); // Immediate first attempt.
-  _pollInterval = setInterval(tryReadToken, 3000);
-}
-
-// Start polling as soon as the service worker wakes.
-_startPolling();
-
-// ── Tab listener ───────────────────────────────────────────────────────────
-
-// When any Contendo tab finishes loading, attempt token read immediately.
-// Covers the case where the user navigates to Contendo after the popup opens.
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === "complete" && tab.url?.startsWith(CONTENDO_ORIGIN)) {
-    tryReadToken();
-  }
+  return false;
 });
 
-// ── Message listener ───────────────────────────────────────────────────────
+// ── Internal message listener ──────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.action === "ingest") {
     handleIngest(message).then(sendResponse);
     // Return true to keep the message channel open for the async response.
     return true;
-  }
-  if (message.action === "startTokenPolling") {
-    _startPolling();
-    sendResponse({ ok: true });
-    return false;
   }
 });
 

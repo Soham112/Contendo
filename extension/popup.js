@@ -1,15 +1,15 @@
 // popup.js — Popup controller
 //
-// Auth flow (no manual token input):
-//   1. On open: check chrome.storage.local for "contendo_token" (written by
-//      the background service worker, which polls the Contendo tab).
+// Auth flow (push model — no polling, no content-script messaging):
+//   1. On open: check chrome.storage.local for "contendo_token".
+//      The Contendo web app pushes this token via chrome.runtime.sendMessage
+//      (externally_connectable) whenever the user loads the app signed in.
 //   2. Token present → go straight to the article/YouTube UI.
-//   3. Token absent → show "Open Contendo" button. On click: open the
-//      Contendo tab, tell the background worker to start polling, and show a
-//      "Connecting…" spinner. Poll storage every 2 s — when the background
-//      worker writes the token the popup switches to the main UI automatically.
-//   4. On 401 from backend: clear the cached token and re-run init() so the
-//      background worker fetches a fresh token.
+//   3. Token absent → show two buttons:
+//        "Open Contendo" — opens the app so the frontend can push the token.
+//        "Already signed in — retry" — re-checks storage (for the case where
+//        Contendo is already open in another tab and has already pushed the token).
+//   4. On 401 from backend: clear the cached token and re-run init().
 
 const CONTENDO_ORIGIN = "https://contendo-six.vercel.app";
 
@@ -66,31 +66,33 @@ async function extractPageContent(tabId) {
 
 // ── Connect state ──────────────────────────────────────────────────────────
 
-let _connectPollInterval = null;
-
 function initConnectState(hint) {
   showOnly("state-connect");
   if (hint) showFeedback("connect-feedback", hint, "error");
 
-  document.getElementById("open-contendo-btn").addEventListener("click", async () => {
-    // Open the Contendo tab and tell the background worker to start polling.
+  // "Open Contendo" — opens the app so the frontend can push the token.
+  document.getElementById("open-contendo-btn").addEventListener("click", () => {
     chrome.tabs.create({ url: CONTENDO_ORIGIN });
-    chrome.runtime.sendMessage({ action: "startTokenPolling" });
+    showFeedback(
+      "connect-feedback",
+      "Sign in to Contendo — the extension connects automatically when the page loads.",
+      "info"
+    );
+  });
 
-    // Switch to a "Connecting…" state and poll storage every 2 s.
-    // When the background worker writes the token the popup transitions
-    // automatically — no second click required.
-    showOnly("state-connecting");
-
-    if (_connectPollInterval) clearInterval(_connectPollInterval);
-    _connectPollInterval = setInterval(async () => {
-      const { contendo_token } = await chrome.storage.local.get("contendo_token");
-      if (contendo_token) {
-        clearInterval(_connectPollInterval);
-        _connectPollInterval = null;
-        init(); // Re-run with the newly available token.
-      }
-    }, 2000);
+  // "Already signed in — retry" — re-checks storage in case the frontend
+  // already pushed the token (e.g. Contendo was open in another tab).
+  document.getElementById("retry-connect-btn").addEventListener("click", async () => {
+    const { contendo_token } = await chrome.storage.local.get("contendo_token");
+    if (contendo_token) {
+      init(); // Token is there — go straight to the article UI.
+    } else {
+      showFeedback(
+        "connect-feedback",
+        "No token yet — open Contendo and sign in, then click retry again.",
+        "info"
+      );
+    }
   });
 }
 

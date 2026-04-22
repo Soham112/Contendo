@@ -5,6 +5,10 @@ import { useRouter, usePathname } from "next/navigation";
 import supabase from "@/lib/supabase";
 import { useApi } from "@/lib/api";
 
+// Extension ID from chrome://extensions (load unpacked → copy the ID).
+// The ID is stable for a given unpacked extension directory.
+const CONTENDO_EXTENSION_ID = "YOUR_EXTENSION_ID_HERE";
+
 const SKIP_ROUTES = ["/welcome", "/sign-in", "/sign-up", "/onboarding", "/first-post"];
 
 export function useProfileCheck() {
@@ -18,11 +22,33 @@ export function useProfileCheck() {
   const pathname = usePathname();
   const api = useApi();
 
-  // Resolve auth state once on mount
+  // Resolve auth state once on mount and push token to the Chrome extension.
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       setIsSignedIn(!!user);
       setIsLoaded(true);
+
+      if (user) {
+        // Push the Supabase access_token to the Chrome extension via
+        // externally_connectable. Runs whenever the Contendo app loads while
+        // the user is signed in — this is the push model that replaces all
+        // content-script polling. Fails silently if the extension isn't installed.
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          if (!session?.access_token) return;
+          try {
+            const chr = (window as any).chrome;
+            if (chr?.runtime?.sendMessage) {
+              chr.runtime.sendMessage(
+                CONTENDO_EXTENSION_ID,
+                { action: "setToken", token: session.access_token },
+                () => { void chr.runtime?.lastError; } // suppress "no listener" console error
+              );
+            }
+          } catch (_) {
+            // Extension not installed or externally_connectable not wired yet — ignore.
+          }
+        });
+      }
     });
   }, []);
 
