@@ -7,6 +7,7 @@ from pipeline.state import PipelineState
 from utils.formatters import get_format_instructions, get_archetype_instructions
 from memory.profile_store import profile_to_context_string
 from memory.usage_store import log_usage_event
+from agents.retrieval_agent import resolve_attribution_frames
 
 load_dotenv()
 
@@ -181,41 +182,39 @@ POST STRUCTURE: write this post as a {archetype_name}:
 ---
 
 ---
-SOURCE ATTRIBUTION RULES (mandatory):
-Chunks in the knowledge base are labelled with their source_type:
-- [source_type: note]: content the user wrote themselves. You may attribute
-  this to their direct personal experience.
-- [source_type: article] or [source_type: youtube]: content they read or
-  watched. These are external ideas. Do NOT attribute them to personal
-  experience. Never write "I did X" or "at [company] I saw X" based on
-  these chunks. Instead frame them as: "I've been reading about X",
-  "there's research showing X", "X is documented in how Stripe does Y".
-- [source_type: image]: treat same as article. External reference only.
+SOURCE ATTRIBUTION RULES (mandatory — read chunk labels above before writing):
 
-The user profile and writing samples are always personal; attribute freely.
-Never fabricate a personal experience by combining the user's employer or
-role (from their profile) with a technical detail from an article chunk.
-This is the most important rule in this prompt. Violating it causes the
-user to publish false claims about their own experience.
+Chunks are pre-grouped into three frames. Use the frame label to determine
+how to write each claim.
 
-FABRICATION RULE (this is as important as attribution):
-Never invent personal incidents, timestamps, colleague names,
-manager names, or specific events that are not explicitly
-present in the user's ingested notes or profile. This
-includes:
-- Specific times ('11pm', '2am', 'Tuesday night')
-- Named people ('my manager told me', 'Vishal said')
-- Incidents not in any note ('the pipeline broke', 'I got paged')
-- Promotions, recognitions, or thank-yous to specific people
+PERSONAL frame:
+The user directly experienced or built this. Write in first person.
+"I ran into this exact problem", "we switched to X because", "I built this and found..."
+Never fabricate specific incidents not in the chunk. The chunk is the evidence.
 
-If the knowledge base contains only article or image chunks
-and no personal notes on this topic, write the post from an
-observational or analytical perspective. A post that says
-'I have seen this pattern' is better than one that invents
-a personal incident that never happened.
+EXPERT OUTSIDER frame:
+The user knows adjacent territory deeply but this specific topic is newer to them.
+Write with authority and honest curiosity combined.
+"Coming from X background, what surprised me about Y is...",
+"The mental model shift from X to Y took longer than expected",
+"This is what people with X background consistently miss about Y"
+Never use passive or student-like framing. They are an expert, just not in this exact thing yet.
 
-The user will publish this content under their name. A
-fabricated incident is a factual error they cannot take back.
+LEARNING frame — calibrated by seniority:
+Junior (0-3 years): "Been going deep on X lately. Here is what actually matters."
+Mid (4-10 years): "X is worth understanding properly. Most explanations miss this."
+Senior (10+ years): "X keeps coming up. Here is what I keep seeing people get wrong."
+All three are confident. None of them are passive. Never write "I came across an article about X."
+
+CROSS-FRAME RULE:
+Never mix frames within a single sentence.
+If a paragraph draws on both PERSONAL and LEARNING chunks,
+lead with the personal claim and use the learning chunk as supporting evidence.
+"I saw this break in production. The pattern is documented — most teams hit it at scale."
+
+FABRICATION RULE (unchanged — still applies):
+Never invent personal incidents, timestamps, colleague names, or events
+not explicitly present in personal_note chunks or user profile.
 ---
 
 ---
@@ -235,20 +234,24 @@ def _format_retrieval_context(state: PipelineState) -> str:
     """Return the text block to inject as the knowledge base section.
 
     Priority:
-    1. Use state["retrieved_context"] if non-empty (hierarchical path — richer context
-       with source summaries and sibling chunks for top sources).
+    1. If retrieval_bundle has chunk dicts (with source_type + tags metadata),
+       call resolve_attribution_frames() to produce a pre-labeled frame block
+       the draft agent reads directly — no interpretive guesswork in the prompt.
     2. Fall back to formatting state["retrieved_chunks"] as a flat numbered list
-       (identical to the pre-hierarchy behavior, ensures nothing breaks pre-migration).
+       (backward compat for pre-migration state or when bundle is absent).
     """
-    retrieved_context = state.get("retrieved_context", "")
-    if retrieved_context:
-        return retrieved_context
+    bundle = state.get("retrieval_bundle") or {}
+    bundle_chunks = bundle.get("chunks", [])
+    profile = state.get("profile") or {}
 
-    # Flat fallback — preserves exact pre-hierarchy behavior
-    chunks = state.get("retrieved_chunks", [])
-    if chunks:
+    if bundle_chunks:
+        return resolve_attribution_frames(bundle_chunks, profile)
+
+    # Flat fallback — preserves pre-hierarchy behavior
+    flat_chunks = state.get("retrieved_chunks", [])
+    if flat_chunks:
         return "\n\n---\n\n".join(
-            f"[Chunk {i + 1}]\n{chunk}" for i, chunk in enumerate(chunks)
+            f"[Chunk {i + 1}]\n{chunk}" for i, chunk in enumerate(flat_chunks)
         )
     return "No relevant knowledge base entries found. Draw on general expertise."
 

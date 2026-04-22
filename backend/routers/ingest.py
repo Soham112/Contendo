@@ -34,8 +34,9 @@ MAX_ZIP_BYTES = 50 * 1024 * 1024  # 50 MB
 
 class IngestRequest(BaseModel):
     content: str = ""
-    source_type: str  # "article" | "youtube" | "image" | "note"
+    source_type: str  # "article" | "youtube" | "image" | "note" | "personal_note" | "saved_content"
     raw_image: str | None = None
+    content_origin: str | None = None  # "personal" | "saved" — only meaningful when source_type is "note"
 
 
 class IngestResponse(BaseModel):
@@ -98,7 +99,17 @@ async def ingest(
     else:
         if not req.content or not req.content.strip():
             raise HTTPException(status_code=400, detail="content is required")
-        result = ingest_content(req.content, source_type=req.source_type, user_id=user_id)
+        # Resolve effective source_type for notes based on content_origin signal.
+        # content_origin: "personal" → personal_note (user lived/built it)
+        # content_origin: "saved"   → saved_content (external reference saved by user)
+        # absent                    → keep as "note" (legacy fallback; treated as saved_content downstream)
+        effective_source_type = req.source_type
+        if req.source_type == "note" and req.content_origin:
+            if req.content_origin == "personal":
+                effective_source_type = "personal_note"
+            elif req.content_origin == "saved":
+                effective_source_type = "saved_content"
+        result = ingest_content(req.content, source_type=effective_source_type, user_id=user_id)
 
     if result.get("duplicate"):
         return IngestResponse(

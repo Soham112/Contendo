@@ -17,7 +17,7 @@
 | **Backend** | |
 | `backend/main.py` | FastAPI app entry point — CORS config, lifespan hook (calls `init_db` + `init_hierarchy_db` + `init_retrieval_stats_db`), router registration, and `logging.basicConfig` (level from `LOG_LEVEL` env var, defaults to INFO) |
 | `backend/routers/__init__.py` | Empty — marks routers/ as a Python package |
-| `backend/routers/ingest.py` | `/ingest`, `/ingest-file`, `/scrape-and-ingest`, `/obsidian/preview`, `/obsidian/ingest` (both with `ENVIRONMENT=production` guard), `/obsidian/preview-zip`, `/obsidian/ingest-zip` (no environment guard — works in production) |
+| `backend/routers/ingest.py` | `/ingest`, `/ingest-file`, `/scrape-and-ingest`, `/obsidian/preview`, `/obsidian/ingest` (both with `ENVIRONMENT=production` guard), `/obsidian/preview-zip`, `/obsidian/ingest-zip` (no environment guard — works in production). `POST /ingest` accepts optional `content_origin: "personal" | "saved"` field — when `source_type` is `"note"` and `content_origin` is present, the effective source_type stored is `"personal_note"` (personal) or `"saved_content"` (saved); absent `content_origin` keeps `"note"` for backward compat. |
 | `backend/routers/generate.py` | `/generate`, `/refine`, `/refine-selection`, `/score`, `/generate-visuals`, `/refine-visual` |
 | `backend/routers/history.py` | `GET /history`, `POST /log-post`, `PATCH /history/{id}`, `DELETE /history/{id}`, `POST /history/{id}/restore/{vid}`, `PATCH /history/{id}/publish` |
 | `backend/routers/library.py` | `GET /library`, `GET /library/clusters`, `DELETE /library/source` |
@@ -40,8 +40,8 @@
 | `backend/agents/visual_agent.py` | Parses [DIAGRAM:] and [IMAGE:] placeholders from post; calls Claude to generate SVG for diagrams; returns reminder text for images. `STYLE_VARIANTS` (5 named styles: flowchart, layered, radial, timeline, comparison) are auto-selected based on keyword matching in the description. `generate_svg_for_diagram(description, style_hint, current_svg, refinement_instruction)` is the unified public function for both generation (no current_svg) and refinement (with current_svg + refinement_instruction). `DIAGRAM_PROMPT` requires Editorial Atelier aesthetic: soft muted colors (sage greens #e8ede4/#c5d4be, warm grays, soft terracotta #f0e0d6), bold+sublabel node text, dashed container borders, legend section for color-coded elements, generous whitespace, rx=8 minimum on all rectangles, title+subtitle layout. `REFINE_PROMPT` applies targeted modifications to existing SVG. |
 | `backend/agents/ingestion_agent.py` | Chunks content, extracts tags via Claude Sonnet, upserts to ChromaDB; after successful upsert: generates a 2-3 sentence source summary via Claude Haiku and writes a source_node + topic_node to hierarchy_store (wrapped in try/except — never blocks ingestion); SHA-256 dedup via `query_by_hash()` before any Claude call |
 | `backend/agents/vision_agent.py` | Sends base64 images to Claude vision, returns extracted text |
-| `backend/agents/retrieval_agent.py` | Semantic search node in the LangGraph pipeline; builds a `retrieval_bundle` (chunks + source_contexts + topic_contexts) from hierarchy_store; sets `retrieved_context` (pre-formatted enriched text block) and always sets `retrieved_chunks` for backward compat; computes internal coverage signal via `_compute_retrieval_confidence()` and stores `retrieval_confidence` + `retrieved_chunk_count` in pipeline state; falls back to flat retrieval if hierarchy_store is empty; calls `increment_retrieval()` for each unique source title in a try/except block |
-| `backend/agents/draft_agent.py` | Calls Claude Haiku via `infer_archetype()` to classify the topic into one of 7 post archetypes, then generates the initial draft via Claude Sonnet; uses `_format_retrieval_context()` which prefers the enriched `retrieved_context` from state and falls back to flat `retrieved_chunks`; injects `_get_grounding_instruction(retrieval_confidence, retrieved_chunk_count)` into the prompt for medium/low confidence calibration (empty string for high confidence); passes `state.get("length", "standard")` into `get_format_instructions()` |
+| `backend/agents/retrieval_agent.py` | Semantic search node in the LangGraph pipeline; builds a `retrieval_bundle` (chunks + source_contexts + topic_contexts) from hierarchy_store; sets `retrieved_context` (pre-formatted enriched text block) and always sets `retrieved_chunks` for backward compat; computes internal coverage signal via `_compute_retrieval_confidence()` and stores `retrieval_confidence` + `retrieved_chunk_count` in pipeline state; falls back to flat retrieval if hierarchy_store is empty; calls `increment_retrieval()` for each unique source title in a try/except block. Exports `resolve_attribution_frames(chunks, profile) -> str` and `infer_seniority_level(profile) -> str` — see function entries below. |
+| `backend/agents/draft_agent.py` | Calls Claude Haiku via `infer_archetype()` to classify the topic into one of 7 post archetypes, then generates the initial draft via Claude Sonnet; `_format_retrieval_context()` now calls `resolve_attribution_frames()` when `retrieval_bundle` chunks are available, producing a pre-labeled PERSONAL / EXPERT OUTSIDER / LEARNING block; falls back to flat `retrieved_chunks` for backward compat; injects `_get_grounding_instruction(retrieval_confidence, retrieved_chunk_count)` for medium/low confidence calibration; passes `state.get("length", "standard")` into `get_format_instructions()` |
 | `backend/agents/critic_agent.py` | Diagnoses the initial draft across hook, substance, structure, and voice; produces a structured JSON brief; runs between `draft_node` and `humanizer_node`; uses Claude Haiku; skipped for draft quality mode |
 | `backend/agents/humanizer_agent.py` | Rewrites draft to remove AI patterns, inject human voice; reads `critic_brief` from state and fixes flagged issues before humanizing if any area was rated "needs_work"; exposes `refine_selection()` for targeted single-selection rewrites |
 | `backend/agents/predictability_audit_agent.py` | Three-step post-humanizer audit: (1) Haiku finds the single most AI-sounding sentence or returns CLEAN; (2) Sonnet rewrites only that sentence to be shorter, more specific, or unresolved; (3) Haiku checks for burstiness (3+ consecutive sentences within 4 words of each other in length) and breaks rhythm if found. Skipped for draft quality mode. All exceptions caught — pipeline never breaks. Usage logged via `usage_store` as three separate event_types: `predictability_audit_step1/2/3`. |
@@ -119,6 +119,17 @@
 | **Writes** | Returns `{ chunks_stored: int, tags: list[str] }` on new content; `{ chunks_stored: int, tags: list[str], duplicate: True }` if content already exists — not a pipeline node |
 | **Side effects** | Computes SHA-256 hash of normalised content and calls `query_by_hash()` before any Claude call. If duplicate: returns immediately. If new: calls Claude for tag extraction, upserts chunks to ChromaDB with `source_title`, `ingested_at`, and `content_hash` in metadata. |
 
+**`source_type` value documentation (`embeddings` table):**
+
+| Value | Meaning | Attribution frame |
+|---|---|---|
+| `personal_note` | User lived or built this — explicitly confirmed via `content_origin: "personal"` at ingest time | PERSONAL — write in first person |
+| `saved_content` | External reference the user saved — explicitly confirmed via `content_origin: "saved"` at ingest time | LEARNING or EXPERT_OUTSIDER depending on expertise distance |
+| `note` | Legacy value — source_type was `note` but `content_origin` was absent at ingest time; treated as `saved_content` in attribution logic | LEARNING or EXPERT_OUTSIDER |
+| `article` | Scraped article or pasted article text | LEARNING or EXPERT_OUTSIDER |
+| `youtube` | YouTube transcript ingested via FeedMemory | LEARNING or EXPERT_OUTSIDER |
+| `image` | Image processed via vision agent | LEARNING or EXPERT_OUTSIDER |
+
 ### vector_store.py — get_all_sources()
 | | |
 |---|---|
@@ -139,6 +150,28 @@
 | **Reads** | `image_base64: str`, `media_type: str` (passed directly) |
 | **Writes** | Returns `str` — extracted knowledge text |
 | **Side effects** | None (output fed into ingestion_agent) |
+
+### retrieval_agent.py — infer_seniority_level()
+| | |
+|---|---|
+| **Signature** | `infer_seniority_level(profile: dict) -> str` |
+| **Returns** | `"junior"`, `"mid"`, or `"senior"` |
+| **Logic** | Checks `profile["years_of_experience"]` (int) first: ≤3 → junior, ≤10 → mid, >10 → senior. Falls back to role title keyword matching: senior/lead/principal/director/VP/head of/staff → senior; junior/intern/associate/student/graduate → junior; no match → mid. |
+| **Used by** | `resolve_attribution_frames()` to calibrate the LEARNING frame copy register |
+
+### retrieval_agent.py — resolve_attribution_frames()
+| | |
+|---|---|
+| **Signature** | `resolve_attribution_frames(chunks: list[dict], profile: dict) -> str` |
+| **Inputs** | Raw chunk dicts from `retrieval_bundle["chunks"]`; user profile dict |
+| **Returns** | Structured labeled string with chunks grouped under PERSONAL EXPERIENCE / EXPERT OUTSIDER PERSPECTIVE / LEARNING headers and `[source: X \| tags: Y]` per-chunk labels |
+| **Step 1** | Topic clustering: group chunks by shared tags (comma-separated string in `chunk["tags"]`). Chunks sharing ≥1 tag belong to the same cluster. Tag-less chunks form singleton clusters. |
+| **Step 2** | Frame resolution per cluster (strict priority): (1) any `source_type: personal_note` → PERSONAL for the whole cluster; (2) cluster tags overlap `profile["topics_of_expertise"]` → EXPERT_OUTSIDER; (3) otherwise → LEARNING calibrated by `infer_seniority_level(profile)`. |
+| **Step 3** | Output ordered: PERSONAL → EXPERT_OUTSIDER → LEARNING (senior → mid → junior). Each chunk printed with its frame header, source label, and body. |
+| **Fallback** | Returns `"No relevant knowledge base entries found. Draw on general expertise."` when chunks list is empty. |
+
+**Architectural decision — frame resolution in the retriever, not the draft agent prompt:**
+Pre-labeling chunk frames is structural and deterministic — it runs on typed data (source_type, tags, profile fields) and produces explicit headers the model reads directly. In-prompt attribution logic ("if the source_type is note, write in first person") is interpretive and brittle — the model may misread, ignore, or mis-apply it under creative pressure. By resolving frames before the prompt is constructed, the draft agent has no ambiguity to resolve. It reads labeled blocks and writes accordingly.
 
 ### retrieval_node (retrieval_agent.py)
 | | |
