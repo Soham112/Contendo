@@ -1,4 +1,5 @@
 import anthropic
+import asyncio
 import json
 import os
 import random
@@ -7,6 +8,7 @@ from dotenv import load_dotenv
 from memory.vector_store import query_similar_hybrid_batch, get_all_tags, get_all_sources
 from memory.feedback_store import get_all_topics_posted
 from memory.profile_store import load_profile, profile_to_context_string
+from memory.usage_store import log_usage_event
 
 load_dotenv()
 
@@ -147,6 +149,17 @@ TOPICS ALREADY WRITTEN ABOUT (do not repeat these):
         system=system,
         messages=[{"role": "user", "content": user_message}],
     )
+
+    try:
+        asyncio.get_running_loop().create_task(log_usage_event(
+            user_id=user_id,
+            event_type="ideation",
+            input_tokens=message.usage.input_tokens,
+            output_tokens=message.usage.output_tokens,
+            metadata={"count": count, "topic": topic or ""},
+        ))
+    except RuntimeError:
+        pass  # No running event loop (e.g. in tests) — skip logging
 
     raw = message.content[0].text.strip()
 
