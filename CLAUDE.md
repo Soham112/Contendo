@@ -37,17 +37,18 @@ learns a user's knowledge base and writes posts in their voice.
 - Frontend: Next.js 14 (App Router) in frontend/
 - Backend: FastAPI (Python 3.11) in backend/
 - LLM: Claude API (Anthropic)
-- Vector DB: ChromaDB (local, persistent)
-- Post history: SQLite
+- Vector DB: Supabase pgvector (`embeddings` table)
+- Post history: Supabase Postgres (`posts` + `post_versions`)
 - Embeddings: sentence-transformers (local, no API key)
 - Agent orchestration: LangGraph
 
 **Current state:** Fully working locally and deployed to production.
 Frontend on Vercel (contendo-six.vercel.app). Backend on Railway
-(contendo-production.up.railway.app). Clerk JWT auth added — multi-user,
+(contendo-production.up.railway.app). Supabase JWT auth added — multi-user,
 per-user data isolation. New-user flow at `/first-post` (`/onboarding` is
-kept as a legacy redirect). Profile editor at `/settings`. Per-user profiles stored at `DATA_DIR/profiles/profile_{user_id}.json`
-on Railway's persistent volume (`/data`). Landing page (`/welcome`) is the
+kept as a legacy redirect). Profile editor at `/settings`. Per-user profiles
+are stored in the Supabase `profiles` table (`id` + `data` JSON).
+Landing page (`/welcome`) is the
 default entry point — unauthenticated visitors hitting `/` are redirected
 there by middleware; signed-in users can also visit `/welcome` (sidebar
 logo links there) and see auth-aware CTAs ("Open workspace" → `/`).
@@ -73,10 +74,10 @@ logo links there) and see auth-aware CTAs ("Open workspace" → `/`).
 - DESIGN.md is the source of truth for all UI/UX decisions — read it before any frontend change
 - The implementation is always the source of truth if docs conflict
 
-**Auth (Clerk JWT):**
+**Auth (Supabase JWT):**
 - All protected endpoints use `Depends(get_user_id_dep)` from `auth/clerk.py`
 - In non-production without a token, `user_id` falls back to `"default"` (local dev convenience)
-- `CLERK_SECRET_KEY` is required in production for JWKS fetching
+- `SUPABASE_JWT_SECRET` is required in production for HS256 token verification
 - Frontend: all API calls go through `useApi()` from `lib/api.ts` — never raw `fetch()`
 - New users are redirected to `/first-post` by `useProfileCheck` in AppShell
 

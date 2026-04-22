@@ -21,7 +21,7 @@ flowchart TD
         S6["Landing Page (/welcome)\n(Own top nav, bypasses sidebar)"]
     end
 
-    subgraph API["FastAPI Backend — 27 Endpoints (includes temporary admin/debug routes)"]
+    subgraph API["FastAPI Backend Endpoints"]
         R1["POST /ingest\nPOST /ingest-file\nPOST /scrape-and-ingest"]
         R1b["POST /obsidian/preview, /obsidian/ingest (local path)\nPOST /obsidian/preview-zip, /obsidian/ingest-zip (zip upload — production-ready)"]
         R2["POST /generate"]
@@ -33,7 +33,7 @@ flowchart TD
         R7["POST /generate-visuals\nPOST /score"]
         R8["GET /stats\nPOST /feedback"]
         R9["GET /profile\nPOST /profile\nGET /library/clusters"]
-        R10["GET /debug/profile-paths\nPOST /admin/migrate-profile\nPOST /admin/migrate-user-data"]
+        R10["GET /admin/usage"]
     end
 
     subgraph Pipeline["LangGraph Pipeline"]
@@ -245,7 +245,7 @@ Note: profile files are gitignored — your personal details never get committed
 │   │           └── page.tsx          # Profile editor (/settings/profile) — section nav, summary header, sticky save
 │   ├── components/
 │   │   ├── AppShell.tsx              # Layout wrapper — sidebar for app routes, passthrough for /welcome + /first-post + /onboarding
-│   │   ├── Sidebar.tsx               # Left sidebar — logo, six nav items (+ Settings), user row
+│   │   ├── Sidebar.tsx               # Left sidebar — core nav items (+ conditional Admin), user row
 │   │   ├── FeedMemory.tsx            # Feed Memory form — all input types, Obsidian vault flow
 │   │   ├── CreatePost.tsx            # Create Post — 4-state UI, settings drawer, resizable split-screen analysis
 │   │   └── ui/
@@ -265,8 +265,7 @@ Note: profile files are gitignored — your personal details never get committed
     │   ├── ideas.py                  # /suggestions
     │   ├── stats.py                  # /stats
     │   ├── profile.py                # GET/POST /profile — per-user read/write, read-back verification
-    │   ├── debug.py                  # TEMPORARY: GET /debug/profile-paths (no auth)
-    │   └── admin.py                  # TEMPORARY: POST /admin/migrate-profile + POST /admin/migrate-user-data (x-migration-secret)
+    │   └── admin.py                  # GET /admin/usage (x-admin-secret)
     ├── requirements.txt              # All Python dependencies pinned
     ├── .env.example                  # Required env var keys with no values
     ├── agents/
@@ -373,23 +372,15 @@ backend/data/hierarchy.db      →  /data/hierarchy.db
 backend/data/profile.json      →  /data/profile.json
 ```
 
-**How to migrate via the temporary migration endpoints in `backend/routers/admin.py`:**
+**How to migrate profile/posts into Supabase:**
 
-Two endpoints handle the migration. Run them in order after the backend is deployed and the persistent volume is mounted:
+Use the one-time script in `scripts/migrate_to_supabase.py` after your backend env vars are configured.
 
 ```bash
-# 1. Migrate ChromaDB chunks, SQLite posts, and hierarchy nodes
-#    (copies everything under user_id="default" to your Clerk user ID)
-curl -X POST https://your-service.up.railway.app/admin/migrate-user-data \
-  -H "Content-Type: application/json" \
-  -H "x-migration-secret: YOUR_MIGRATION_SECRET" \
-  -d '{"target_user_id": "your_clerk_user_id"}'
-
-# 2. Migrate your voice/style profile
-curl -X POST https://your-service.up.railway.app/admin/migrate-profile \
-  -H "Content-Type: application/json" \
-  -H "x-migration-secret: YOUR_MIGRATION_SECRET" \
-  -d '{"target_user_id": "your_clerk_user_id"}'
+python scripts/migrate_to_supabase.py \
+    --old_clerk_id user_3BYsinXXXX \
+    --new_supabase_id a3f2b1c4-0000-0000-0000-000000000000 \
+    --data_dir /data
 ```
 
 **Verify the migration:**
@@ -427,7 +418,6 @@ Obsidian vault ingestion reads directly from the local filesystem. It **cannot w
 After deploying:
 
 - [ ] `GET https://your-backend.up.railway.app/health` returns `{"status": "ok"}`
-- [ ] `GET https://your-backend.up.railway.app/debug/profile-paths` shows `data_dir: "/data"` and `profiles_dir_exists: true`
 - [ ] Frontend loads at your Vercel URL
 - [ ] New user sign-up → redirected to `/first-post` and can complete first draft flow
 - [ ] Sign out and sign back in → no forced onboarding loop (`/onboarding` redirects to `/first-post` only when visited)
