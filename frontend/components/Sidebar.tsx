@@ -69,6 +69,8 @@ const NAV_ITEMS = [
   },
 ];
 
+const ADMIN_EMAIL = "soham112000@gmail.com";
+
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -117,7 +119,15 @@ export default function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 px-3 pb-4 space-y-0.5 overflow-y-auto">
-        {NAV_ITEMS.map((item) => {
+        {[...NAV_ITEMS, ...(user?.email === ADMIN_EMAIL ? [{
+          href: "/admin",
+          label: "Admin",
+          icon: (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M8 2L2 5v4c0 3 2.5 5.2 6 6 3.5-.8 6-3 6-6V5L8 2z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+            </svg>
+          ),
+        }] : [])].map((item) => {
           const isActive =
             item.href === "/"
               ? pathname === "/"
