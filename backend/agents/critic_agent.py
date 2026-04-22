@@ -1,4 +1,5 @@
 import anthropic
+import asyncio
 import json
 import logging
 import os
@@ -8,6 +9,7 @@ from dotenv import load_dotenv
 
 from pipeline.state import PipelineState
 from memory.profile_store import profile_to_context_string
+from memory.usage_store import log_usage_event
 
 load_dotenv()
 
@@ -122,6 +124,17 @@ def critic_node(state: PipelineState) -> PipelineState:
 
         raw = message.content[0].text.strip()
         state["critic_brief"] = _parse_critic_response(raw)
+
+        try:
+            asyncio.get_running_loop().create_task(log_usage_event(
+                user_id=state.get("user_id", "default"),
+                event_type="critic",
+                input_tokens=message.usage.input_tokens,
+                output_tokens=message.usage.output_tokens,
+                model="haiku",
+            ))
+        except RuntimeError:
+            pass
 
     except Exception as e:
         logger.warning("Critic agent failed: %s — setting critic_brief={}, pipeline continues", e)
