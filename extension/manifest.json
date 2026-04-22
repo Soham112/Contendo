@@ -10,7 +10,11 @@
   ],
   "content_scripts": [
     {
-      "matches": ["https://contendo-six.vercel.app/*"],
+      "matches": [
+        "https://contendo-six.vercel.app/*",
+        "http://*/*",
+        "https://*/*"
+      ],
       "js": ["content.js"],
       "run_at": "document_idle"
     }

@@ -1,13 +1,15 @@
 // popup.js — Popup controller
 //
 // Auth flow (no manual token input):
-//   1. On open: check chrome.storage.local for a cached token.
-//   2. If none: query for an open contendo-six.vercel.app tab, send
-//      { action: "getSupabaseToken" } to its content script, cache the result.
-//   3. If Contendo is not open or user is not signed in: show the connect
-//      state with a single "Open Contendo" button.
-//   4. On 401 from backend: clear cached token and re-run the flow so a
-//      fresh token is read from the Contendo tab automatically.
+//   1. On open: check chrome.storage.local for "contendo_token" (written by
+//      the background service worker, which polls the Contendo tab).
+//   2. Token present → go straight to the article/YouTube UI.
+//   3. Token absent → show "Open Contendo" button. On click: open the
+//      Contendo tab, tell the background worker to start polling, and show a
+//      "Connecting…" spinner. Poll storage every 2 s — when the background
+//      worker writes the token the popup switches to the main UI automatically.
+//   4. On 401 from backend: clear the cached token and re-run init() so the
+//      background worker fetches a fresh token.
 
 const CONTENDO_ORIGIN = "https://contendo-six.vercel.app";
 
@@ -41,37 +43,12 @@ function truncate(str, maxLen) {
 
 // ── Token resolution ───────────────────────────────────────────────────────
 
-// Read the Supabase access_token directly from the Contendo tab's localStorage.
-// We inject content.js programmatically before messaging to handle the case
-// where the tab was already open when the extension was installed or reloaded
-// (declarative content_scripts only inject into tabs opened after the extension
-// loads, so existing tabs may not have the listener active).
-async function getTokenFromContendo() {
-  try {
-    const tabs = await chrome.tabs.query({ url: `${CONTENDO_ORIGIN}/*` });
-    if (!tabs.length) return null;
-    const tab = tabs[0];
-    // Inject content.js first — the injection guard (window.__contendo_injected)
-    // inside content.js prevents duplicate listener registration if it was
-    // already declaratively loaded.
-    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
-    const response = await chrome.tabs.sendMessage(tab.id, { action: "getSupabaseToken" });
-    return response?.token || null;
-  } catch (_) {
-    // Tab not yet ready or content script not loaded — return null gracefully.
-    return null;
-  }
-}
-
-// Resolve a valid token: use the cached one if present, otherwise fetch fresh
-// from the Contendo tab and cache it.
+// The background service worker polls the Contendo tab and writes the token
+// to chrome.storage.local under "contendo_token". The popup reads from
+// storage only — it never touches the Contendo tab directly.
 async function resolveToken() {
-  const { token } = await chrome.storage.local.get("token");
-  if (token) return token;
-
-  const fresh = await getTokenFromContendo();
-  if (fresh) await chrome.storage.local.set({ token: fresh });
-  return fresh || null;
+  const { contendo_token } = await chrome.storage.local.get("contendo_token");
+  return contendo_token || null;
 }
 
 // ── Content extraction ─────────────────────────────────────────────────────
@@ -89,17 +66,31 @@ async function extractPageContent(tabId) {
 
 // ── Connect state ──────────────────────────────────────────────────────────
 
+let _connectPollInterval = null;
+
 function initConnectState(hint) {
   showOnly("state-connect");
   if (hint) showFeedback("connect-feedback", hint, "error");
 
-  document.getElementById("open-contendo-btn").addEventListener("click", () => {
+  document.getElementById("open-contendo-btn").addEventListener("click", async () => {
+    // Open the Contendo tab and tell the background worker to start polling.
     chrome.tabs.create({ url: CONTENDO_ORIGIN });
-    showFeedback(
-      "connect-feedback",
-      "Sign in to Contendo, then come back and click the extension icon.",
-      "info"
-    );
+    chrome.runtime.sendMessage({ action: "startTokenPolling" });
+
+    // Switch to a "Connecting…" state and poll storage every 2 s.
+    // When the background worker writes the token the popup transitions
+    // automatically — no second click required.
+    showOnly("state-connecting");
+
+    if (_connectPollInterval) clearInterval(_connectPollInterval);
+    _connectPollInterval = setInterval(async () => {
+      const { contendo_token } = await chrome.storage.local.get("contendo_token");
+      if (contendo_token) {
+        clearInterval(_connectPollInterval);
+        _connectPollInterval = null;
+        init(); // Re-run with the newly available token.
+      }
+    }, 2000);
   });
 }
 
@@ -196,7 +187,7 @@ function handleIngestResponse(response, sourceTitle) {
     // 401 means the cached token expired — clear it and re-run so a fresh
     // token is read from the Contendo tab automatically.
     if (response?.status === 401) {
-      chrome.storage.local.remove("token");
+      chrome.storage.local.remove("contendo_token");
       init();
       return;
     }
