@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Contendo",
+  "description": "Save any webpage or YouTube video to your Contendo knowledge base with one click.",
+  "version": "1.0.0",
+  "permissions": ["activeTab", "storage", "scripting"],
+  "host_permissions": [
+    "https://contendo-production.up.railway.app/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Add to Contendo"
+  }
+}
