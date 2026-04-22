@@ -2,7 +2,7 @@
 
 A personal content generation system that learns your knowledge base and writes in your voice. You feed it articles, YouTube videos, images, and notes — it stores them as semantic memory. When you want to publish, it retrieves the most relevant knowledge, drafts content in your style, humanizes it, scores it, and hands you a final editable post.
 
-Built for authenticated multi-user usage with per-user data isolation (Clerk + namespaced memory stores) and a fast loop from raw knowledge to publishable content.
+Built for authenticated multi-user usage with per-user data isolation (Supabase JWT + user-scoped tables) and a fast loop from raw knowledge to publishable content.
 
 ---
 
@@ -38,13 +38,15 @@ flowchart TD
 
     subgraph Pipeline["LangGraph Pipeline"]
         N1["1. load_profile_node\nLoad profile + posted topics"]
-        N2["2. retrieval_node\nSemantic search ChromaDB"]
+        N2["2. retrieval_node\nSemantic search via pgvector + frame resolution"]
         N3["3. draft_node\nInfer archetype (Claude Haiku) → generate initial draft (Claude Sonnet)"]
         N4["4. critic_node\nDiagnose hook/substance/structure/voice"]
         N5["5. humanizer_node\nRemove AI patterns, inject voice"]
-        N6["6. scorer_node\nScore 0–100 across 5 dimensions (polished mode)"]
-        N7{"Quality mode?\ndraft/standard → finalize\npolished → check score + iterations"}
-        N8["finalize_node"]
+        N6["6. predictability_audit_node\nDe-pattern AI rhythm + sentence predictability"]
+        N7["7. scorer_node\nScore 0–100 across 5 dimensions (polished mode)"]
+        N8{"Quality mode?\nstandard/draft → word_count_enforcer\npolished → check score + iterations"}
+        N9["8. word_count_enforcer_node\nFinal trim/expand gate"]
+        N10["finalize_node"]
     end
 
     subgraph Agents["Standalone Agents"]
@@ -53,9 +55,9 @@ flowchart TD
     end
 
     subgraph Memory["Memory Layer"]
-        DB1["ChromaDB\n(vector store — chunks + metadata, per-user collections)"]
-        DB2["profiles/profile_{user_id}.json\n(voice, style, words to avoid — per user)"]
-        DB3["SQLite posts.db\n(posts + post_versions tables)"]
+        DB1["Supabase pgvector\n(embeddings table: chunks + metadata, user_id isolated)"]
+        DB2["Supabase profiles\n(id + data JSON per user)"]
+        DB3["Supabase posts + post_versions\n(versioned post history)"]
     end
 
     NAV --> S1
@@ -89,12 +91,14 @@ flowchart TD
     N2 --> N3
     N3 --> N4
     N4 --> N5
-    N5 --> N7
-    N7 -->|"finalize"| N8
-    N7 -->|"score"| N6
-    N6 -->|"finalize"| N8
-    N6 -->|"retry (polished mode only)"| N5
-    N8 --> DB3
+    N5 --> N6
+    N6 --> N8
+    N8 -->|"word_count_enforcer"| N9
+    N8 -->|"score"| N7
+    N7 -->|"word_count_enforcer"| N9
+    N7 -->|"retry (polished mode only)"| N5
+    N9 --> N10
+    N10 --> DB3
 
     N1 --- DB2
     N2 --- DB1
@@ -107,7 +111,7 @@ flowchart TD
 
 Navigation is handled by a persistent left sidebar (`Sidebar.tsx`), rendered by `AppShell.tsx` for every route except `/welcome`, `/first-post`, `/onboarding`, `/sign-in`, and `/sign-up`. The landing page at `/welcome` has its own top nav and bypasses the sidebar entirely. **`/welcome` is the default entry point and is accessible to all users** — unauthenticated visitors hitting the root URL are redirected there by `middleware.ts`; signed-in users can also visit `/welcome` at any time (e.g. via the sidebar logo link) and see auth-aware CTAs ("Open workspace" instead of sign-up prompts). Clicking "Log in" on the landing page preserves `/welcome` as the post-login destination via `redirect_url`.
 
-**Screen 1 — Feed Memory (`/`):** The user selects an input type (Article/Text, URL, File, YouTube, Image/Diagram, Note, or Obsidian vault) and adds their content. For **URL**, the backend scrapes the page via Jina Reader and stores it automatically. For **File**, PDF, DOCX, and TXT uploads (up to 10 MB) are accepted — text is extracted server-side. For **Image/Diagram**, Claude vision extracts the knowledge as text first. For **Obsidian**, the user enters their local vault folder path; a preview step shows how many notes and words will be ingested before committing. The YouTube tab shows a textarea for manual paste — auto-fetching was removed after YouTube blocked bot-based transcript retrieval. For all types, content is chunked into 500-word overlapping segments, embedded locally with `sentence-transformers`, and upserted into ChromaDB. The response shows how many chunks were stored and what tags were auto-extracted.
+**Screen 1 — Feed Memory (`/`):** The user selects an input type (Article/Text, URL, File, YouTube, Image/Diagram, Note, or Obsidian vault) and adds their content. For **URL**, the backend scrapes the page via Jina Reader and stores it automatically. For **File**, PDF, DOCX, and TXT uploads (up to 10 MB) are accepted — text is extracted server-side. For **Image/Diagram**, Claude vision extracts the knowledge as text first. For **Obsidian**, the user enters their local vault folder path; a preview step shows how many notes and words will be ingested before committing. The YouTube tab shows a textarea for manual paste — auto-fetching was removed after YouTube blocked bot-based transcript retrieval. For all types, content is chunked into 500-word overlapping segments, embedded locally with `sentence-transformers`, and upserted into Supabase `embeddings` (pgvector). The response shows how many chunks were stored and what tags were auto-extracted.
 
 **Screen 2 — Library (`/library`):** Shows everything the user has fed into memory, grouped by source (one card per ingest call, not per chunk). A stats bar shows total sources, total chunks, and unique tag count. Source cards display the type badge (Article/Note/Image/YouTube), title derived from the first 80 characters of the content, date added, chunk count, and tag pills. Searchable by title and tags, filterable by source type, sortable newest/oldest. This gives the user full visibility into what knowledge the system has before generating a post.
 
@@ -117,7 +121,7 @@ Navigation is handled by a persistent left sidebar (`Sidebar.tsx`), rendered by 
 
 **Screen 5 — History (`/history`):** All auto-saved posts, newest first. Searchable by topic and content string matches. Each card shows topic, format/tone badges, authenticity score, and date. Every generation creates version 1; every refinement creates the next version. Version pills in the card header show the score for each version (color-coded green/amber/red) with the best version starred. Clicking a pill switches the expanded view to that version's content. Any version can be restored to Create Post with one click. Cards can be deleted with a confirmation step. Global toast notifications pop up confirming system interactions. If SVG diagrams were saved alongside the post, they are rendered inline in the expanded view with an "Open as PNG" button. Individual posts also have a dedicated full-page detail view at `/history/[id]`.
 
-**Settings (`/settings`):** Settings hub page accessible from the sidebar. Shows 6 cards in a 2-column grid: **Profile** (avatar, name, role, bio excerpt), **Voice & Fingerprint** (counts for phrases/avoid/rules/topics), **Writing Samples** (sample count + nudge), **Memory** (knowledge chunk count, links to Library), **Account** (Clerk email, sign-out), and **Integrations** (coming soon). Loads profile and stats in parallel with skeleton placeholders while fetching.
+**Settings (`/settings`):** Settings hub page accessible from the sidebar. Shows 7 cards in a 2-column grid: **Profile**, **Voice & Fingerprint**, **Writing Samples**, **Memory**, **Usage & Tokens**, **Account** (Supabase user email + sign-out), and **Integrations** (coming soon). Loads profile, stats, and usage in parallel with skeleton placeholders while fetching.
 
 **Edit Profile (`/settings/profile`):** Full profile editor linked from the Settings hub. Structured into six anchored card sections (Identity, Audience, Voice, Opinions, Samples, Advanced) with a sticky section nav for fast navigation. A live-updating profile summary header (avatar initials, name, role, location) sits above the form. All fields from onboarding are editable. A sticky "Save changes" button shows an amber dot when dirty; saves via `POST /profile`; shows success/error toast. Browser `beforeunload` guard fires if navigating away with unsaved changes.
 
@@ -127,13 +131,14 @@ Navigation is handled by a persistent left sidebar (`Sidebar.tsx`), rendered by 
 
 | Step | Agent | Job |
 |------|-------|-----|
-| 1 | `load_profile_node` | Reads `profile.json`, injects user voice and style into state. Also loads all previously posted topics from SQLite to prevent repeated angles. |
-| 2 | `retrieval_node` | Queries ChromaDB for the 8 most semantically relevant chunks; builds a `retrieval_bundle` with source summaries and adjacent sibling chunks from `hierarchy_store`; sets `retrieved_context` (enriched prompt block) and always sets `retrieved_chunks` for backward compat; computes internal retrieval calibration fields (`retrieval_confidence`, `retrieved_chunk_count`) from raw retrieval results; falls back to flat retrieval if hierarchy_store is empty |
-| 3 | `draft_node` | First calls Claude Haiku (`infer_archetype()`) to classify the topic into one of 7 post archetypes. Then calls Claude Sonnet to produce a draft using the enriched `retrieved_context` (source summaries + sibling chunks for top sources) or flat `retrieved_chunks` as fallback; injects a dynamic `grounding_instruction` for medium/low retrieval confidence and injects nothing for high confidence (baseline behavior unchanged) |
+| 1 | `load_profile_node` | Reads profile from Supabase `profiles` table, injects user voice/style into state, and loads previously posted topics from Supabase post history to avoid repeated angles. |
+| 2 | `retrieval_node` | Queries Supabase pgvector for relevant chunks, builds a retrieval bundle, computes retrieval confidence, and pre-labels chunk groups with attribution frames (PERSONAL / EXPERT OUTSIDER / LEARNING) for reliable grounding. |
+| 3 | `draft_node` | Uses Haiku to infer archetype, then Sonnet to generate a first draft using framed retrieval context plus format/tone/length constraints. |
 | 4 | `critic_node` | Calls Claude Haiku once to diagnose hook/substance/structure/voice issues and writes `critic_brief` into state |
-| 5 | `humanizer_node` | Calls Claude to strip AI writing patterns, vary sentence structure, inject the user's authentic voice, and apply `critic_brief` fixes when present. Also exposes `refine_draft()` for targeted post-generation edits via `/refine` |
-| 6 | `scorer_node` | Calls Claude to score the draft 0–100 across 5 dimensions; uses 3-attempt JSON parse to handle markdown-wrapped responses |
-| 7 | Conditional | **draft** mode: skip critic, humanizer, and scorer entirely, return raw draft. **standard** mode (default): critic + 1 humanizer pass; scorer skipped during generation — scored lazily on demand via `POST /score` when user clicks the analysis toggle. **polished** mode: critic + up to 3 humanizer passes with scorer running each iteration; retries if score < 75 and iterations < 3. |
+| 5 | `humanizer_node` | Rewrites for voice/authenticity and applies critic fixes while preserving meaning. |
+| 6 | `predictability_audit_node` | Runs a final anti-pattern pass to reduce AI-like rhythm and repetitive sentence structure. |
+| 7 | `scorer_node` (polished only) | Scores 0–100 across 5 dimensions; polished mode retries through humanizer+audit until threshold or max iterations. |
+| 8 | `word_count_enforcer_node` | Final gate that trims or expands to hit concrete format+length targets before finalize. |
 
 ---
 
@@ -147,9 +152,9 @@ Navigation is handled by a persistent left sidebar (`Sidebar.tsx`), rendered by 
 | Backend | FastAPI (Python 3.11) | Async, typed, auto-docs, fast iteration |
 | LLM | claude-sonnet-4-6 (Anthropic) | Best balance of quality and speed for generation tasks |
 | Embeddings | sentence-transformers (all-MiniLM-L6-v2) | Local, no API key, good semantic quality for retrieval |
-| Vector DB | ChromaDB | Local persistent storage, simple Python API, no infra needed |
+| Vector DB | Supabase pgvector (`embeddings`) | User-scoped semantic retrieval with SQL visibility and production-ready storage |
 | Agent orchestration | LangGraph | Stateful graph with conditional edges — perfect for retry loops |
-| Post history | SQLite (sqlite3) | Zero-config, single-file, sufficient for one user |
+| Post history | Supabase Postgres (`posts`, `post_versions`) | Multi-user, versioned history with shared auth model |
 | HTTP client | httpx | URL scraping via Jina Reader |
 | PDF extraction | PyMuPDF (fitz) | Fast text extraction from PDFs; detects scanned/image-only files |
 | DOCX extraction | python-docx | Plain text extraction from Word documents |
@@ -197,7 +202,7 @@ The system writes in YOUR voice — but it needs to know who you are first.
 
 **Production (Vercel + Railway):** Sign up at the app URL. New users are automatically redirected to `/first-post` — a guided first-draft flow that captures profile signals and generates a first post. After that, they can move into the main workspace. `/onboarding` remains as a backward-compatible route that immediately redirects to `/first-post`.
 
-**Local dev:** The same first-post flow works locally. Profiles are saved to `backend/data/profiles/profile_{user_id}.json` (or `backend/data/profile.json` for the legacy `user_id=default` fallback when no auth token is present).
+**Local dev:** The same first-post flow works locally. Profiles are read/written through Supabase (`profiles` table). In non-production with no token, backend auth falls back to `user_id="default"` for convenience.
 
 The more specific you are, the better the output. Generic profile → generic posts. Specific profile → posts that sound like you wrote them.
 
@@ -214,7 +219,7 @@ Note: profile files are gitignored — your personal details never get committed
 ├── PROMPTS.md                        # All agent system prompts verbatim — source of truth
 ├── DESIGN.md                         # Editorial Atelier design system — read before any UI change
 ├── scripts/
-│   └── migrate_hierarchy.py          # One-time migration: backfill hierarchy_store from existing ChromaDB data
+│   └── migrate_to_supabase.py        # One-time migration: profile + posts + post_versions into Supabase
 ├── .gitignore                        # Excludes venv, node_modules, .env, chroma data
 │
 ├── frontend/
@@ -269,22 +274,24 @@ Note: profile files are gitignored — your personal details never get committed
     ├── requirements.txt              # All Python dependencies pinned
     ├── .env.example                  # Required env var keys with no values
     ├── agents/
-    │   ├── ingestion_agent.py        # Chunks, tags, upserts content into ChromaDB
+    │   ├── ingestion_agent.py        # Chunks, tags, upserts content into Supabase embeddings
     │   ├── vision_agent.py           # Sends images to Claude vision for text extraction
     │   ├── visual_agent.py           # Parses [DIAGRAM:]/[IMAGE:] placeholders; generates SVGs
     │   ├── ideation_agent.py         # Multi-query diversity sampling + idea generation
     │   ├── retrieval_agent.py        # Semantic search node in the LangGraph pipeline
     │   ├── draft_agent.py            # Generates initial draft via Claude + confidence-based grounding calibration
     │   ├── humanizer_agent.py        # Rewrites draft to remove AI patterns; exposes refine_draft()
-    │   └── scorer_agent.py           # Scores draft 0–100, robust JSON parse with fallback
+    │   ├── scorer_agent.py           # Scores draft 0–100, robust JSON parse with fallback
+    │   ├── predictability_audit_agent.py  # Post-humanizer anti-pattern + rhythm pass
+    │   └── word_count_enforcer_agent.py   # Final length gate (trim/expand)
     ├── pipeline/
     │   ├── state.py                  # TypedDict defining shared LangGraph pipeline state
-    │   └── graph.py                  # LangGraph graph — nodes, edges, quality-aware routing; returns retrieval_confidence in /generate output
+    │   └── graph.py                  # LangGraph graph — includes predictability audit + final word_count_enforcer gate
     ├── memory/
-    │   ├── vector_store.py           # ChromaDB init, upsert, semantic query, get_all_sources, get_adjacent_chunks; per-user collections namespaced as contendo_{user_id}
-    │   ├── hierarchy_store.py        # SQLite hierarchy.db — source_nodes + topic_nodes for hierarchical retrieval
-    │   ├── profile_store.py          # profile.json load/save with defaults auto-created
-    │   └── feedback_store.py         # SQLite posts + post_versions tables — history, versions, restore
+    │   ├── vector_store.py           # Supabase pgvector embeddings store + semantic query utilities
+    │   ├── hierarchy_store.py        # Supabase source_nodes + topic_nodes (hierarchical retrieval)
+    │   ├── profile_store.py          # Supabase profiles table load/save with defaults auto-merge
+    │   └── feedback_store.py         # Supabase posts + post_versions tables — history, versions, restore
     ├── tools/
     │   ├── scraper_tool.py           # URL scraper via Jina Reader — scrape_url(), clean_scraped_text()
     │   └── obsidian_tool.py          # Obsidian vault reader — read_vault(), get_vault_stats(), clean_obsidian_markdown()
@@ -293,8 +300,7 @@ Note: profile files are gitignored — your personal details never get committed
     │   ├── formatters.py             # Format + tone instruction strings per output type
     │   └── file_extractor.py         # PDF (PyMuPDF), DOCX (python-docx), TXT text extraction
     └── data/
-        ├── profile.template.json     # Committed template — copy to profile.json to get started
-        └── profile.json              # User voice + style profile (gitignored, auto-created if missing)
+        └── feedback.jsonl            # Append-only feedback log on DATA_DIR volume
 ```
 
 ---
@@ -350,12 +356,8 @@ Railway injects `$PORT` automatically — the `CMD` in the Dockerfile uses it.
 2. Set the mount path to `/data`.
 3. Railway will persist everything written to `/data` across deploys.
 
-> Your data files live at the top level of the volume:
-> - `/data/chroma_db/` — ChromaDB vector store directory
-> - `/data/posts.db` — post history SQLite database
-> - `/data/hierarchy.db` — hierarchy store SQLite database
-> - `/data/profiles/profile_{user_id}.json` — per-user voice and style profiles (created by first-post flow or profile save)
-> - `/data/profile.json` — legacy single-user profile (still read for `user_id=default` in local dev)
+> Your local volume is mainly used for auxiliary files such as feedback logs and migration inputs.
+> Core product data now lives in Supabase tables (`embeddings`, `profiles`, `posts`, `post_versions`, and related stats/topic tables).
 
 ---
 
@@ -363,13 +365,11 @@ Railway injects `$PORT` automatically — the `CMD` in the Dockerfile uses it.
 
 Do this once before your first production deploy.
 
-**Files to copy from your local machine:**
+**Files you may copy from your local machine (if present):**
 
 ```
-backend/data/chroma_db/        →  /data/chroma_db/
 backend/data/posts.db          →  /data/posts.db
-backend/data/hierarchy.db      →  /data/hierarchy.db
-backend/data/profile.json      →  /data/profile.json
+backend/data/profiles/         →  /data/profiles/
 ```
 
 **How to migrate profile/posts into Supabase:**
@@ -385,7 +385,7 @@ python scripts/migrate_to_supabase.py \
 
 **Verify the migration:**
 
-After running both curls, sign in to the app and confirm: Library shows all existing sources, History shows all existing posts, Stats shows a non-zero chunk count, and `/settings` shows your profile name.
+After migration, sign in and confirm: History shows migrated posts, Settings shows profile data, and new generation requests store/retrieve data under your Supabase user id.
 
 ---
 
