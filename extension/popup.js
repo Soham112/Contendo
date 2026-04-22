@@ -42,13 +42,20 @@ function truncate(str, maxLen) {
 // ── Token resolution ───────────────────────────────────────────────────────
 
 // Read the Supabase access_token directly from the Contendo tab's localStorage.
-// content.js is pre-loaded on Contendo pages via manifest content_scripts, so
-// the message always reaches a live listener — no executeScript needed here.
+// We inject content.js programmatically before messaging to handle the case
+// where the tab was already open when the extension was installed or reloaded
+// (declarative content_scripts only inject into tabs opened after the extension
+// loads, so existing tabs may not have the listener active).
 async function getTokenFromContendo() {
   try {
     const tabs = await chrome.tabs.query({ url: `${CONTENDO_ORIGIN}/*` });
     if (!tabs.length) return null;
-    const response = await chrome.tabs.sendMessage(tabs[0].id, { action: "getSupabaseToken" });
+    const tab = tabs[0];
+    // Inject content.js first — the injection guard (window.__contendo_injected)
+    // inside content.js prevents duplicate listener registration if it was
+    // already declaratively loaded.
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
+    const response = await chrome.tabs.sendMessage(tab.id, { action: "getSupabaseToken" });
     return response?.token || null;
   } catch (_) {
     // Tab not yet ready or content script not loaded — return null gracefully.
