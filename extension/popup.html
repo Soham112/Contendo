@@ -52,8 +52,6 @@
     }
 
     /* ── Text inputs ── */
-    input[type="text"],
-    input[type="password"],
     textarea {
       width: 100%;
       background: #ffffff;
@@ -66,16 +64,10 @@
       outline: none;
       transition: border-color 0.15s;
       resize: none;
-    }
-    input[type="text"]:focus,
-    input[type="password"]:focus,
-    textarea:focus {
-      border-color: #58614f;
-    }
-    textarea {
       min-height: 100px;
       line-height: 1.5;
     }
+    textarea:focus { border-color: #58614f; }
 
     /* ── Page title preview ── */
     .title-preview {
@@ -128,10 +120,7 @@
       transition: opacity 0.15s;
     }
     .btn-primary:hover { opacity: 0.88; }
-    .btn-primary:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
     /* ── Ghost/secondary button ── */
     .btn-ghost {
@@ -170,51 +159,49 @@
       border: 1px solid #e8e5e2;
     }
 
-    /* ── Divider ── */
-    .divider { height: 1px; background: #ede9e5; margin: 14px 0; }
-
     /* ── Spacing helpers ── */
-    .mt4  { margin-top: 4px; }
     .mt8  { margin-top: 8px; }
     .mt12 { margin-top: 12px; }
     .mt14 { margin-top: 14px; }
 
-    /* ── Auth footer ── */
-    .auth-hint {
-      margin-top: 10px;
+    /* ── Connect state ── */
+    .connect-body {
+      text-align: center;
+      padding: 8px 0 4px;
+    }
+    .connect-icon {
+      font-size: 28px;
+      margin-bottom: 10px;
+    }
+    .connect-title {
+      font-family: Georgia, "Times New Roman", serif;
+      font-style: italic;
+      font-size: 14px;
+      color: #2f3333;
+      margin-bottom: 6px;
+    }
+    .connect-hint {
       font-size: 11px;
       color: #9a9692;
-      line-height: 1.5;
+      line-height: 1.6;
+      margin-bottom: 14px;
     }
-
-    /* ── Settings link ── */
-    .settings-row {
-      display: flex;
-      justify-content: flex-end;
-      margin-top: 2px;
-    }
-    .settings-link {
-      font-size: 11px;
-      color: #9a9692;
-      cursor: pointer;
-      text-decoration: none;
-      background: none;
-      border: none;
-      padding: 0;
-    }
-    .settings-link:hover { color: #58614f; text-decoration: underline; }
 
     /* ── Loading spinner ── */
     .spinner {
       display: inline-block;
       width: 14px;
       height: 14px;
-      border: 2px solid rgba(255,255,255,0.4);
-      border-top-color: #ffffff;
+      border: 2px solid rgba(47,51,51,0.15);
+      border-top-color: #58614f;
       border-radius: 50%;
       animation: spin 0.7s linear infinite;
       vertical-align: middle;
       margin-right: 6px;
+    }
+    .spinner-white {
+      border-color: rgba(255,255,255,0.4);
+      border-top-color: #ffffff;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -224,24 +211,33 @@
 </head>
 <body>
 
-  <!-- ────────────────── AUTH STATE ────────────────── -->
-  <div id="state-auth">
+  <!-- ── CONNECTING (brief — shown while reading token from Contendo tab) ── -->
+  <div id="state-connecting">
     <div class="header">
       <span class="wordmark">Contendo</span>
     </div>
-
-    <div class="label">Supabase access token</div>
-    <input type="password" id="token-input" placeholder="Paste your token here…" autocomplete="off" />
-    <p class="auth-hint">
-      Open your Contendo workspace in the browser, open DevTools → Application → Local Storage → find
-      <code style="font-size:10px;background:#f0ece8;padding:1px 4px;border-radius:3px;">sb-…-auth-token</code>
-      and copy the <code style="font-size:10px;background:#f0ece8;padding:1px 4px;border-radius:3px;">access_token</code> value.
-    </p>
-    <button class="btn-primary mt12" id="save-token-btn">Save token</button>
-    <div id="auth-feedback" class="mt8" hidden></div>
+    <div class="feedback info" style="text-align:center;padding:18px 11px;">
+      <span class="spinner"></span> Connecting…
+    </div>
   </div>
 
-  <!-- ────────────────── PAGE STATE ────────────────── -->
+  <!-- ── CONNECT (shown when Contendo is not open or user is not signed in) ── -->
+  <div id="state-connect" hidden>
+    <div class="header">
+      <span class="wordmark">Contendo</span>
+    </div>
+    <div class="connect-body">
+      <div class="connect-icon">🔗</div>
+      <div class="connect-title">Sign in to connect</div>
+      <p class="connect-hint">
+        Open Contendo and sign in — the extension will connect automatically.
+      </p>
+      <button class="btn-primary" id="open-contendo-btn">Open Contendo</button>
+      <div id="connect-feedback" class="mt8" hidden></div>
+    </div>
+  </div>
+
+  <!-- ── PAGE ── -->
   <div id="state-page" hidden>
     <div class="header">
       <span class="wordmark">Contendo</span>
@@ -264,13 +260,9 @@
     </div>
 
     <div id="page-feedback" class="mt8" hidden></div>
-
-    <div class="settings-row mt8">
-      <button class="settings-link" id="page-logout-btn">Change token</button>
-    </div>
   </div>
 
-  <!-- ────────────────── YOUTUBE STATE ────────────────── -->
+  <!-- ── YOUTUBE ── -->
   <div id="state-youtube" hidden>
     <div class="header">
       <span class="wordmark">Contendo</span>
@@ -290,28 +282,24 @@
     </div>
 
     <div id="yt-feedback" class="mt8" hidden></div>
-
-    <div class="settings-row mt8">
-      <button class="settings-link" id="yt-logout-btn">Change token</button>
-    </div>
   </div>
 
-  <!-- ────────────────── LOADING OVERLAY ────────────────── -->
+  <!-- ── LOADING ── -->
   <div id="state-loading" hidden>
     <div class="header">
       <span class="wordmark">Contendo</span>
     </div>
-    <div class="feedback info mt8" style="text-align:center;padding:18px 11px;">
+    <div class="feedback info" style="text-align:center;padding:18px 11px;">
       <span class="spinner"></span> Saving to your knowledge base…
     </div>
   </div>
 
-  <!-- ────────────────── SUCCESS STATE ────────────────── -->
+  <!-- ── SUCCESS ── -->
   <div id="state-success" hidden>
     <div class="header">
       <span class="wordmark">Contendo</span>
     </div>
-    <div class="feedback success mt8" style="text-align:center;padding:18px 11px;">
+    <div class="feedback success" style="text-align:center;padding:18px 11px;">
       <div style="font-size:22px;margin-bottom:6px;">✓</div>
       <div id="success-msg">Saved to your knowledge base.</div>
     </div>
