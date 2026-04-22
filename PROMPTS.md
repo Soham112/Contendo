@@ -4,6 +4,8 @@
 > When any prompt needs to be tuned, update this file first, then update the
 > corresponding agent file to match. The two must never be out of sync.
 
+> **Verification note (2026-04-22):** Smart source attribution added (feature/smart-source-attribution). SOURCE ATTRIBUTION RULES block in draft_agent.py replaced with a pre-labeled frame system. Chunk grouping now happens upstream in retrieval_agent.py via `resolve_attribution_frames()` — the draft agent reads explicit frame labels (PERSONAL / EXPERT OUTSIDER / LEARNING) rather than doing attribution interpretation inside the prompt.
+
 > **Verification note (2026-04-22):** Word count enforcer added (feature/word-count-enforcer). Hard word count rule injected into draft_agent.py and humanizer_agent.py prompts. New word_count_enforcer_agent.py with trim/expand Haiku prompts documented below.
 
 > **Verification note (2026-04-07):** Create Post canvas timing and manuscript-editor focus/selection styling fixed. No prompt text changed in this pass.
@@ -200,42 +202,42 @@ POST STRUCTURE: write this post as a {archetype_name}:
 ---
 
 ---
-SOURCE ATTRIBUTION RULES (mandatory):
-Chunks in the knowledge base are labelled with their source_type:
-- [source_type: note]: content the user wrote themselves. You may attribute
-  this to their direct personal experience.
-- [source_type: article] or [source_type: youtube]: content they read or
-  watched. These are external ideas. Do NOT attribute them to personal
-  experience. Never write "I did X" or "at [company] I saw X" based on
-  these chunks. Instead frame them as: "I've been reading about X",
-  "there's research showing X", "X is documented in how Stripe does Y".
-- [source_type: image]: treat same as article. External reference only.
+SOURCE ATTRIBUTION RULES (mandatory — read chunk labels above before writing):
 
-The user profile and writing samples are always personal; attribute freely.
-Never fabricate a personal experience by combining the user's employer or
-role (from their profile) with a technical detail from an article chunk.
-This is the most important rule in this prompt. Violating it causes the
-user to publish false claims about their own experience.
+Chunks are pre-grouped into three frames. Use the frame label to determine
+how to write each claim.
 
-FABRICATION RULE (this is as important as attribution):
-Never invent personal incidents, timestamps, colleague names,
-manager names, or specific events that are not explicitly
-present in the user's ingested notes or profile. This
-includes:
-- Specific times ('11pm', '2am', 'Tuesday night')
-- Named people ('my manager told me', 'Vishal said')
-- Incidents not in any note ('the pipeline broke', 'I got paged')
-- Promotions, recognitions, or thank-yous to specific people
+PERSONAL frame:
+The user directly experienced or built this. Write in first person.
+"I ran into this exact problem", "we switched to X because", "I built this and found..."
+Never fabricate specific incidents not in the chunk. The chunk is the evidence.
 
-If the knowledge base contains only article or image chunks
-and no personal notes on this topic, write the post from an
-observational or analytical perspective. A post that says
-'I have seen this pattern' is better than one that invents
-a personal incident that never happened.
+EXPERT OUTSIDER frame:
+The user knows adjacent territory deeply but this specific topic is newer to them.
+Write with authority and honest curiosity combined.
+"Coming from X background, what surprised me about Y is...",
+"The mental model shift from X to Y took longer than expected",
+"This is what people with X background consistently miss about Y"
+Never use passive or student-like framing. They are an expert, just not in this exact thing yet.
 
-The user will publish this content under their name. A
-fabricated incident is a factual error they cannot take back.
+LEARNING frame — calibrated by seniority:
+Junior (0-3 years): "Been going deep on X lately. Here is what actually matters."
+Mid (4-10 years): "X is worth understanding properly. Most explanations miss this."
+Senior (10+ years): "X keeps coming up. Here is what I keep seeing people get wrong."
+All three are confident. None of them are passive. Never write "I came across an article about X."
+
+CROSS-FRAME RULE:
+Never mix frames within a single sentence.
+If a paragraph draws on both PERSONAL and LEARNING chunks,
+lead with the personal claim and use the learning chunk as supporting evidence.
+"I saw this break in production. The pattern is documented — most teams hit it at scale."
+
+FABRICATION RULE (unchanged — still applies):
+Never invent personal incidents, timestamps, colleague names, or events
+not explicitly present in personal_note chunks or user profile.
 ---
+
+*(Note: Chunk grouping and frame resolution happen upstream in `retrieval_agent.py → resolve_attribution_frames()`. The draft agent receives chunks pre-labeled with PERSONAL / EXPERT OUTSIDER / LEARNING headers — it reads the labels directly rather than interpreting source_type values itself. This is structural and reliable; in-prompt attribution interpretation is brittle.)*
 
 ---
 VISUAL PLACEHOLDER RULES (mandatory):
@@ -253,7 +255,7 @@ Never force a diagram into opinion pieces or short punchy posts where the words 
 **Input variables injected:**
 - `profile_context` — string-formatted output of `profile_to_context_string(profile)`, containing name, role, voice descriptors, writing rules, topics of expertise, words to avoid
 - `format_instructions` — output of `get_format_instructions(format, tone)` from `utils/formatters.py`
-- `retrieved_chunks` — numbered list of retrieved ChromaDB chunks, separated by `---`; each chunk is prefixed with `[source_type: X]` to distinguish personal notes from external articles — used by the draft agent for attribution (see SOURCE ATTRIBUTION RULES below); falls back to "No relevant knowledge base entries found." if empty
+- `retrieved_chunks` — structured labeled block produced by `resolve_attribution_frames()` in `retrieval_agent.py`; chunks are grouped under explicit frame headers (PERSONAL EXPERIENCE / EXPERT OUTSIDER PERSPECTIVE / LEARNING) with `[source: X | tags: Y]` labels per chunk; the draft agent reads these headers directly to determine writing frame without any source_type interpretation; falls back to a flat numbered list when `retrieval_bundle` is absent (backward compat), and "No relevant knowledge base entries found." when empty
 - `topic` — the generation topic
 - `context_section` — optional context string prefixed with "Additional context:", or empty string
 - `posted_topics_section` — bullet list of all previously saved topics from `feedback_store.get_all_topics_posted()`, prefixed with "Topics you have already written about — do not repeat these angles, find a fresh perspective:"; empty string if no posts saved yet
