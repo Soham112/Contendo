@@ -14,60 +14,69 @@
 // flag. The declarative load on Contendo pages also only fires once per page, but
 // the guard is harmless there too.
 
+function extractMainContent() {
+  // Step 1: Remove noise elements from a clone
+  const clone = document.body.cloneNode(true);
+  const noise = clone.querySelectorAll(
+    'nav, header, footer, aside, script, style, noscript, ' +
+    '[role="navigation"], [role="banner"], [role="complementary"], ' +
+    '.nav, .navigation, .sidebar, .menu, .header, .footer, ' +
+    '.cookie, .popup, .modal, .ad, .advertisement'
+  );
+  noise.forEach(el => el.remove());
+
+  // Step 2: Score all block elements by text density
+  const candidates = clone.querySelectorAll(
+    'div, article, section, main, p'
+  );
+
+  let bestEl = null;
+  let bestScore = 0;
+
+  candidates.forEach(el => {
+    const text = el.innerText || el.textContent || '';
+    const textLength = text.trim().length;
+    const linkText = Array.from(el.querySelectorAll('a'))
+      .reduce((sum, a) => sum + (a.textContent || '').length, 0);
+    const pCount = el.querySelectorAll('p').length;
+
+    // Score = text length, penalise link-heavy elements (nav), reward paragraphs
+    const score = textLength - (linkText * 2) + (pCount * 50);
+
+    if (score > bestScore && textLength > 200) {
+      bestScore = score;
+      bestEl = el;
+    }
+  });
+
+  const raw = bestEl
+    ? (bestEl.innerText || bestEl.textContent || '')
+    : clone.innerText || clone.textContent || '';
+
+  return raw.trim().slice(0, 8000);
+}
+
+function extractTitle() {
+  // Try og:title first (most reliable)
+  const og = document.querySelector('meta[property="og:title"]');
+  if (og && og.content) return og.content.trim();
+
+  // Try h1
+  const h1 = document.querySelector('h1');
+  if (h1 && h1.textContent.trim().length > 5) return h1.textContent.trim();
+
+  // Fall back to document.title, strip site name
+  return document.title.split(/\s[\|\-–]\s/)[0].trim();
+}
+
 if (!window.__contendo_injected) {
   window.__contendo_injected = true;
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
     if (message.action === "getPageContent") {
-      // ── Title: strip site name suffix after | or – or — ──────────────────
-      const rawTitle = document.title || "";
-      const title = rawTitle.replace(/\s*[|–—-]\s+[^|–—-]+$/, "").trim() || rawTitle;
-
-      // ── Body: priority-based selector, then stripped fallback ─────────────
-      const SELECTORS = [
-        "article",
-        '[role="main"]',
-        "main",
-        ".post-content",
-        ".article-content",
-        ".entry-content",
-        ".prose",
-        "#content",
-        ".content",
-      ];
-
-      let text = "";
-
-      for (const sel of SELECTORS) {
-        const el = document.querySelector(sel);
-        if (el) {
-          const candidate = el.innerText.trim();
-          if (candidate.length > 200) {
-            text = candidate;
-            break;
-          }
-        }
-      }
-
-      if (!text) {
-        // Fallback: clone body, strip chrome elements, extract remaining text.
-        const STRIP = [
-          "nav", "header", "footer", "aside",
-          '[role="navigation"]', '[role="banner"]',
-          ".sidebar", "script", "style",
-        ];
-        const clone = document.body.cloneNode(true);
-        STRIP.forEach((sel) => {
-          clone.querySelectorAll(sel).forEach((el) => el.remove());
-        });
-        text = clone.innerText.trim();
-      }
-
-      // Limit to 8000 chars — keeps the payload reasonable and well within
-      // the ingestion agent's chunking capacity.
-      text = text.slice(0, 8000);
-
+      const title = extractTitle();
+      const text = extractMainContent();
       const url = window.location.href;
       sendResponse({ title, text, url });
 
