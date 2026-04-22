@@ -4,6 +4,8 @@
 > When any prompt needs to be tuned, update this file first, then update the
 > corresponding agent file to match. The two must never be out of sync.
 
+> **Verification note (2026-04-22):** Word count enforcer added (feature/word-count-enforcer). Hard word count rule injected into draft_agent.py and humanizer_agent.py prompts. New word_count_enforcer_agent.py with trim/expand Haiku prompts documented below.
+
 > **Verification note (2026-04-07):** Create Post canvas timing and manuscript-editor focus/selection styling fixed. No prompt text changed in this pass.
 
 > **Verification note (2026-04-07):** Create Post editor sync now re-runs across loading-driven post-gen mount transitions so generated content appears immediately without navigation. No prompt text changed in this pass.
@@ -627,6 +629,69 @@ Post:
 **Output handling:**
 - The full returned text replaces `state["current_draft"]`
 - If Haiku returns the post unchanged (rhythm already varied), `current_draft` is still overwritten with the same content (safe no-op)
+
+---
+
+### Word Count Enforcer Agent — agents/word_count_enforcer_agent.py
+
+**Purpose:** Final word-count gate. Runs once at the very end of the pipeline (after predictability_audit for standard/draft; after all scorer/retry iterations for polished). Counts words deterministically, then makes one targeted Haiku call to trim or expand only if needed.
+
+**Model:** `claude-haiku-4-5-20251001`, `max_tokens=2000`
+
+**Skipped:** `draft` quality mode; thread format (tweet-count based, no word target).
+
+**Word count targets:**
+| Format | concise | standard | long-form |
+|---|---|---|---|
+| linkedin post | 100–180 | 250–350 | 450–600 |
+| medium article | 350–500 | 700–900 | 1200–1800 |
+
+**Trim prompt** *(used when word count > max_words):*
+```
+You are a precise editor. Trim this post to fit within {min_words}–{max_words} words.
+
+Rules:
+- Preserve the voice, meaning, and key ideas exactly
+- Cut weaker sentences, redundant phrases, and padding first
+- Do not add any new content
+- Output only the trimmed post — no commentary, no preamble
+
+Current word count: {current_count}
+Target: {min_words}–{max_words} words
+
+Post:
+{post}
+```
+
+**Expand prompt** *(used when word count < min_words):*
+```
+You are a precise editor. Expand this post slightly to reach at least {min_words} words.
+
+Rules:
+- Add one specific detail, concrete example, or clarifying sentence — not filler
+- Preserve the voice and meaning exactly
+- Stay under {max_words} words
+- Output only the expanded post — no commentary, no preamble
+
+Current word count: {current_count}
+Target: {min_words}–{max_words} words
+
+Post:
+{post}
+```
+
+**Input variables injected:**
+- `min_words`, `max_words` — from `_WORD_COUNT_MAP[(format, length)]`
+- `current_count` — `len(post.split())`
+- `post` — `state["current_draft"]`
+
+**Output handling:**
+- If within range: returns state unchanged (no Claude call)
+- If trim/expand needed: replaces `state["current_draft"]` with Haiku output
+- Usage logged as `event_type="word_count_enforcer"`, `model="haiku"`
+- All exceptions caught — pipeline never breaks
+
+**Pipeline position:** `predictability_audit → word_count_enforcer → finalize` (standard/draft); `scorer → word_count_enforcer → finalize` (polished, after all retry iterations). The retry loop (`scorer → humanizer → predictability_audit → scorer`) never passes through this node.
 
 ---
 

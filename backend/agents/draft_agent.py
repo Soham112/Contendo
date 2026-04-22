@@ -26,6 +26,43 @@ _ARCHETYPE_HUMAN_NAMES = {
 }
 
 
+_WORD_COUNT_MAP = {
+    "linkedin post": {
+        "concise":   (100, 180),
+        "standard":  (250, 350),
+        "long-form": (450, 600),
+    },
+    "medium article": {
+        "concise":   (350, 500),
+        "standard":  (700, 900),
+        "long-form": (1200, 1800),
+    },
+    # thread is tweet-count based, not word-count — no enforcement
+}
+
+
+def _get_word_count_rule(format_type: str, length: str) -> str:
+    """Return a hard word-count rule string for the given format/length combo.
+
+    Returns an empty string for thread (tweet-based) or unknown formats
+    so the prompt is unchanged.
+    """
+    fmt = format_type.lower().strip()
+    lng = length.lower().strip()
+    format_lengths = _WORD_COUNT_MAP.get(fmt)
+    if format_lengths is None:
+        return ""
+    min_w, max_w = format_lengths.get(lng, format_lengths["standard"])
+    return (
+        f"\n---\n"
+        f"WORD COUNT RULE — this overrides everything else:\n"
+        f"The final post must be {min_w}–{max_w} words.\n"
+        f"Count before outputting. If over {max_w}, cut until you are within range.\n"
+        f"Never exceed {max_w} words under any circumstance.\n"
+        f"---"
+    )
+
+
 def _get_grounding_instruction(confidence: str, chunk_count: int) -> str:
         """Return prompt calibration text based on retrieval confidence.
 
@@ -127,6 +164,7 @@ User profile:
 
 Format and tone instructions:
 {format_instructions}
+{word_count_rule}
 
 Knowledge base (use what's relevant, ignore the rest):
 {retrieved_chunks}
@@ -233,6 +271,7 @@ def draft_node(state: PipelineState) -> PipelineState:
         state.get("length", "standard"),
         state["tone"],
     )
+    word_count_rule = _get_word_count_rule(state["format"], state.get("length", "standard"))
 
     chunks_text = _format_retrieval_context(state)
 
@@ -261,6 +300,7 @@ def draft_node(state: PipelineState) -> PipelineState:
     prompt = SYSTEM_PROMPT.format(
         profile_context=profile_context,
         format_instructions=format_instructions,
+        word_count_rule=word_count_rule,
         retrieved_chunks=chunks_text,
         topic=state["topic"],
         context_section=context_section,

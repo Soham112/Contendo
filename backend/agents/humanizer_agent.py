@@ -15,6 +15,38 @@ client = anthropic.Anthropic(
     max_retries=3,
 )
 
+_WORD_COUNT_MAP = {
+    "linkedin post": {
+        "concise":   (100, 180),
+        "standard":  (250, 350),
+        "long-form": (450, 600),
+    },
+    "medium article": {
+        "concise":   (350, 500),
+        "standard":  (700, 900),
+        "long-form": (1200, 1800),
+    },
+    # thread is tweet-count based, not word-count — no enforcement
+}
+
+
+def _get_word_count_rule(format_type: str, length: str) -> str:
+    fmt = format_type.lower().strip()
+    lng = length.lower().strip()
+    format_lengths = _WORD_COUNT_MAP.get(fmt)
+    if format_lengths is None:
+        return ""
+    min_w, max_w = format_lengths.get(lng, format_lengths["standard"])
+    return (
+        f"---\n"
+        f"WORD COUNT RULE — this overrides everything else:\n"
+        f"The final post must be {min_w}–{max_w} words.\n"
+        f"Count before outputting. If over {max_w}, cut until you are within range.\n"
+        f"Never exceed {max_w} words under any circumstance.\n"
+        f"---\n\n"
+    )
+
+
 SYSTEM_PROMPT = """You are a humanizing editor. You take drafts that may still have AI-writing fingerprints and rewrite them to sound like a real human wrote them, specifically like the person described in the profile below.
 
 User profile:
@@ -40,7 +72,7 @@ What to inject instead:
 - Opinions stated with confidence, not hedged to death
 - The writer's actual voice as described in the profile
 
-Current draft:
+{word_count_rule}Current draft:
 {current_draft}
 
 {rewrite_instruction}"""
@@ -221,6 +253,10 @@ def humanizer_node(state: PipelineState) -> PipelineState:
     current_draft = state["current_draft"]
 
     critic_section, rewrite_instruction = _format_critic_brief(state.get("critic_brief", {}))
+    word_count_rule = _get_word_count_rule(
+        state.get("format", "linkedin post"),
+        state.get("length", "standard"),
+    )
 
     prompt = SYSTEM_PROMPT.format(
         profile_context=profile_context,
@@ -228,6 +264,7 @@ def humanizer_node(state: PipelineState) -> PipelineState:
         current_draft=current_draft,
         critic_section=critic_section,
         rewrite_instruction=rewrite_instruction,
+        word_count_rule=word_count_rule,
     )
 
     message = client.messages.create(

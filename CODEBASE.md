@@ -45,9 +45,10 @@
 | `backend/agents/critic_agent.py` | Diagnoses the initial draft across hook, substance, structure, and voice; produces a structured JSON brief; runs between `draft_node` and `humanizer_node`; uses Claude Haiku; skipped for draft quality mode |
 | `backend/agents/humanizer_agent.py` | Rewrites draft to remove AI patterns, inject human voice; reads `critic_brief` from state and fixes flagged issues before humanizing if any area was rated "needs_work"; exposes `refine_selection()` for targeted single-selection rewrites |
 | `backend/agents/predictability_audit_agent.py` | Three-step post-humanizer audit: (1) Haiku finds the single most AI-sounding sentence or returns CLEAN; (2) Sonnet rewrites only that sentence to be shorter, more specific, or unresolved; (3) Haiku checks for burstiness (3+ consecutive sentences within 4 words of each other in length) and breaks rhythm if found. Skipped for draft quality mode. All exceptions caught — pipeline never breaks. Usage logged via `usage_store` as three separate event_types: `predictability_audit_step1/2/3`. |
+| `backend/agents/word_count_enforcer_agent.py` | Final word-count gate — runs once at the end of the pipeline after all passes are complete. Maps `(format, length)` to concrete `(min_words, max_words)` targets. If within range: returns unchanged. If over: Haiku trims while preserving voice. If under: Haiku expands with one specific detail. Skipped for draft quality mode and thread format (tweet-count based). All exceptions caught — pipeline never breaks. Usage logged as `event_type="word_count_enforcer"`. |
 | `backend/agents/scorer_agent.py` | Scores draft 0–100 across 5 dimensions, returns flagged sentences |
 | `backend/pipeline/state.py` | TypedDict schema for shared LangGraph pipeline state; includes `length` (`"concise" | "standard" | "long-form"`), `archetype`, `user_id`, `critic_brief`, retrieval calibration fields (`retrieval_confidence`, `retrieved_chunk_count`), `retrieved_chunks` (backward compat flat list), `retrieval_bundle` (full hierarchical bundle), and `retrieved_context` (pre-formatted enriched text for draft prompt) |
-| `backend/pipeline/graph.py` | LangGraph graph definition — nodes, edges, conditional retry loop. Pipeline order: load_profile → retrieval → draft → critic → humanizer → predictability_audit → scorer (polished only) → finalize |
+| `backend/pipeline/graph.py` | LangGraph graph definition — nodes, edges, conditional retry loop. Pipeline order: load_profile → retrieval → draft → critic → humanizer → predictability_audit → word_count_enforcer (standard/draft) OR scorer → word_count_enforcer (polished) → finalize. word_count_enforcer always runs exactly once, as the final gate before finalize. |
 | `backend/memory/vector_store.py` | ChromaDB init, upsert, semantic query, stats, delete_source, query_by_hash; `query_similar()` returns `source_id` and `chunk_index` per result; `query_similar_batch()` embeds all queries in a single batched forward pass then queries ChromaDB for each (significantly faster than N sequential `query_similar()` calls); `query_similar_hybrid()` and `query_similar_hybrid_batch()` combine BM25 keyword ranking (rank-bm25) with cosine vector search via Reciprocal Rank Fusion (k=60) — both fall back to pure vector search on any exception; `upsert_chunks()` stores `node_type:"chunk"`; `get_chunks_for_source()` and `get_adjacent_chunks()` for hierarchical sibling retrieval; collections namespaced as `contendo_{user_id}` |
 | `backend/memory/usage_store.py` | Fire-and-forget Claude API usage logging to Supabase `usage_events` table; `log_usage_event(user_id, event_type, input_tokens, output_tokens, metadata={}, model="sonnet")` is the only public function; calculates `estimated_cost_usd` using per-token pricing (Sonnet: $0.000003/$0.000015 in/out; Haiku: $0.00000025/$0.00000125); posts via `httpx.AsyncClient`; never raises; intended for `asyncio.get_running_loop().create_task()` call sites; wraps the HTTP call in try/except and logs warnings on failure |
 | `backend/memory/profile_store.py` | Per-user profile read/write backed by Supabase `profiles` table — `load_profile(user_id)` selects row and merges missing keys from `DEFAULT_PROFILE`; `save_profile(profile, user_id)` upserts `{"id": user_id, "data": profile}`; `profile_exists(user_id)` returns True if a row exists; `DEFAULT_PROFILE` includes bio, location, target_audience, opinions, writing_samples; `profile_to_context_string()` formats all fields for prompt injection; `save_writing_sample(user_id, sample, max_samples=10)` appends a new sample (case-insensitive dedup, oldest dropped when over limit) |
@@ -193,12 +194,29 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
 **Architectural decision — runs after humanizer, not before:**
 The humanizer rewrites freely across the entire post, including sentence structure. Running the audit before humanizer would be wasted work — humanizer would overwrite the fixes. Running it after locks in the humanizer's voice pass first, then makes targeted single-sentence corrections on top of that final text. The audit is designed to be a scalpel (one sentence replaced, one rhythm break fixed), not a rewrite — which is why it sits at the end of the pipeline after all broader passes are complete.
 
+### word_count_enforcer_node (word_count_enforcer_agent.py)
+| | |
+|---|---|
+| **Reads from state** | `current_draft`, `format`, `length`, `quality`, `user_id` |
+| **Writes to state** | `current_draft: str` (overwrites only if adjustment was needed; unchanged if within range, thread format, or any exception) |
+| **Side effects** | 0 or 1 Claude Haiku call (`claude-haiku-4-5-20251001`, `max_tokens=2000`). Zero calls when post is already within target range or format is thread. Usage logged as `event_type="word_count_enforcer"`. Skipped entirely for `draft` quality mode. |
+
+**Word count targets (from `_WORD_COUNT_MAP`):**
+| Format | concise | standard | long-form |
+|---|---|---|---|
+| linkedin post | 100–180 | 250–350 | 450–600 |
+| medium article | 350–500 | 700–900 | 1200–1800 |
+| thread | — (tweet-based) | — | — |
+
+**Architectural decision — word count enforcement is a separate final node, not a prompt instruction alone:**
+Prompt-level word count instructions ("Target length: 100–180 words") are advisory — the model balances them against voice, structure, and substance requirements, and in practice generates 300–400 words regardless of the stated target. A final enforcement node is the only reliable mechanism because: (1) it counts words deterministically after all creative passes are complete; (2) it makes a single targeted edit (trim or expand) with no competing objectives; (3) it runs once, after all humanizer/scorer/retry iterations, so it never interferes with the quality loop. The node is positioned at the very end of the pipeline (after word_count_enforcer, only finalize runs) to avoid any pass undoing its enforcement.
+
 ### scorer_node (scorer_agent.py)
 | | |
 |---|---|
 | **Reads from state** | `current_draft` |
 | **Writes to state** | `score: int`, `score_feedback: list[str]` |
-| **Side effects** | 1 Claude API call — only invoked for polished mode. Skipped entirely for standard and draft modes (graph routes predictability_audit → finalize directly). |
+| **Side effects** | 1 Claude API call — only invoked for polished mode. Skipped entirely for standard and draft modes (graph routes predictability_audit → word_count_enforcer directly). |
 
 ### load_profile_node (graph.py inline)
 | | |
