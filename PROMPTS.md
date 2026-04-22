@@ -544,6 +544,92 @@ Rules:
 
 ---
 
+### Predictability Audit Agent — agents/predictability_audit_agent.py
+
+**Purpose:** Runs after `humanizer_node`. Makes two targeted interventions on the humanized post: (1) finds and rewrites the single most AI-sounding sentence, then (2) breaks monotonous sentence-length rhythm if present. Skipped for `draft` quality mode.
+
+---
+
+**Step 1 — Find worst sentence (Haiku, `max_tokens=200`)**
+
+*(Injected as user message — no system role.)*
+
+```
+Read this post and return the single most AI-sounding sentence — the one that is too smooth, too resolved, or could have been written by any AI about this topic.
+
+Rules:
+- Return only the sentence, verbatim, with no explanation or punctuation outside the sentence itself
+- If nothing sounds like AI, return only the word: CLEAN
+
+Post:
+{post}
+```
+
+**Input variables injected:**
+- `post` — the current draft string from pipeline state
+
+**Output handling:**
+- If response (stripped) equals `"CLEAN"` (case-insensitive): step 2 is skipped entirely
+- Otherwise: the returned string is treated as the verbatim flagged sentence and passed to step 2
+
+---
+
+**Step 2 — Rewrite the flagged sentence (Sonnet, `max_tokens=200`)**
+
+*(Only runs if step 1 did not return CLEAN. Injected as user message — no system role.)*
+
+```
+You are rewriting a single sentence in a social media post to sound more human and unexpected.
+
+Full post (for voice context only — do not rewrite this):
+{post}
+
+Sentence to rewrite:
+{flagged_sentence}
+
+Rules:
+- Rewrite only the sentence above
+- Make it unexpected: shorter, more specific, slightly imperfect, or unresolved
+- Never use em dashes
+- Output only the rewritten sentence — no explanation, no quotes, no preamble
+```
+
+**Input variables injected:**
+- `post` — the current draft string (full post for voice context)
+- `flagged_sentence` — the verbatim sentence returned by step 1
+
+**Output handling:**
+- The returned string is the replacement sentence
+- Inserted into the post via exact string match first; fuzzy word-overlap fallback if exact match fails; WARNING logged and post returned unchanged if no match found
+
+---
+
+**Step 3 — Burstiness fix (Haiku, `max_tokens=2000`)**
+
+*(Always runs, regardless of step 1/2 outcome. Injected as user message — no system role.)*
+
+```
+Check this post for monotonous sentence rhythm.
+
+If 3 or more consecutive sentences are within 4 words of each other in length, rewrite one of them to be either under 6 words or over 18 words to break the rhythm.
+
+If the rhythm is already varied, return the post unchanged.
+
+Output only the full post — no explanation, no preamble.
+
+Post:
+{post}
+```
+
+**Input variables injected:**
+- `post` — the post after step 2 (or the original humanized post if step 2 was skipped)
+
+**Output handling:**
+- The full returned text replaces `state["current_draft"]`
+- If Haiku returns the post unchanged (rhythm already varied), `current_draft` is still overwritten with the same content (safe no-op)
+
+---
+
 ### Scorer Agent — agents/scorer_agent.py
 
 **Purpose:** Score the current draft 0–100 across 5 dimensions of human authenticity. Return flagged sentences and actionable feedback.

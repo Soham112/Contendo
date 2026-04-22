@@ -7,6 +7,7 @@ from agents.retrieval_agent import retrieval_node
 from agents.draft_agent import draft_node
 from agents.critic_agent import critic_node
 from agents.humanizer_agent import humanizer_node
+from agents.predictability_audit_agent import predictability_audit_node
 from agents.scorer_agent import scorer_node
 
 SCORE_THRESHOLD = 75
@@ -53,6 +54,7 @@ def build_graph() -> StateGraph:
     graph.add_node("draft", draft_node)
     graph.add_node("critic", critic_node)
     graph.add_node("humanizer", humanizer_node)
+    graph.add_node("predictability_audit", predictability_audit_node)
     graph.add_node("scorer", scorer_node)
     graph.add_node("finalize", finalize_node)
 
@@ -61,8 +63,9 @@ def build_graph() -> StateGraph:
     graph.add_edge("retrieval", "draft")
     graph.add_edge("draft", "critic")
     graph.add_edge("critic", "humanizer")
+    graph.add_edge("humanizer", "predictability_audit")
     graph.add_conditional_edges(
-        "humanizer",
+        "predictability_audit",
         should_score,
         {
             "scorer": "scorer",

@@ -44,9 +44,10 @@
 | `backend/agents/draft_agent.py` | Calls Claude Haiku via `infer_archetype()` to classify the topic into one of 7 post archetypes, then generates the initial draft via Claude Sonnet; uses `_format_retrieval_context()` which prefers the enriched `retrieved_context` from state and falls back to flat `retrieved_chunks`; injects `_get_grounding_instruction(retrieval_confidence, retrieved_chunk_count)` into the prompt for medium/low confidence calibration (empty string for high confidence); passes `state.get("length", "standard")` into `get_format_instructions()` |
 | `backend/agents/critic_agent.py` | Diagnoses the initial draft across hook, substance, structure, and voice; produces a structured JSON brief; runs between `draft_node` and `humanizer_node`; uses Claude Haiku; skipped for draft quality mode |
 | `backend/agents/humanizer_agent.py` | Rewrites draft to remove AI patterns, inject human voice; reads `critic_brief` from state and fixes flagged issues before humanizing if any area was rated "needs_work"; exposes `refine_selection()` for targeted single-selection rewrites |
+| `backend/agents/predictability_audit_agent.py` | Three-step post-humanizer audit: (1) Haiku finds the single most AI-sounding sentence or returns CLEAN; (2) Sonnet rewrites only that sentence to be shorter, more specific, or unresolved; (3) Haiku checks for burstiness (3+ consecutive sentences within 4 words of each other in length) and breaks rhythm if found. Skipped for draft quality mode. All exceptions caught — pipeline never breaks. Usage logged via `usage_store` as three separate event_types: `predictability_audit_step1/2/3`. |
 | `backend/agents/scorer_agent.py` | Scores draft 0–100 across 5 dimensions, returns flagged sentences |
 | `backend/pipeline/state.py` | TypedDict schema for shared LangGraph pipeline state; includes `length` (`"concise" | "standard" | "long-form"`), `archetype`, `user_id`, `critic_brief`, retrieval calibration fields (`retrieval_confidence`, `retrieved_chunk_count`), `retrieved_chunks` (backward compat flat list), `retrieval_bundle` (full hierarchical bundle), and `retrieved_context` (pre-formatted enriched text for draft prompt) |
-| `backend/pipeline/graph.py` | LangGraph graph definition — nodes, edges, conditional retry loop |
+| `backend/pipeline/graph.py` | LangGraph graph definition — nodes, edges, conditional retry loop. Pipeline order: load_profile → retrieval → draft → critic → humanizer → predictability_audit → scorer (polished only) → finalize |
 | `backend/memory/vector_store.py` | ChromaDB init, upsert, semantic query, stats, delete_source, query_by_hash; `query_similar()` returns `source_id` and `chunk_index` per result; `query_similar_batch()` embeds all queries in a single batched forward pass then queries ChromaDB for each (significantly faster than N sequential `query_similar()` calls); `query_similar_hybrid()` and `query_similar_hybrid_batch()` combine BM25 keyword ranking (rank-bm25) with cosine vector search via Reciprocal Rank Fusion (k=60) — both fall back to pure vector search on any exception; `upsert_chunks()` stores `node_type:"chunk"`; `get_chunks_for_source()` and `get_adjacent_chunks()` for hierarchical sibling retrieval; collections namespaced as `contendo_{user_id}` |
 | `backend/memory/usage_store.py` | Fire-and-forget Claude API usage logging to Supabase `usage_events` table; `log_usage_event(user_id, event_type, input_tokens, output_tokens, metadata={}, model="sonnet")` is the only public function; calculates `estimated_cost_usd` using per-token pricing (Sonnet: $0.000003/$0.000015 in/out; Haiku: $0.00000025/$0.00000125); posts via `httpx.AsyncClient`; never raises; intended for `asyncio.get_running_loop().create_task()` call sites; wraps the HTTP call in try/except and logs warnings on failure |
 | `backend/memory/profile_store.py` | Per-user profile read/write backed by Supabase `profiles` table — `load_profile(user_id)` selects row and merges missing keys from `DEFAULT_PROFILE`; `save_profile(profile, user_id)` upserts `{"id": user_id, "data": profile}`; `profile_exists(user_id)` returns True if a row exists; `DEFAULT_PROFILE` includes bio, location, target_audience, opinions, writing_samples; `profile_to_context_string()` formats all fields for prompt injection; `save_writing_sample(user_id, sample, max_samples=10)` appends a new sample (case-insensitive dedup, oldest dropped when over limit) |
@@ -177,12 +178,27 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
 | **Writes to state** | `current_draft: str` (overwrites), `iterations: int` (increments by 1) |
 | **Side effects** | 1 Claude Sonnet call per invocation. `_format_critic_brief()` converts `critic_brief` into `(critic_section, rewrite_instruction)` injected into `SYSTEM_PROMPT`. When any area has `"needs_work"`, the humanizer fixes hook/substance/structure/voice first then humanizes. When all areas are "strong" or brief is `{}`, behavior is identical to the old prompt (preserve structure, language-only pass). |
 
+### predictability_audit_node (predictability_audit_agent.py)
+| | |
+|---|---|
+| **Reads from state** | `current_draft`, `quality`, `user_id` |
+| **Writes to state** | `current_draft: str` (overwrites on any change; unchanged on CLEAN, burstiness-OK, or any exception) |
+| **Side effects** | Up to 3 Claude API calls: Haiku (step 1, max_tokens=200) + Sonnet (step 2, max_tokens=200, only if not CLEAN) + Haiku (step 3, max_tokens=2000). Usage logged as `predictability_audit_step1/2/3`. Skipped entirely for `draft` quality — returns state immediately with no API calls. |
+
+**Sentence replacement logic:**
+1. Exact string match (`original in post`) — `str.replace(..., 1)`
+2. Fuzzy word-overlap: splits post into sentences, finds best match by `|orig_words ∩ candidate_words|`, requires overlap ≥ `max(1, len(orig_words) // 2)`
+3. If no match found: logs WARNING and returns post unchanged
+
+**Architectural decision — runs after humanizer, not before:**
+The humanizer rewrites freely across the entire post, including sentence structure. Running the audit before humanizer would be wasted work — humanizer would overwrite the fixes. Running it after locks in the humanizer's voice pass first, then makes targeted single-sentence corrections on top of that final text. The audit is designed to be a scalpel (one sentence replaced, one rhythm break fixed), not a rewrite — which is why it sits at the end of the pipeline after all broader passes are complete.
+
 ### scorer_node (scorer_agent.py)
 | | |
 |---|---|
 | **Reads from state** | `current_draft` |
 | **Writes to state** | `score: int`, `score_feedback: list[str]` |
-| **Side effects** | 1 Claude API call — only invoked for polished mode. Skipped entirely for standard and draft modes (graph routes humanizer → finalize directly). |
+| **Side effects** | 1 Claude API call — only invoked for polished mode. Skipped entirely for standard and draft modes (graph routes predictability_audit → finalize directly). |
 
 ### load_profile_node (graph.py inline)
 | | |
