@@ -40,7 +40,7 @@ async function handleIngest({ token, tabId, content, source_type, content_origin
       } catch (_) {
         // Non-JSON error body — keep the status string
       }
-      return { success: false, error: detail };
+      return { success: false, error: detail, status: response.status };
     }
 
     const data = await response.json();

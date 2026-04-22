@@ -1,10 +1,21 @@
-// popup.js — Three-state popup controller
-// States: auth → page | youtube
+// popup.js — Popup controller
+//
+// Auth flow (no manual token input):
+//   1. On open: check chrome.storage.local for a cached token.
+//   2. If none: query for an open contendo-six.vercel.app tab, send
+//      { action: "getSupabaseToken" } to its content script, cache the result.
+//   3. If Contendo is not open or user is not signed in: show the connect
+//      state with a single "Open Contendo" button.
+//   4. On 401 from backend: clear cached token and re-run the flow so a
+//      fresh token is read from the Contendo tab automatically.
+
+const CONTENDO_ORIGIN = "https://contendo-six.vercel.app";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function showOnly(stateId) {
-  ["state-auth", "state-page", "state-youtube", "state-loading", "state-success"].forEach((id) => {
+  ["state-connecting", "state-connect", "state-page", "state-youtube",
+   "state-loading", "state-success"].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.hidden = id !== stateId;
   });
@@ -28,42 +39,60 @@ function truncate(str, maxLen) {
   return str.length > maxLen ? str.slice(0, maxLen - 1) + "…" : str;
 }
 
-// ── Content extraction ─────────────────────────────────────────────────────
+// ── Token resolution ───────────────────────────────────────────────────────
 
-async function extractPageContent(tabId) {
+// Read the Supabase access_token directly from the Contendo tab's localStorage.
+// content.js is pre-loaded on Contendo pages via manifest content_scripts, so
+// the message always reaches a live listener — no executeScript needed here.
+async function getTokenFromContendo() {
   try {
-    // Inject content.js into the active tab (guard inside prevents duplicate listeners)
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ["content.js"],
-    });
-    return await chrome.tabs.sendMessage(tabId, { action: "getPageContent" });
-  } catch (err) {
-    // Scripting can fail on chrome:// or extension pages — return null gracefully
+    const tabs = await chrome.tabs.query({ url: `${CONTENDO_ORIGIN}/*` });
+    if (!tabs.length) return null;
+    const response = await chrome.tabs.sendMessage(tabs[0].id, { action: "getSupabaseToken" });
+    return response?.token || null;
+  } catch (_) {
+    // Tab not yet ready or content script not loaded — return null gracefully.
     return null;
   }
 }
 
-// ── Auth state ─────────────────────────────────────────────────────────────
+// Resolve a valid token: use the cached one if present, otherwise fetch fresh
+// from the Contendo tab and cache it.
+async function resolveToken() {
+  const { token } = await chrome.storage.local.get("token");
+  if (token) return token;
 
-function initAuthState() {
-  showOnly("state-auth");
-  const saveBtn = document.getElementById("save-token-btn");
-  const tokenInput = document.getElementById("token-input");
+  const fresh = await getTokenFromContendo();
+  if (fresh) await chrome.storage.local.set({ token: fresh });
+  return fresh || null;
+}
 
-  saveBtn.addEventListener("click", async () => {
-    const token = tokenInput.value.trim();
-    if (!token) {
-      showFeedback("auth-feedback", "Paste a token first.", "error");
-      return;
-    }
-    await chrome.storage.local.set({ token });
-    // Re-initialise — will now pick up the stored token
-    init();
-  });
+// ── Content extraction ─────────────────────────────────────────────────────
 
-  tokenInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") saveBtn.click();
+async function extractPageContent(tabId) {
+  try {
+    // Inject content.js into the article tab on demand.
+    // The injection guard inside content.js prevents duplicate listeners.
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+    return await chrome.tabs.sendMessage(tabId, { action: "getPageContent" });
+  } catch (_) {
+    return null;
+  }
+}
+
+// ── Connect state ──────────────────────────────────────────────────────────
+
+function initConnectState(hint) {
+  showOnly("state-connect");
+  if (hint) showFeedback("connect-feedback", hint, "error");
+
+  document.getElementById("open-contendo-btn").addEventListener("click", () => {
+    chrome.tabs.create({ url: CONTENDO_ORIGIN });
+    showFeedback(
+      "connect-feedback",
+      "Sign in to Contendo, then come back and click the extension icon.",
+      "info"
+    );
   });
 }
 
@@ -72,15 +101,12 @@ function initAuthState() {
 async function initPageState(tab, token) {
   showOnly("state-page");
 
-  // Get page content from content script
   const content = await extractPageContent(tab.id);
 
-  const titleEl = document.getElementById("page-title-preview");
-  titleEl.textContent = content?.title
+  document.getElementById("page-title-preview").textContent = content?.title
     ? truncate(content.title, 90)
     : truncate(tab.title || "Untitled page", 90);
 
-  // Source type pill selection
   let selectedSource = "article";
   let selectedOrigin = "saved";
 
@@ -95,9 +121,7 @@ async function initPageState(tab, token) {
     });
   });
 
-  // Ingest button
-  const ingestBtn = document.getElementById("page-ingest-btn");
-  ingestBtn.addEventListener("click", async () => {
+  document.getElementById("page-ingest-btn").addEventListener("click", async () => {
     hideFeedback("page-feedback");
 
     if (!content?.text) {
@@ -120,12 +144,6 @@ async function initPageState(tab, token) {
 
     handleIngestResponse(response, content.title || tab.title || "page");
   });
-
-  // Logout / change token
-  document.getElementById("page-logout-btn").addEventListener("click", async () => {
-    await chrome.storage.local.remove("token");
-    initAuthState();
-  });
 }
 
 // ── YouTube state ──────────────────────────────────────────────────────────
@@ -133,18 +151,12 @@ async function initPageState(tab, token) {
 async function initYouTubeState(tab, token) {
   showOnly("state-youtube");
 
-  // Extract title from the YouTube tab
   const content = await extractPageContent(tab.id);
-  const titleEl = document.getElementById("yt-title-preview");
-  titleEl.textContent = content?.title
-    ? truncate(content.title, 90)
-    : truncate(tab.title || "YouTube video", 90);
-
   const videoTitle = content?.title || tab.title || "YouTube video";
 
-  // Ingest button
-  const ingestBtn = document.getElementById("yt-ingest-btn");
-  ingestBtn.addEventListener("click", async () => {
+  document.getElementById("yt-title-preview").textContent = truncate(videoTitle, 90);
+
+  document.getElementById("yt-ingest-btn").addEventListener("click", async () => {
     hideFeedback("yt-feedback");
 
     const transcript = document.getElementById("yt-transcript").value.trim();
@@ -168,21 +180,21 @@ async function initYouTubeState(tab, token) {
 
     handleIngestResponse(response, videoTitle);
   });
-
-  // Logout / change token
-  document.getElementById("yt-logout-btn").addEventListener("click", async () => {
-    await chrome.storage.local.remove("token");
-    initAuthState();
-  });
 }
 
 // ── Success / error handling ───────────────────────────────────────────────
 
 function handleIngestResponse(response, sourceTitle) {
   if (!response || !response.success) {
-    const errMsg = response?.error || "Unknown error — check your token and try again.";
-    // Go back to previous state and show the error
-    // We don't know which state we came from, so reinitialise
+    // 401 means the cached token expired — clear it and re-run so a fresh
+    // token is read from the Contendo tab automatically.
+    if (response?.status === 401) {
+      chrome.storage.local.remove("token");
+      init();
+      return;
+    }
+
+    const errMsg = response?.error || "Something went wrong — try again.";
     init(errMsg);
     return;
   }
@@ -190,32 +202,31 @@ function handleIngestResponse(response, sourceTitle) {
   const chunks = response.data?.chunks_stored ?? 0;
   const duplicate = response.data?.duplicate ?? false;
 
-  const msg = duplicate
+  document.getElementById("success-msg").textContent = duplicate
     ? "Already in your knowledge base — no new chunks added."
     : `Saved. ${chunks} chunk${chunks !== 1 ? "s" : ""} added to your knowledge base.`;
 
-  document.getElementById("success-msg").textContent = msg;
   showOnly("state-success");
 
-  document.getElementById("success-back-btn").addEventListener("click", () => {
-    init();
-  });
+  document.getElementById("success-back-btn").addEventListener("click", () => init());
 }
 
 // ── Boot ───────────────────────────────────────────────────────────────────
 
 async function init(pendingError) {
-  const { token } = await chrome.storage.local.get("token");
+  showOnly("state-connecting");
+
+  const token = await resolveToken();
 
   if (!token) {
-    initAuthState();
+    initConnectState(pendingError || null);
     return;
   }
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
   if (!tab) {
-    initAuthState();
+    initConnectState("No active tab found.");
     return;
   }
 
@@ -227,10 +238,8 @@ async function init(pendingError) {
     await initPageState(tab, token);
   }
 
-  // Surface a deferred error from a previous ingest attempt
   if (pendingError) {
-    const feedbackId = isYouTube ? "yt-feedback" : "page-feedback";
-    showFeedback(feedbackId, pendingError, "error");
+    showFeedback(isYouTube ? "yt-feedback" : "page-feedback", pendingError, "error");
   }
 }
 

@@ -3,9 +3,17 @@
   "name": "Contendo",
   "description": "Save any webpage or YouTube video to your Contendo knowledge base with one click.",
   "version": "1.0.0",
-  "permissions": ["activeTab", "storage", "scripting"],
+  "permissions": ["activeTab", "storage", "scripting", "tabs"],
   "host_permissions": [
-    "https://contendo-production.up.railway.app/*"
+    "https://contendo-production.up.railway.app/*",
+    "https://contendo-six.vercel.app/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://contendo-six.vercel.app/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
   ],
   "background": {
     "service_worker": "background.js"
