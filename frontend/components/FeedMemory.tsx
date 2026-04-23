@@ -33,7 +33,7 @@ const ALL_TABS: { id: SourceType; label: string; description: string; localOnly?
     id: "youtube",
     label: "YouTube",
     description:
-      "Paste the transcript manually. Open YouTube → click '...' → 'Show transcript', then copy and paste it here.",
+      "Paste a YouTube URL and the transcript is fetched automatically — no manual copying needed.",
   },
   {
     id: "image",
@@ -154,7 +154,7 @@ const TOUR_STEPS: { id: SourceType; label: string; description: string }[] = [
   {
     id: "youtube",
     label: "YouTube",
-    description: "Open any YouTube video, click the transcript button, copy it, paste it here. Turns talks and interviews into memory.",
+    description: "Paste any YouTube URL — the transcript is fetched automatically. No manual copying needed.",
   },
   {
     id: "image",
@@ -195,6 +195,12 @@ export default function FeedMemory() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ chunks_stored: number; tags: string[]; title?: string; word_count?: number; duplicate?: boolean } | null>(null);
   const [error, setError] = useState("");
+  // YouTube auto-fetch state
+  const [ytUrl, setYtUrl] = useState("");
+  const [ytTranscript, setYtTranscript] = useState("");
+  const [ytVideoId, setYtVideoId] = useState("");
+  const [ytFetching, setYtFetching] = useState(false);
+  const [ytFetchError, setYtFetchError] = useState("");
   const [stats, setStats] = useState<Stats | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const docFileInputRef = useRef<HTMLInputElement>(null);
@@ -250,6 +256,40 @@ export default function FeedMemory() {
     }
   };
 
+  // ── YouTube auto-fetch ────────────────────────────────────────────────────
+
+  function isYouTubeUrl(url: string): boolean {
+    return /^https?:\/\/(youtu\.be\/|(?:www\.)?youtube\.com\/(watch\?|shorts\/))/i.test(url.trim());
+  }
+
+  const handleYtFetch = async (url: string) => {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    if (!isYouTubeUrl(trimmed)) {
+      setYtFetchError("Please paste a YouTube video URL");
+      return;
+    }
+    setYtFetchError("");
+    setYtTranscript("");
+    setYtVideoId("");
+    setYtFetching(true);
+    try {
+      const res = await api.fetchYoutubeTranscript(trimmed);
+      if (!res.ok) {
+        const err = await res.json();
+        setYtFetchError(err.detail ?? "Failed to fetch transcript");
+        return;
+      }
+      const data = await res.json();
+      setYtTranscript(data.transcript);
+      setYtVideoId(data.video_id);
+    } catch (e: unknown) {
+      setYtFetchError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setYtFetching(false);
+    }
+  };
+
   const fetchStats = async () => {
     try {
       const res = await api.getStats();
@@ -290,6 +330,11 @@ export default function FeedMemory() {
     setIsDragging(false);
     setResult(null);
     setError("");
+    setYtUrl("");
+    setYtTranscript("");
+    setYtVideoId("");
+    setYtFetching(false);
+    setYtFetchError("");
     // If tour is active, sync to the clicked tab's step
     if (tourActive) {
       const stepIdx = TOUR_STEPS.findIndex((s) => s.id === tab);
@@ -484,6 +529,8 @@ export default function FeedMemory() {
       if (!urlInput.startsWith("http://") && !urlInput.startsWith("https://")) {
         setError("URL must start with http:// or https://"); return;
       }
+    } else if (activeTab === "youtube") {
+      if (!ytTranscript) { setError("Paste a YouTube URL above and wait for the transcript to load."); return; }
     } else {
       if (!content.trim()) { setError("Please enter some content."); return; }
     }
@@ -501,6 +548,7 @@ export default function FeedMemory() {
       } else {
         const body: { source_type: string; raw_image?: string; content?: string } = { source_type: activeTab };
         if (activeTab === "image") { body.raw_image = imagePreview; body.content = ""; }
+        else if (activeTab === "youtube") { body.content = ytTranscript; }
         else { body.content = content; }
         res = await api.ingestContent(body);
       }
@@ -851,17 +899,55 @@ export default function FeedMemory() {
                 <input ref={docFileInputRef} type="file" accept=".pdf,.docx,.txt" onChange={handleDocFileChange} className="hidden" />
               </div>
 
+            ) : activeTab === "youtube" ? (
+              /* ── YouTube ── */
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="label-caps text-secondary">YOUTUBE URL</label>
+                  <input
+                    type="url"
+                    value={ytUrl}
+                    onChange={(e) => {
+                      setYtUrl(e.target.value);
+                      setYtFetchError("");
+                      setYtTranscript("");
+                      setYtVideoId("");
+                    }}
+                    onPaste={(e) => {
+                      const pasted = e.clipboardData.getData("text");
+                      setTimeout(() => handleYtFetch(pasted), 0);
+                    }}
+                    onBlur={() => { if (ytUrl && !ytTranscript && !ytFetching) handleYtFetch(ytUrl); }}
+                    placeholder="Paste a YouTube URL..."
+                    className="w-full bg-surface-container-low px-4 py-3 text-[15px] text-on-surface placeholder:text-outline rounded-lg border-0 border-b-2 border-outline-variant focus:outline-none focus:border-primary transition-colors"
+                  />
+                  {ytFetchError && (
+                    <p className="text-sm text-error">{ytFetchError}</p>
+                  )}
+                </div>
+                {ytFetching && (
+                  <p className="text-sm text-secondary">Fetching transcript…</p>
+                )}
+                {ytTranscript && (
+                  <div className="rounded-xl bg-surface-container-low px-5 py-4 space-y-2">
+                    <p className="label-caps text-secondary">Transcript preview</p>
+                    <p className="text-[13px] text-on-surface leading-relaxed">
+                      {ytTranscript.slice(0, 300)}{ytTranscript.length > 300 ? "…" : ""}
+                    </p>
+                    <p className="text-xs text-outline">Video ID: {ytVideoId}</p>
+                  </div>
+                )}
+              </div>
+
             ) : (
-              /* ── Article / YouTube / Note ── */
+              /* ── Article / Note ── */
               <div className="space-y-2">
                 <label className="label-caps text-secondary">{inputLabel}</label>
                 <textarea
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
                   placeholder={
-                    activeTab === "youtube"
-                      ? "Paste the YouTube transcript here..."
-                      : activeTab === "note"
+                    activeTab === "note"
                       ? "Write your thoughts, ideas, or observations..."
                       : "Paste your article or thoughts here. We'll automatically structure it for your editorial needs..."
                   }
@@ -969,7 +1055,7 @@ export default function FeedMemory() {
             ) : (
               <button
                 onClick={handleSubmit}
-                disabled={loading}
+                disabled={loading || (activeTab === "youtube" && (!ytTranscript || ytFetching))}
                 className="btn-primary px-7 py-2.5 rounded-lg text-white text-[13px] font-semibold uppercase tracking-widest shadow-card hover:opacity-90 disabled:opacity-50 active:scale-95 transition-all"
               >
                 {loading
@@ -978,6 +1064,8 @@ export default function FeedMemory() {
                     : activeTab === "file" && uploadedFile
                     ? `Processing ${uploadedFile.name}…`
                     : "Processing…"
+                  : activeTab === "youtube" && ytFetching
+                  ? "Fetching transcript…"
                   : "Feed into Memory"}
               </button>
             )}

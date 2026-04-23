@@ -123,15 +123,42 @@ async function initYouTubeState(tab, token) {
 
   document.getElementById("yt-title-preview").textContent = truncate(videoTitle, 90);
 
-  document.getElementById("yt-ingest-btn").addEventListener("click", async () => {
-    hideFeedback("yt-feedback");
+  // Auto-fetch the transcript using the tab URL — no manual paste needed.
+  const fetchResult = await chrome.runtime.sendMessage({
+    action: "fetchYouTubeTranscript",
+    token,
+    url: tab.url,
+  });
 
-    const transcript = document.getElementById("yt-transcript").value.trim();
-    if (!transcript) {
-      showFeedback("yt-feedback", "Paste the video transcript before saving.", "error");
+  if (!fetchResult || !fetchResult.success) {
+    // Expired token — re-auth and retry.
+    if (fetchResult?.status === 401) {
+      chrome.storage.local.remove("contendo_token");
+      init();
       return;
     }
+    document.getElementById("yt-fetching-status").hidden = true;
+    showFeedback(
+      "yt-feedback",
+      fetchResult?.error || "Could not fetch transcript. The video may not have captions enabled.",
+      "error"
+    );
+    return;
+  }
 
+  // Transcript ready — show preview and enable the ingest button.
+  const transcript = fetchResult.data.transcript;
+
+  document.getElementById("yt-fetching-status").hidden = true;
+  document.getElementById("yt-transcript-snippet").textContent =
+    transcript.slice(0, 200) + (transcript.length > 200 ? "…" : "");
+  document.getElementById("yt-transcript-preview").hidden = false;
+
+  const ingestBtn = document.getElementById("yt-ingest-btn");
+  ingestBtn.disabled = false;
+
+  ingestBtn.addEventListener("click", async () => {
+    hideFeedback("yt-feedback");
     showOnly("state-loading");
 
     const response = await chrome.runtime.sendMessage({
