@@ -32,6 +32,7 @@ DEFAULT_PROFILE: dict[str, Any] = {
         "Number tweets. "
         "Last tweet is the payoff."
     ),
+    "extension_banner_dismissed": False,
 }
 
 

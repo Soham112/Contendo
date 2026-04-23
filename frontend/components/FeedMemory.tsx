@@ -7,7 +7,6 @@ import { useApi } from "@/lib/api";
 import ExtensionInstallModal from "@/components/ExtensionInstallModal";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-const EXTENSION_BANNER_DISMISSED_KEY = "contendo_extension_banner_dismissed";
 
 const isLocalBackend =
   process.env.NEXT_PUBLIC_API_URL?.includes("localhost") ||
@@ -181,6 +180,7 @@ export default function FeedMemory() {
   const api = useApi();
   const [showExtensionBanner, setShowExtensionBanner] = useState(false);
   const [isExtensionModalOpen, setIsExtensionModalOpen] = useState(false);
+  const [currentProfile, setCurrentProfile] = useState<Record<string, unknown> | null>(null);
   const [activeTab, setActiveTab] = useState<SourceType>("article");
   const [content, setContent] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -211,12 +211,6 @@ export default function FeedMemory() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const docFileInputRef = useRef<HTMLInputElement>(null);
   const { showToast } = useToast();
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const wasDismissed = localStorage.getItem(EXTENSION_BANNER_DISMISSED_KEY) === "1";
-    setShowExtensionBanner(!wasDismissed);
-  }, []);
 
   // ── Tooltip tour ─────────────────────────────────────────────────────────────
   const [tourStep, setTourStep] = useState(-1);
@@ -261,10 +255,9 @@ export default function FeedMemory() {
   };
 
   const dismissExtensionBanner = () => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem(EXTENSION_BANNER_DISMISSED_KEY, "1");
-    }
     setShowExtensionBanner(false);
+    const updated = { ...(currentProfile ?? {}), extension_banner_dismissed: true };
+    api.saveProfile(updated); // fire and forget — persists across devices
   };
 
   const handleExtensionDownloaded = () => {
@@ -329,6 +322,14 @@ export default function FeedMemory() {
       statsLoaded: stats !== null,
     });
     fetchStats();
+    api.getProfile().then(async (res) => {
+      if (res.ok) {
+        const data = await res.json();
+        const p: Record<string, unknown> = data.profile ?? {};
+        setCurrentProfile(p);
+        setShowExtensionBanner(!p.extension_banner_dismissed);
+      }
+    });
   }, []);
 
   useEffect(() => {
