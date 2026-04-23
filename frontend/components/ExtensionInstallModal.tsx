@@ -68,7 +68,7 @@ export default function ExtensionInstallModal({
             Close
           </button>
           <a
-            href="/extension.zip"
+            href="https://github.com/Soham112/Contendo/releases/download/v1.0.0-extension/contendo-extension.zip"
             download
             onClick={handleDownloadClick}
             className="btn-primary px-5 py-2 text-[13px] text-white rounded-xl font-semibold hover:opacity-90 transition-opacity"
