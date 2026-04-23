@@ -75,7 +75,7 @@ logo links there) and see auth-aware CTAs ("Open workspace" → `/`).
 - The implementation is always the source of truth if docs conflict
 
 **Auth (Supabase JWT):**
-- All protected endpoints use `Depends(get_user_id_dep)` from `auth/clerk.py`
+- All protected endpoints use `Depends(get_user_id_dep)` from `backend/auth/clerk.py` — Supabase JWT verification
 - In non-production without a token, `user_id` falls back to `"default"` (local dev convenience)
 - `SUPABASE_JWT_SECRET` is required in production for HS256 token verification
 - Frontend: all API calls go through `useApi()` from `lib/api.ts` — never raw `fetch()`
