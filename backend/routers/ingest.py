@@ -54,6 +54,38 @@ class ObsidianRequest(BaseModel):
     vault_path: str
 
 
+class YouTubeTranscriptRequest(BaseModel):
+    url: str
+
+
+class YouTubeTranscriptResponse(BaseModel):
+    transcript: str
+    video_id: str
+
+
+def _extract_video_id(url: str) -> str | None:
+    """Extract the 11-character video ID from common YouTube URL formats.
+
+    Handles:
+      - https://youtu.be/VIDEO_ID
+      - https://www.youtube.com/watch?v=VIDEO_ID (query params in any order)
+      - https://www.youtube.com/shorts/VIDEO_ID
+    """
+    # youtu.be short links
+    short = re.match(r"^https?://youtu\.be/([A-Za-z0-9_-]{11})", url.strip())
+    if short:
+        return short.group(1)
+    # youtube.com/watch?v=... (v= may not be the first param)
+    watch = re.search(r"[?&]v=([A-Za-z0-9_-]{11})", url)
+    if watch and "youtube.com" in url:
+        return watch.group(1)
+    # youtube.com/shorts/VIDEO_ID
+    shorts = re.match(r"^https?://(?:www\.)?youtube\.com/shorts/([A-Za-z0-9_-]{11})", url.strip())
+    if shorts:
+        return shorts.group(1)
+    return None
+
+
 def _title_from_text(text: str, filename: str) -> str:
     """Extract a human-readable title from the start of document text.
 
@@ -178,6 +210,43 @@ async def scrape_and_ingest(
         "title": scraped["title"],
         "word_count": scraped["word_count"],
     }
+
+
+@router.post("/fetch-youtube-transcript", response_model=YouTubeTranscriptResponse)
+async def fetch_youtube_transcript(
+    req: YouTubeTranscriptRequest,
+    user_id: str = Depends(get_user_id_dep),
+) -> YouTubeTranscriptResponse:
+    """Fetch a YouTube transcript from a URL without ingesting it.
+
+    Accepts any standard YouTube URL and returns the plain-text transcript.
+    The caller decides when to ingest (via POST /ingest with source_type="youtube").
+    """
+    video_id = _extract_video_id(req.url)
+    if not video_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid YouTube URL. Supported formats: youtube.com/watch?v=ID, youtu.be/ID, youtube.com/shorts/ID",
+        )
+
+    try:
+        from youtube_transcript_api import (  # noqa: PLC0415
+            YouTubeTranscriptApi,
+            TranscriptsDisabled,
+            NoTranscriptFound,
+        )
+        transcript = YouTubeTranscriptApi().fetch(video_id)
+        text = " ".join(s.text for s in transcript)
+        return YouTubeTranscriptResponse(transcript=text, video_id=video_id)
+    except Exception as exc:
+        # Import may succeed but class names differ across minor versions —
+        # check the type name string so we don't depend on the exact import path.
+        exc_name = type(exc).__name__
+        if exc_name == "TranscriptsDisabled":
+            raise HTTPException(status_code=422, detail="Transcripts are disabled for this video.")
+        if exc_name in ("NoTranscriptFound", "CouldNotRetrieveTranscript"):
+            raise HTTPException(status_code=422, detail="No transcript is available for this video.")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch transcript: {exc}")
 
 
 @router.post("/obsidian/preview")

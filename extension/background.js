@@ -38,6 +38,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     handleIngest(message).then(sendResponse);
     return true;
   }
+  if (message.action === "fetchYouTubeTranscript") {
+    handleFetchYouTubeTranscript(message).then(sendResponse);
+    return true;
+  }
 });
 
 // ── Scrape-and-ingest handler (articles) ──────────────────────────────────
@@ -72,6 +76,35 @@ async function handleScrapeAndIngest({ token, tabId, url }) {
       } catch (_) {}
     }
 
+    return { success: true, data };
+  } catch (err) {
+    return { success: false, error: err.message || "Network error — check your connection." };
+  }
+}
+
+// ── Fetch-YouTube-transcript handler ──────────────────────────────────────
+
+async function handleFetchYouTubeTranscript({ token, url }) {
+  try {
+    const response = await fetch(`${API_BASE}/fetch-youtube-transcript`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      },
+      body: JSON.stringify({ url }),
+    });
+
+    if (!response.ok) {
+      let detail = `Server error ${response.status}`;
+      try {
+        const err = await response.json();
+        if (err.detail) detail = err.detail;
+      } catch (_) {}
+      return { success: false, error: detail, status: response.status };
+    }
+
+    const data = await response.json();
     return { success: true, data };
   } catch (err) {
     return { success: false, error: err.message || "Network error — check your connection." };

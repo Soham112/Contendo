@@ -192,6 +192,13 @@ export function useApi() {
       return apiFetch("/obsidian/ingest-zip", { method: "POST", body: formData });
     },
 
+    fetchYoutubeTranscript: (url: string) =>
+      apiFetch("/fetch-youtube-transcript", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      }),
+
     // ── Generate ──────────────────────────────────────────────────────────
     generatePost: (body: GenerateRequest) =>
       apiFetch("/generate", {

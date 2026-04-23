@@ -274,12 +274,19 @@
     <div class="title-preview" id="yt-title-preview">Loading…</div>
 
     <div class="mt12">
-      <div class="label">Transcript</div>
-      <textarea id="yt-transcript" placeholder="Paste the video transcript here. On YouTube, click '⋯ More' under the video → 'Show transcript', then copy all lines."></textarea>
+      <!-- Shown while the transcript is being fetched -->
+      <div class="feedback info" id="yt-fetching-status" style="text-align:center;padding:14px 11px;">
+        <span class="spinner"></span> Fetching transcript…
+      </div>
+      <!-- Shown once the transcript is ready -->
+      <div id="yt-transcript-preview" hidden>
+        <div class="label">Transcript preview</div>
+        <div class="title-preview" id="yt-transcript-snippet" style="font-size:11px;color:#645e57;line-height:1.5;max-height:72px;overflow:hidden;"></div>
+      </div>
     </div>
 
     <div class="mt12">
-      <button class="btn-primary" id="yt-ingest-btn">Add video to Memory</button>
+      <button class="btn-primary" id="yt-ingest-btn" disabled>Add video to Memory</button>
     </div>
 
     <div id="yt-feedback" class="mt8" hidden></div>
