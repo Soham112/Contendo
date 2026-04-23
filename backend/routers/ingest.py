@@ -244,9 +244,6 @@ async def fetch_youtube_transcript(
             headers={"x-api-key": _SUPADATA_API_KEY},
         )
 
-    if response.status_code == 200:
-        logger.info(f"Supadata response body: {response.text}")
-
     if response.status_code == 404:
         raise HTTPException(status_code=422, detail="No transcript found for this video")
     if response.status_code == 429:
@@ -255,7 +252,7 @@ async def fetch_youtube_transcript(
         raise HTTPException(status_code=502, detail="Transcript service error")
 
     data = response.json()
-    text = data.get("text") or ""
+    text = data.get("content") or ""
     if not text:
         raise HTTPException(status_code=422, detail="No transcript found for this video")
 
