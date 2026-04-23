@@ -2493,15 +2493,15 @@ export default function CreatePost() {
                         >
                           LENGTH
                         </label>
-                        <div className="overflow-x-auto no-scrollbar">
-                          <div className="flex md:grid md:grid-cols-3 gap-2 min-w-max md:min-w-0">
+                        <div className="w-full">
+                          <div className="flex md:grid md:grid-cols-3 gap-2 w-full">
                           {LENGTHS.map((l) => {
                             const isActive = length === l.id;
                             return (
                               <button
                                 key={l.id}
                                 onClick={() => setLength(l.id)}
-                                className={`w-[170px] md:w-full min-h-[54px] px-4 py-2.5 rounded-md transition-all border text-left flex flex-col justify-center shrink-0 ${
+                                className={`w-full flex-1 md:flex-none min-h-[54px] px-2 md:px-4 py-3 md:py-2.5 rounded-md transition-all border text-left flex flex-col justify-center ${
                                   isActive
                                     ? "bg-primary text-white border-transparent"
                                     : "text-on-surface hover:text-on-surface bg-transparent"
@@ -2512,9 +2512,9 @@ export default function CreatePost() {
                                     : { borderColor: "rgba(174, 179, 178, 0.15)" }
                                 }
                               >
-                                <div className="text-[13px] font-medium leading-tight">{l.label}</div>
+                                <div className="text-sm md:text-[13px] font-medium leading-tight">{l.label}</div>
                                 <div
-                                  className="text-[11px] leading-tight mt-0.5"
+                                  className="text-xs md:text-[11px] leading-tight mt-0.5"
                                   style={{ opacity: isActive ? 0.7 : 0.55 }}
                                 >
                                   {LENGTH_META[format][l.id]}

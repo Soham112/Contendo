@@ -643,7 +643,7 @@ export default function FeedMemory() {
               setIsExtensionModalOpen(true);
             }
           }}
-          className="w-full rounded-xl bg-surface-container-low px-4 py-2.5 flex items-center gap-2 cursor-pointer hover:bg-surface-container transition-colors text-secondary"
+          className="hidden md:flex w-full rounded-xl bg-surface-container-low px-4 py-2.5 items-center gap-2 cursor-pointer hover:bg-surface-container transition-colors text-secondary"
         >
           <Puzzle size={16} className="shrink-0" />
           <span className="text-[13px] font-normal truncate">Install Chrome Extension</span>
@@ -1018,7 +1018,7 @@ export default function FeedMemory() {
 
             ) : (
               /* ── Article / Note ── */
-              <div className="space-y-2">
+              <div className="space-y-2 w-full">
                 <label className="label-caps text-secondary">{inputLabel}</label>
                 <textarea
                   value={content}
@@ -1029,7 +1029,7 @@ export default function FeedMemory() {
                       : "Paste your article or thoughts here. We'll automatically structure it for your editorial needs..."
                   }
                   rows={10}
-                  className="w-full bg-surface-container-low px-4 py-3 text-[15px] text-on-surface placeholder:text-outline rounded-lg border-0 border-b-2 border-outline-variant focus:outline-none focus:border-primary resize-none transition-colors leading-relaxed"
+                  className="w-full box-border bg-surface-container-low px-4 py-3 text-[15px] text-on-surface placeholder:text-outline rounded-lg border-0 border-b-2 border-outline-variant focus:outline-none focus:border-primary resize-none transition-colors leading-relaxed"
                 />
               </div>
             )}
