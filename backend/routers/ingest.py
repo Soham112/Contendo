@@ -3,12 +3,14 @@ import re
 import shutil
 from pathlib import Path
 
+import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from auth.clerk import get_user_id_dep
 
 _IS_PRODUCTION = os.environ.get("ENVIRONMENT", "").lower() == "production"
+_SUPADATA_API_KEY = os.getenv("SUPADATA_API_KEY")
 _OBSIDIAN_DISABLED_MSG = (
     "Obsidian vault ingestion is a local-only feature. "
     "It reads directly from your filesystem and cannot work on a remote server. "
@@ -219,9 +221,12 @@ async def fetch_youtube_transcript(
 ) -> YouTubeTranscriptResponse:
     """Fetch a YouTube transcript from a URL without ingesting it.
 
-    Accepts any standard YouTube URL and returns the plain-text transcript.
-    The caller decides when to ingest (via POST /ingest with source_type="youtube").
+    Calls the Supadata REST API to retrieve the transcript. The caller decides
+    when to ingest (via POST /ingest with source_type="youtube").
     """
+    if not _SUPADATA_API_KEY:
+        raise HTTPException(status_code=503, detail="Transcript service not configured")
+
     video_id = _extract_video_id(req.url)
     if not video_id:
         raise HTTPException(
@@ -229,24 +234,26 @@ async def fetch_youtube_transcript(
             detail="Invalid YouTube URL. Supported formats: youtube.com/watch?v=ID, youtu.be/ID, youtube.com/shorts/ID",
         )
 
-    try:
-        from youtube_transcript_api import (  # noqa: PLC0415
-            YouTubeTranscriptApi,
-            TranscriptsDisabled,
-            NoTranscriptFound,
+    async with httpx.AsyncClient(timeout=15) as client:
+        response = await client.get(
+            "https://api.supadata.ai/v1/youtube/transcript",
+            params={"videoId": video_id, "text": "true"},
+            headers={"x-api-key": _SUPADATA_API_KEY},
         )
-        transcript = YouTubeTranscriptApi().fetch(video_id)
-        text = " ".join(s.text for s in transcript)
-        return YouTubeTranscriptResponse(transcript=text, video_id=video_id)
-    except Exception as exc:
-        # Import may succeed but class names differ across minor versions —
-        # check the type name string so we don't depend on the exact import path.
-        exc_name = type(exc).__name__
-        if exc_name == "TranscriptsDisabled":
-            raise HTTPException(status_code=422, detail="Transcripts are disabled for this video.")
-        if exc_name in ("NoTranscriptFound", "CouldNotRetrieveTranscript"):
-            raise HTTPException(status_code=422, detail="No transcript is available for this video.")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch transcript: {exc}")
+
+    if response.status_code == 404:
+        raise HTTPException(status_code=422, detail="No transcript found for this video")
+    if response.status_code == 429:
+        raise HTTPException(status_code=503, detail="Transcript service limit reached")
+    if response.status_code != 200:
+        raise HTTPException(status_code=502, detail="Transcript service error")
+
+    data = response.json()
+    text = data.get("text") or ""
+    if not text:
+        raise HTTPException(status_code=422, detail="No transcript found for this video")
+
+    return YouTubeTranscriptResponse(transcript=text, video_id=video_id)
 
 
 @router.post("/obsidian/preview")

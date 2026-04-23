@@ -195,12 +195,13 @@ export default function FeedMemory() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ chunks_stored: number; tags: string[]; title?: string; word_count?: number; duplicate?: boolean } | null>(null);
   const [error, setError] = useState("");
-  // YouTube auto-fetch state
+  // YouTube two-path state
   const [ytUrl, setYtUrl] = useState("");
   const [ytTranscript, setYtTranscript] = useState("");
   const [ytVideoId, setYtVideoId] = useState("");
   const [ytFetching, setYtFetching] = useState(false);
   const [ytFetchError, setYtFetchError] = useState("");
+  const [ytManualText, setYtManualText] = useState("");
   const [stats, setStats] = useState<Stats | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const docFileInputRef = useRef<HTMLInputElement>(null);
@@ -335,6 +336,7 @@ export default function FeedMemory() {
     setYtVideoId("");
     setYtFetching(false);
     setYtFetchError("");
+    setYtManualText("");
     // If tour is active, sync to the clicked tab's step
     if (tourActive) {
       const stepIdx = TOUR_STEPS.findIndex((s) => s.id === tab);
@@ -530,7 +532,7 @@ export default function FeedMemory() {
         setError("URL must start with http:// or https://"); return;
       }
     } else if (activeTab === "youtube") {
-      if (!ytTranscript) { setError("Paste a YouTube URL above and wait for the transcript to load."); return; }
+      if (!ytTranscript) { setError("Paste a YouTube URL or enter the transcript manually first."); return; }
     } else {
       if (!content.trim()) { setError("Please enter some content."); return; }
     }
@@ -568,6 +570,11 @@ export default function FeedMemory() {
       setUploadedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
       if (docFileInputRef.current) docFileInputRef.current.value = "";
+      setYtUrl("");
+      setYtTranscript("");
+      setYtVideoId("");
+      setYtFetchError("");
+      setYtManualText("");
       await fetchStats();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
@@ -900,8 +907,10 @@ export default function FeedMemory() {
               </div>
 
             ) : activeTab === "youtube" ? (
-              /* ── YouTube ── */
-              <div className="space-y-4">
+              /* ── YouTube — two-path layout ── */
+              <div className="space-y-5">
+
+                {/* PATH A — URL auto-fetch */}
                 <div className="space-y-2">
                   <label className="label-caps text-secondary">YOUTUBE URL</label>
                   <input
@@ -910,33 +919,56 @@ export default function FeedMemory() {
                     onChange={(e) => {
                       setYtUrl(e.target.value);
                       setYtFetchError("");
-                      setYtTranscript("");
-                      setYtVideoId("");
+                      // Clear URL-path result so typing again resets the success state
+                      if (ytVideoId) { setYtTranscript(""); setYtVideoId(""); }
                     }}
                     onPaste={(e) => {
                       const pasted = e.clipboardData.getData("text");
                       setTimeout(() => handleYtFetch(pasted), 0);
                     }}
-                    onBlur={() => { if (ytUrl && !ytTranscript && !ytFetching) handleYtFetch(ytUrl); }}
+                    onBlur={() => { if (ytUrl && !ytVideoId && !ytFetching) handleYtFetch(ytUrl); }}
                     placeholder="Paste a YouTube URL..."
                     className="w-full bg-surface-container-low px-4 py-3 text-[15px] text-on-surface placeholder:text-outline rounded-lg border-0 border-b-2 border-outline-variant focus:outline-none focus:border-primary transition-colors"
                   />
                   {ytFetchError && (
                     <p className="text-sm text-error">{ytFetchError}</p>
                   )}
+                  {ytFetching && (
+                    <p className="text-sm text-secondary">Fetching transcript…</p>
+                  )}
+                  {ytVideoId && ytTranscript && !ytFetching && (
+                    <div className="rounded-xl bg-surface-container-low px-5 py-3 space-y-1.5">
+                      <p className="text-[12px] font-semibold text-primary">✓ Transcript ready</p>
+                      <p className="text-[13px] text-on-surface leading-relaxed">
+                        {ytTranscript.slice(0, 200)}{ytTranscript.length > 200 ? "…" : ""}
+                      </p>
+                    </div>
+                  )}
                 </div>
-                {ytFetching && (
-                  <p className="text-sm text-secondary">Fetching transcript…</p>
-                )}
-                {ytTranscript && (
-                  <div className="rounded-xl bg-surface-container-low px-5 py-4 space-y-2">
-                    <p className="label-caps text-secondary">Transcript preview</p>
-                    <p className="text-[13px] text-on-surface leading-relaxed">
-                      {ytTranscript.slice(0, 300)}{ytTranscript.length > 300 ? "…" : ""}
-                    </p>
-                    <p className="text-xs text-outline">Video ID: {ytVideoId}</p>
-                  </div>
-                )}
+
+                {/* OR separator — text only, no line (No-Line Rule) */}
+                <div className="text-center">
+                  <span className="label-caps text-outline">or</span>
+                </div>
+
+                {/* PATH B — Manual paste */}
+                <div className="space-y-2">
+                  <label className="label-caps text-secondary">PASTE TRANSCRIPT</label>
+                  <textarea
+                    value={ytManualText}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setYtManualText(val);
+                      setYtTranscript(val);
+                      // Manual input wins — clear URL-path result indicators
+                      if (val && ytVideoId) { setYtVideoId(""); }
+                    }}
+                    placeholder="Already have the transcript? Paste it here..."
+                    rows={6}
+                    className="w-full bg-surface-container-low px-4 py-3 text-[15px] text-on-surface placeholder:text-outline rounded-lg border-0 border-b-2 border-outline-variant focus:outline-none focus:border-primary resize-none transition-colors leading-relaxed"
+                  />
+                </div>
+
               </div>
 
             ) : (
