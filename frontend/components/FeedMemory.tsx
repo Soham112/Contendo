@@ -691,9 +691,9 @@ export default function FeedMemory() {
         </div>
 
         {/* Main input card */}
-        <div className="bg-surface-container-lowest rounded-2xl shadow-card overflow-hidden">
+        <div className="w-full bg-surface-container-lowest rounded-2xl shadow-card overflow-hidden">
           {/* Card body */}
-          <div className="p-8 space-y-6">
+          <div className="p-8 max-md:px-4 space-y-6 w-full">
 
             {activeTab === "obsidian" ? (
               /* ── Obsidian flow ── */
@@ -1018,7 +1018,7 @@ export default function FeedMemory() {
 
             ) : (
               /* ── Article / Note ── */
-              <div className="space-y-2 w-full">
+              <div className="space-y-2 w-full max-md:max-w-full max-md:mx-0">
                 <label className="label-caps text-secondary">{inputLabel}</label>
                 <textarea
                   value={content}
@@ -1029,7 +1029,7 @@ export default function FeedMemory() {
                       : "Paste your article or thoughts here. We'll automatically structure it for your editorial needs..."
                   }
                   rows={10}
-                  className="w-full box-border bg-surface-container-low px-4 py-3 text-[15px] text-on-surface placeholder:text-outline rounded-lg border-0 border-b-2 border-outline-variant focus:outline-none focus:border-primary resize-none transition-colors leading-relaxed"
+                  className="w-full max-md:w-full box-border bg-surface-container-low px-4 py-3 text-[15px] text-on-surface placeholder:text-outline rounded-lg border-0 border-b-2 border-outline-variant focus:outline-none focus:border-primary resize-none transition-colors leading-relaxed"
                 />
               </div>
             )}
