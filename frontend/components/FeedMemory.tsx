@@ -1,10 +1,13 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { Puzzle, X } from "lucide-react";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useApi } from "@/lib/api";
+import ExtensionInstallModal from "@/components/ExtensionInstallModal";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const EXTENSION_BANNER_DISMISSED_KEY = "contendo_extension_banner_dismissed";
 
 const isLocalBackend =
   process.env.NEXT_PUBLIC_API_URL?.includes("localhost") ||
@@ -176,6 +179,8 @@ const TOUR_STEPS: { id: SourceType; label: string; description: string }[] = [
 
 export default function FeedMemory() {
   const api = useApi();
+  const [showExtensionBanner, setShowExtensionBanner] = useState(false);
+  const [isExtensionModalOpen, setIsExtensionModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<SourceType>("article");
   const [content, setContent] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -206,6 +211,12 @@ export default function FeedMemory() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const docFileInputRef = useRef<HTMLInputElement>(null);
   const { showToast } = useToast();
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const wasDismissed = localStorage.getItem(EXTENSION_BANNER_DISMISSED_KEY) === "1";
+    setShowExtensionBanner(!wasDismissed);
+  }, []);
 
   // ── Tooltip tour ─────────────────────────────────────────────────────────────
   const [tourStep, setTourStep] = useState(-1);
@@ -247,6 +258,18 @@ export default function FeedMemory() {
     setTourActive(false);
     setTourStep(-1);
     if (typeof window !== "undefined") localStorage.setItem("contendo_feed_tour_done", "1");
+  };
+
+  const dismissExtensionBanner = () => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem(EXTENSION_BANNER_DISMISSED_KEY, "1");
+    }
+    setShowExtensionBanner(false);
+  };
+
+  const handleExtensionDownloaded = () => {
+    dismissExtensionBanner();
+    setIsExtensionModalOpen(false);
   };
 
   const advanceTour = () => {
@@ -629,6 +652,37 @@ export default function FeedMemory() {
             Transform raw fragments into editorial wisdom. Select a medium to store your inspiration.
           </p>
         </div>
+
+        {showExtensionBanner && (
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setIsExtensionModalOpen(true)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setIsExtensionModalOpen(true);
+              }
+            }}
+            className="w-full rounded-xl bg-surface-container-low px-4 py-2.5 flex items-center justify-between gap-3 cursor-pointer hover:bg-surface-container transition-colors"
+          >
+            <div className="flex items-center gap-2 text-secondary min-w-0">
+              <Puzzle size={16} className="shrink-0" />
+              <span className="text-[13px] font-normal truncate">Install Chrome Extension</span>
+            </div>
+            <button
+              type="button"
+              aria-label="Dismiss extension banner"
+              onClick={(e) => {
+                e.stopPropagation();
+                dismissExtensionBanner();
+              }}
+              className="shrink-0 text-outline hover:text-secondary transition-colors p-1"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
 
         {/* Tab selector */}
         <div className="flex flex-wrap gap-2" ref={tabBarRef}>
@@ -1327,6 +1381,12 @@ export default function FeedMemory() {
           </div>
         </div>
       )}
+
+      <ExtensionInstallModal
+        isOpen={isExtensionModalOpen}
+        onClose={() => setIsExtensionModalOpen(false)}
+        onDownload={handleExtensionDownloaded}
+      />
     </div>
   );
 }
