@@ -621,9 +621,9 @@ export default function FeedMemory() {
     "CONTENT FRAGMENT";
 
   return (
-    <div className="flex gap-8 max-w-7xl">
+    <div className="flex flex-col md:flex-row gap-8 max-w-7xl w-full px-4 md:px-0">
       {/* ── Left: main form ───────────────────────────────────── */}
-      <div className="flex-1 min-w-0 space-y-7">
+      <div className="flex-1 min-w-0 w-full space-y-7">
 
         {/* Header */}
         <div>
@@ -650,7 +650,7 @@ export default function FeedMemory() {
         </div>
 
         {/* Tab selector */}
-        <div className="flex flex-wrap gap-2" ref={tabBarRef}>
+        <div className="hidden md:flex flex-wrap gap-2" ref={tabBarRef}>
           {TABS.map((tab, idx) => (
             <button
               key={tab.id}
@@ -660,6 +660,26 @@ export default function FeedMemory() {
                 activeTab === tab.id
                   ? "btn-primary text-white shadow-card"
                   : "bg-surface-container text-secondary hover:bg-surface-container-high hover:text-on-surface"
+              }`}
+            >
+              <span className={activeTab === tab.id ? "text-white/80" : "text-outline"}>
+                {SOURCE_ICONS[tab.id]}
+              </span>
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="md:hidden flex gap-2 overflow-x-auto no-scrollbar pb-1" ref={tabBarRef}>
+          {TABS.map((tab, idx) => (
+            <button
+              key={tab.id}
+              ref={(el) => { tabButtonRefs.current[idx] = el; }}
+              onClick={() => handleTabChange(tab.id)}
+              className={`shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-full text-[12px] font-medium tracking-wide transition-all duration-150 ${
+                activeTab === tab.id
+                  ? "btn-primary text-white shadow-card"
+                  : "bg-surface-container text-secondary"
               }`}
             >
               <span className={activeTab === tab.id ? "text-white/80" : "text-outline"}>
@@ -1198,7 +1218,7 @@ export default function FeedMemory() {
       </div>
 
       {/* ── Right: info panel ─────────────────────────────────── */}
-      <div className="w-72 shrink-0 space-y-4 pt-[88px]">
+      <div className="w-full md:w-72 shrink-0 space-y-4 pt-0 md:pt-[88px]">
 
         {/* Recent Memory stats card */}
         <div className="bg-surface-container-lowest rounded-2xl shadow-card p-6">

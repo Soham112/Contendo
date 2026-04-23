@@ -253,7 +253,7 @@ export default function IdeasPage() {
       {/* ── Top header bar ───────────────────────────────────────────────── */}
       <div
         style={{ borderBottom: "0.5px solid #dfe3e2", height: "56px" }}
-        className="flex items-center px-10 bg-background shrink-0 gap-4"
+        className="hidden md:flex items-center px-10 bg-background shrink-0 gap-4"
       >
         <div className="flex-1" />
 
@@ -283,7 +283,7 @@ export default function IdeasPage() {
       </div>
 
       {/* ── Scrollable content ────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto px-10 py-10">
+      <div className="flex-1 overflow-y-auto px-4 md:px-10 py-8 md:py-10">
 
         {/* Breadcrumb */}
         <p className="label-caps text-outline mb-8">Workspace / Ideation</p>
@@ -355,26 +355,26 @@ export default function IdeasPage() {
         {hasIdeas && (
           <div className="mb-12">
             {/* Section header */}
-            <div className="flex items-baseline justify-between mb-5">
+            <div className="flex items-center justify-between gap-3 mb-5">
               <h2 className="font-headline text-2xl text-on-surface">Fresh Concepts</h2>
-              <div className="flex items-center gap-4">
-                <span className="label-caps text-outline">{ideas.length} Results Found</span>
+              <div className="flex items-center gap-3 shrink-0">
+                <span className="label-caps text-outline whitespace-nowrap">{ideas.length} Results Found</span>
                 {clearConfirm ? (
-                  <span className="text-xs text-outline">
+                  <span className="text-xs text-outline whitespace-nowrap">
                     Clear all?{" "}
                     <button onClick={handleClearAll} className="underline hover:text-on-surface">Yes</button>
                     {" / "}
                     <button onClick={() => setClearConfirm(false)} className="underline hover:text-on-surface">No</button>
                   </span>
                 ) : (
-                  <button onClick={() => setClearConfirm(true)} className="text-xs text-outline-variant hover:text-outline transition-colors underline">
+                  <button onClick={() => setClearConfirm(true)} className="text-xs text-outline-variant hover:text-outline transition-colors underline whitespace-nowrap">
                     Clear all
                   </button>
                 )}
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {ideas.map((idea, i) => (
                 <IdeaCard
                   key={i}

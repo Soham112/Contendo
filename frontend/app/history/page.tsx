@@ -735,7 +735,7 @@ export default function HistoryPage() {
       {/* ── Top header bar ───────────────────────────────────────────────── */}
       <div
         style={{ borderBottom: "0.5px solid #dfe3e2", height: "56px" }}
-        className="flex items-center px-10 bg-background shrink-0 gap-4"
+        className="hidden md:flex items-center px-10 bg-background shrink-0 gap-4"
       >
         {/* Search */}
         <div className="relative w-72">
@@ -782,22 +782,22 @@ export default function HistoryPage() {
       </div>
 
       {/* ── Scrollable content ────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto px-10 py-10">
+      <div className="flex-1 overflow-y-auto px-4 md:px-10 py-8 md:py-10">
 
         {/* ── Title row ──────────────────────────────────────────────────── */}
-        <div className="flex items-start justify-between gap-8 mb-10">
+        <div className="flex flex-col md:flex-row items-start justify-between gap-4 md:gap-8 mb-10">
           {/* Left: title + subtitle */}
           <div className="flex-1 min-w-0">
-            <h1 className="font-headline text-[2.75rem] text-on-surface leading-tight mb-3">
+            <h1 className="font-headline text-[2.2rem] md:text-[2.75rem] text-on-surface leading-tight mb-3">
               History Archive
             </h1>
-            <p className="text-secondary text-[14px] leading-relaxed max-w-lg">
+            <p className="text-secondary text-[14px] leading-relaxed max-w-full md:max-w-lg">
               A chronological collection of your creative output. Review, refine, and restore past versions of your stories.
             </p>
           </div>
 
           {/* Right: sort pills */}
-          <div className="flex items-center gap-2 pt-3 shrink-0">
+          <div className="flex items-center gap-2 mt-3 md:mt-0 w-full md:w-auto flex-wrap">
             {SORT_OPTIONS.map((opt) => (
               <button
                 key={opt.id}

@@ -1732,7 +1732,7 @@ export default function CreatePost() {
       {/* ── Header bar ──────────────────────────────────────────────────────── */}
       <div
         style={{ borderBottom: "0.5px solid #dfe3e2", height: "52px" }}
-        className="flex items-center justify-between px-8 bg-background shrink-0"
+        className="hidden md:flex items-center justify-between px-8 bg-background shrink-0"
       >
         {/* Breadcrumb */}
         <div className="flex items-center gap-1.5">
@@ -2204,7 +2204,7 @@ export default function CreatePost() {
       ) : (
         // ── Scrollable column (configure / spinner / visuals) ────────────────
         <div className="flex-1 overflow-y-auto">
-          <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px 40px" }}>
+          <div className="px-4 md:px-10" style={{ maxWidth: 900, margin: "0 auto", paddingTop: "32px", paddingBottom: "32px" }}>
 
             {/* Ideas panel */}
             {suggestionsVisible && (
@@ -2409,9 +2409,9 @@ export default function CreatePost() {
                   </div>
 
                   {/* Format & Tone side-by-side */}
-                  <div className="flex gap-12 items-start">
+                  <div className="flex flex-col md:flex-row gap-6 md:gap-12 items-start">
                     {/* Format — vertical pills */}
-                    <div className="w-[38%] shrink-0">
+                    <div className="w-full md:w-[38%] shrink-0">
                       <label
                         className="label-caps text-secondary block mb-3"
                         style={{ fontSize: "0.62rem", letterSpacing: "0.09em" }}
@@ -2442,7 +2442,7 @@ export default function CreatePost() {
                     </div>
 
                     {/* Right column — tone row, tone context line, length row */}
-                    <div className="w-[62%] shrink-0">
+                    <div className="w-full md:w-[62%] shrink-0">
                       <div>
                         <label
                           className="label-caps text-secondary block mb-3"
@@ -2493,14 +2493,15 @@ export default function CreatePost() {
                         >
                           LENGTH
                         </label>
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="overflow-x-auto no-scrollbar">
+                          <div className="flex md:grid md:grid-cols-3 gap-2 min-w-max md:min-w-0">
                           {LENGTHS.map((l) => {
                             const isActive = length === l.id;
                             return (
                               <button
                                 key={l.id}
                                 onClick={() => setLength(l.id)}
-                                className={`w-full min-h-[54px] px-4 py-2.5 rounded-md transition-all border text-left flex flex-col justify-center ${
+                                className={`w-[170px] md:w-full min-h-[54px] px-4 py-2.5 rounded-md transition-all border text-left flex flex-col justify-center shrink-0 ${
                                   isActive
                                     ? "bg-primary text-white border-transparent"
                                     : "text-on-surface hover:text-on-surface bg-transparent"
@@ -2521,6 +2522,7 @@ export default function CreatePost() {
                               </button>
                             );
                           })}
+                          </div>
                         </div>
                       </div>
                     </div>

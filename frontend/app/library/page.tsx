@@ -644,7 +644,7 @@ export default function LibraryPage() {
       {/* ── Top header bar ─────────────────────────────────────────────────── */}
       <div
         style={{ borderBottom: "0.5px solid #dfe3e2", height: "56px" }}
-        className="flex items-center px-10 bg-background shrink-0 gap-4"
+        className="hidden md:flex items-center px-10 bg-background shrink-0 gap-4"
       >
         {/* Search */}
         <div className="relative flex-1 max-w-sm">
@@ -680,7 +680,7 @@ export default function LibraryPage() {
       </div>
 
       {/* ── Main content ───────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto px-10 py-8">
+      <div className="flex-1 overflow-y-auto px-4 md:px-10 py-6 md:py-8">
 
         {loading && <p className="text-sm text-outline">Loading...</p>}
         {error && <p className="text-sm text-error">{error}</p>}
@@ -688,7 +688,7 @@ export default function LibraryPage() {
         {!loading && !error && (
           <>
             {/* ── Title + stats row ──────────────────────────────────────── */}
-            <div className="flex items-start justify-between gap-8 mb-8">
+            <div className="flex flex-col md:flex-row items-start justify-between gap-5 md:gap-8 mb-8">
               {/* Left: breadcrumb + two-line title */}
               <div>
                 <p className="label-caps text-outline mb-2">Workspace / Library</p>
@@ -697,7 +697,7 @@ export default function LibraryPage() {
               </div>
 
               {/* Right: stats tiles */}
-              <div className="flex gap-3 shrink-0 pt-2">
+              <div className="flex gap-3 shrink-0 pt-2 overflow-x-auto no-scrollbar w-full md:w-auto">
                 {[
                   { value: sources.length, label: "Total Sources" },
                   { value: totalChunks >= 1000 ? `${(totalChunks / 1000).toFixed(1)}k` : totalChunks, label: "AI Chunks" },
@@ -705,7 +705,7 @@ export default function LibraryPage() {
                 ].map(({ value, label }) => (
                   <div
                     key={label}
-                    className="rounded-xl bg-surface-container-lowest px-5 py-4 text-center min-w-[90px]"
+                    className="rounded-xl bg-surface-container-lowest px-4 md:px-5 py-4 text-center min-w-[110px] shrink-0"
                     style={{ outline: "1px solid rgba(174,179,178,0.15)" }}
                   >
                     <p className="font-headline text-2xl text-on-surface tabular-nums">{value}</p>
@@ -716,14 +716,14 @@ export default function LibraryPage() {
             </div>
 
             {/* ── Filter tabs + controls ─────────────────────────────────── */}
-            <div className="flex items-end justify-between mb-6" style={{ borderBottom: "1px solid #dfe3e2" }}>
+            <div className="flex flex-col md:flex-row md:items-end justify-between mb-6 gap-2" style={{ borderBottom: "1px solid #dfe3e2" }}>
               {/* Underline tabs — hidden in Topic Map view */}
-              <div className="flex gap-6">
+              <div className="flex gap-4 md:gap-6 overflow-x-auto no-scrollbar w-full md:w-auto">
                 {mainView === "sources" && FILTER_TABS.map((tab) => (
                   <button
                     key={tab.id}
                     onClick={() => { setFilter(tab.id); setVisibleCount(6); }}
-                    className={`pb-3 text-[13px] font-medium transition-colors relative whitespace-nowrap ${
+                    className={`pb-3 text-[12px] md:text-[13px] font-medium transition-colors relative whitespace-nowrap ${
                       filter === tab.id
                         ? "text-on-surface"
                         : "text-outline hover:text-secondary"
@@ -738,18 +738,18 @@ export default function LibraryPage() {
               </div>
 
               {/* Right controls */}
-              <div className="flex items-center gap-2 pb-3">
+              <div className="flex items-center gap-2 pb-3 overflow-x-auto no-scrollbar w-full md:w-auto">
                 {/* Sources / Topic Map toggle */}
                 <div className="flex border border-surface-container-high rounded-lg overflow-hidden">
                   <button
                     onClick={() => setMainView("sources")}
-                    className={`px-3 py-1.5 text-[12px] font-medium transition-colors ${mainView === "sources" ? "bg-surface-container text-on-surface" : "bg-surface-container-lowest text-outline hover:text-secondary"}`}
+                    className={`px-2.5 md:px-3 py-1.5 text-[11px] md:text-[12px] font-medium transition-colors whitespace-nowrap ${mainView === "sources" ? "bg-surface-container text-on-surface" : "bg-surface-container-lowest text-outline hover:text-secondary"}`}
                   >
                     Sources
                   </button>
                   <button
                     onClick={() => setMainView("topic-map")}
-                    className={`px-3 py-1.5 text-[12px] font-medium transition-colors border-l border-surface-container-high ${mainView === "topic-map" ? "bg-surface-container text-on-surface" : "bg-surface-container-lowest text-outline hover:text-secondary"}`}
+                    className={`px-2.5 md:px-3 py-1.5 text-[11px] md:text-[12px] font-medium transition-colors border-l border-surface-container-high whitespace-nowrap ${mainView === "topic-map" ? "bg-surface-container text-on-surface" : "bg-surface-container-lowest text-outline hover:text-secondary"}`}
                   >
                     Topic Map
                   </button>
@@ -767,7 +767,7 @@ export default function LibraryPage() {
 
                     <button
                       onClick={cycleSortOrder}
-                      className="flex items-center gap-1.5 text-[12px] text-secondary border border-surface-container-high rounded-lg px-3 py-1.5 hover:border-outline-variant hover:text-on-surface transition-colors bg-surface-container-lowest"
+                      className="flex items-center gap-1.5 text-[11px] md:text-[12px] text-secondary border border-surface-container-high rounded-lg px-2.5 md:px-3 py-1.5 hover:border-outline-variant hover:text-on-surface transition-colors bg-surface-container-lowest whitespace-nowrap"
                     >
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>
@@ -832,7 +832,7 @@ export default function LibraryPage() {
 
                 {/* Source grid */}
                 {filtered.length > 0 && viewMode === "grid" && (
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                     {visibleSources.map((source, i) => (
                       <SourceCard
                         key={i}

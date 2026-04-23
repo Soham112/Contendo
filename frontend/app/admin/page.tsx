@@ -160,31 +160,33 @@ function TopUsersTable({ users }: { users: TopUser[] }) {
       {users.length === 0 ? (
         <p className="text-sm text-secondary opacity-60">No data yet.</p>
       ) : (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs text-secondary opacity-60 border-b border-outline-variant">
-              <th className="pb-2 font-medium">User ID</th>
-              <th className="pb-2 font-medium text-right">Calls</th>
-              <th className="pb-2 font-medium text-right">Tokens</th>
-              <th className="pb-2 font-medium text-right">Cost</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((u, i) => (
-              <tr
-                key={u.user_id}
-                className={i < users.length - 1 ? "border-b border-outline-variant border-opacity-30" : ""}
-              >
-                <td className="py-2 text-on-surface font-mono text-xs truncate max-w-[180px]">
-                  {u.user_id}
-                </td>
-                <td className="py-2 text-right text-on-surface">{fmt(u.call_count)}</td>
-                <td className="py-2 text-right text-on-surface">{fmt(u.total_tokens)}</td>
-                <td className="py-2 text-right text-on-surface">{fmtCost(u.total_cost)}</td>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[560px] text-sm">
+            <thead>
+              <tr className="text-left text-xs text-secondary opacity-60 border-b border-outline-variant">
+                <th className="pb-2 font-medium">User ID</th>
+                <th className="pb-2 font-medium text-right">Calls</th>
+                <th className="pb-2 font-medium text-right">Tokens</th>
+                <th className="pb-2 font-medium text-right">Cost</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {users.map((u, i) => (
+                <tr
+                  key={u.user_id}
+                  className={i < users.length - 1 ? "border-b border-outline-variant border-opacity-30" : ""}
+                >
+                  <td className="py-2 text-on-surface font-mono text-xs truncate max-w-[180px]">
+                    {u.user_id}
+                  </td>
+                  <td className="py-2 text-right text-on-surface">{fmt(u.call_count)}</td>
+                  <td className="py-2 text-right text-on-surface">{fmt(u.total_tokens)}</td>
+                  <td className="py-2 text-right text-on-surface">{fmtCost(u.total_cost)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -232,7 +234,7 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background px-6 py-10 max-w-4xl mx-auto">
+    <div className="min-h-screen bg-background px-4 md:px-6 py-10 max-w-4xl mx-auto">
       {/* Header */}
       <div className="mb-8">
         <h1 className="font-headline text-3xl text-on-surface mb-1">Usage</h1>
