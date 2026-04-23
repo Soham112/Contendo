@@ -42,6 +42,7 @@ class IngestRequest(BaseModel):
     source_type: str  # "article" | "youtube" | "image" | "note" | "personal_note" | "saved_content"
     raw_image: str | None = None
     content_origin: str | None = None  # "personal" | "saved" — only meaningful when source_type is "note"
+    source_title: str | None = None  # optional caller-supplied title for library card display
 
 
 class IngestResponse(BaseModel):
@@ -66,6 +67,7 @@ class YouTubeTranscriptRequest(BaseModel):
 class YouTubeTranscriptResponse(BaseModel):
     transcript: str
     video_id: str
+    title: str
 
 
 def _extract_video_id(url: str) -> str | None:
@@ -146,7 +148,7 @@ async def ingest(
                 effective_source_type = "personal_note"
             elif req.content_origin == "saved":
                 effective_source_type = "saved_content"
-        result = ingest_content(req.content, source_type=effective_source_type, user_id=user_id)
+        result = ingest_content(req.content, source_type=effective_source_type, source_title=req.source_title, user_id=user_id)
 
     if result.get("duplicate"):
         return IngestResponse(
@@ -256,7 +258,8 @@ async def fetch_youtube_transcript(
     if not text:
         raise HTTPException(status_code=422, detail="No transcript found for this video")
 
-    return YouTubeTranscriptResponse(transcript=text, video_id=video_id)
+    title = data.get("title") or f"YouTube Video {video_id}"
+    return YouTubeTranscriptResponse(transcript=text, video_id=video_id, title=title)
 
 
 @router.post("/obsidian/preview")

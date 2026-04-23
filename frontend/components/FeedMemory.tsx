@@ -555,7 +555,7 @@ export default function FeedMemory() {
       } else if (activeTab === "url") {
         res = await api.scrapeAndIngest(urlInput.trim());
       } else {
-        const body: { source_type: string; raw_image?: string; content?: string } = { source_type: activeTab };
+        const body: { source_type: string; raw_image?: string; content?: string; source_title?: string } = { source_type: activeTab };
         if (activeTab === "image") { body.raw_image = imagePreview; body.content = ""; }
         else if (activeTab === "youtube") {
           let transcript = ytTranscript; // may already be set by manual textarea
@@ -571,6 +571,7 @@ export default function FeedMemory() {
             const fetchData = await fetchRes.json();
             transcript = fetchData.transcript;
             setYtTranscript(transcript);
+            body.source_title = fetchData.title;
           }
           body.content = transcript;
         }
