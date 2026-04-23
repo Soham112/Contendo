@@ -123,49 +123,39 @@ async function initYouTubeState(tab, token) {
 
   document.getElementById("yt-title-preview").textContent = truncate(videoTitle, 90);
 
-  // Auto-fetch the transcript using the tab URL — no manual paste needed.
-  const fetchResult = await chrome.runtime.sendMessage({
-    action: "fetchYouTubeTranscript",
-    token,
-    url: tab.url,
-  });
-
-  if (!fetchResult || !fetchResult.success) {
-    // Expired token — re-auth and retry.
-    if (fetchResult?.status === 401) {
-      chrome.storage.local.remove("contendo_token");
-      init();
-      return;
-    }
-    document.getElementById("yt-fetching-status").hidden = true;
-    showFeedback(
-      "yt-feedback",
-      fetchResult?.error || "Could not fetch transcript. The video may not have captions enabled.",
-      "error"
-    );
-    return;
-  }
-
-  // Transcript ready — show preview and enable the ingest button.
-  const transcript = fetchResult.data.transcript;
-
-  document.getElementById("yt-fetching-status").hidden = true;
-  document.getElementById("yt-transcript-snippet").textContent =
-    transcript.slice(0, 200) + (transcript.length > 200 ? "…" : "");
-  document.getElementById("yt-transcript-preview").hidden = false;
-
-  const ingestBtn = document.getElementById("yt-ingest-btn");
-  ingestBtn.disabled = false;
-
-  ingestBtn.addEventListener("click", async () => {
+  // Button click: fetch transcript from backend, then ingest.
+  document.getElementById("yt-ingest-btn").addEventListener("click", async () => {
     hideFeedback("yt-feedback");
     showOnly("state-loading");
 
+    // Step 1: fetch transcript via the same endpoint Feed Memory uses.
+    const fetchResult = await chrome.runtime.sendMessage({
+      action: "fetchYouTubeTranscript",
+      token,
+      url: tab.url,
+    });
+
+    if (!fetchResult || !fetchResult.success) {
+      if (fetchResult?.status === 401) {
+        chrome.storage.local.remove("contendo_token");
+        init();
+        return;
+      }
+      showOnly("state-youtube");
+      showFeedback(
+        "yt-feedback",
+        fetchResult?.error || "Could not fetch transcript. The video may not have captions enabled.",
+        "error"
+      );
+      return;
+    }
+
+    // Step 2: ingest the transcript.
     const response = await chrome.runtime.sendMessage({
       action: "ingest",
       token,
       tabId: tab.id,
-      content: transcript,
+      content: fetchResult.data.transcript,
       source_type: "youtube",
       content_origin: "saved",
       title: videoTitle,

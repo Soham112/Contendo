@@ -532,7 +532,14 @@ export default function FeedMemory() {
         setError("URL must start with http:// or https://"); return;
       }
     } else if (activeTab === "youtube") {
-      if (!ytTranscript) { setError("Paste a YouTube URL or enter the transcript manually first."); return; }
+      if (!ytUrl.trim() && !ytManualText.trim()) {
+        setError("Paste a YouTube URL or enter the transcript manually.");
+        return;
+      }
+      if (ytUrl.trim() && !isYouTubeUrl(ytUrl)) {
+        setYtFetchError("Please paste a valid YouTube video URL.");
+        return;
+      }
     } else {
       if (!content.trim()) { setError("Please enter some content."); return; }
     }
@@ -550,7 +557,23 @@ export default function FeedMemory() {
       } else {
         const body: { source_type: string; raw_image?: string; content?: string } = { source_type: activeTab };
         if (activeTab === "image") { body.raw_image = imagePreview; body.content = ""; }
-        else if (activeTab === "youtube") { body.content = ytTranscript; }
+        else if (activeTab === "youtube") {
+          let transcript = ytTranscript; // may already be set by manual textarea
+          if (ytUrl.trim()) {
+            setYtFetching(true);
+            const fetchRes = await api.fetchYoutubeTranscript(ytUrl.trim());
+            setYtFetching(false);
+            if (!fetchRes.ok) {
+              const errData = await fetchRes.json().catch(() => ({})) as { detail?: string };
+              setYtFetchError(errData.detail ?? "Failed to fetch transcript");
+              return;
+            }
+            const fetchData = await fetchRes.json();
+            transcript = fetchData.transcript;
+            setYtTranscript(transcript);
+          }
+          body.content = transcript;
+        }
         else { body.content = content; }
         res = await api.ingestContent(body);
       }
@@ -910,7 +933,7 @@ export default function FeedMemory() {
               /* ── YouTube — two-path layout ── */
               <div className="space-y-5">
 
-                {/* PATH A — URL auto-fetch */}
+                {/* PATH A — URL, fetched on submit */}
                 <div className="space-y-2">
                   <label className="label-caps text-secondary">YOUTUBE URL</label>
                   <input
@@ -919,30 +942,12 @@ export default function FeedMemory() {
                     onChange={(e) => {
                       setYtUrl(e.target.value);
                       setYtFetchError("");
-                      // Clear URL-path result so typing again resets the success state
-                      if (ytVideoId) { setYtTranscript(""); setYtVideoId(""); }
                     }}
-                    onPaste={(e) => {
-                      const pasted = e.clipboardData.getData("text");
-                      setTimeout(() => handleYtFetch(pasted), 0);
-                    }}
-                    onBlur={() => { if (ytUrl && !ytVideoId && !ytFetching) handleYtFetch(ytUrl); }}
                     placeholder="Paste a YouTube URL..."
                     className="w-full bg-surface-container-low px-4 py-3 text-[15px] text-on-surface placeholder:text-outline rounded-lg border-0 border-b-2 border-outline-variant focus:outline-none focus:border-primary transition-colors"
                   />
                   {ytFetchError && (
                     <p className="text-sm text-error">{ytFetchError}</p>
-                  )}
-                  {ytFetching && (
-                    <p className="text-sm text-secondary">Fetching transcript…</p>
-                  )}
-                  {ytVideoId && ytTranscript && !ytFetching && (
-                    <div className="rounded-xl bg-surface-container-low px-5 py-3 space-y-1.5">
-                      <p className="text-[12px] font-semibold text-primary">✓ Transcript ready</p>
-                      <p className="text-[13px] text-on-surface leading-relaxed">
-                        {ytTranscript.slice(0, 200)}{ytTranscript.length > 200 ? "…" : ""}
-                      </p>
-                    </div>
                   )}
                 </div>
 
@@ -1087,7 +1092,7 @@ export default function FeedMemory() {
             ) : (
               <button
                 onClick={handleSubmit}
-                disabled={loading || (activeTab === "youtube" && (!ytTranscript || ytFetching))}
+                disabled={loading || (activeTab === "youtube" && !ytUrl.trim() && !ytManualText)}
                 className="btn-primary px-7 py-2.5 rounded-lg text-white text-[13px] font-semibold uppercase tracking-widest shadow-card hover:opacity-90 disabled:opacity-50 active:scale-95 transition-all"
               >
                 {loading
@@ -1095,9 +1100,9 @@ export default function FeedMemory() {
                     ? (() => { try { return `Scraping ${new URL(urlInput).hostname}…`; } catch { return "Scraping…"; } })()
                     : activeTab === "file" && uploadedFile
                     ? `Processing ${uploadedFile.name}…`
+                    : activeTab === "youtube" && ytFetching
+                    ? "Fetching transcript…"
                     : "Processing…"
-                  : activeTab === "youtube" && ytFetching
-                  ? "Fetching transcript…"
                   : "Feed into Memory"}
               </button>
             )}
