@@ -10,6 +10,10 @@
 //        "Already signed in — retry" — re-checks storage (for the case where
 //        Contendo is already open in another tab and has already pushed the token).
 //   4. On 401 from backend: clear the cached token and re-run init().
+//
+// Article saving: sends { action: "scrapeAndIngest", url } to background.js,
+//   which POSTs to /scrape-and-ingest. The backend handles scraping entirely.
+// YouTube saving: sends { action: "ingest", content: transcript } — unchanged.
 
 const CONTENDO_ORIGIN = "https://contendo-six.vercel.app";
 
@@ -51,19 +55,6 @@ async function resolveToken() {
   return contendo_token || null;
 }
 
-// ── Content extraction ─────────────────────────────────────────────────────
-
-async function extractPageContent(tabId) {
-  try {
-    // Inject content.js into the article tab on demand.
-    // The injection guard inside content.js prevents duplicate listeners.
-    await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
-    return await chrome.tabs.sendMessage(tabId, { action: "getPageContent" });
-  } catch (_) {
-    return null;
-  }
-}
-
 // ── Connect state ──────────────────────────────────────────────────────────
 
 function initConnectState(hint) {
@@ -101,48 +92,24 @@ function initConnectState(hint) {
 async function initPageState(tab, token) {
   showOnly("state-page");
 
-  const content = await extractPageContent(tab.id);
-
-  document.getElementById("page-title-preview").textContent = content?.title
-    ? truncate(content.title, 90)
-    : truncate(tab.title || "Untitled page", 90);
-
-  let selectedSource = "article";
-  let selectedOrigin = "saved";
-
-  document.querySelectorAll("#state-page .source-pill").forEach((pill) => {
-    pill.addEventListener("click", () => {
-      document.querySelectorAll("#state-page .source-pill").forEach((p) => p.classList.remove("active"));
-      pill.classList.add("active");
-      selectedSource = pill.dataset.source;
-      selectedOrigin = pill.dataset.origin;
-      document.getElementById("page-badge").textContent =
-        selectedSource === "note" ? "Personal" : "Article";
-    });
-  });
+  // Title preview comes from the tab — the backend will extract the real title
+  // server-side via /scrape-and-ingest, so this is display-only.
+  document.getElementById("page-title-preview").textContent =
+    truncate(tab.title || "Untitled page", 90);
 
   document.getElementById("page-ingest-btn").addEventListener("click", async () => {
     hideFeedback("page-feedback");
-
-    if (!content?.text) {
-      showFeedback("page-feedback", "Could not extract page content. Try on a regular webpage.", "error");
-      return;
-    }
-
     showOnly("state-loading");
 
+    // Send the URL only — backend scrapes, titles, chunks, and embeds.
     const response = await chrome.runtime.sendMessage({
-      action: "ingest",
+      action: "scrapeAndIngest",
       token,
       tabId: tab.id,
-      content: content.text,
-      source_type: selectedSource,
-      content_origin: selectedOrigin,
-      title: content.title || tab.title || "",
-      url: tab.url || "",
+      url: tab.url,
     });
 
-    handleIngestResponse(response, content.title || tab.title || "page");
+    handleIngestResponse(response, tab.title || "page");
   });
 }
 
@@ -151,8 +118,8 @@ async function initPageState(tab, token) {
 async function initYouTubeState(tab, token) {
   showOnly("state-youtube");
 
-  const content = await extractPageContent(tab.id);
-  const videoTitle = content?.title || tab.title || "YouTube video";
+  // Strip " - YouTube" suffix that Chrome includes in the tab title.
+  const videoTitle = (tab.title || "YouTube video").replace(/\s*-\s*YouTube\s*$/i, "").trim() || "YouTube video";
 
   document.getElementById("yt-title-preview").textContent = truncate(videoTitle, 90);
 
