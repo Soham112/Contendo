@@ -9,8 +9,8 @@ interface ExtensionInstallModalProps {
 const EXTENSION_BANNER_DISMISSED_KEY = "contendo_extension_banner_dismissed";
 
 const INSTALL_STEPS = [
-  'Click "Download Extension" below',
-  "Unzip the downloaded folder",
+  'Click "Download Extension" and save to your Downloads folder',
+  "Find the zip in Downloads and unzip it (double-click on Mac, right-click → Extract All on Windows)",
   "Open chrome://extensions in a new tab",
   'Enable "Developer mode" (toggle, top right)',
   'Click "Load unpacked" and select the unzipped folder',
