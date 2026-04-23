@@ -1,9 +1,12 @@
+import logging
 import os
 import re
 import shutil
 from pathlib import Path
 
 import httpx
+
+logger = logging.getLogger(__name__)
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
@@ -240,6 +243,9 @@ async def fetch_youtube_transcript(
             params={"videoId": video_id, "text": "true"},
             headers={"x-api-key": _SUPADATA_API_KEY},
         )
+
+    if response.status_code == 200:
+        logger.info(f"Supadata response body: {response.text}")
 
     if response.status_code == 404:
         raise HTTPException(status_code=422, detail="No transcript found for this video")
