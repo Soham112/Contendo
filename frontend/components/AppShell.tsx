@@ -23,6 +23,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   if (
+    pathname === "/" ||
     pathname === "/welcome" ||
     pathname === "/onboarding" ||
     pathname === "/first-post" ||
