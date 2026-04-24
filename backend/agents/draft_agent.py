@@ -103,6 +103,14 @@ Rules for this post:
 """.strip()
 
 
+_FIRST_POST_INSTRUCTION = """FIRST POST RULE (overrides word-count and visual placeholder rules):
+This is the user's very first generated post. Keep it short and punchy — a quick win.
+- Target length: 120–150 words. Do not exceed 150 words under any circumstance.
+- Count your words before outputting. Cut ruthlessly if over 150.
+- Do NOT include any [DIAGRAM: ...] or [IMAGE: ...] placeholders. None. Ever. In a first post.
+- No multi-section structure. One tight idea, one strong finish.
+- The goal is to prove the system works, not to show off every feature."""
+
 _ZERO_NOTES_GUARD = """ZERO PERSONAL NOTES RULE (highest priority — overrides all other instructions):
 This user has no ingested notes yet. You have ZERO first-person source material.
 Do NOT write any personal stories, specific incidents, named colleagues,
@@ -174,6 +182,7 @@ Topic: {topic}
 {context_section}
 {posted_topics_section}
 {grounding_instruction}
+{first_post_instruction}
 Write the draft now. Do not add any preamble or explanation; output only the post content itself.
 
 ---
@@ -269,12 +278,25 @@ def draft_node(state: PipelineState) -> PipelineState:
 
     profile = state["profile"]
     profile_context = profile_to_context_string(profile)
+    is_first_post = state.get("first_post", False)
+    effective_length = "concise" if is_first_post else state.get("length", "standard")
+
     format_instructions = get_format_instructions(
         state["format"],
-        state.get("length", "standard"),
+        effective_length,
         state["tone"],
     )
-    word_count_rule = _get_word_count_rule(state["format"], state.get("length", "standard"))
+    if is_first_post:
+        word_count_rule = (
+            "\n---\n"
+            "WORD COUNT RULE — this overrides everything else:\n"
+            "The final post must be 120–150 words.\n"
+            "Count before outputting. If over 150, cut until you are within range.\n"
+            "Never exceed 150 words under any circumstance.\n"
+            "---"
+        )
+    else:
+        word_count_rule = _get_word_count_rule(state["format"], effective_length)
 
     chunks_text = _format_retrieval_context(state)
 
@@ -300,6 +322,8 @@ def draft_node(state: PipelineState) -> PipelineState:
             _ZERO_NOTES_GUARD + ("\n\n" + grounding_instruction if grounding_instruction else "")
         )
 
+    first_post_instruction = _FIRST_POST_INSTRUCTION if is_first_post else ""
+
     prompt = SYSTEM_PROMPT.format(
         profile_context=profile_context,
         format_instructions=format_instructions,
@@ -309,6 +333,7 @@ def draft_node(state: PipelineState) -> PipelineState:
         context_section=context_section,
         posted_topics_section=posted_topics_section,
         grounding_instruction=grounding_instruction,
+        first_post_instruction=first_post_instruction,
         archetype_name=archetype_name,
         archetype_instructions=archetype_instructions,
     )

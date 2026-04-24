@@ -47,8 +47,8 @@
 | `backend/agents/predictability_audit_agent.py` | Three-step post-humanizer audit: (1) Haiku finds the single most AI-sounding sentence or returns CLEAN; (2) Sonnet rewrites only that sentence to be shorter, more specific, or unresolved; (3) Haiku checks for burstiness (3+ consecutive sentences within 4 words of each other in length) and breaks rhythm if found. Skipped for draft quality mode. All exceptions caught — pipeline never breaks. Usage logged via `usage_store` as three separate event_types: `predictability_audit_step1/2/3`. |
 | `backend/agents/word_count_enforcer_agent.py` | Final word-count gate — runs once at the end of the pipeline after all passes are complete. Maps `(format, length)` to concrete `(min_words, max_words)` targets. If within range: returns unchanged. If over: Haiku trims while preserving voice. If under: Haiku expands with one specific detail. Skipped for draft quality mode and thread format (tweet-count based). All exceptions caught — pipeline never breaks. Usage logged as `event_type="word_count_enforcer"`. |
 | `backend/agents/scorer_agent.py` | Scores draft 0–100 across 5 dimensions, returns flagged sentences |
-| `backend/pipeline/state.py` | TypedDict schema for shared LangGraph pipeline state; includes `length` (`"concise" | "standard" | "long-form"`), `archetype`, `user_id`, `critic_brief`, retrieval calibration fields (`retrieval_confidence`, `retrieved_chunk_count`), `retrieved_chunks` (backward compat flat list), `retrieval_bundle` (full hierarchical bundle), and `retrieved_context` (pre-formatted enriched text for draft prompt) |
-| `backend/pipeline/graph.py` | LangGraph graph definition — nodes, edges, conditional retry loop. Pipeline order: load_profile → retrieval → draft → critic → humanizer → predictability_audit → word_count_enforcer (standard/draft) OR scorer → word_count_enforcer (polished) → finalize. word_count_enforcer always runs exactly once, as the final gate before finalize. |
+| `backend/pipeline/state.py` | TypedDict schema for shared LangGraph pipeline state; includes `length` (`"concise" | "standard" | "long-form"`), `archetype`, `user_id`, `critic_brief`, retrieval calibration fields (`retrieval_confidence`, `retrieved_chunk_count`), `retrieved_chunks` (backward compat flat list), `retrieval_bundle` (full hierarchical bundle), `retrieved_context` (pre-formatted enriched text for draft prompt), and `first_post: bool` (set by `load_profile_node` when the user has no prior post history) |
+| `backend/pipeline/graph.py` | LangGraph graph definition — nodes, edges, conditional retry loop. Pipeline order: load_profile → retrieval → draft → critic → humanizer → predictability_audit → word_count_enforcer (standard/draft) OR scorer → word_count_enforcer (polished) → finalize. word_count_enforcer always runs exactly once, as the final gate before finalize. `load_profile_node` sets `first_post=True` when `posted_topics` is empty (user has no prior generation history). |
 | `backend/memory/vector_store.py` | Supabase pgvector store for embeddings; local sentence-transformer encoding + Supabase RPC retrieval (`match_embeddings`), upsert/delete/list helpers, dedup via `query_by_hash`, and source-level aggregation helpers. `query_similar_batch()` embeds all queries in one batched forward pass for speed. |
 | `backend/memory/usage_store.py` | Fire-and-forget Claude API usage logging to Supabase `usage_events` table; `log_usage_event(user_id, event_type, input_tokens, output_tokens, metadata={}, model="sonnet")` is the only public function; calculates `estimated_cost_usd` using per-token pricing (Sonnet: $0.000003/$0.000015 in/out; Haiku: $0.00000025/$0.00000125); posts via `httpx.AsyncClient`; never raises; intended for `asyncio.get_running_loop().create_task()` call sites; wraps the HTTP call in try/except and logs warnings on failure |
 | `backend/memory/profile_store.py` | Per-user profile read/write backed by Supabase `profiles` table — `load_profile(user_id)` selects row and merges missing keys from `DEFAULT_PROFILE`; `save_profile(profile, user_id)` upserts `{"id": user_id, "data": profile}`; `profile_exists(user_id)` returns True if a row exists; `DEFAULT_PROFILE` includes bio, location, target_audience, opinions, writing_samples; `profile_to_context_string()` formats all fields for prompt injection; `save_writing_sample(user_id, sample, max_samples=10)` appends a new sample (case-insensitive dedup, oldest dropped when over limit) |
@@ -190,9 +190,11 @@ Pre-labeling chunk frames is structural and deterministic — it runs on typed d
 ### draft_node (draft_agent.py)
 | | |
 |---|---|
-| **Reads from state** | `profile`, `retrieved_chunks`, `topic`, `format`, `tone`, `length`, `context` |
+| **Reads from state** | `profile`, `retrieved_chunks`, `topic`, `format`, `tone`, `length`, `context`, `first_post` |
 | **Writes to state** | `current_draft: str`, `archetype: str` (inferred archetype key, e.g. `"incident_report"`) |
 | **Side effects** | 2 Claude API calls: Haiku (`claude-haiku-4-5-20251001`) for `infer_archetype()`, then Sonnet (`claude-sonnet-4-6`) for the draft |
+
+**First-post mode (`first_post=True`):** When the user has no prior generation history, `draft_node` overrides the requested `length` to `"concise"`, replaces the word-count rule with a hard 120–150 word constraint, and injects `_FIRST_POST_INSTRUCTION` into the prompt. This instruction also suppresses all `[DIAGRAM:]` and `[IMAGE:]` placeholders, enforces a single-idea structure, and prevents multi-section layouts. The goal is a quick win: a short, sharp post that proves the system works without overwhelming the new user.
 
 ### critic_node (critic_agent.py)
 | | |
@@ -263,7 +265,7 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
 | | |
 |---|---|
 | **Reads** | Profile from Supabase `profiles` table via `load_profile(user_id)`; calls `get_all_topics_posted()` from feedback_store |
-| **Writes to state** | `profile: dict`, `iterations: 0`, `posted_topics: list[str]` |
+| **Writes to state** | `profile: dict`, `iterations: 0`, `posted_topics: list[str]`, `first_post: bool` (True when `posted_topics` is empty) |
 
 ### finalize_node (graph.py inline)
 | | |
@@ -972,6 +974,7 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
 
 ---
 
+| First post is capped at 120–150 words with no visual placeholders | When `load_profile_node` detects the user has no prior posts (`posted_topics` is empty), it sets `first_post=True` in pipeline state. `draft_node` reads this flag and: (1) overrides `effective_length` to `"concise"`, (2) replaces the word-count rule with a hard 120–150 word constraint, and (3) injects `_FIRST_POST_INSTRUCTION` which suppresses all `[DIAGRAM:]`/`[IMAGE:]` placeholders and enforces a single-idea structure. The flag is derived from `posted_topics` (already loaded) — no extra DB query. Subsequent posts use the user's requested length normally. |
 | `/first-post` is a standalone conversion-focused route with full generation completion | The flow now does real work, not just a placeholder: it saves a minimal profile first, generates the first draft, auto-logs to history, and shows an in-page draft review screen with copy + workspace navigation. This closes the first-run loop without dropping users into an empty workspace. |
 | Supabase JWT auth via PyJWT HS256 | `backend/auth/clerk.py` decodes Bearer tokens with `jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], audience="authenticated")`; returns `payload["sub"]` as `user_id`. `SUPABASE_JWT_SECRET` is required in production. No JWKS fetch or RSA key rotation needed. Any exception → 401. **Auth fully migrated from Clerk to Supabase; Clerk references only appear in legacy migration script (`migrate_to_supabase.py`) and historical comments.** |
 | Dev fallback to `user_id="default"` | When `ENVIRONMENT != "production"` and no Authorization header is present, `get_user_id()` returns `"default"` instead of raising 401. This preserves full local dev convenience — no token needed. Production always requires a valid token. |

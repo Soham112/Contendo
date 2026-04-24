@@ -8,6 +8,8 @@
 
 > **Verification note (2026-04-22):** Smart source attribution added (feature/smart-source-attribution). SOURCE ATTRIBUTION RULES block in draft_agent.py replaced with a pre-labeled frame system. Chunk grouping now happens upstream in retrieval_agent.py via `resolve_attribution_frames()` — the draft agent reads explicit frame labels (PERSONAL / EXPERT OUTSIDER / LEARNING) rather than doing attribution interpretation inside the prompt.
 
+> **Verification note (2026-04-24):** First post length cap added (feature/short-first-post-length). When a user has no prior post history, `draft_node` now injects `_FIRST_POST_INSTRUCTION` which hard-caps the post at 120–150 words and suppresses all `[DIAGRAM:]`/`[IMAGE:]` placeholders. The `first_post` flag is set in `load_profile_node` when `posted_topics` is empty — no extra DB query. Subsequent posts are unaffected.
+
 > **Verification note (2026-04-22):** Word count enforcer added (feature/word-count-enforcer). Hard word count rule injected into draft_agent.py and humanizer_agent.py prompts. New word_count_enforcer_agent.py with trim/expand Haiku prompts documented below.
 
 > **Verification note (2026-04-07):** Create Post canvas timing and manuscript-editor focus/selection styling fixed. No prompt text changed in this pass.
@@ -232,6 +234,7 @@ Topic: {topic}
 {context_section}
 {posted_topics_section}
 {grounding_instruction}
+{first_post_instruction}
 Write the draft now. Do not add any preamble or explanation; output only the post content itself.
 
 ---
@@ -298,6 +301,7 @@ Never force a diagram into opinion pieces or short punchy posts where the words 
 - `context_section` — optional context string prefixed with "Additional context:", or empty string
 - `posted_topics_section` — bullet list of all previously saved topics from `feedback_store.get_all_topics_posted()`, prefixed with "Topics you have already written about — do not repeat these angles, find a fresh perspective:"; empty string if no posts saved yet
 - `grounding_instruction` — output of `_get_grounding_instruction(retrieval_confidence, retrieved_chunk_count)`; empty string for high confidence (prompt unchanged); calibration text for medium/low; injected between `{posted_topics_section}` and "Write the draft now."
+- `first_post_instruction` — `_FIRST_POST_INSTRUCTION` constant when `state["first_post"] == True`; empty string otherwise. Injected immediately after `grounding_instruction`.
 - `archetype_name` — human-readable archetype name (e.g. "Incident Report / Retrospective"), resolved from the inferred archetype key
 - `archetype_instructions` — structural prompt block for the inferred archetype, returned by `get_archetype_instructions()` in `utils/formatters.py`
 
@@ -312,6 +316,25 @@ Never force a diagram into opinion pieces or short punchy posts where the words 
 | low | Fewer than 3 strong matches, below medium trigger thresholds | Write one idea well and stop. 60–100 words is a complete post. No padding, no fabrication. |
 
 Design principle: always generate. Calibrate output length and frame to available grounding. A 70-word post built on one real idea is better than a 400-word post built on fabrication.
+
+### First-post instruction (injected on user's first generation)
+
+**Trigger condition:** `state["first_post"] == True` — set by `load_profile_node` when `posted_topics` is empty (user has never generated a post before).
+
+**Behaviour:** `_FIRST_POST_INSTRUCTION` is injected as `{first_post_instruction}` immediately after `{grounding_instruction}`. Additionally, `draft_node` overrides `effective_length` to `"concise"` and replaces the word-count rule with a hard 120–150 word constraint. The VISUAL PLACEHOLDER RULES in `SYSTEM_PROMPT` are overridden by this instruction — no `[DIAGRAM:]` or `[IMAGE:]` placeholders in a first post.
+
+**Full instruction text:**
+```
+FIRST POST RULE (overrides word-count and visual placeholder rules):
+This is the user's very first generated post. Keep it short and punchy — a quick win.
+- Target length: 120–150 words. Do not exceed 150 words under any circumstance.
+- Count your words before outputting. Cut ruthlessly if over 150.
+- Do NOT include any [DIAGRAM: ...] or [IMAGE: ...] placeholders. None. Ever. In a first post.
+- No multi-section structure. One tight idea, one strong finish.
+- The goal is to prove the system works, not to show off every feature.
+```
+
+---
 
 ### Zero-notes guard (injected when retrieved_chunks is empty)
 

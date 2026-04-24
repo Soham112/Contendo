@@ -22,6 +22,7 @@ def load_profile_node(state: PipelineState) -> PipelineState:
     state["archetype"] = state.get("archetype", "")
     state["critic_brief"] = {}
     state["posted_topics"] = get_all_topics_posted(user_id=user_id)
+    state["first_post"] = len(state["posted_topics"]) == 0
     return state
 
 
