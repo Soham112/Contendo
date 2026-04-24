@@ -48,10 +48,10 @@ Frontend on Vercel (contendo-six.vercel.app). Backend on Railway
 per-user data isolation. New-user flow at `/first-post` (`/onboarding` is
 kept as a legacy redirect). Profile editor at `/settings`. Per-user profiles
 are stored in the Supabase `profiles` table (`id` + `data` JSON).
-Landing page (`/welcome`) is the
-default entry point — unauthenticated visitors hitting `/` are redirected
-there by middleware; signed-in users can also visit `/welcome` (sidebar
-logo links there) and see auth-aware CTAs ("Open workspace" → `/`).
+Landing page (`/`) is the
+default public entry point. Legacy `/welcome` remains available for backward
+compatibility. Signed-in users can still visit `/welcome` via the sidebar
+logo link and see auth-aware CTAs ("Open workspace" → `/create`).
 
 ---
 

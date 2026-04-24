@@ -52,11 +52,6 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  // Unauthenticated visitors hitting / → show the landing page
-  if (!user && pathname === "/") {
-    return NextResponse.redirect(new URL("/welcome", request.url));
-  }
-
   // All other protected routes → require sign-in
   if (!isPublicRoute(pathname) && !user) {
     const signInUrl = new URL("/sign-in", request.url);

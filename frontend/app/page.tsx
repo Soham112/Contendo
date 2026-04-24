@@ -1,5 +1,5 @@
-import FeedMemory from "@/components/FeedMemory";
+import WelcomePage from './welcome/page';
 
-export default function Home() {
-  return <FeedMemory />;
+export default function HomePage() {
+  return <WelcomePage />;
 }
