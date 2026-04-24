@@ -18,7 +18,7 @@ const NAV_ITEMS = [
     ),
   },
   {
-    href: "/",
+    href: "/feed-memory",
     label: "Feed Memory",
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -150,10 +150,7 @@ export default function Sidebar({
             </svg>
           ),
         }] : [])].map((item) => {
-          const isActive =
-            item.href === "/"
-              ? pathname === "/"
-              : pathname.startsWith(item.href);
+          const isActive = pathname.startsWith(item.href);
 
           return (
             <Link
