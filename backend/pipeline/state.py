@@ -25,6 +25,9 @@ class PipelineState(TypedDict, total=False):
     # Previously posted topics (for novelty injection in draft)
     posted_topics: list[str]
 
+    # True when this is the user's very first generated post (no prior history)
+    first_post: bool
+
     # Generation state
     current_draft: str
     iterations: int
