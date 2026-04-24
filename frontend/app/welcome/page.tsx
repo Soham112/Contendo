@@ -63,7 +63,7 @@ function TopNav({ isSignedIn, authLoaded }: { isSignedIn: boolean; authLoaded: b
         <div className="flex items-center gap-2 sm:gap-3">
           {authLoaded && isSignedIn ? (
             <Link
-              href="/"
+              href="/create"
               className="btn-primary text-white text-[11px] label-caps rounded-lg px-4 py-2.5 sm:px-5"
             >
               Open workspace
@@ -114,7 +114,7 @@ export default function WelcomePage() {
 
   const heroPrimaryCta = useMemo(() => {
     if (isSignedIn) {
-      return { href: "/", label: "Open workspace" };
+      return { href: "/create", label: "Open workspace" };
     }
     return { href: "/first-post", label: "Write your first post" };
   }, [authLoaded, isSignedIn]);
