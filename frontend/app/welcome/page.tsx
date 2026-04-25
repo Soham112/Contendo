@@ -58,12 +58,12 @@ function TopNav({ isSignedIn, authLoaded }: { isSignedIn: boolean; authLoaded: b
           </a>
         </div>
 
-        {/* Right — auth-aware, unchanged */}
+        {/* Right — auth-aware */}
         <div className="flex items-center gap-2 sm:gap-3">
           {authLoaded && isSignedIn ? (
             <Link
               href="/create"
-              className="btn-primary text-white text-[11px] label-caps rounded-lg px-4 py-2.5 sm:px-5"
+              className="text-[11px] label-caps text-primary border border-primary/40 hover:border-primary hover:bg-surface-container-low rounded-lg px-4 py-2.5 sm:px-5 transition-colors"
             >
               Open workspace
             </Link>
@@ -77,7 +77,7 @@ function TopNav({ isSignedIn, authLoaded }: { isSignedIn: boolean; authLoaded: b
               </Link>
               <Link
                 href="/first-post"
-                className="btn-primary text-white text-[11px] label-caps rounded-lg px-4 py-2.5 sm:px-5"
+                className="text-[11px] label-caps text-primary border border-primary/40 hover:border-primary hover:bg-surface-container-low rounded-lg px-4 py-2.5 sm:px-5 transition-colors"
               >
                 Get started
               </Link>
