@@ -302,12 +302,6 @@ export default function FeedMemory() {
   };
 
   useEffect(() => {
-    // [Tour debug] — remove after confirming tour fires correctly
-    console.log('[Tour debug]', {
-      tourDone: localStorage.getItem('contendo_feed_tour_done'),
-      totalChunks: stats?.total_chunks ?? null,
-      statsLoaded: stats !== null,
-    });
     fetchStats();
   }, []);
 
