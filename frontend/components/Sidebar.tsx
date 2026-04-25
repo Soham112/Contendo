@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import supabase from "@/lib/supabase";
 import FeedbackModal from "@/components/ui/FeedbackButton";
+import ContendoLogo from "@/components/ContendoLogo";
 
 const NAV_ITEMS = [
   {
@@ -126,16 +127,8 @@ export default function Sidebar({
             <path d="M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
           </svg>
         </button>
-        <Link href="/welcome" className="flex items-center gap-2.5 group">
-          <div className="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center transition-colors group-hover:bg-surface-container-high">
-            <svg width="14" height="14" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M2 9.5L4 3l4 5.5M5.5 7h3" stroke="#58614f" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </div>
-          <div className="flex flex-col leading-tight">
-            <span className="text-[15px] font-bold text-on-surface tracking-tight font-headline">Contendo</span>
-            <span className="text-[9px] uppercase tracking-[0.12em] text-secondary font-label">Editorial Atelier</span>
-          </div>
+        <Link href="/welcome" className="group">
+          <ContendoLogo />
         </Link>
       </div>
 
