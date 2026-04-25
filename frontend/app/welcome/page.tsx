@@ -115,34 +115,39 @@ export default function WelcomePage() {
 
         {/* ── Hero ──────────────────────────────────────────────────────────── */}
         <section
-          className="px-4 text-center flex flex-col items-center justify-center"
+          className="px-4 flex flex-col items-center justify-center text-center"
           style={{
             minHeight: "100vh",
-            paddingTop: 120,
-            paddingBottom: 72,
+            paddingTop: 96,
+            paddingBottom: 48,
             background: "linear-gradient(to bottom, #faf9f8 85%, #f3f4f3 100%)",
           }}
         >
-          <div className="w-full max-w-[600px] mx-auto flex flex-col items-center">
+          <div className="w-full max-w-[560px] mx-auto flex flex-col items-center">
 
-            {/* Illustration */}
-            <img
-              src="/images/landing-hero.png"
-              alt="Person riding pen upward"
-              className="mb-12 w-full object-contain"
-              style={{ maxWidth: "500px", height: "auto" }}
-            />
+            {/* Illustration — framed container blends transparent PNG with page background */}
+            <div
+              className="mb-8 rounded-lg p-6 flex items-center justify-center"
+              style={{ background: "#faf9f8" }}
+            >
+              <img
+                src="/images/landing-hero.png"
+                alt="Person riding pen upward"
+                className="w-full object-contain"
+                style={{ maxWidth: "400px", height: "auto" }}
+              />
+            </div>
 
             {/* Tagline */}
             <h1
-              className="font-headline font-normal leading-[1.1] tracking-tight text-on-surface text-5xl mb-4"
+              className="font-headline font-normal leading-[1.1] tracking-tight text-on-surface text-5xl mb-3"
             >
               Write like yourself. At scale.
             </h1>
 
             {/* Subtitle */}
             <p
-              className="font-sans text-lg text-secondary/70 text-center mx-auto mb-12"
+              className="font-sans text-lg text-secondary/70 text-center mx-auto mb-10"
               style={{ maxWidth: "600px" }}
             >
               Your thoughts, written in your voice.
@@ -151,7 +156,7 @@ export default function WelcomePage() {
             {/* CTA */}
             <Link
               href={heroPrimaryCta.href}
-              className="font-sans font-medium text-white text-base px-8 py-3 rounded-md transition-opacity hover:opacity-90"
+              className="font-sans font-medium text-white text-base px-8 py-3 rounded-md transition-opacity hover:opacity-90 mb-12"
               style={{
                 background: "linear-gradient(135deg, #58614f 0%, #4c5543 100%)",
               }}
@@ -160,7 +165,7 @@ export default function WelcomePage() {
             </Link>
 
             {/* Trust chips */}
-            <div className="mt-20 flex flex-wrap gap-8 justify-center items-center">
+            <div className="flex flex-wrap gap-6 justify-center items-center">
               {["✓ Learns in seconds", "✓ Sounds like you", "✓ Ready to post"].map((chip) => (
                 <span key={chip} className="font-sans text-sm text-on-surface/60 text-center">
                   {chip}
