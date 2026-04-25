@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import supabase from "@/lib/supabase";
+import { QuillIcon } from "@/components/ContendoLogo";
 
 const MOOD_GRADIENTS = [
   { label: "Analytical",   from: "#3a4a35", to: "#58614f", img: "/mood-analytical.png" },
@@ -25,8 +26,9 @@ function TopNav({ isSignedIn, authLoaded }: { isSignedIn: boolean; authLoaded: b
       <div className="max-w-[1200px] mx-auto px-5 sm:px-8 py-4 flex items-center justify-between relative">
         <Link
           href="/welcome"
-          className="font-headline italic text-on-surface text-xl tracking-tight"
+          className="flex items-center gap-2.5 font-headline italic text-on-surface text-xl tracking-tight"
         >
+          <QuillIcon size={22} />
           Contendo
         </Link>
 
