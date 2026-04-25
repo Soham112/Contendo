@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import supabase from "@/lib/supabase";
 import { QuillIcon } from "@/components/ContendoLogo";
 
@@ -17,8 +16,6 @@ const MOOD_GRADIENTS = [
   { label: "Direct",       from: "#5c4a2a", to: "#8a7040", img: "/mood-direct.png" },
 ];
 
-const HERO_DRAFT_KEY = "contentOS_last_topic";
-const SHARED_TOPIC_KEY = "contendo_topic";
 
 function TopNav({ isSignedIn, authLoaded }: { isSignedIn: boolean; authLoaded: boolean }) {
   return (
@@ -93,7 +90,6 @@ function TopNav({ isSignedIn, authLoaded }: { isSignedIn: boolean; authLoaded: b
 }
 
 export default function WelcomePage() {
-  const router = useRouter();
   const [isSignedIn, setIsSignedIn] = useState(false);
   const [authLoaded, setAuthLoaded] = useState(false);
 
@@ -103,46 +99,13 @@ export default function WelcomePage() {
       setAuthLoaded(true);
     });
   }, []);
-  const [topicInput, setTopicInput] = useState("");
-  const [showInputError, setShowInputError] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const SUGGESTION_PILLS = [
-    "Why I changed my mind on...",
-    "What 3 years of X taught me",
-    "The mistake most people make with...",
-    "My honest take on...",
-  ];
 
   const heroPrimaryCta = useMemo(() => {
     if (isSignedIn) {
-      return { href: "/create", label: "Open workspace" };
+      return { href: "/create", label: "OPEN WORKSPACE" };
     }
-    return { href: "/first-post", label: "Write your first post" };
+    return { href: "/first-post", label: "TRY FOR FREE" };
   }, [authLoaded, isSignedIn]);
-
-  // ── DO NOT TOUCH — routing + sessionStorage logic ──────────────────────────
-  const handleHeroSubmit = (event: FormEvent) => {
-    event.preventDefault();
-    const topic = topicInput.trim();
-
-    if (!topic) {
-      setShowInputError(true);
-      return;
-    }
-
-    setShowInputError(false);
-    sessionStorage.setItem(SHARED_TOPIC_KEY, topic);
-
-    if (isSignedIn) {
-      sessionStorage.setItem(HERO_DRAFT_KEY, topic);
-      router.push("/create");
-      return;
-    }
-
-    router.push(`/first-post?topic=${encodeURIComponent(topic)}`);
-  };
-  // ── END DO NOT TOUCH ───────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-background text-on-surface font-sans">
@@ -152,7 +115,7 @@ export default function WelcomePage() {
 
         {/* ── Hero ──────────────────────────────────────────────────────────── */}
         <section
-          className="px-5 sm:px-8 text-center flex flex-col items-center justify-center"
+          className="px-4 text-center flex flex-col items-center justify-center"
           style={{
             minHeight: "100vh",
             paddingTop: 120,
@@ -160,115 +123,51 @@ export default function WelcomePage() {
             background: "linear-gradient(to bottom, #faf9f8 85%, #f3f4f3 100%)",
           }}
         >
-          <div className="max-w-[980px] mx-auto">
+          <div className="w-full max-w-[600px] mx-auto flex flex-col items-center">
+
+            {/* Illustration */}
+            <img
+              src="/images/landing-hero.png"
+              alt="Person riding pen upward"
+              className="mb-12 w-full object-contain"
+              style={{ maxWidth: "500px", height: "auto" }}
+            />
+
+            {/* Tagline */}
             <h1
-              className="font-headline font-normal leading-[1.1] tracking-tight mb-5"
-              style={{ fontSize: "clamp(2.8rem, 5vw, 3.8rem)", color: "#2f3333" }}
+              className="font-headline font-normal leading-[1.1] tracking-tight text-on-surface text-5xl mb-4"
             >
               Write like yourself. At scale.
             </h1>
 
+            {/* Subtitle */}
             <p
-              className="text-secondary mx-auto"
-              style={{
-                fontSize: "1.1rem",
-                lineHeight: 1.7,
-                maxWidth: "500px",
-                marginBottom: "48px",
-              }}
+              className="font-sans text-lg text-secondary/70 text-center mx-auto mb-12"
+              style={{ maxWidth: "600px" }}
             >
-              Feed it your notes, articles, and opinions.
-              It learns your voice and writes posts you&apos;d actually publish.
+              Your thoughts, written in your voice.
             </p>
 
-            <form
-              onSubmit={handleHeroSubmit}
-              className="mx-auto rounded-xl flex flex-col sm:flex-row gap-2 sm:items-center"
+            {/* CTA */}
+            <Link
+              href={heroPrimaryCta.href}
+              className="font-sans font-medium text-white text-base px-8 py-3 rounded-md transition-opacity hover:opacity-90"
               style={{
-                maxWidth: "680px",
-                background: "#ffffff",
-                border: "1px solid rgba(174, 179, 178, 0.25)",
-                padding: "8px 8px 8px 16px",
+                background: "linear-gradient(135deg, #58614f 0%, #4c5543 100%)",
               }}
-              aria-label="Start your first post"
             >
-              <input
-                ref={inputRef}
-                value={topicInput}
-                onChange={(event) => {
-                  setTopicInput(event.target.value);
-                  if (showInputError && event.target.value.trim()) {
-                    setShowInputError(false);
-                  }
-                }}
-                placeholder="What do you want to write about today?"
-                className="flex-1 bg-transparent text-[14px] sm:text-[13px] text-on-surface placeholder:text-outline focus:outline-none focus:border-b-2 focus:border-b-[#58614f]"
-                style={{ minHeight: "64px", paddingTop: "20px", paddingBottom: "20px" }}
-                aria-label="Topic prompt"
-              />
-              <button
-                type="submit"
-                className="btn-primary text-white text-[13px] font-medium rounded-md px-5 py-3 sm:py-2.5 whitespace-nowrap self-center w-full sm:w-auto"
-              >
-                Start Writing
-              </button>
-            </form>
+              {authLoaded ? heroPrimaryCta.label : <span className="opacity-0">TRY FOR FREE</span>}
+            </Link>
 
-            {showInputError && (
-              <p className="mt-2 text-[12px] text-secondary/80">Add a topic first to continue.</p>
-            )}
-
-            {/* ── Suggestion pills ──────────────────────────────────────────── */}
-            <div style={{ marginTop: "20px" }}>
-              <p
-                className="text-center mb-3"
-                style={{
-                  fontSize: "0.7rem",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06rem",
-                  color: "rgba(100, 94, 87, 0.5)",
-                }}
-              >
-                Or start from a prompt
-              </p>
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: "10px",
-                  justifyContent: "center",
-                }}
-              >
-                {SUGGESTION_PILLS.map((pill) => (
-                  <button
-                    key={pill}
-                    type="button"
-                    onClick={() => {
-                      setTopicInput(pill);
-                      inputRef.current?.focus();
-                    }}
-                    style={{
-                      background: "#ffffff",
-                      border: "1px solid rgba(174, 179, 178, 0.35)",
-                      borderRadius: "9999px",
-                      padding: "8px 16px",
-                      fontSize: "0.8rem",
-                      color: "var(--color-text-secondary, #645e57)",
-                      cursor: "pointer",
-                      transition: "background 0.15s ease",
-                    }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLButtonElement).style.background = "#f3f4f3";
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLButtonElement).style.background = "#ffffff";
-                    }}
-                  >
-                    {pill}
-                  </button>
-                ))}
-              </div>
+            {/* Trust chips */}
+            <div className="mt-20 flex flex-wrap gap-8 justify-center items-center">
+              {["✓ Learns in seconds", "✓ Sounds like you", "✓ Ready to post"].map((chip) => (
+                <span key={chip} className="font-sans text-sm text-on-surface/60 text-center">
+                  {chip}
+                </span>
+              ))}
             </div>
+
           </div>
         </section>
 
