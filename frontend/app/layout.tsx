@@ -6,6 +6,7 @@ import { ToastProvider } from "@/components/ui/ToastProvider";
 export const metadata: Metadata = {
   title: "Contendo",
   description: "Personal content generation system",
+  icons: { icon: '/favicon.png' },
 };
 
 export default function RootLayout({
