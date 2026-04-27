@@ -36,6 +36,17 @@ interface DailyEvent {
   count: number;
 }
 
+interface SourcePreferenceItem {
+  source_type: string;
+  tab_clicks: number;
+  percentage: number;
+}
+
+interface SourceIngestItem {
+  source_type: string;
+  count: number;
+}
+
 interface AnalyticsData {
   total_events: number;
   unique_users: number;
@@ -53,6 +64,11 @@ interface AnalyticsData {
     cohort_2_posts: number;
     cohort_5_posts: number;
     retention_rate_2plus: number;
+  };
+  feed_memory_usage: {
+    source_preferences: SourcePreferenceItem[];
+    ingest_outcomes: { success: number; duplicate: number; failed: number; total: number };
+    ingests_by_source: SourceIngestItem[];
   };
 }
 
@@ -487,6 +503,94 @@ export default function AnalyticsDashboard() {
 
       </div>
 
+      {/* ── Feed Memory usage ── */}
+      <div className="bg-surface-container-low rounded-xl p-5 mb-6">
+        <SectionHeading>Feed Memory — how users are building their library</SectionHeading>
+        {data ? (() => {
+          const fmu = data.feed_memory_usage;
+          const SOURCE_LABELS: Record<string, string> = {
+            article: "Article (paste)",
+            url: "URL (scrape)",
+            file: "File upload",
+            youtube: "YouTube",
+            image: "Image / diagram",
+            note: "Note",
+            obsidian: "Obsidian vault",
+          };
+          const totalTabClicks = fmu.source_preferences.reduce((s, p) => s + p.tab_clicks, 0);
+          const totalIngests = fmu.ingest_outcomes.total;
+          const hasAny = totalTabClicks > 0 || totalIngests > 0;
+
+          return !hasAny ? (
+            <p className="text-sm text-secondary opacity-60">No Feed Memory activity yet.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+
+              {/* Source preference (tab clicks) */}
+              <div>
+                <p className="text-xs text-secondary opacity-60 mb-3">Source tab selected</p>
+                {fmu.source_preferences.length === 0 ? (
+                  <p className="text-sm text-secondary opacity-60">No tab clicks yet.</p>
+                ) : (
+                  <div className="divide-y divide-outline-variant/20">
+                    {fmu.source_preferences.map((item) => (
+                      <HBar
+                        key={item.source_type}
+                        label={SOURCE_LABELS[item.source_type] ?? item.source_type}
+                        count={item.tab_clicks}
+                        total={totalTabClicks}
+                        sub={`${item.percentage}%`}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Ingests by source (what they actually saved) */}
+              <div>
+                <p className="text-xs text-secondary opacity-60 mb-3">Actually ingested by source</p>
+                {fmu.ingests_by_source.length === 0 ? (
+                  <p className="text-sm text-secondary opacity-60">No ingests yet.</p>
+                ) : (
+                  <div className="divide-y divide-outline-variant/20">
+                    {fmu.ingests_by_source.map((item) => (
+                      <HBar
+                        key={item.source_type}
+                        label={SOURCE_LABELS[item.source_type] ?? item.source_type}
+                        count={item.count}
+                        total={fmu.ingests_by_source.reduce((s, i) => s + i.count, 0)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Ingest outcomes */}
+              <div>
+                <p className="text-xs text-secondary opacity-60 mb-3">Ingest outcomes</p>
+                {totalIngests === 0 ? (
+                  <p className="text-sm text-secondary opacity-60">No ingests yet.</p>
+                ) : (
+                  <div className="space-y-1">
+                    <FunnelRow label="Successful" count={fmu.ingest_outcomes.success} base={totalIngests} />
+                    <FunnelRow label="Duplicate (skipped)" count={fmu.ingest_outcomes.duplicate} base={totalIngests} />
+                    <FunnelRow label="Failed" count={fmu.ingest_outcomes.failed} base={totalIngests} />
+                    <p className="text-xs text-secondary opacity-60 mt-2">
+                      {totalIngests} total submit{totalIngests !== 1 ? "s" : ""}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+            </div>
+          );
+        })() : (
+          <div className="grid grid-cols-3 gap-6">
+            {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-32" />)}
+          </div>
+        )}
+      </div>
+
       {/* ── Feature funnels ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
         {/* First-post flow */}
@@ -516,7 +620,7 @@ export default function AnalyticsDashboard() {
 
         {/* Feed memory tour + Retention */}
         <div className="flex flex-col gap-6">
-          {/* Feed memory */}
+          {/* Feed memory tour */}
           <div className="bg-surface-container-low rounded-xl p-5">
             <SectionHeading>Feed memory tour</SectionHeading>
             {data && feedMemory ? (
@@ -524,7 +628,7 @@ export default function AnalyticsDashboard() {
                 <p className="text-sm text-secondary opacity-60">Tour not shown yet.</p>
               ) : (
                 <div className="space-y-1">
-                  <FunnelRow label="Tour shown" count={feedMemory.shown} base={feedMemory.shown} />
+                  <FunnelRow label="Shown" count={feedMemory.shown} base={feedMemory.shown} />
                   <FunnelRow label="Completed" count={feedMemory.completed} base={feedMemory.shown} />
                   <FunnelRow label="Skipped" count={feedMemory.skipped} base={feedMemory.shown} />
                   <p className="text-xs text-secondary opacity-60 mt-2">

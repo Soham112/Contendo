@@ -195,6 +195,60 @@ async def get_analytics_data(
         },
     }
 
+    # ── Feed Memory usage breakdown ───────────────────────────────────────────
+    # Source type preference: count source_tab clicks grouped by metadata.source_type
+    tab_rows = [r for r in rows if r.get("button_name") == "source_tab"]
+    source_pref: dict[str, int] = {}
+    for r in tab_rows:
+        meta = r.get("metadata") or {}
+        st = meta.get("source_type", "unknown")
+        source_pref[st] = source_pref.get(st, 0) + 1
+
+    total_tab_clicks = sum(source_pref.values())
+    source_preferences = [
+        {
+            "source_type": st,
+            "tab_clicks": count,
+            "percentage": round(count / total_tab_clicks * 100, 1) if total_tab_clicks else 0,
+        }
+        for st, count in sorted(source_pref.items(), key=lambda x: -x[1])
+    ]
+
+    # Ingest outcomes: ingest_submit events
+    ingest_rows = [r for r in rows if r.get("button_name") == "ingest_submit"]
+    ingest_success = sum(1 for r in ingest_rows if r["event_type"] == "feature_complete")
+    ingest_duplicate = sum(
+        1 for r in ingest_rows
+        if r["event_type"] == "feature_abandon" and (r.get("metadata") or {}).get("duplicate")
+    )
+    ingest_failed = sum(
+        1 for r in ingest_rows
+        if r["event_type"] == "feature_abandon" and not (r.get("metadata") or {}).get("duplicate")
+    )
+
+    # Per-source-type ingest success counts
+    source_ingests: dict[str, int] = {}
+    for r in ingest_rows:
+        if r["event_type"] != "feature_complete":
+            continue
+        meta = r.get("metadata") or {}
+        st = meta.get("source_type", "unknown")
+        source_ingests[st] = source_ingests.get(st, 0) + 1
+
+    feed_memory_usage = {
+        "source_preferences": source_preferences,
+        "ingest_outcomes": {
+            "success": ingest_success,
+            "duplicate": ingest_duplicate,
+            "failed": ingest_failed,
+            "total": len(ingest_rows),
+        },
+        "ingests_by_source": [
+            {"source_type": st, "count": count}
+            for st, count in sorted(source_ingests.items(), key=lambda x: -x[1])
+        ],
+    }
+
     # ── Daily events ──────────────────────────────────────────────────────────
     day_counts: dict[str, int] = {}
     for r in rows:
@@ -237,4 +291,5 @@ async def get_analytics_data(
         "feature_funnels": feature_funnels,
         "daily_events": daily_events,
         "retention": retention,
+        "feed_memory_usage": feed_memory_usage,
     }
