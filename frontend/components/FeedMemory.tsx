@@ -324,6 +324,7 @@ export default function FeedMemory() {
   }, [obsidianPhase]);
 
   const handleTabChange = (tab: SourceType) => {
+    logEvent({ event_type: "button_click", page_url: "/feed-memory", button_name: "source_tab", metadata: { source_type: tab } });
     setActiveTab(tab);
     setContent("");
     setUrlInput("");
@@ -593,6 +594,12 @@ export default function FeedMemory() {
 
       const data = await res.json();
       setResult(data);
+      logEvent({
+        event_type: data.duplicate ? "feature_abandon" : "feature_complete",
+        page_url: "/feed-memory",
+        button_name: "ingest_submit",
+        metadata: { source_type: activeTab, chunks_stored: data.chunks_stored ?? 0, duplicate: !!data.duplicate },
+      });
       showToast(`Ingested successfully! Added ${data.chunks_added ?? 0} chunks.`, "success");
       setContent("");
       setUrlInput("");
@@ -608,7 +615,9 @@ export default function FeedMemory() {
       setYtManualText("");
       await fetchStats();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Something went wrong.");
+      const msg = e instanceof Error ? e.message : "Something went wrong.";
+      setError(msg);
+      logEvent({ event_type: "feature_abandon", page_url: "/feed-memory", button_name: "ingest_submit", metadata: { source_type: activeTab, error: msg } });
     } finally {
       setLoading(false);
     }
