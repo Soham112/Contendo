@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useApi } from "@/lib/api";
+import { useTracking } from "@/lib/useTracking";
 
 const SS_POST = "contentOS_last_post";
 const SS_SCORE = "contentOS_last_score";
@@ -696,6 +697,7 @@ function SettingsDrawer({ initialTopic, initialFormat, initialTone, initialLengt
 
 export default function CreatePost() {
   const api = useApi();
+  const { logEvent } = useTracking();
   const [topic, setTopic] = useState("");
   const [format, setFormat] = useState<Format>("linkedin post");
   const [tone, setTone] = useState<Tone>("casual");
@@ -1089,6 +1091,7 @@ export default function CreatePost() {
       setError("Topic is required.");
       return;
     }
+    logEvent({ event_type: "button_click", page_url: "/create", button_name: "generate_btn", metadata: { format: f, tone: tn } });
     setError("");
     setLoading(true);
     setResult(null);
@@ -1213,6 +1216,7 @@ export default function CreatePost() {
     await navigator.clipboard.writeText(stripMarkdown(stripPlaceholders(editedPost)));
     setCopiedLinkedIn(true);
     showToast("Copied for LinkedIn", "success");
+    logEvent({ event_type: "button_click", page_url: "/create", button_name: "publish_btn", metadata: { platform: "linkedin" } });
     setTimeout(() => setCopiedLinkedIn(false), 1500);
   };
 
@@ -1220,10 +1224,12 @@ export default function CreatePost() {
     await navigator.clipboard.writeText(stripPlaceholders(editedPost));
     setCopiedMedium(true);
     showToast("Copied for Medium", "success");
+    logEvent({ event_type: "button_click", page_url: "/create", button_name: "publish_btn", metadata: { platform: "medium" } });
     setTimeout(() => setCopiedMedium(false), 1500);
   };
 
   const handleGenerateVisuals = async () => {
+    logEvent({ event_type: "button_click", page_url: "/create", button_name: "generate_visuals_btn" });
     setVisualsLoading(true);
     setVisuals([]);
     setAnalysisOpen(false);
@@ -1600,7 +1606,7 @@ export default function CreatePost() {
   const postActionButtons = (
     <div style={{ display: "flex", flexDirection: "column", gap: btnGap, alignItems: "center" }}>
       <button
-        onClick={() => setDrawerOpen(true)}
+        onClick={() => { logEvent({ event_type: "button_click", page_url: "/create", button_name: "regenerate_btn" }); setDrawerOpen(true); }}
         disabled={loading}
         title="Regenerate"
         style={splitActive ? { display: "flex", flexDirection: "column", alignItems: "center", gap: 5, background: "none", border: "none", cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.5 : 1, padding: "4px 6px", borderRadius: 8 } : actionBtnStyle(loading)}
@@ -1613,6 +1619,7 @@ export default function CreatePost() {
 
       <button
         onClick={() => {
+            logEvent({ event_type: "button_click", page_url: "/create", button_name: "analyse_btn" });
             // Snapshot current DOM content before the layout branch switches.
             // Without this, content typed-but-not-yet-persisted would be lost
             // when the split layout remounts the editor div.
@@ -1869,7 +1876,7 @@ export default function CreatePost() {
                       Tone
                     </span>
                     <button
-                      onClick={() => { setResult(null); setEditedPost(""); setAnalysisOpen(false); }}
+                      onClick={() => { logEvent({ event_type: "button_click", page_url: "/create", button_name: "start_over_btn" }); setResult(null); setEditedPost(""); setAnalysisOpen(false); }}
                       className="text-xs text-outline hover:text-secondary transition-colors"
                     >
                       ← Start over

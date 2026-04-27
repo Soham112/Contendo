@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Puzzle } from "lucide-react";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useApi } from "@/lib/api";
+import { useTracking } from "@/lib/useTracking";
 import ExtensionInstallModal from "@/components/ExtensionInstallModal";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -178,6 +179,7 @@ const TOUR_STEPS: { id: SourceType; label: string; description: string }[] = [
 
 export default function FeedMemory() {
   const api = useApi();
+  const { logEvent } = useTracking();
   const [isExtensionModalOpen, setIsExtensionModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<SourceType>("article");
   const [content, setContent] = useState("");
@@ -223,8 +225,10 @@ export default function FeedMemory() {
     const timer = setTimeout(() => {
       setTourActive(true);
       setTourStep(0);
+      logEvent({ event_type: "feature_start", page_url: "/feed-memory", button_name: "feed_memory_tour", metadata: { status: "shown" } });
     }, 800);
     return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // When tour step changes: switch active tab and measure fixed position for the tooltip
@@ -246,17 +250,23 @@ export default function FeedMemory() {
     });
   }, [tourStep, tourActive]);
 
-  const dismissTour = () => {
+  const _endTour = () => {
     setTourActive(false);
     setTourStep(-1);
     if (typeof window !== "undefined") localStorage.setItem("contendo_feed_tour_done", "1");
+  };
+
+  const dismissTour = () => {
+    logEvent({ event_type: "feature_abandon", page_url: "/feed-memory", button_name: "feed_memory_tour", metadata: { status: "skipped" } });
+    _endTour();
   };
 
   const advanceTour = () => {
     if (tourStep < TOUR_STEPS.length - 1) {
       setTourStep(tourStep + 1);
     } else {
-      dismissTour();
+      logEvent({ event_type: "feature_complete", page_url: "/feed-memory", button_name: "feed_memory_tour", metadata: { status: "completed" } });
+      _endTour();
     }
   };
 

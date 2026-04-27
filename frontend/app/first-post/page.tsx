@@ -6,6 +6,7 @@ import supabase from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Sparkles } from 'lucide-react'
 import { useApi } from '@/lib/api'
+import { useTracking } from '@/lib/useTracking'
 import {
   ROLE_OPTIONS,
   ROLE_TO_BUCKET,
@@ -866,6 +867,7 @@ function FirstPostContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const api = useApi()
+  const { logEvent } = useTracking()
 
   const [screen, setScreen] = useState(0)
   const [flowState, setFlowState] = useState<'form' | 'generating' | 'error' | 'draft' | 'gate' | 'intercept'>('form')
@@ -991,6 +993,7 @@ function FirstPostContent() {
     if (screen === 3 && answers.opinionIsCustom) {
       updateAnswers({ opinion: customOpinion })
     }
+    logEvent({ event_type: 'feature_complete', page_url: '/first-post', metadata: { step: screen } })
     setScreen(s => s + 1)
   }
 
@@ -1066,6 +1069,7 @@ function FirstPostContent() {
       .join(', ')
     const finalAnswers = { ...answers, audience: combined }
     updateAnswers({ audience: combined })
+    logEvent({ event_type: 'feature_start', page_url: '/first-post', metadata: { step: 'generate', role: answers.role } })
     setFlowState('generating')
 
     const effectiveResumeFields = resumeFieldsOverride ?? resumeExtractedFields
@@ -1137,6 +1141,7 @@ function FirstPostContent() {
       console.error('[first-post] log post error:', err)
     }
 
+    logEvent({ event_type: 'feature_complete', page_url: '/first-post', metadata: { step: 'draft_ready', archetype } })
     setDraftState({ post: generatedPost, score, archetype, postId })
     setFlowState('draft')
   }
@@ -1214,6 +1219,7 @@ function FirstPostContent() {
   }
 
   function handleGateSkip() {
+    logEvent({ event_type: 'feature_abandon', page_url: '/first-post', metadata: { step: 'resume_gate', reason: 'user_skip' } })
     persistDraftToSession()
     router.push(pendingDestination === 'feed' ? '/' : '/create')
   }
