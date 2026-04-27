@@ -335,6 +335,19 @@ export function useApi() {
         body: JSON.stringify({ message, page }),
       }),
 
+    // ── Analytics ─────────────────────────────────────────────────────────
+    logEvent: (payload: {
+      event_type: string;
+      page_url?: string;
+      button_name?: string;
+      metadata?: Record<string, unknown>;
+    }) =>
+      apiFetch("/log-event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }),
+
     // ── Profile ───────────────────────────────────────────────────────────
     getProfile: () => apiFetch("/profile"),
 

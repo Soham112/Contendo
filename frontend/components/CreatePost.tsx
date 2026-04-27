@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useApi } from "@/lib/api";
+import { useTracking } from "@/lib/useTracking";
 
 const SS_POST = "contentOS_last_post";
 const SS_SCORE = "contentOS_last_score";
@@ -696,6 +697,7 @@ function SettingsDrawer({ initialTopic, initialFormat, initialTone, initialLengt
 
 export default function CreatePost() {
   const api = useApi();
+  const { logEvent } = useTracking();
   const [topic, setTopic] = useState("");
   const [format, setFormat] = useState<Format>("linkedin post");
   const [tone, setTone] = useState<Tone>("casual");
@@ -1089,6 +1091,7 @@ export default function CreatePost() {
       setError("Topic is required.");
       return;
     }
+    logEvent({ event_type: "button_click", page_url: "/create", button_name: "generate_btn", metadata: { format: f, tone: tn } });
     setError("");
     setLoading(true);
     setResult(null);
@@ -1213,6 +1216,7 @@ export default function CreatePost() {
     await navigator.clipboard.writeText(stripMarkdown(stripPlaceholders(editedPost)));
     setCopiedLinkedIn(true);
     showToast("Copied for LinkedIn", "success");
+    logEvent({ event_type: "button_click", page_url: "/create", button_name: "publish_btn", metadata: { platform: "linkedin" } });
     setTimeout(() => setCopiedLinkedIn(false), 1500);
   };
 
@@ -1220,6 +1224,7 @@ export default function CreatePost() {
     await navigator.clipboard.writeText(stripPlaceholders(editedPost));
     setCopiedMedium(true);
     showToast("Copied for Medium", "success");
+    logEvent({ event_type: "button_click", page_url: "/create", button_name: "publish_btn", metadata: { platform: "medium" } });
     setTimeout(() => setCopiedMedium(false), 1500);
   };
 

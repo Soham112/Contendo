@@ -7,11 +7,20 @@ import { useProfileCheck } from "@/hooks/useProfileCheck";
 import OnboardingIntercept from "@/components/OnboardingIntercept";
 import LoadingWordmark from "@/components/LoadingWordmark";
 import PageTransition from "@/components/PageTransition";
+import { useTracking } from "@/lib/useTracking";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { loading, hasProfile } = useProfileCheck();
+  const { logEvent } = useTracking();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    if (pathname) {
+      logEvent({ event_type: "page_view", page_url: pathname });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
 
   // Checked client-side only — default true to avoid flicker before mount
   const [interceptDone, setInterceptDone] = useState(true);

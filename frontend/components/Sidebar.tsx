@@ -7,6 +7,7 @@ import type { User } from "@supabase/supabase-js";
 import supabase from "@/lib/supabase";
 import FeedbackModal from "@/components/ui/FeedbackButton";
 import { ContendoLogoSmall } from "@/components/ContendoLogo";
+import { useTracking } from "@/lib/useTracking";
 
 const NAV_ITEMS = [
   {
@@ -81,6 +82,7 @@ export default function Sidebar({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { logEvent } = useTracking();
   const [user, setUser] = useState<User | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
 
@@ -138,22 +140,37 @@ export default function Sidebar({
 
       {/* Nav */}
       <nav className="flex-1 px-3 pb-4 space-y-0.5 overflow-y-auto">
-        {[...NAV_ITEMS, ...(user?.email === ADMIN_EMAIL ? [{
-          href: "/admin",
-          label: "Admin",
-          icon: (
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M8 2L2 5v4c0 3 2.5 5.2 6 6 3.5-.8 6-3 6-6V5L8 2z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-            </svg>
-          ),
-        }] : [])].map((item) => {
+        {[...NAV_ITEMS, ...(user?.email === ADMIN_EMAIL ? [
+          {
+            href: "/admin",
+            label: "Admin",
+            icon: (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M8 2L2 5v4c0 3 2.5 5.2 6 6 3.5-.8 6-3 6-6V5L8 2z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+              </svg>
+            ),
+          },
+          {
+            href: "/admin/analytics",
+            label: "Analytics",
+            icon: (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <polyline points="2,12 5,8 8,10 11,5 14,7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                <line x1="2" y1="14" x2="14" y2="14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+            ),
+          },
+        ] : [])].map((item) => {
           const isActive = pathname.startsWith(item.href);
 
           return (
             <Link
               key={item.href}
               href={item.href}
-              onClick={onClose}
+              onClick={() => {
+                logEvent({ event_type: "button_click", page_url: pathname ?? undefined, button_name: item.href.replace("/", "") + "_nav", metadata: { destination: item.href } });
+                onClose();
+              }}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13.5px] transition-all duration-150 ${
                 isActive
                   ? "bg-surface-container text-primary font-semibold"
@@ -173,7 +190,10 @@ export default function Sidebar({
       <div className="px-3 pb-3">
         <Link
           href="/create"
-          onClick={onClose}
+          onClick={() => {
+            logEvent({ event_type: "button_click", page_url: pathname ?? undefined, button_name: "create_post_cta", metadata: { destination: "/create" } });
+            onClose();
+          }}
           className="btn-primary flex items-center justify-center gap-2 w-full py-2.5 rounded-lg text-[12px] uppercase tracking-widest font-semibold text-white shadow-card hover:opacity-90 active:scale-95 transition-all"
         >
           <svg width="13" height="13" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
