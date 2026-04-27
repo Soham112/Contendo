@@ -222,7 +222,7 @@ export default function AnalyticsDashboard() {
   // Auto-refresh every 5 minutes
   useEffect(() => {
     if (!authorized) return;
-    const id = setInterval(fetchData, 5 * 60 * 1000);
+    const id = setInterval(fetchData, 60 * 60 * 1000);
     return () => clearInterval(id);
   }, [authorized, fetchData]);
 
@@ -337,7 +337,7 @@ export default function AnalyticsDashboard() {
             />
             <MetricCard
               label="Auto-refresh"
-              value="5 min"
+              value="1 hr"
               sub={lastRefresh ? `Last: ${lastRefresh.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "—"}
             />
           </>
