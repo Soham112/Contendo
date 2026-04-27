@@ -416,29 +416,75 @@ export default function AnalyticsDashboard() {
       </div>
 
       {/* ── Button clicks ── */}
-      <div className="bg-surface-container-low rounded-xl p-5 mb-6">
-        <SectionHeading>Most-clicked buttons</SectionHeading>
-        {data ? (
-          data.button_clicks.length === 0 ? (
-            <p className="text-sm text-secondary opacity-60">No clicks recorded yet.</p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 divide-y divide-outline-variant/20 sm:divide-y-0">
-              {data.button_clicks.slice(0, 10).map((item) => (
-                <HBar
-                  key={item.button_name}
-                  label={item.button_name}
-                  count={item.count}
-                  total={totalClicks}
-                  sub={`${item.unique_users} users`}
-                />
-              ))}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+
+        {/* Create Post actions */}
+        <div className="bg-surface-container-low rounded-xl p-5">
+          <SectionHeading>Create Post actions</SectionHeading>
+          {data ? (() => {
+            const CREATE_BTNS = ["generate_btn", "generate_visuals_btn", "analyse_btn", "regenerate_btn", "publish_btn", "start_over_btn"];
+            const createClicks = data.button_clicks.filter(b => CREATE_BTNS.includes(b.button_name));
+            const LABELS: Record<string, string> = {
+              generate_btn: "Generate",
+              generate_visuals_btn: "Generate Visuals",
+              analyse_btn: "Analyse",
+              regenerate_btn: "Regenerate",
+              publish_btn: "Publish (copy)",
+              start_over_btn: "Start over",
+            };
+            const totalCreate = createClicks.reduce((s, b) => s + b.count, 0);
+            return createClicks.length === 0 ? (
+              <p className="text-sm text-secondary opacity-60">No create post actions yet.</p>
+            ) : (
+              <div className="divide-y divide-outline-variant/20">
+                {CREATE_BTNS.map(name => {
+                  const item = createClicks.find(b => b.button_name === name);
+                  if (!item) return null;
+                  return (
+                    <HBar
+                      key={name}
+                      label={LABELS[name] ?? name}
+                      count={item.count}
+                      total={totalCreate}
+                      sub={`${item.unique_users} users`}
+                    />
+                  );
+                })}
+              </div>
+            );
+          })() : (
+            <div className="space-y-2">
+              {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-8" />)}
             </div>
-          )
-        ) : (
-          <div className="grid grid-cols-2 gap-3">
-            {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-8" />)}
-          </div>
-        )}
+          )}
+        </div>
+
+        {/* All other buttons (nav etc.) */}
+        <div className="bg-surface-container-low rounded-xl p-5">
+          <SectionHeading>All buttons (top 8)</SectionHeading>
+          {data ? (
+            data.button_clicks.length === 0 ? (
+              <p className="text-sm text-secondary opacity-60">No clicks recorded yet.</p>
+            ) : (
+              <div className="divide-y divide-outline-variant/20">
+                {data.button_clicks.slice(0, 8).map((item) => (
+                  <HBar
+                    key={item.button_name}
+                    label={item.button_name}
+                    count={item.count}
+                    total={totalClicks}
+                    sub={`${item.unique_users} users`}
+                  />
+                ))}
+              </div>
+            )
+          ) : (
+            <div className="space-y-2">
+              {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-8" />)}
+            </div>
+          )}
+        </div>
+
       </div>
 
       {/* ── Feature funnels ── */}
