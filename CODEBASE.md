@@ -25,6 +25,7 @@
 | `backend/routers/stats.py` | `GET /stats` — returns `{ total_chunks, tags[] }` for the current user. `GET /usage/me` — returns per-user Claude API usage from `usage_events` table: `{ total_calls, total_input_tokens, total_output_tokens, total_cost_usd, calls_this_week, cost_this_week, breakdown: [{event_type, calls, cost_usd}] }`; aggregated in Python from a single Supabase query filtered by `user_id` |
 | `backend/routers/profile.py` | `GET /profile`, `POST /profile`, `POST /extract-resume` — per-user profile read/write plus resume extraction; `POST /profile` does a read-back verification after save and returns HTTP 500 if the write didn't land; `POST /extract-resume` accepts `multipart/form-data` with a single `file` (PDF only), extracts text via PyMuPDF (`extract_from_pdf`), sends to Claude Sonnet 4.6 to produce structured `{ name, role, bio, location, topics_of_expertise, voice_descriptors, opinions, writing_samples }` JSON, and returns the parsed dict — does NOT auto-save to profile (frontend merges and saves via `POST /profile`); returns 422 if file is not a PDF, extracted text < 100 chars, or JSON parse fails |
 | `backend/routers/admin.py` | `GET /admin/usage` — protected by `x-admin-secret` header matching `ADMIN_SECRET` env var; queries Supabase `usage_events` table and returns `{ distinct_users, calls: {today/this_week/all_time}, cost_usd: {today/this_week/all_time}, daily: [{date, count}×14], top_users: [{user_id, call_count, total_tokens, total_cost}] }`; pulls all rows in one query and aggregates in Python |
+| `backend/routers/analytics.py` | `POST /log-event` — fire-and-forget user event logging; protected by `Depends(get_user_id_dep)`; accepts `{ event_type, page_url?, button_name?, metadata? }`; inserts into Supabase `user_events` table via `asyncio.create_task()` (never blocks caller); returns `{"logged": true}`; all exceptions caught and logged — never fails the caller. `GET /admin/analytics-data` — admin-only (protected by `x-admin-secret` header); accepts `?days=30` query param; queries `user_events` and aggregates: `total_events`, `unique_users`, `date_range`, `event_breakdown` (by event_type), `page_views`, `button_clicks`, `feature_funnels` (first_post_flow step counts + feed_memory tour stats), `daily_events` (one entry per day in range), `retention` cohorts (based on generate_btn click counts). Event types: `page_view | button_click | feature_start | feature_complete | feature_abandon`. |
 | `backend/routers/feedback.py` | `POST /feedback` — accepts `{ message: str, page: str }` body; `user_id` from `Depends(get_user_id_dep)`; appends a JSON line to `DATA_DIR/feedback.jsonl` with fields `user_id`, `message`, `page`, `submitted_at` (UTC ISO); returns `{"received": true}`; after writing, fires `_notify_telegram()` via `asyncio.create_task()` (fire-and-forget, never blocks response); `_notify_telegram()` reads `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` from env — if either is absent, logs a warning and returns silently; on Telegram API failure, catches all exceptions and logs a warning (non-fatal); uses `httpx.AsyncClient(timeout=10)` for the Telegram `sendMessage` call with HTML parse mode |
 | `backend/db/__init__.py` | Empty — marks db/ as a Python package |
 | `backend/db/supabase_client.py` | Module-level Supabase client — `create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)`; exported as `supabase`; imported by all memory stores |
@@ -87,6 +88,8 @@
 | `frontend/app/history/[id]/page.tsx` | Post detail page (`/history/[id]`) — full-page view of a single post with version picker, restore, delete, diagram rendering; **"Open in editor"** button; **"Mark as published"** inline modal; published badge when `published_at` is set |
 | `frontend/app/welcome/page.tsx` | Landing page (`/welcome`) — standalone editorial marketing surface (top nav + hero + how-it-works + philosophy + toolkit + mood grid + final CTA + footer), accessible to both signed-in and signed-out users. Sections alternate bg-background / bg-surface-container-low for tonal rhythm. Functional hero prompt bar: submit writes `sessionStorage.contendo_topic`; signed-in users go to `/create` (also writes `contentOS_last_topic`); signed-out users go to `/first-post?topic=...`. Nav has four center links: "How it works" → `#how-it-works`, "About" → `/about`, "Careers" → `/careers`, "Pricing" → `/pricing` (the latter three are placeholder hrefs — those routes do not yet exist); auth-aware CTA ("Get started" → `/first-post` signed-out, "Open workspace" → `/create` signed-in). How-it-works section: three prose steps, no icons, step numbers in Noto Serif italic sage. Mood grid: 8 `MOOD_GRADIENTS` tiles with Noto Serif italic labels, `rounded-2xl`, `minHeight: 160`. No fake social proof, no trial/pricing language anywhere. |
 | `frontend/app/admin/page.tsx` | Admin usage dashboard at `/admin` — checks current Supabase user email === `soham112000@gmail.com`, redirects to `/` otherwise; fetches `GET /admin/usage` with `x-admin-secret: NEXT_PUBLIC_ADMIN_SECRET` header; shows distinct-user count, calls and cost (today/this-week/all-time) stat cards, a 14-day SVG bar chart, and a top-users-by-cost table; no recharts dependency — pure inline SVG |
+| `frontend/app/admin/analytics/page.tsx` | Analytics dashboard at `/admin/analytics` — admin-only (same email check); fetches `GET /admin/analytics-data?days=N` with `x-admin-secret` header; period selector (7/14/30/90 days); auto-refreshes every 5 min via `setInterval`; shows: key metric cards (total events, unique users, date range), daily events SVG bar chart, event breakdown bars, top pages bars, most-clicked buttons bars, first-post flow funnel (step 0–complete), feed memory tour funnel (shown/completed/skipped + rate), retention cohorts (1+/2+/5+ posts); no external chart library — pure CSS + inline SVG |
+| `frontend/lib/useTracking.ts` | `useTracking()` hook — wraps `api.logEvent()` in a fire-and-forget `logEvent(payload)` function; payload type: `{ event_type, page_url?, button_name?, metadata? }`; all errors caught and `console.warn`'d — never throws; used in AppShell, Sidebar, CreatePost, FeedMemory, first-post/page |
 | `frontend/app/globals.css` | Global styles — Tailwind directives, CSS custom properties for design tokens, `.btn-primary` gradient, `.glass` glassmorphism, `.font-headline`/`.serif-text`, grain texture overlay, custom scrollbar, `.input-editorial`, `.label-caps`, `.ghost-border`, `.no-scrollbar` (hides scrollbar on overflow-x-auto nav elements) |
 | `frontend/components/ui/ToastProvider.tsx` | Global custom lightweight React Context for floating success/error notifications |
 | `frontend/components/ui/FeedbackButton.tsx` | Floating pill button fixed bottom-right (bottom: 24px, right: 24px) on all app routes; opens a centered modal overlay (rgba(0,0,0,0.3) backdrop, 420px card, ambient shadow); modal has Noto Serif "Send feedback" title, subtitle, `input-editorial` textarea, Cancel ghost button + Submit `btn-primary`; on submit calls `api.submitFeedback(message, pathname)`; shows inline "Thanks — feedback received." success state then auto-closes after 2 s; only mounted in the app shell so it never appears on `/`, `/welcome`, `/onboarding`, `/sign-in`, `/sign-up` |
@@ -837,6 +840,39 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
 | `content_hash` | text | SHA-256 of normalised content for dedup |
 | `node_type` | text | `chunk` |
 | `ingested_at` | timestamptz | UTC timestamp of ingest |
+
+---
+
+### User events table (Supabase Postgres)
+**Table:** `user_events` in Supabase  
+**Owned by:** `backend/routers/analytics.py`  
+**Create SQL:**
+```sql
+CREATE TABLE IF NOT EXISTS user_events (
+  id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+  user_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  page_url TEXT,
+  button_name TEXT,
+  metadata JSONB DEFAULT '{}',
+  timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+CREATE INDEX idx_user_events_user_id ON user_events(user_id);
+CREATE INDEX idx_user_events_event_type ON user_events(event_type);
+CREATE INDEX idx_user_events_timestamp ON user_events(timestamp);
+```
+
+**Columns:**
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | bigint PK | Auto-generated identity |
+| `user_id` | text | Supabase user UUID |
+| `event_type` | text | `page_view \| button_click \| feature_start \| feature_complete \| feature_abandon` |
+| `page_url` | text | Page path (e.g. `/create`) |
+| `button_name` | text | Button identifier (e.g. `generate_btn`, `publish_btn`) |
+| `metadata` | jsonb | Arbitrary extra context (step, platform, destination, etc.) |
+| `timestamp` | timestamptz | Event time (indexed) |
 
 ---
 
