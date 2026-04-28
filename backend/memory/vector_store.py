@@ -128,8 +128,22 @@ def query_similar(
 
     results = []
     for row in (response.data or []):
+        content = row.get("content", "")
         results.append({
-            "content": row.get("content", ""),
+            # Flat fields — retrieval_agent accesses these directly
+            "text": content,
+            "content": content,
+            "source_id": row.get("source_id", ""),
+            "source_title": row.get("source_title", ""),
+            "source_type": row.get("source_type", ""),
+            "tags": row.get("tags", ""),
+            "chunk_index": row.get("chunk_index", 0),
+            "total_chunks": row.get("total_chunks", 0),
+            "content_hash": row.get("content_hash", ""),
+            "node_type": row.get("node_type", "chunk"),
+            "ingested_at": row.get("ingested_at", ""),
+            "similarity": round(float(row.get("similarity", 0.0)), 4),
+            # Nested metadata kept for any callers that use chunk["metadata"][...]
             "metadata": {
                 "source_id": row.get("source_id", ""),
                 "source_title": row.get("source_title", ""),
@@ -138,10 +152,9 @@ def query_similar(
                 "chunk_index": row.get("chunk_index", 0),
                 "total_chunks": row.get("total_chunks", 0),
                 "content_hash": row.get("content_hash", ""),
-                "node_type": row.get("node_type", "chunk"),
+                "node_id": row.get("node_type", "chunk"),
                 "ingested_at": row.get("ingested_at", ""),
             },
-            "similarity": round(float(row.get("similarity", 0.0)), 4),
         })
 
     return results

@@ -396,7 +396,7 @@ def retrieval_node(state: PipelineState) -> PipelineState:
     except Exception as e:
         print(f"[retrieval_node] hierarchical retrieval failed ({e}), falling back to flat")
         try:
-            raw_results = query_similar(query, top_k=8, user_id=user_id)
+            raw_results = query_similar(query, n_results=8, user_id=user_id)
             chunks = [
                 r for r in raw_results
                 if float(r.get("similarity", 0.0)) >= RELEVANCE_THRESHOLD
