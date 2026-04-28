@@ -536,7 +536,7 @@ export default function FeedMemory() {
       if (!uploadedFile) { setError("Please upload a file."); return; }
     } else if (activeTab === "url") {
       if (!urlInput.trim()) { setError("Please enter a URL."); return; }
-      if (!urlInput.startsWith("http://") && !urlInput.startsWith("https://")) {
+      if (!urlInput.trim().startsWith("http://") && !urlInput.trim().startsWith("https://")) {
         setError("URL must start with http:// or https://"); return;
       }
     } else if (activeTab === "youtube") {
