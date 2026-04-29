@@ -368,6 +368,13 @@ export function useApi() {
       return apiFetch("/extract-resume", { method: "POST", body: formData });
     },
 
+    saveExperienceNodes: (nodes: Record<string, unknown>[]) =>
+      apiFetch("/save-experience-nodes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nodes }),
+      }),
+
     saveProfile: async (profile: ProfileData) => {
       const res = await apiFetch("/profile", {
         method: "POST",

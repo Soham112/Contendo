@@ -2,11 +2,14 @@ import json
 import logging
 import os
 import re
+from typing import Any
 
 import anthropic
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from pydantic import BaseModel
 
 from auth.clerk import get_user_id_dep
+from memory.experience_store import save_experience_nodes
 from memory.profile_store import load_profile, profile_exists, save_profile
 from utils.file_extractor import extract_from_pdf
 
@@ -86,23 +89,44 @@ async def extract_resume(
             detail="Could not extract text from this PDF. Please try a different file.",
         )
 
-    prompt = f"""You are extracting structured profile information from a resume to populate a personal content generation platform. The goal is to capture how this person thinks and works, not just their job titles.
+    prompt = f"""You are extracting structured information from a resume to populate a personal content generation platform. You must output TWO things: a voice profile and a structured work history.
 
-Extract the following fields. For fields you cannot find, return null. Do not invent information that is not in the resume.
+Do not invent information not present in the resume. For fields you cannot find, use null or an empty array.
 
-Return ONLY valid JSON with exactly these fields, no preamble, no markdown:
+Return ONLY valid JSON with exactly this structure, no preamble, no markdown:
 {{
-  "name": "full name",
-  "role": "current or most recent job title",
-  "bio": "2-3 sentence professional summary in first person, human-sounding, not corporate. Based only on what is in the resume.",
-  "location": "city and state or country if present, otherwise null",
-  "topics_of_expertise": ["3-6 specific topic areas derived from their actual work, skills, and projects — not generic labels"],
-  "voice_descriptors": ["2-3 phrases reflecting how someone in their specific role and domain naturally speaks — infer from their domain and seniority"],
-  "opinions": ["1-2 professional opinions they likely hold based on their work — write these as general beliefs, never as specific incidents or stories. Example: 'Feature engineering matters more than model selection in most production ML work' not 'At my last job we improved AUC by switching approaches'"],
-  "writing_samples": []
+  "profile": {{
+    "name": "full name",
+    "role": "current or most recent job title",
+    "bio": "2-3 sentence professional summary in first person, human-sounding, not corporate. Based only on what is in the resume.",
+    "location": "city and state or country if present, otherwise null",
+    "topics_of_expertise": ["3-6 specific topic areas derived from their actual work, skills, and projects — not generic labels"],
+    "voice_descriptors": ["2-3 phrases reflecting how someone in their specific role and domain naturally speaks — infer from their domain and seniority"],
+    "opinions": ["1-2 professional opinions they likely hold based on their work — write these as general beliefs, never as specific incidents or stories. Example: 'Feature engineering matters more than model selection in most production ML work'"],
+    "writing_samples": []
+  }},
+  "experience_nodes": [
+    {{
+      "node_type": "work | personal_project | education",
+      "entity_name": "company name, project name, or institution",
+      "role": "job title, project role, or degree/major",
+      "start_date": "year as string e.g. '2021', or null",
+      "end_date": "year as string, 'present', or null",
+      "domain_areas": ["generic skill or domain labels e.g. 'React', 'fundraising', 'OKRs', 'Python' — 3-8 items"],
+      "description": "1-2 sentences: what they built, shipped, or achieved — factual, no embellishment"
+    }}
+  ]
 }}
 
-IMPORTANT: The opinions field must contain general professional beliefs only. Never write opinions as personal anecdotes, specific incidents, or stories with numbers. Those will be fabricated since you are only reading a resume, not the person's actual experience notes.
+Rules for experience_nodes:
+- Include ALL jobs, side projects, and education entries from the resume as separate nodes.
+- node_type must be exactly "work", "personal_project", or "education".
+- domain_areas must be generic, reusable labels (skills, technologies, methodologies, markets) — not company names.
+- description must be factual. Do not invent metrics or outcomes not stated in the resume.
+- For education, role is the degree and major (e.g. "B.S. Computer Science").
+- Order nodes from most recent to oldest within each type.
+
+IMPORTANT: The opinions field in profile must contain general professional beliefs only. Never write opinions as personal anecdotes or fabricated stories.
 
 Resume text:
 {resume_text}"""
@@ -112,7 +136,7 @@ Resume text:
     try:
         message = _anthropic_client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=2048,
+            max_tokens=3000,
             messages=[{"role": "user", "content": prompt}],
         )
         raw = message.content[0].text.strip()
@@ -158,5 +182,35 @@ Resume text:
             detail="Resume extraction failed — could not parse Claude response. Please try again or skip.",
         )
 
-    logger.info(f"POST /extract-resume: success for user_id={user_id}, name={extracted.get('name')!r}")
-    return extracted
+    profile = extracted.get("profile", {})
+    experience_nodes = extracted.get("experience_nodes", [])
+    logger.info(
+        f"POST /extract-resume: success for user_id={user_id}, "
+        f"name={profile.get('name')!r}, experience_nodes={len(experience_nodes)}"
+    )
+    return {"profile": profile, "experience_nodes": experience_nodes}
+
+
+class SaveExperienceNodesRequest(BaseModel):
+    nodes: list[dict[str, Any]]
+
+
+@router.post("/save-experience-nodes")
+async def save_experience_nodes_endpoint(
+    body: SaveExperienceNodesRequest,
+    user_id: str = Depends(get_user_id_dep),
+) -> dict:
+    """
+    Persist the user-confirmed experience nodes. Replaces any existing nodes
+    for this user — the frontend confirmation step is the source of truth.
+    Called after the user reviews and edits the extracted experience_nodes
+    from /extract-resume.
+    """
+    logger.info(f"POST /save-experience-nodes: {len(body.nodes)} nodes for user_id={user_id}")
+    try:
+        ids = save_experience_nodes(user_id=user_id, nodes=body.nodes)
+    except Exception as e:
+        logger.error(f"POST /save-experience-nodes: failed for user_id={user_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to save experience nodes.")
+    logger.info(f"POST /save-experience-nodes: saved {len(ids)} nodes for user_id={user_id}")
+    return {"saved": True, "count": len(ids)}

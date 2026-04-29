@@ -840,3 +840,66 @@ If all three fail: logs raw response, returns `score=50`, `feedback=["Score pars
 **Standalone scoring function — `score_text(draft: str) -> tuple[int, list[str]]`:**
 
 The full 3-attempt JSON parse and Claude call is extracted into `score_text()`. `scorer_node` calls it internally. `POST /refine` also calls it directly without constructing a `PipelineState`. Returns `(total_score, feedback + flagged_sentences combined list)`.
+
+---
+
+## Resume Extraction Prompt (Phase 2)
+
+**Location:** `backend/routers/profile.py` — `POST /extract-resume`
+**Model:** `claude-sonnet-4-6` | **max_tokens:** 3000
+
+**Purpose:** Accept a PDF resume, extract text via PyMuPDF, and return TWO structured outputs in a single Claude call:
+1. `profile` — voice/identity fields for the profiles table
+2. `experience_nodes` — structured work history for the experience_nodes table
+
+**JSON parse fallback:** Same 3-attempt pattern (direct → strip fences → regex extract). If all fail: 422 with message "Resume extraction failed — could not parse Claude response."
+
+**Response shape:** `{ "profile": {...}, "experience_nodes": [...] }` — does NOT save automatically. Frontend merges profile via `POST /profile` and confirms experience nodes via `POST /save-experience-nodes`.
+
+**System prompt (verbatim):**
+
+```
+You are extracting structured information from a resume to populate a personal content generation platform. You must output TWO things: a voice profile and a structured work history.
+
+Do not invent information not present in the resume. For fields you cannot find, use null or an empty array.
+
+Return ONLY valid JSON with exactly this structure, no preamble, no markdown:
+{
+  "profile": {
+    "name": "full name",
+    "role": "current or most recent job title",
+    "bio": "2-3 sentence professional summary in first person, human-sounding, not corporate. Based only on what is in the resume.",
+    "location": "city and state or country if present, otherwise null",
+    "topics_of_expertise": ["3-6 specific topic areas derived from their actual work, skills, and projects — not generic labels"],
+    "voice_descriptors": ["2-3 phrases reflecting how someone in their specific role and domain naturally speaks — infer from their domain and seniority"],
+    "opinions": ["1-2 professional opinions they likely hold based on their work — write these as general beliefs, never as specific incidents or stories. Example: 'Feature engineering matters more than model selection in most production ML work'"],
+    "writing_samples": []
+  },
+  "experience_nodes": [
+    {
+      "node_type": "work | personal_project | education",
+      "entity_name": "company name, project name, or institution",
+      "role": "job title, project role, or degree/major",
+      "start_date": "year as string e.g. '2021', or null",
+      "end_date": "year as string, 'present', or null",
+      "domain_areas": ["generic skill or domain labels e.g. 'React', 'fundraising', 'OKRs', 'Python' — 3-8 items"],
+      "description": "1-2 sentences: what they built, shipped, or achieved — factual, no embellishment"
+    }
+  ]
+}
+
+Rules for experience_nodes:
+- Include ALL jobs, side projects, and education entries from the resume as separate nodes.
+- node_type must be exactly "work", "personal_project", or "education".
+- domain_areas must be generic, reusable labels (skills, technologies, methodologies, markets) — not company names.
+- description must be factual. Do not invent metrics or outcomes not stated in the resume.
+- For education, role is the degree and major (e.g. "B.S. Computer Science").
+- Order nodes from most recent to oldest within each type.
+
+IMPORTANT: The opinions field in profile must contain general professional beliefs only. Never write opinions as personal anecdotes or fabricated stories.
+
+Resume text:
+{resume_text}
+```
+
+**`POST /save-experience-nodes`** — separate endpoint called after the user confirms/edits the extracted nodes in the frontend. Accepts `{ "nodes": [...] }`, calls `save_experience_nodes()` which delete-then-reinserts all nodes for the user. Returns `{ "saved": true, "count": N }`.
