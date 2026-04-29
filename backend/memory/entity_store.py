@@ -1,9 +1,69 @@
 import logging
+import re
 from typing import Any
 
 from db.supabase_client import supabase
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Entity name normalization
+# ---------------------------------------------------------------------------
+
+# Suffixes that are meaningless for deduplication — stripped before lookup.
+# Ordered longest-first so ".js" doesn't shadow "node.js".
+_STRIP_SUFFIXES = [
+    "framework", "platform", "library", "language", "database", "db",
+    ".js", ".ts", ".py", ".io",
+]
+
+def _normalize_entity_name(name: str) -> str:
+    """Return a canonical form of an entity name for deduplication.
+
+    Steps (order matters):
+    1. Strip leading/trailing whitespace.
+    2. Collapse internal whitespace.
+    3. Remove common noise punctuation (hyphens, dots outside version numbers,
+       parentheses) that create false variants ("React.js" → "react js" → "react").
+    4. Strip known meaningless suffixes ("framework", ".js", ".py", etc.).
+    5. Lowercase and strip again.
+
+    Examples:
+      "React.js"      → "react"
+      "ReactJS"       → "reactjs"   (camelCase is kept — too risky to split)
+      "Open AI"       → "open ai"
+      "OpenAI"        → "openai"
+      "Node.js"       → "nodejs"    (.js stripped after dot removal)
+      "PostgreSQL"    → "postgresql"
+      "Postgres"      → "postgres"  (these stay distinct — different spellings)
+      "LangChain"     → "langchain"
+      "LangChain (framework)" → "langchain"
+    """
+    s = name.strip()
+
+    # Remove parenthetical qualifiers e.g. "Python (language)"
+    s = re.sub(r"\s*\(.*?\)", "", s)
+
+    # Remove hyphens and dots that aren't between digits (preserve "3.11", "gpt-4")
+    s = re.sub(r"(?<!\d)[.\-](?!\d)", " ", s)
+
+    # Collapse whitespace
+    s = re.sub(r"\s+", " ", s).strip()
+
+    # Strip known meaningless suffixes (word-boundary aware)
+    lower = s.lower()
+    for suffix in _STRIP_SUFFIXES:
+        if lower.endswith(" " + suffix):
+            s = s[: -(len(suffix) + 1)].strip()
+            lower = s.lower()
+            break
+        if lower.endswith(suffix) and len(s) > len(suffix) + 2:
+            s = s[: -len(suffix)].strip()
+            lower = s.lower()
+            break
+
+    return s.lower().strip()
+
 
 # ---------------------------------------------------------------------------
 # Entities
@@ -12,16 +72,25 @@ logger = logging.getLogger(__name__)
 def upsert_entity(user_id: str, entity_name: str, entity_type: str) -> str:
     """Insert entity if it doesn't exist; return its entity_id either way.
 
-    Uses the UNIQUE (user_id, entity_name, entity_type) constraint to
-    deduplicate. Does a select-first to avoid unnecessary writes on the
-    hot path (same entity mentioned across many chunks).
+    Normalizes entity_name before lookup so surface-form variants
+    ("React.js", "ReactJS", "react") collapse to the same canonical row.
+    The canonical (normalized) name is what gets stored — raw extraction
+    output is never written directly.
+
+    Uses the UNIQUE (user_id, entity_name, entity_type) constraint for
+    final-level deduplication. Does a select-first to avoid unnecessary
+    writes on the hot path (same entity mentioned across many chunks).
     """
-    # Fast path: entity already exists
+    canonical = _normalize_entity_name(entity_name)
+    if not canonical:
+        canonical = entity_name.lower().strip()
+
+    # Fast path: entity already exists under canonical name
     result = (
         supabase.table("entities")
         .select("entity_id")
         .eq("user_id", user_id)
-        .eq("entity_name", entity_name)
+        .eq("entity_name", canonical)
         .eq("entity_type", entity_type)
         .limit(1)
         .execute()
@@ -29,18 +98,21 @@ def upsert_entity(user_id: str, entity_name: str, entity_type: str) -> str:
     if result.data:
         return result.data[0]["entity_id"]
 
-    # Slow path: insert new entity
+    # Slow path: insert new entity with canonical name
     inserted = (
         supabase.table("entities")
         .insert({
             "user_id": user_id,
-            "entity_name": entity_name,
+            "entity_name": canonical,
             "entity_type": entity_type,
         })
         .execute()
     )
     entity_id: str = inserted.data[0]["entity_id"]
-    logger.debug("entity created: %s (%s) for user %s", entity_name, entity_type, user_id)
+    logger.debug(
+        "entity created: %r → canonical %r (%s) for user %s",
+        entity_name, canonical, entity_type, user_id,
+    )
     return entity_id
 
 

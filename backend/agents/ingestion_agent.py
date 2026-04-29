@@ -16,7 +16,7 @@ from memory.hierarchy_store import (
     upsert_source_node,
     upsert_topic_node,
 )
-from memory.entity_store import upsert_entity, upsert_chunk_entities
+from memory.entity_store import upsert_entity, upsert_chunk_entities, _normalize_entity_name
 from utils.chunker import chunk_text
 
 load_dotenv()
@@ -278,7 +278,7 @@ def _crossref_experience_context(text: str, user_id: str) -> str | None:
         work_match = False
         project_match = False
         for node in nodes:
-            name = node.get("entity_name", "").lower()
+            name = _normalize_entity_name(node.get("entity_name", ""))
             if not name or len(name) < 3:
                 continue
             if name in text_lower:

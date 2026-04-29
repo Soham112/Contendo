@@ -390,14 +390,14 @@ def _get_entity_ids_for_query(query_topic: str, user_id: str) -> list[str]:
     Skips entities shorter than 3 characters to avoid false matches.
     """
     try:
-        from memory.entity_store import get_entities_for_user
+        from memory.entity_store import get_entities_for_user, _normalize_entity_name
         entities = get_entities_for_user(user_id)
-        query_lower = query_topic.lower()
+        query_normalized = _normalize_entity_name(query_topic)
         return [
             e["entity_id"]
             for e in entities
             if len(e.get("entity_name", "")) >= 3
-            and e["entity_name"].lower() in query_lower
+            and e["entity_name"] in query_normalized  # entity_names already stored normalized
         ]
     except Exception as exc:
         logger.debug("entity query matching failed: %s", exc)
