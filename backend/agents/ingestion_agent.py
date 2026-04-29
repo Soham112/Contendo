@@ -204,19 +204,24 @@ def _store_entities_for_chunks(
     chunks: list[str],
     source_id: str,
     user_id: str,
-) -> None:
+) -> list[str]:
     """Extract entities for all chunks in parallel and persist to entity tables.
 
     Runs Haiku calls concurrently (one per chunk) via ThreadPoolExecutor.
     All failures are caught and logged — never blocks ingestion.
     chunk_id format mirrors upsert_chunks: f"{source_id}_{chunk_index}"
+
+    Returns the deduplicated list of entity names that were successfully stored.
+    Used by the consolidation trigger to check which entities crossed the threshold.
     """
+    stored_entity_names: list[str] = []
+    names_lock = __import__("threading").Lock()
+
     def process_chunk(index: int, text: str) -> None:
         chunk_id = f"{source_id}_{index}"
         raw_entities = _extract_entities_for_chunk(text)
         if not raw_entities:
             return
-        # Upsert each entity and collect (entity_id, relationship_type) pairs
         resolved: list[dict] = []
         for e in raw_entities:
             try:
@@ -226,6 +231,8 @@ def _store_entities_for_chunks(
                     entity_type=e["entity_type"],
                 )
                 resolved.append({"entity_id": eid, "relationship_type": e["relationship_type"]})
+                with names_lock:
+                    stored_entity_names.append(e["entity_name"])
             except Exception as exc:
                 logger.debug("entity upsert failed: %s — %s", e["entity_name"], exc)
         upsert_chunk_entities(chunk_id, user_id, resolved)
@@ -241,6 +248,15 @@ def _store_entities_for_chunks(
                 future.result()
             except Exception as e:
                 logger.warning("entity storage failed for chunk %d: %s", futures[future], e)
+
+    # Deduplicate while preserving order
+    seen: set[str] = set()
+    unique_names: list[str] = []
+    for name in stored_entity_names:
+        if name not in seen:
+            seen.add(name)
+            unique_names.append(name)
+    return unique_names
 
 
 def _crossref_experience_context(text: str, user_id: str) -> str | None:
@@ -382,10 +398,23 @@ def ingest_content(
 
     # Entity extraction — runs per chunk after successful storage.
     # Wrapped in try/except: a failure here must NEVER fail ingestion.
+    extracted_entity_names: list[str] = []
     try:
-        _store_entities_for_chunks(chunks, source_id=source_id, user_id=user_id)
+        extracted_entity_names = _store_entities_for_chunks(
+            chunks, source_id=source_id, user_id=user_id
+        )
     except Exception as e:
         logger.warning("entity extraction failed for source %s: %s", source_id, e)
+
+    # Memory consolidation — check if any extracted entities have crossed the
+    # 3-source threshold and synthesise a consolidation chunk for them.
+    # Runs after entity extraction. Failures must NEVER fail ingestion.
+    if extracted_entity_names:
+        try:
+            from agents.consolidation_agent import maybe_consolidate_entities
+            maybe_consolidate_entities(extracted_entity_names, user_id=user_id)
+        except Exception as e:
+            logger.warning("consolidation trigger failed for source %s: %s", source_id, e)
 
     # Hierarchy persistence — runs after successful chunk storage.
     # Wrapped in try/except: a failure here must NEVER fail ingestion.

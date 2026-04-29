@@ -940,3 +940,38 @@ Resume text:
 ```
 
 **`POST /save-experience-nodes`** — separate endpoint called after the user confirms/edits the extracted nodes in the frontend. Accepts `{ "nodes": [...] }`, calls `save_experience_nodes()` which delete-then-reinserts all nodes for the user. Returns `{ "saved": true, "count": N }`.
+
+
+---
+
+## Memory Consolidation Prompt (Phase 5)
+
+**Location:** `backend/agents/consolidation_agent.py`
+**Model:** `claude-haiku-4-5-20251001` | **max_tokens:** 300
+
+**Trigger:** Called from `ingestion_agent.ingest_content()` after entity extraction. Runs only for entities that have just crossed the 3-distinct-source threshold (`maybe_consolidate_entities()`). Already-consolidated entities are re-synthesised to keep the brief fresh.
+
+**Output:** Stored as `node_type="consolidation"` in the `embeddings` table. One row per (user, entity) — deterministic ID `consolidation_{user_id}_{entity_id}`. Surfaced at retrieval under the CONSOLIDATION frame header — draft agent uses it as background context, not direct quotation.
+
+**System prompt (verbatim):**
+
+```
+You are a knowledge consolidation assistant. You receive everything a specific person knows about a topic, organised by context bucket. Your job is to write a concise, factual memory brief in the exact format below.
+
+Rules:
+- Write only what is supported by the provided chunks. Do not invent facts.
+- Each bucket line must be a single sentence, max 20 words.
+- If a bucket has no content, omit that line entirely.
+- The "gap" line describes what is clearly absent or untested based on what IS present — infer carefully.
+- Do not use bullet points, headers, or markdown. Plain text only.
+- Return ONLY the formatted brief, nothing else.
+
+Format:
+entity: "{entity_name}"
+  direct experience (work): "..."
+  direct experience (personal): "..."
+  learned knowledge: "..."
+  gap: "..."
+```
+
+**Input construction (`_build_consolidation_input`):** Chunks are grouped into work / personal_project / learning / observation / legacy buckets. Each chunk is truncated to 80 words. Max 12 chunks per entity total, max 4 per bucket. Passed as a plain-text bucket list to Haiku.

@@ -92,6 +92,12 @@ def resolve_attribution_frames(
 
     # ── Step 1: Per-chunk frame assignment ──────────────────────────────────
     def _chunk_frame(chunk: dict, tags: set[str]) -> str:
+        # Consolidation chunks get their own frame — they span all contexts and
+        # should be surfaced as background context, not attributed to one frame.
+        node_type = _get_field(chunk, "node_type") or chunk.get("metadata", {}).get("node_id", "")
+        if node_type == "consolidation" or _get_field(chunk, "source_type") == "consolidation":
+            return "CONSOLIDATION"
+
         memory_context = chunk.get("memory_context") or chunk.get("metadata", {}).get("memory_context")
 
         # Primary signal: memory_context (set at ingest time — most reliable)
@@ -130,6 +136,7 @@ def resolve_attribution_frames(
 
     # ── Step 2: Build labeled output block grouped by frame ─────────────────
     frame_order = [
+        "CONSOLIDATION",
         "PERSONAL_WORK",
         "PERSONAL_PROJECT",
         "PERSONAL",
@@ -155,6 +162,10 @@ def resolve_attribution_frames(
             ) + "]"
 
     frame_headers = {
+        "CONSOLIDATION": (
+            "CONSOLIDATED MEMORY — synthesised summary of everything known about this topic. "
+            "Use as background context. Do not quote directly — absorb and write from it:"
+        ),
         "PERSONAL_WORK": (
             f"PERSONAL EXPERIENCE — WORK CONTEXT{_work_ctx} — write in first person, "
             "this is something you built or did professionally:"
