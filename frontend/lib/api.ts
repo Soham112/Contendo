@@ -6,10 +6,14 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 // ── Request / Response Types ─────────────────────────────────────────────────
 
+export type MemoryContext = "work" | "personal_project" | "learning" | "observation";
+
 export interface IngestRequest {
   content?: string;
   source_type: string;
   raw_image?: string;
+  source_title?: string;
+  memory_context?: MemoryContext | null;
 }
 
 export interface IngestResponse {
@@ -197,6 +201,13 @@ export function useApi() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url }),
+      }),
+
+    suggestMemoryContext: (content: string) =>
+      apiFetch("/suggest-memory-context", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
       }),
 
     // ── Generate ──────────────────────────────────────────────────────────

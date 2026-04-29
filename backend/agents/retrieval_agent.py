@@ -52,21 +52,25 @@ def infer_seniority_level(profile: dict) -> str:
 
 
 def resolve_attribution_frames(chunks: list[dict], profile: dict) -> str:
-    """Group retrieved chunks by topic cluster and assign an explicit writing frame.
+    """Assign an explicit writing frame to each retrieved chunk individually.
 
-    Each chunk dict is expected to have (flat or nested under 'metadata'):
-        text / content  — chunk body
-        source_type     — "personal_note", "saved_content", "note", "article",
-                          "youtube", "image"
-        tags            — comma-separated tag string
+    Phase 1 fix: frame is assigned per-chunk, not per-cluster. The old
+    cluster-level assignment caused a single personal_note to contaminate
+    all other chunks in its tag cluster with a PERSONAL frame, leading to
+    first-person hallucinations about article/video content.
 
-    Frame priority per cluster (strict order):
-    1. Any chunk with source_type 'personal_note'  → PERSONAL for entire cluster
-    2. Cluster tags overlap with profile.topics_of_expertise → EXPERT_OUTSIDER
-    3. Otherwise → LEARNING, calibrated by inferred seniority level
+    Frame resolution per chunk (strict priority):
+    1. memory_context field (Phase 1 — most reliable signal):
+         "work"             → PERSONAL_WORK
+         "personal_project" → PERSONAL_PROJECT
+         "learning"         → LEARNING (never PERSONAL, even if source_type=personal_note)
+         "observation"      → OBSERVATION
+    2. source_type fallback (for legacy chunks where memory_context is None):
+         "personal_note"    → PERSONAL
+         others             → EXPERT_OUTSIDER if tags overlap with profile expertise,
+                              else LEARNING calibrated by seniority
 
-    Returns a structured labeled string for prompt injection that the draft agent
-    reads directly — no interpretive guesswork inside the prompt.
+    Output: structured labeled block for direct prompt injection.
     """
     if not chunks:
         return "No relevant knowledge base entries found. Draw on general expertise."
@@ -74,89 +78,77 @@ def resolve_attribution_frames(chunks: list[dict], profile: dict) -> str:
     seniority = infer_seniority_level(profile)
     topics_of_expertise = [t.lower().strip() for t in profile.get("topics_of_expertise", [])]
 
-    # ── Step 1: Parse tags per chunk ────────────────────────────────────────
-    def _get_field(chunk: dict, flat_key: str, meta_key: str | None = None) -> str:
+    def _get_field(chunk: dict, flat_key: str) -> str:
         """Read a field from a flat chunk dict or its nested 'metadata' sub-dict."""
         val = chunk.get(flat_key)
         if val is not None:
             return str(val)
-        if meta_key:
-            return str(chunk.get("metadata", {}).get(meta_key) or "")
-        return ""
+        return str(chunk.get("metadata", {}).get(flat_key) or "")
+
+    # ── Step 1: Per-chunk frame assignment ──────────────────────────────────
+    def _chunk_frame(chunk: dict, tags: set[str]) -> str:
+        memory_context = chunk.get("memory_context") or chunk.get("metadata", {}).get("memory_context")
+
+        # Primary signal: memory_context (set at ingest time — most reliable)
+        if memory_context == "work":
+            return "PERSONAL_WORK"
+        if memory_context == "personal_project":
+            return "PERSONAL_PROJECT"
+        if memory_context == "observation":
+            return "OBSERVATION"
+        if memory_context == "learning":
+            # Explicitly marked as external knowledge — never PERSONAL
+            in_expertise = any(
+                any(exp in tag or tag in exp for exp in topics_of_expertise)
+                for tag in tags
+            ) if topics_of_expertise and tags else False
+            return "EXPERT_OUTSIDER" if in_expertise else f"LEARNING_{seniority.upper()}"
+
+        # Fallback: legacy chunks without memory_context — use source_type heuristic
+        source_type = _get_field(chunk, "source_type")
+        if source_type == "personal_note":
+            return "PERSONAL"
+
+        in_expertise = any(
+            any(exp in tag or tag in exp for exp in topics_of_expertise)
+            for tag in tags
+        ) if topics_of_expertise and tags else False
+        return "EXPERT_OUTSIDER" if in_expertise else f"LEARNING_{seniority.upper()}"
 
     chunk_tags: list[set[str]] = []
+    chunk_frames: list[str] = []
     for chunk in chunks:
         raw_tags = _get_field(chunk, "tags")
         tags = {t.strip().lower() for t in raw_tags.split(",") if t.strip()} if raw_tags else set()
         chunk_tags.append(tags)
+        chunk_frames.append(_chunk_frame(chunk, tags))
 
-    # ── Step 2: Cluster chunks by shared tags ────────────────────────────────
-    # Chunks sharing at least one tag belong to the same topic cluster.
-    # Tag-less chunks each form a singleton cluster.
-    clusters: list[list[int]] = []   # each entry = list of chunk indices
-    chunk_to_cluster: dict[int, int] = {}
-
-    for i, tags in enumerate(chunk_tags):
-        if not tags:
-            cid = len(clusters)
-            clusters.append([i])
-            chunk_to_cluster[i] = cid
-            continue
-
-        placed = False
-        for cid, members in enumerate(clusters):
-            cluster_tags: set[str] = set()
-            for m in members:
-                cluster_tags |= chunk_tags[m]
-            if tags & cluster_tags:
-                clusters[cid].append(i)
-                chunk_to_cluster[i] = cid
-                placed = True
-                break
-
-        if not placed:
-            cid = len(clusters)
-            clusters.append([i])
-            chunk_to_cluster[i] = cid
-
-    # ── Step 3: Resolve frame per cluster ───────────────────────────────────
-    cluster_frames: list[str] = []
-    for cid, members in enumerate(clusters):
-        cluster_all_tags: set[str] = set()
-        for idx in members:
-            cluster_all_tags |= chunk_tags[idx]
-
-        # Priority 1 — personal_note in cluster → PERSONAL
-        has_personal = any(
-            _get_field(chunks[idx], "source_type") == "personal_note"
-            for idx in members
-        )
-        if has_personal:
-            cluster_frames.append("PERSONAL")
-            continue
-
-        # Priority 2 — topic overlaps with declared expertise → EXPERT_OUTSIDER
-        in_expertise = any(
-            any(exp in tag or tag in exp for exp in topics_of_expertise)
-            for tag in cluster_all_tags
-        ) if topics_of_expertise and cluster_all_tags else False
-
-        if in_expertise:
-            cluster_frames.append("EXPERT_OUTSIDER")
-        else:
-            cluster_frames.append(f"LEARNING_{seniority.upper()}")
-
-    # ── Step 4: Build labeled output block ──────────────────────────────────
+    # ── Step 2: Build labeled output block grouped by frame ─────────────────
     frame_order = [
+        "PERSONAL_WORK",
+        "PERSONAL_PROJECT",
         "PERSONAL",
+        "OBSERVATION",
         "EXPERT_OUTSIDER",
         "LEARNING_SENIOR",
         "LEARNING_MID",
         "LEARNING_JUNIOR",
     ]
     frame_headers = {
+        "PERSONAL_WORK": (
+            "PERSONAL EXPERIENCE — WORK CONTEXT — write in first person, "
+            "this is something you built or did professionally:"
+        ),
+        "PERSONAL_PROJECT": (
+            "PERSONAL EXPERIENCE — PERSONAL PROJECT — write in first person, "
+            "this is your own side project or experiment:"
+        ),
         "PERSONAL": (
             "PERSONAL EXPERIENCE — write these claims in first person:"
+        ),
+        "OBSERVATION": (
+            "OBSERVATION — patterns you've noticed in the world, "
+            "write with 'I've noticed' or 'I keep seeing', not as personal lived experience:"
         ),
         "EXPERT_OUTSIDER": (
             "EXPERT OUTSIDER PERSPECTIVE — you know adjacent territory deeply,\n"
@@ -167,19 +159,16 @@ def resolve_attribution_frames(chunks: list[dict], profile: dict) -> str:
         "LEARNING_JUNIOR": "LEARNING — confident framing at junior level, not passive:",
     }
 
-    # Collect chunks per frame in original similarity order
-    frame_to_entries: dict[str, list[tuple[int, int]]] = {}  # frame → [(chunk_idx, cluster_id)]
-    for cid, (members, frame) in enumerate(zip(clusters, cluster_frames)):
-        frame_to_entries.setdefault(frame, [])
-        for idx in members:
-            frame_to_entries[frame].append((idx, cid))
+    frame_to_chunk_indices: dict[str, list[int]] = {}
+    for idx, frame in enumerate(chunk_frames):
+        frame_to_chunk_indices.setdefault(frame, []).append(idx)
 
     lines: list[str] = []
     for frame in frame_order:
-        if frame not in frame_to_entries:
+        if frame not in frame_to_chunk_indices:
             continue
         lines.append(frame_headers[frame])
-        for chunk_idx, _cid in frame_to_entries[frame]:
+        for chunk_idx in frame_to_chunk_indices[frame]:
             chunk = chunks[chunk_idx]
             source_type = _get_field(chunk, "source_type") or "article"
             tag_list = ", ".join(sorted(chunk_tags[chunk_idx])) if chunk_tags[chunk_idx] else "none"

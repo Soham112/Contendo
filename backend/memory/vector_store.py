@@ -7,13 +7,17 @@ generated locally with sentence-transformers (all-MiniLM-L6-v2, 384-dim).
 Table schema (embeddings):
   id, user_id, content, embedding (vector 384), source_id, source_title,
   source_type, tags, chunk_index, total_chunks, content_hash, node_type,
-  ingested_at (timestamptz)
+  memory_context, ingested_at (timestamptz)
+
+  memory_context values: "work" | "personal_project" | "learning" |
+                         "observation" | NULL (legacy/untagged)
 
 RPC required:
   match_embeddings(query_embedding vector, match_user_id text, match_count int)
   → table(id, content, source_id, source_title, source_type, tags,
-          chunk_index, total_chunks, content_hash, node_type, ingested_at,
-          similarity float)
+          chunk_index, total_chunks, content_hash, node_type, memory_context,
+          ingested_at, similarity float)
+  See migrations/002_add_memory_context.sql for the updated RPC definition.
 """
 
 import logging
@@ -78,13 +82,16 @@ def upsert_chunks(
     ingested_at: str = "",
     user_id: str = "default",
     content_hash: str = "",
+    memory_context: str | None = None,
 ) -> int:
     """Embed chunks locally and upsert rows into the embeddings table.
 
     Signature matches the call in ingestion_agent.py:
         upsert_chunks(chunks, source_type=..., tags=..., source_id=...,
                       source_title=..., ingested_at=..., user_id=...,
-                      content_hash=...)
+                      content_hash=..., memory_context=...)
+
+    memory_context: "work" | "personal_project" | "learning" | "observation" | None
 
     Returns:
         Number of rows upserted.
@@ -114,6 +121,7 @@ def upsert_chunks(
             "total_chunks": total,
             "content_hash": content_hash,
             "node_type": "chunk",
+            "memory_context": memory_context,
             "ingested_at": ingested_at or None,
         })
 
@@ -153,6 +161,7 @@ def query_similar(
             "total_chunks": row.get("total_chunks", 0),
             "content_hash": row.get("content_hash", ""),
             "node_type": row.get("node_type", "chunk"),
+            "memory_context": row.get("memory_context"),  # None for legacy chunks
             "ingested_at": row.get("ingested_at", ""),
             "similarity": round(float(row.get("similarity", 0.0)), 4),
             # Nested metadata kept for any callers that use chunk["metadata"][...]
@@ -165,6 +174,7 @@ def query_similar(
                 "total_chunks": row.get("total_chunks", 0),
                 "content_hash": row.get("content_hash", ""),
                 "node_id": row.get("node_type", "chunk"),
+                "memory_context": row.get("memory_context"),
                 "ingested_at": row.get("ingested_at", ""),
             },
         })
@@ -213,7 +223,7 @@ def _fetch_corpus_for_bm25(user_id: str) -> list[dict]:
         supabase.table("embeddings")
         .select(
             "id,content,source_id,source_title,source_type,"
-            "tags,chunk_index,total_chunks,content_hash,node_type,ingested_at"
+            "tags,chunk_index,total_chunks,content_hash,node_type,memory_context,ingested_at"
         )
         .eq("user_id", user_id)
         .execute()
@@ -222,25 +232,27 @@ def _fetch_corpus_for_bm25(user_id: str) -> list[dict]:
     for row in response.data or []:
         content = row.get("content", "")
         corpus.append({
-            "id":           row.get("id", ""),
-            "text":         content,
-            "content":      content,
-            "source_id":    row.get("source_id", ""),
-            "source_title": row.get("source_title", ""),
-            "source_type":  row.get("source_type", ""),
-            "tags":         row.get("tags", ""),
-            "chunk_index":  row.get("chunk_index", 0),
-            "total_chunks": row.get("total_chunks", 0),
-            "content_hash": row.get("content_hash", ""),
-            "node_type":    row.get("node_type", "chunk"),
-            "ingested_at":  row.get("ingested_at", ""),
+            "id":             row.get("id", ""),
+            "text":           content,
+            "content":        content,
+            "source_id":      row.get("source_id", ""),
+            "source_title":   row.get("source_title", ""),
+            "source_type":    row.get("source_type", ""),
+            "tags":           row.get("tags", ""),
+            "chunk_index":    row.get("chunk_index", 0),
+            "total_chunks":   row.get("total_chunks", 0),
+            "content_hash":   row.get("content_hash", ""),
+            "node_type":      row.get("node_type", "chunk"),
+            "memory_context": row.get("memory_context"),  # None for legacy chunks
+            "ingested_at":    row.get("ingested_at", ""),
             "metadata": {
-                "source_id":    row.get("source_id", ""),
-                "source_title": row.get("source_title", ""),
-                "source_type":  row.get("source_type", ""),
-                "tags":         row.get("tags", ""),
-                "chunk_index":  row.get("chunk_index", 0),
-                "total_chunks": row.get("total_chunks", 0),
+                "source_id":      row.get("source_id", ""),
+                "source_title":   row.get("source_title", ""),
+                "source_type":    row.get("source_type", ""),
+                "tags":           row.get("tags", ""),
+                "chunk_index":    row.get("chunk_index", 0),
+                "total_chunks":   row.get("total_chunks", 0),
+                "memory_context": row.get("memory_context"),
             },
         })
     return corpus

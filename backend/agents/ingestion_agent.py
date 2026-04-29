@@ -36,6 +36,23 @@ Rules:
 
 Example output: ["machine learning", "transformer models", "ai inference", "scaling laws"]"""
 
+CONTEXT_CLASSIFY_SYSTEM_PROMPT = """You are a context classifier. Given a short passage of text, determine which of four memory contexts it belongs to.
+
+Contexts:
+- "work"             — professional work: team projects, client work, production systems, sprints, company context
+- "personal_project" — personal side projects, experiments, weekend builds, indie work
+- "learning"         — external knowledge: articles, research, books, courses, videos, things the user read or watched
+- "observation"      — patterns the user has noticed, meta-commentary, "I keep seeing", "most teams I talk to"
+
+Key signals:
+- "we built", "our team", "the client", "production", "sprint", "my company" → work
+- "I built", "my side project", "I was experimenting", "over the weekend", "my own" → personal_project
+- "the article argues", "research shows", "according to", "I read", "the author", "studies show" → learning
+- "I keep seeing", "I've noticed", "the pattern I notice", "most teams", "in my experience observing" → observation
+
+Return ONLY one of: "work", "personal_project", "learning", "observation"
+No explanation, no punctuation, just the single label."""
+
 SUMMARY_MODEL = "claude-haiku-4-5-20251001"
 
 
@@ -91,6 +108,34 @@ def _generate_source_summary(content: str) -> str:
         return ""
 
 
+VALID_MEMORY_CONTEXTS = {"work", "personal_project", "learning", "observation"}
+
+
+def _classify_memory_context(text: str) -> str:
+    """Classify text into a memory context using Claude Haiku language pattern detection.
+
+    Uses first 200 words. Returns one of: "work" | "personal_project" |
+    "learning" | "observation". Defaults to "learning" on any failure.
+
+    Called at ingest time when the user has not explicitly set memory_context,
+    and also via the /suggest-memory-context endpoint for UI pre-selection.
+    """
+    preview = " ".join(text.split()[:200])
+    try:
+        message = client.messages.create(
+            model=SUMMARY_MODEL,
+            max_tokens=10,
+            system=CONTEXT_CLASSIFY_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": preview}],
+        )
+        result = message.content[0].text.strip().lower().strip('"\'')
+        if result in VALID_MEMORY_CONTEXTS:
+            return result
+    except Exception as e:
+        logger.warning("memory context classification failed: %s", e)
+    return "learning"
+
+
 def _assign_to_topic(source_id: str, tags: list[str], user_id: str) -> str:
     """Assign source to an existing topic (2+ tag overlap) or create a new one.
 
@@ -116,7 +161,21 @@ def _assign_to_topic(source_id: str, tags: list[str], user_id: str) -> str:
     return topic_id
 
 
-def ingest_content(content: str, source_type: str, source_title: str | None = None, user_id: str = "default") -> dict:
+def ingest_content(
+    content: str,
+    source_type: str,
+    source_title: str | None = None,
+    user_id: str = "default",
+    memory_context: str | None = None,
+) -> dict:
+    """Ingest content into the knowledge base.
+
+    memory_context: "work" | "personal_project" | "learning" | "observation" | None
+        When None, the Haiku language pattern classifier is run to infer context
+        automatically. Explicitly provided values are always used as-is.
+
+    Returns dict with keys: chunks_stored, tags, suggested_context (when inferred).
+    """
     chunks = chunk_text(content)
     if not chunks:
         return {"chunks_stored": 0, "tags": []}
@@ -132,6 +191,17 @@ def ingest_content(content: str, source_type: str, source_title: str | None = No
         }
 
     tags = _extract_tags(content)
+
+    # Infer memory_context via Haiku classifier when not explicitly provided.
+    # Store the suggestion so the caller can surface it in the response.
+    context_was_inferred = False
+    if memory_context is None:
+        memory_context = _classify_memory_context(content)
+        context_was_inferred = True
+    elif memory_context not in VALID_MEMORY_CONTEXTS:
+        logger.warning("invalid memory_context %r — falling back to classifier", memory_context)
+        memory_context = _classify_memory_context(content)
+        context_was_inferred = True
 
     if source_title is None:
         # Derive a human-readable title from the first 80 chars of content
@@ -152,6 +222,7 @@ def ingest_content(content: str, source_type: str, source_title: str | None = No
         ingested_at=ingested_at,
         user_id=user_id,
         content_hash=content_hash,
+        memory_context=memory_context,
     )
 
     # Invalidate BM25 cache so the next generation request picks up the new
@@ -178,4 +249,7 @@ def ingest_content(content: str, source_type: str, source_title: str | None = No
     except Exception as e:
         logger.warning("hierarchy persistence failed for source %s: %s", source_id, e)
 
-    return {"chunks_stored": stored, "tags": tags}
+    result: dict = {"chunks_stored": stored, "tags": tags, "memory_context": memory_context}
+    if context_was_inferred:
+        result["suggested_context"] = memory_context
+    return result

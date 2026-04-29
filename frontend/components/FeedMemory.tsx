@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Puzzle } from "lucide-react";
 import { useToast } from "@/components/ui/ToastProvider";
-import { useApi } from "@/lib/api";
+import { useApi, type MemoryContext } from "@/lib/api";
 import { useTracking } from "@/lib/useTracking";
 import ExtensionInstallModal from "@/components/ExtensionInstallModal";
 
@@ -208,6 +208,8 @@ export default function FeedMemory() {
   const [ytFetchError, setYtFetchError] = useState("");
   const [ytManualText, setYtManualText] = useState("");
   const [stats, setStats] = useState<Stats | null>(null);
+  const [memoryContext, setMemoryContext] = useState<MemoryContext | null>(null);
+  const [contextSuggesting, setContextSuggesting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const docFileInputRef = useRef<HTMLInputElement>(null);
   const { showToast } = useToast();
@@ -304,6 +306,21 @@ export default function FeedMemory() {
     }
   };
 
+  const handleContextBlur = async (text: string) => {
+    if (!text || text.trim().length < 30 || memoryContext !== null) return;
+    setContextSuggesting(true);
+    try {
+      const res = await api.suggestMemoryContext(text);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.suggested_context && memoryContext === null) {
+          setMemoryContext(data.suggested_context as MemoryContext);
+        }
+      }
+    } catch {}
+    finally { setContextSuggesting(false); }
+  };
+
   const fetchStats = async () => {
     try {
       const res = await api.getStats();
@@ -339,6 +356,8 @@ export default function FeedMemory() {
     setIsDragging(false);
     setResult(null);
     setError("");
+    setMemoryContext(null);
+    setContextSuggesting(false);
     setYtUrl("");
     setYtTranscript("");
     setYtVideoId("");
@@ -563,7 +582,10 @@ export default function FeedMemory() {
       } else if (activeTab === "url") {
         res = await api.scrapeAndIngest(urlInput.trim());
       } else {
-        const body: { source_type: string; raw_image?: string; content?: string; source_title?: string } = { source_type: activeTab };
+        const body: { source_type: string; raw_image?: string; content?: string; source_title?: string; memory_context?: MemoryContext | null } = {
+          source_type: activeTab,
+          memory_context: memoryContext,
+        };
         if (activeTab === "image") { body.raw_image = imagePreview; body.content = ""; }
         else if (activeTab === "youtube") {
           let transcript = ytTranscript; // may already be set by manual textarea
@@ -606,6 +628,7 @@ export default function FeedMemory() {
       setImageFile(null);
       setImagePreview("");
       setUploadedFile(null);
+      setMemoryContext(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
       if (docFileInputRef.current) docFileInputRef.current.value = "";
       setYtUrl("");
@@ -1036,6 +1059,7 @@ export default function FeedMemory() {
                 <textarea
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
+                  onBlur={(e) => handleContextBlur(e.target.value)}
                   placeholder={
                     activeTab === "note"
                       ? "Write your thoughts, ideas, or observations..."
@@ -1044,6 +1068,44 @@ export default function FeedMemory() {
                   rows={10}
                   className="w-full max-md:w-full max-md:!w-full box-border bg-surface-container-low px-4 py-3 text-[15px] text-on-surface placeholder:text-outline rounded-lg border-0 border-b-2 border-outline-variant focus:outline-none focus:border-primary resize-none transition-colors leading-relaxed"
                 />
+              </div>
+            )}
+
+            {/* Context selector — article, note, youtube only */}
+            {(activeTab === "article" || activeTab === "note" || activeTab === "youtube") && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <label className="label-caps text-secondary">CONTEXT</label>
+                  {contextSuggesting && (
+                    <span className="text-[10px] text-outline animate-pulse">suggesting…</span>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {(
+                    [
+                      { value: "work" as MemoryContext, label: "Work" },
+                      { value: "personal_project" as MemoryContext, label: "Personal project" },
+                      { value: "learning" as MemoryContext, label: "Learning" },
+                      { value: "observation" as MemoryContext, label: "Observation" },
+                    ] as { value: MemoryContext; label: string }[]
+                  ).map(({ value, label }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setMemoryContext(memoryContext === value ? null : value)}
+                      className={`px-3.5 py-1.5 rounded-full text-[12px] font-medium transition-all duration-150 ${
+                        memoryContext === value
+                          ? "btn-primary text-white shadow-card"
+                          : "bg-surface-container text-secondary hover:bg-surface-container-high hover:text-on-surface"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-outline">
+                  Tag the origin so your posts know what you lived vs what you learned.
+                </p>
               </div>
             )}
 
