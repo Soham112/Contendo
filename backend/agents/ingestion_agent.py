@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 
-from memory.vector_store import query_by_hash, upsert_chunks
+from memory.vector_store import invalidate_bm25_cache, query_by_hash, upsert_chunks
 from memory.hierarchy_store import (
     add_source_to_topic,
     find_matching_topic,
@@ -153,6 +153,10 @@ def ingest_content(content: str, source_type: str, source_title: str | None = No
         user_id=user_id,
         content_hash=content_hash,
     )
+
+    # Invalidate BM25 cache so the next generation request picks up the new
+    # corpus. Safe to call even if no cache entry exists yet.
+    invalidate_bm25_cache(user_id)
 
     # Hierarchy persistence — runs after successful chunk storage.
     # Wrapped in try/except: a failure here must NEVER fail ingestion.
