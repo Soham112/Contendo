@@ -492,6 +492,57 @@ def delete_source(source_title: str, user_id: str = "default") -> dict:
     return {"deleted": True, "chunks_removed": count}
 
 
+def get_chunks_by_ids(chunk_ids: list[str], user_id: str = "default") -> list[dict]:
+    """Fetch full chunk dicts for a list of chunk_ids (entity-linked retrieval).
+
+    Returns same format as query_similar() so the retrieval pipeline can treat
+    entity-linked chunks identically to vector/BM25 results.
+    Chunks are given similarity=0.35 (above RELEVANCE_THRESHOLD, same as BM25 proxy).
+    """
+    if not chunk_ids:
+        return []
+    response = (
+        supabase.table("embeddings")
+        .select(
+            "id,content,source_id,source_title,source_type,"
+            "tags,chunk_index,total_chunks,content_hash,node_type,memory_context,ingested_at"
+        )
+        .in_("id", chunk_ids)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    results = []
+    for row in (response.data or []):
+        content = row.get("content", "")
+        results.append({
+            "id":            row.get("id", ""),
+            "text":          content,
+            "content":       content,
+            "source_id":     row.get("source_id", ""),
+            "source_title":  row.get("source_title", ""),
+            "source_type":   row.get("source_type", ""),
+            "tags":          row.get("tags", ""),
+            "chunk_index":   row.get("chunk_index", 0),
+            "total_chunks":  row.get("total_chunks", 0),
+            "content_hash":  row.get("content_hash", ""),
+            "node_type":     row.get("node_type", "chunk"),
+            "memory_context": row.get("memory_context"),
+            "ingested_at":   row.get("ingested_at", ""),
+            "similarity":    0.35,  # entity-linked proxy — above threshold, below high-confidence bar
+            "metadata": {
+                "source_id":      row.get("source_id", ""),
+                "source_title":   row.get("source_title", ""),
+                "source_type":    row.get("source_type", ""),
+                "tags":           row.get("tags", ""),
+                "chunk_index":    row.get("chunk_index", 0),
+                "total_chunks":   row.get("total_chunks", 0),
+                "memory_context": row.get("memory_context"),
+                "ingested_at":    row.get("ingested_at", ""),
+            },
+        })
+    return results
+
+
 def get_chunks_for_source(source_id: str, user_id: str = "default") -> list[dict]:
     """Return all chunks for a source_id, sorted by chunk_index ascending.
 

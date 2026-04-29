@@ -22,6 +22,9 @@ class PipelineState(TypedDict, total=False):
     retrieval_bundle: dict            # structured hierarchical bundle {chunks, source_contexts, topic_contexts}
     retrieved_context: str            # pre-formatted text block for draft prompt injection; "" triggers flat fallback
 
+    # Phase 4: user's experience nodes loaded at retrieval time for attribution context
+    experience_nodes: list[dict[str, Any]]
+
     # Previously posted topics (for novelty injection in draft)
     posted_topics: list[str]
 
