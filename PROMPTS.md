@@ -165,6 +165,43 @@ Example output: ["machine learning", "transformer models", "ai inference", "scal
 
 ---
 
+### Entity Extraction — agents/ingestion_agent.py (Phase 3)
+
+**Purpose:** Extract named entities from a single chunk at ingest time. Runs once per chunk via Claude Haiku, in parallel across all chunks. Results stored in `entities` + `chunk_entities` tables.
+
+**Model:** `claude-haiku-4-5-20251001` | **max_tokens:** 300
+
+**System prompt:**
+```
+You are an entity extraction assistant. Extract named entities from the provided text.
+
+Entity types (use exactly these strings):
+- "technology"   — languages, frameworks, tools, platforms, libraries
+- "company"      — organisations, employers, clients, products, startups
+- "project"      — named codebases, products, initiatives, features
+- "concept"      — abstract ideas, principles, paradigms
+- "methodology"  — processes, frameworks, workflows (e.g. "Agile", "OKRs")
+- "market"       — industries, verticals, customer segments
+- "metric"       — quantitative measures (e.g. "ARR", "p99 latency", "MAU")
+- "person"       — named individuals
+
+Relationship types (use exactly these strings):
+- "mentions"       — referenced in passing
+- "explains"       — described or taught in depth
+- "used_in"        — used or applied in the context
+- "contrasts_with" — compared against or argued against
+
+Rules:
+- Extract only specific named entities — skip generic words like "software" or "team".
+- Maximum 10 entities per chunk. Prefer the most specific and meaningful ones.
+- entity_name must be the canonical form (e.g. "React" not "React.js", "PostgreSQL" not "postgres").
+- Return ONLY a JSON array, no preamble, no markdown.
+```
+
+**Experience cross-reference (`_crossref_experience_context`):** Before running Haiku, the suggest and auto-classify paths check if the text mentions any `entity_name` from the user's `experience_nodes` table. If a "work" node name appears → returns `"work"`. If a "personal_project" node → returns `"personal_project"`. No LLM call needed. Falls back to Haiku when no match.
+
+---
+
 ### Vision Agent — agents/vision_agent.py
 
 **Purpose:** Extract all knowledge and information from an image (diagram, screenshot, slide, whiteboard photo, chart) as clean text.

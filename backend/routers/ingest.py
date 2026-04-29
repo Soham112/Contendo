@@ -20,7 +20,7 @@ _OBSIDIAN_DISABLED_MSG = (
     "Run the backend locally to use this feature."
 )
 
-from agents.ingestion_agent import ingest_content, _classify_memory_context
+from agents.ingestion_agent import ingest_content, _classify_memory_context, _crossref_experience_context
 from agents.vision_agent import extract_from_image
 from tools.obsidian_tool import (
     extract_vault_from_zip,
@@ -190,7 +190,9 @@ async def suggest_memory_context(
     """
     if not req.content or not req.content.strip():
         return {"suggested_context": "learning"}
-    suggested = _classify_memory_context(req.content)
+    # Experience cross-reference first (deterministic, no LLM) — falls back
+    # to Haiku classifier when no known entity matches are found in the text.
+    suggested = _crossref_experience_context(req.content, user_id) or _classify_memory_context(req.content)
     return {"suggested_context": suggested}
 
 
