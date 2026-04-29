@@ -138,3 +138,57 @@ def get_chunk_ids_for_entity(entity_id: str, user_id: str) -> list[str]:
         .execute()
     )
     return [row["chunk_id"] for row in (result.data or [])]
+
+
+def get_entities_with_source_count(
+    user_id: str, min_sources: int = 3
+) -> list[dict[str, Any]]:
+    """Return entities that appear in at least min_sources distinct sources.
+
+    chunk_id format is '{source_id}_{chunk_index}' — source_id is extracted
+    by rsplit('_', 1)[0] since source_ids are UUIDs with no trailing underscore.
+
+    Returns list of dicts: {entity_id, entity_name, entity_type, source_count}.
+    Used by the consolidation agent to find entities ready for synthesis.
+    """
+    # Fetch all chunk_entities for the user in one query
+    result = (
+        supabase.table("chunk_entities")
+        .select("entity_id, chunk_id")
+        .eq("user_id", user_id)
+        .execute()
+    )
+    rows = result.data or []
+    if not rows:
+        return []
+
+    # Count distinct source_ids per entity_id (source_id = chunk_id without last _N)
+    entity_sources: dict[str, set[str]] = {}
+    for row in rows:
+        entity_id = row["entity_id"]
+        chunk_id = row["chunk_id"]
+        source_id = chunk_id.rsplit("_", 1)[0]
+        entity_sources.setdefault(entity_id, set()).add(source_id)
+
+    qualifying_ids = [
+        eid for eid, sources in entity_sources.items()
+        if len(sources) >= min_sources
+    ]
+    if not qualifying_ids:
+        return []
+
+    # Fetch entity metadata for qualifying ids
+    entity_result = (
+        supabase.table("entities")
+        .select("entity_id, entity_name, entity_type")
+        .eq("user_id", user_id)
+        .in_("entity_id", qualifying_ids)
+        .execute()
+    )
+    return [
+        {
+            **row,
+            "source_count": len(entity_sources[row["entity_id"]]),
+        }
+        for row in (entity_result.data or [])
+    ]
