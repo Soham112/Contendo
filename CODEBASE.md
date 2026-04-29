@@ -50,7 +50,7 @@
 | `backend/agents/scorer_agent.py` | Scores draft 0–100 across 5 dimensions, returns flagged sentences |
 | `backend/pipeline/state.py` | TypedDict schema for shared LangGraph pipeline state; includes `length` (`"concise" | "standard" | "long-form"`), `archetype`, `user_id`, `critic_brief`, retrieval calibration fields (`retrieval_confidence`, `retrieved_chunk_count`), `retrieved_chunks` (backward compat flat list), `retrieval_bundle` (full hierarchical bundle), `retrieved_context` (pre-formatted enriched text for draft prompt), and `first_post: bool` (set by `load_profile_node` when the user has no prior post history) |
 | `backend/pipeline/graph.py` | LangGraph graph definition — nodes, edges, conditional retry loop. Pipeline order: load_profile → retrieval → draft → critic → humanizer → predictability_audit → word_count_enforcer (standard/draft) OR scorer → word_count_enforcer (polished) → finalize. word_count_enforcer always runs exactly once, as the final gate before finalize. `load_profile_node` sets `first_post=True` when `posted_topics` is empty (user has no prior generation history). |
-| `backend/memory/vector_store.py` | Supabase pgvector store for embeddings; local sentence-transformer encoding + Supabase RPC retrieval (`match_embeddings`), upsert/delete/list helpers, dedup via `query_by_hash`, and source-level aggregation helpers. `query_similar_batch()` embeds all queries in one batched forward pass for speed. `query_similar_hybrid()` now implements true hybrid search: pgvector cosine similarity + BM25 Okapi full-corpus ranking, fused with Reciprocal Rank Fusion (RRF). BM25 index is built over the user's complete corpus (correct global IDF) and cached in-memory per user with a 5-minute TTL (`_bm25_cache`, `BM25_CACHE_TTL_SECONDS=300`). Both searches run in parallel via `ThreadPoolExecutor`. `invalidate_bm25_cache(user_id)` drops the cache entry on ingest so the next generation fetches a fresh corpus. |
+| `backend/memory/vector_store.py` | Supabase pgvector store for embeddings; local sentence-transformer encoding + Supabase RPC retrieval (`match_embeddings`), upsert/delete/list helpers, dedup via `query_by_hash`, and source-level aggregation helpers. `query_similar_batch()` embeds all queries in one batched forward pass for speed. `query_similar_hybrid()` implements hybrid search: pgvector cosine similarity + BM25 Okapi full-corpus ranking, fused with RRF. BM25 cached in-memory per user (5-min TTL). `upsert_chunks()` accepts and stores `memory_context` (Phase 1). `query_similar()` and `_fetch_corpus_for_bm25()` return `memory_context` in every chunk dict. |
 | `backend/memory/usage_store.py` | Fire-and-forget Claude API usage logging to Supabase `usage_events` table; `log_usage_event(user_id, event_type, input_tokens, output_tokens, metadata={}, model="sonnet")` is the only public function; calculates `estimated_cost_usd` using per-token pricing (Sonnet: $0.000003/$0.000015 in/out; Haiku: $0.00000025/$0.00000125); posts via `httpx.AsyncClient`; never raises; intended for `asyncio.get_running_loop().create_task()` call sites; wraps the HTTP call in try/except and logs warnings on failure |
 | `backend/memory/profile_store.py` | Per-user profile read/write backed by Supabase `profiles` table — `load_profile(user_id)` selects row and merges missing keys from `DEFAULT_PROFILE`; `save_profile(profile, user_id)` upserts `{"id": user_id, "data": profile}`; `profile_exists(user_id)` returns True if a row exists; `DEFAULT_PROFILE` includes bio, location, target_audience, opinions, writing_samples; `profile_to_context_string()` formats all fields for prompt injection; `save_writing_sample(user_id, sample, max_samples=10)` appends a new sample (case-insensitive dedup, oldest dropped when over limit) |
 | `backend/memory/hierarchy_store.py` | Supabase Postgres store for `source_nodes` and `topic_nodes` tables — `upsert_source_node`, `get_source_node`, `source_node_exists`, `get_sources_for_user`, `upsert_topic_node`, `get_topic_node`, `get_topics_for_user`, `find_matching_topic` (tag-overlap heuristic), `add_source_to_topic`; `init_db()` is a no-op; tags and child_source_ids stored as comma-separated TEXT |
@@ -175,14 +175,14 @@
 |---|---|
 | **Signature** | `resolve_attribution_frames(chunks: list[dict], profile: dict) -> str` |
 | **Inputs** | Raw chunk dicts from `retrieval_bundle["chunks"]`; user profile dict |
-| **Returns** | Structured labeled string with chunks grouped under PERSONAL EXPERIENCE / EXPERT OUTSIDER PERSPECTIVE / LEARNING headers and `[source: X \| tags: Y]` per-chunk labels |
-| **Step 1** | Topic clustering: group chunks by shared tags (comma-separated string in `chunk["tags"]`). Chunks sharing ≥1 tag belong to the same cluster. Tag-less chunks form singleton clusters. |
-| **Step 2** | Frame resolution per cluster (strict priority): (1) any `source_type: personal_note` → PERSONAL for the whole cluster; (2) cluster tags overlap `profile["topics_of_expertise"]` → EXPERT_OUTSIDER; (3) otherwise → LEARNING calibrated by `infer_seniority_level(profile)`. |
-| **Step 3** | Output ordered: PERSONAL → EXPERT_OUTSIDER → LEARNING (senior → mid → junior). Each chunk printed with its frame header, source label, and body. |
+| **Returns** | Structured labeled string with chunks grouped under per-frame headers and `[source: X \| tags: Y]` per-chunk labels |
+| **Phase 1 — per-chunk frame assignment** | Frame is resolved per chunk independently. No clustering. Prevents a single personal_note from contaminating article/video chunks in the same tag cluster. |
+| **Frame priority per chunk** | (1) `memory_context` field (primary, Phase 1): `"work"` → PERSONAL_WORK, `"personal_project"` → PERSONAL_PROJECT, `"observation"` → OBSERVATION, `"learning"` → EXPERT_OUTSIDER (if tags overlap expertise) or LEARNING. (2) Legacy fallback when `memory_context` is NULL: `source_type == "personal_note"` → PERSONAL, else EXPERT_OUTSIDER or LEARNING via expertise overlap check. |
+| **Output order** | PERSONAL_WORK → PERSONAL_PROJECT → PERSONAL → OBSERVATION → EXPERT_OUTSIDER → LEARNING (senior → mid → junior) |
 | **Fallback** | Returns `"No relevant knowledge base entries found. Draw on general expertise."` when chunks list is empty. |
 
-**Architectural decision — frame resolution in the retriever, not the draft agent prompt:**
-Pre-labeling chunk frames is structural and deterministic — it runs on typed data (source_type, tags, profile fields) and produces explicit headers the model reads directly. In-prompt attribution logic ("if the source_type is note, write in first person") is interpretive and brittle — the model may misread, ignore, or mis-apply it under creative pressure. By resolving frames before the prompt is constructed, the draft agent has no ambiguity to resolve. It reads labeled blocks and writes accordingly.
+**Architectural decision — per-chunk frames prevent cluster contamination:**
+The old cluster-level assignment caused one personal_note sharing a tag with article chunks to make ALL chunks in that cluster PERSONAL, leading to first-person hallucinations about externally-sourced content. Per-chunk assignment means each chunk carries only the frame that its own memory_context or source_type warrants. The memory_context field set at ingest time (via user pill selection or Haiku classifier) is the ground truth — source_type is the legacy fallback for existing chunks.
 
 ### retrieval_node (retrieval_agent.py)
 | | |
@@ -831,7 +831,7 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
 | `user_id` | text | Supabase user ID for data isolation |
 | `content` | text | Chunk text |
 | `embedding` | vector(384) | Local sentence-transformer embedding |
-| `source_type` | text | `article`, `youtube`, `image`, or `note` |
+| `source_type` | text | `article`, `youtube`, `image`, `note`, `personal_note`, `saved_content` |
 | `tags` | text | Comma-separated tag list |
 | `source_id` | text | UUID grouping all chunks from one ingest call |
 | `chunk_index` | int | Position of this chunk within its source |
@@ -839,7 +839,10 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
 | `source_title` | text | First 80 chars of first line of content — display title in Library |
 | `content_hash` | text | SHA-256 of normalised content for dedup |
 | `node_type` | text | `chunk` |
+| `memory_context` | text \| NULL | Phase 1 context tag: `work`, `personal_project`, `learning`, `observation`. NULL for legacy chunks — falls back to source_type heuristics in frame resolver. Set at ingest time from user pill selection or Haiku classifier fallback. |
 | `ingested_at` | timestamptz | UTC timestamp of ingest |
+
+**Migration:** `backend/migrations/002_add_memory_context.sql` — adds the column and updates the `match_embeddings` RPC to return it.
 
 ---
 

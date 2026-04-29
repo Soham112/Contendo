@@ -20,7 +20,7 @@ _OBSIDIAN_DISABLED_MSG = (
     "Run the backend locally to use this feature."
 )
 
-from agents.ingestion_agent import ingest_content
+from agents.ingestion_agent import ingest_content, _classify_memory_context
 from agents.vision_agent import extract_from_image
 from tools.obsidian_tool import (
     extract_vault_from_zip,
@@ -43,6 +43,11 @@ class IngestRequest(BaseModel):
     raw_image: str | None = None
     content_origin: str | None = None  # "personal" | "saved" — only meaningful when source_type is "note"
     source_title: str | None = None  # optional caller-supplied title for library card display
+    memory_context: str | None = None  # "work" | "personal_project" | "learning" | "observation" | None
+
+
+class SuggestContextRequest(BaseModel):
+    content: str
 
 
 class IngestResponse(BaseModel):
@@ -138,17 +143,29 @@ async def ingest(
     else:
         if not req.content or not req.content.strip():
             raise HTTPException(status_code=400, detail="content is required")
-        # Resolve effective source_type for notes based on content_origin signal.
-        # content_origin: "personal" → personal_note (user lived/built it)
-        # content_origin: "saved"   → saved_content (external reference saved by user)
-        # absent                    → keep as "note" (legacy fallback; treated as saved_content downstream)
+        # Resolve effective source_type for notes.
+        # Priority order:
+        #   1. content_origin field (explicit legacy signal)
+        #   2. memory_context field (new Phase 1 signal: work/personal_project → personal_note)
+        #   3. fallback: keep as "note"
         effective_source_type = req.source_type
-        if req.source_type == "note" and req.content_origin:
+        if req.source_type == "note":
             if req.content_origin == "personal":
                 effective_source_type = "personal_note"
             elif req.content_origin == "saved":
                 effective_source_type = "saved_content"
-        result = ingest_content(req.content, source_type=effective_source_type, source_title=req.source_title, user_id=user_id)
+            elif req.memory_context in ("work", "personal_project"):
+                # memory_context signals this is the user's own lived experience
+                effective_source_type = "personal_note"
+            elif req.memory_context in ("learning", "observation"):
+                effective_source_type = "saved_content"
+        result = ingest_content(
+            req.content,
+            source_type=effective_source_type,
+            source_title=req.source_title,
+            user_id=user_id,
+            memory_context=req.memory_context,
+        )
 
     if result.get("duplicate"):
         return IngestResponse(
@@ -158,6 +175,23 @@ async def ingest(
             message="This content is already in your knowledge base",
         )
     return IngestResponse(chunks_stored=result["chunks_stored"], tags=result["tags"])
+
+
+@router.post("/suggest-memory-context")
+async def suggest_memory_context(
+    req: SuggestContextRequest,
+    user_id: str = Depends(get_user_id_dep),
+) -> dict:
+    """Classify content into a memory context for UI pre-selection.
+
+    Returns {"suggested_context": "work" | "personal_project" | "learning" | "observation"}
+    The frontend calls this after content is entered to pre-select the context pill.
+    Classification uses Claude Haiku language pattern detection on the first 200 words.
+    """
+    if not req.content or not req.content.strip():
+        return {"suggested_context": "learning"}
+    suggested = _classify_memory_context(req.content)
+    return {"suggested_context": suggested}
 
 
 @router.post("/ingest-file", response_model=IngestResponse)
