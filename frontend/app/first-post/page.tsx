@@ -514,7 +514,12 @@ function ProfileGate({
         const err = await res.json().catch(() => ({ detail: 'Upload failed.' }))
         throw new Error(err.detail ?? 'Upload failed.')
       }
-      const extracted: ExtractedProfile = await res.json()
+      const data = await res.json()
+      const extracted: ExtractedProfile = data.profile ?? data
+      // Silently save experience nodes in the background — no confirmation step needed
+      if (data.experience_nodes?.length) {
+        api.saveExperienceNodes(data.experience_nodes).catch(() => {})
+      }
       await onExtracted(extracted)
       onDone()
     } catch (err: unknown) {
@@ -1008,7 +1013,12 @@ function FirstPostContent() {
         const err = await res.json().catch(() => ({ detail: 'Upload failed.' }))
         throw new Error(err.detail ?? 'Upload failed.')
       }
-      const extracted: ExtractedProfile = await res.json()
+      const data = await res.json()
+      const extracted: ExtractedProfile = data.profile ?? data
+      // Silently save experience nodes in the background — no confirmation step needed
+      if (data.experience_nodes?.length) {
+        api.saveExperienceNodes(data.experience_nodes).catch(() => {})
+      }
       setResumeExtractedFields(extracted)
       setResumeUploaded(true)
       return extracted
