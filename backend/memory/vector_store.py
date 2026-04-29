@@ -17,8 +17,11 @@ RPC required:
 """
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from typing import Optional
 
+from rank_bm25 import BM25Okapi
 from sentence_transformers import SentenceTransformer
 
 from db.supabase_client import supabase
@@ -27,6 +30,15 @@ logger = logging.getLogger(__name__)
 
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 RELEVANCE_THRESHOLD = 0.3
+
+# ---------------------------------------------------------------------------
+# BM25 in-memory cache
+# ---------------------------------------------------------------------------
+
+BM25_CACHE_TTL_SECONDS = 300  # 5 minutes — rebuilt on cache miss or after ingest
+
+# { user_id: {"bm25": BM25Okapi, "corpus": list[dict], "built_at": datetime} }
+_bm25_cache: dict = {}
 
 _embedder: Optional[SentenceTransformer] = None
 
@@ -183,13 +195,190 @@ def query_similar_batch(
     return results
 
 
+# ---------------------------------------------------------------------------
+# BM25 helpers
+# ---------------------------------------------------------------------------
+
+def _tokenize(text: str) -> list[str]:
+    """Lowercase whitespace tokenizer for BM25."""
+    return text.lower().split()
+
+
+def _fetch_corpus_for_bm25(user_id: str) -> list[dict]:
+    """Fetch all chunk content + metadata for a user — no embedding column.
+
+    Deliberately excludes the 384-dim vector to minimise payload size.
+    """
+    response = (
+        supabase.table("embeddings")
+        .select(
+            "id,content,source_id,source_title,source_type,"
+            "tags,chunk_index,total_chunks,content_hash,node_type,ingested_at"
+        )
+        .eq("user_id", user_id)
+        .execute()
+    )
+    corpus = []
+    for row in response.data or []:
+        content = row.get("content", "")
+        corpus.append({
+            "id":           row.get("id", ""),
+            "text":         content,
+            "content":      content,
+            "source_id":    row.get("source_id", ""),
+            "source_title": row.get("source_title", ""),
+            "source_type":  row.get("source_type", ""),
+            "tags":         row.get("tags", ""),
+            "chunk_index":  row.get("chunk_index", 0),
+            "total_chunks": row.get("total_chunks", 0),
+            "content_hash": row.get("content_hash", ""),
+            "node_type":    row.get("node_type", "chunk"),
+            "ingested_at":  row.get("ingested_at", ""),
+            "metadata": {
+                "source_id":    row.get("source_id", ""),
+                "source_title": row.get("source_title", ""),
+                "source_type":  row.get("source_type", ""),
+                "tags":         row.get("tags", ""),
+                "chunk_index":  row.get("chunk_index", 0),
+                "total_chunks": row.get("total_chunks", 0),
+            },
+        })
+    return corpus
+
+
+def _get_or_build_bm25(user_id: str) -> tuple:
+    """Return (BM25Okapi, corpus) from cache, rebuilding when stale.
+
+    Returns (None, []) when the user has no chunks yet.
+    """
+    now = datetime.now()
+    cached = _bm25_cache.get(user_id)
+    if cached and (now - cached["built_at"]).total_seconds() < BM25_CACHE_TTL_SECONDS:
+        return cached["bm25"], cached["corpus"]
+
+    corpus = _fetch_corpus_for_bm25(user_id)
+    if not corpus:
+        return None, []
+
+    tokenized_corpus = [_tokenize(chunk["text"]) for chunk in corpus]
+    bm25 = BM25Okapi(tokenized_corpus)
+    _bm25_cache[user_id] = {"bm25": bm25, "corpus": corpus, "built_at": now}
+    logger.info("BM25 index built for user %s — %d chunks", user_id, len(corpus))
+    return bm25, corpus
+
+
+def _query_bm25(query: str, user_id: str, n_results: int = 8) -> list[dict]:
+    """Score query against full user corpus with BM25; return top-N results.
+
+    Uses the module-level cache — cold path fetches from Supabase once,
+    warm path scores in milliseconds.
+
+    BM25-surfaced results carry similarity=0.35 (above RELEVANCE_THRESHOLD)
+    so downstream filtering does not discard them.
+    """
+    bm25, corpus = _get_or_build_bm25(user_id)
+    if not bm25:
+        return []
+
+    scores = bm25.get_scores(_tokenize(query))
+    top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:n_results]
+
+    results = []
+    for idx in top_indices:
+        if scores[idx] <= 0:
+            break
+        result = dict(corpus[idx])
+        result["bm25_score"] = float(scores[idx])
+        # Proxy similarity: above RELEVANCE_THRESHOLD so the chunk isn't filtered
+        # out, but below the "high confidence" bar (>0.45) to signal BM25 origin.
+        result["similarity"] = 0.35
+        results.append(result)
+    return results
+
+
+def _rrf_merge(
+    vector_results: list[dict],
+    bm25_results: list[dict],
+    k: int = 60,
+    n_results: int = 8,
+) -> list[dict]:
+    """Reciprocal Rank Fusion over vector and BM25 ranked lists.
+
+    Chunks that rank highly in both lists rise to the top. Single-source
+    chunks are included when they rank highly enough on their own.
+
+    The vector result dict is preferred over the BM25 version for any chunk
+    that appears in both lists — it carries a real cosine similarity score
+    which matters for _compute_retrieval_confidence downstream.
+    """
+    combined: dict = {}  # chunk_id → {"score": float, "result": dict}
+
+    for rank, result in enumerate(vector_results):
+        cid = result.get("id") or f"{result.get('source_id')}_{result.get('chunk_index')}"
+        entry = combined.setdefault(cid, {"score": 0.0, "result": result})
+        entry["score"] += 1.0 / (k + rank + 1)
+        entry["result"] = result  # vector result has real similarity — keep it
+
+    for rank, result in enumerate(bm25_results):
+        cid = result.get("id") or f"{result.get('source_id')}_{result.get('chunk_index')}"
+        if cid in combined:
+            combined[cid]["score"] += 1.0 / (k + rank + 1)
+            # Already have the vector version — don't overwrite with BM25 proxy
+        else:
+            combined[cid] = {"score": 1.0 / (k + rank + 1), "result": result}
+
+    merged = sorted(combined.values(), key=lambda e: e["score"], reverse=True)
+    return [entry["result"] for entry in merged[:n_results]]
+
+
+def invalidate_bm25_cache(user_id: str) -> None:
+    """Drop the cached BM25 index for a user.
+
+    Called by ingestion_agent after new content is stored so the next
+    generation request picks up the fresh corpus.
+    """
+    _bm25_cache.pop(user_id, None)
+    logger.debug("BM25 cache invalidated for user %s", user_id)
+
+
 def query_similar_hybrid(
     query: str,
     user_id: str = "default",
     n_results: int = 8,
 ) -> list[dict]:
-    """Delegates to query_similar (pgvector handles ANN natively)."""
-    return query_similar(query, user_id=user_id, n_results=n_results)
+    """Hybrid search: pgvector cosine similarity + BM25 full-corpus ranking.
+
+    Both searches run in parallel via ThreadPoolExecutor and are fused with
+    Reciprocal Rank Fusion. Falls back gracefully to whichever path succeeds
+    if one fails.
+
+    BM25 uses the full user corpus (IDF computed globally — not over a
+    pre-filtered subset) so rare terms like project names and specific jargon
+    receive correct high weight.
+    """
+    vector_results: list[dict] = []
+    bm25_results: list[dict] = []
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        f_vector = executor.submit(query_similar, query, user_id, n_results)
+        f_bm25   = executor.submit(_query_bm25,   query, user_id, n_results)
+        try:
+            vector_results = f_vector.result(timeout=10)
+        except Exception as exc:
+            logger.warning("vector search failed in hybrid retrieval: %s", exc)
+        try:
+            bm25_results = f_bm25.result(timeout=10)
+        except Exception as exc:
+            logger.warning("BM25 search failed in hybrid retrieval: %s", exc)
+
+    if not vector_results and not bm25_results:
+        return []
+    if not bm25_results:
+        return vector_results
+    if not vector_results:
+        return bm25_results
+
+    return _rrf_merge(vector_results, bm25_results, k=60, n_results=n_results)
 
 
 def query_similar_hybrid_batch(
