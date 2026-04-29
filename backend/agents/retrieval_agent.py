@@ -4,6 +4,7 @@ from pipeline.state import PipelineState
 from memory.vector_store import (
     RELEVANCE_THRESHOLD,
     get_adjacent_chunks,
+    get_chunks_by_ids,
     query_similar,
     query_similar_hybrid,
 )
@@ -51,7 +52,11 @@ def infer_seniority_level(profile: dict) -> str:
     return "mid"
 
 
-def resolve_attribution_frames(chunks: list[dict], profile: dict) -> str:
+def resolve_attribution_frames(
+    chunks: list[dict],
+    profile: dict,
+    experience_nodes: list[dict] | None = None,
+) -> str:
     """Assign an explicit writing frame to each retrieved chunk individually.
 
     Phase 1 fix: frame is assigned per-chunk, not per-cluster. The old
@@ -134,13 +139,28 @@ def resolve_attribution_frames(chunks: list[dict], profile: dict) -> str:
         "LEARNING_MID",
         "LEARNING_JUNIOR",
     ]
+    # Build experience context strings for richer attribution headers
+    _work_ctx = ""
+    _project_ctx = ""
+    if experience_nodes:
+        work_nodes = [n for n in experience_nodes if n.get("node_type") == "work"]
+        project_nodes = [n for n in experience_nodes if n.get("node_type") == "personal_project"]
+        if work_nodes:
+            _work_ctx = " [" + "; ".join(
+                n["context_label"] for n in work_nodes[:3] if n.get("context_label")
+            ) + "]"
+        if project_nodes:
+            _project_ctx = " [" + "; ".join(
+                n["context_label"] for n in project_nodes[:3] if n.get("context_label")
+            ) + "]"
+
     frame_headers = {
         "PERSONAL_WORK": (
-            "PERSONAL EXPERIENCE — WORK CONTEXT — write in first person, "
+            f"PERSONAL EXPERIENCE — WORK CONTEXT{_work_ctx} — write in first person, "
             "this is something you built or did professionally:"
         ),
         "PERSONAL_PROJECT": (
-            "PERSONAL EXPERIENCE — PERSONAL PROJECT — write in first person, "
+            f"PERSONAL EXPERIENCE — PERSONAL PROJECT{_project_ctx} — write in first person, "
             "this is your own side project or experiment:"
         ),
         "PERSONAL": (
@@ -352,12 +372,91 @@ def _format_retrieved_context(bundle: dict) -> str:
     return "\n".join(lines).strip()
 
 
+def _get_entity_ids_for_query(query_topic: str, user_id: str) -> list[str]:
+    """Find entity_ids for entities mentioned in the query topic text.
+
+    Simple string match — fast, no LLM call. Returns [] on any failure.
+    Skips entities shorter than 3 characters to avoid false matches.
+    """
+    try:
+        from memory.entity_store import get_entities_for_user
+        entities = get_entities_for_user(user_id)
+        query_lower = query_topic.lower()
+        return [
+            e["entity_id"]
+            for e in entities
+            if len(e.get("entity_name", "")) >= 3
+            and e["entity_name"].lower() in query_lower
+        ]
+    except Exception as exc:
+        logger.debug("entity query matching failed: %s", exc)
+        return []
+
+
+def _enrich_with_entity_chunks(
+    existing_chunks: list[dict],
+    query_topic: str,
+    user_id: str,
+    max_additional: int = 4,
+) -> list[dict]:
+    """Add entity-linked chunks not already in existing_chunks (up to max_additional).
+
+    Total retrieval budget after enrichment: len(existing_chunks) + max_additional (≤ 12).
+    Entity-linked chunks are tagged with entity_linked=True for traceability.
+    Returns existing_chunks unchanged on any failure.
+    """
+    try:
+        entity_ids = _get_entity_ids_for_query(query_topic, user_id)
+        if not entity_ids:
+            return existing_chunks
+
+        existing_ids = {
+            c.get("id") or f"{c.get('source_id', '')}_{c.get('chunk_index', 0)}"
+            for c in existing_chunks
+        }
+
+        from memory.entity_store import get_chunk_ids_for_entity
+        candidate_ids: list[str] = []
+        seen: set[str] = set()
+        for eid in entity_ids:
+            for cid in get_chunk_ids_for_entity(eid, user_id):
+                if cid not in existing_ids and cid not in seen:
+                    candidate_ids.append(cid)
+                    seen.add(cid)
+
+        if not candidate_ids:
+            return existing_chunks
+
+        additional = get_chunks_by_ids(candidate_ids[: max_additional * 2], user_id)
+        for chunk in additional:
+            chunk["entity_linked"] = True
+
+        added = additional[:max_additional]
+        logger.info(
+            "entity enrichment: +%d chunks for user %s (query: %s)",
+            len(added), user_id, query_topic[:50],
+        )
+        return existing_chunks + added
+    except Exception as exc:
+        logger.warning("entity chunk enrichment failed: %s", exc)
+        return existing_chunks
+
+
 def retrieval_node(state: PipelineState) -> PipelineState:
     topic = state["topic"]
     context = state.get("context", "")
     user_id = state.get("user_id", "default")
 
     query = f"{topic}. {context}" if context else topic
+
+    # Load experience nodes once — used for attribution headers in resolve_attribution_frames
+    experience_nodes: list[dict] = []
+    try:
+        from memory.experience_store import get_experience_nodes
+        experience_nodes = get_experience_nodes(user_id)
+    except Exception as exc:
+        logger.debug("experience_nodes load failed (non-fatal): %s", exc)
+    state["experience_nodes"] = experience_nodes
 
     bundle: dict = {"chunks": [], "source_contexts": {}, "topic_contexts": []}
     raw_results: list[dict] = []
@@ -368,6 +467,8 @@ def retrieval_node(state: PipelineState) -> PipelineState:
             r for r in raw_results
             if float(r.get("similarity", 0.0)) >= RELEVANCE_THRESHOLD
         ]
+        # Phase 4: enrich with entity-linked chunks not in top-8 (up to 4 additional, total ≤ 12)
+        chunks = _enrich_with_entity_chunks(chunks, query_topic=query, user_id=user_id, max_additional=4)
         bundle = _build_retrieval_bundle(chunks, user_id)
         state["retrieval_bundle"] = bundle
         state["retrieved_context"] = _format_retrieved_context(bundle)

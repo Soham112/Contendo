@@ -254,7 +254,8 @@ def _format_retrieval_context(state: PipelineState) -> str:
     profile = state.get("profile") or {}
 
     if bundle_chunks:
-        return resolve_attribution_frames(bundle_chunks, profile)
+        experience_nodes = state.get("experience_nodes") or []
+        return resolve_attribution_frames(bundle_chunks, profile, experience_nodes=experience_nodes)
 
     # Flat fallback — preserves pre-hierarchy behavior
     flat_chunks = state.get("retrieved_chunks", [])
