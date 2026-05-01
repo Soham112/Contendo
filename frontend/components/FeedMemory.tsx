@@ -220,6 +220,8 @@ export default function FeedMemory() {
   const [tooltipPos, setTooltipPos] = useState<{ top: number; left: number } | null>(null);
   const tabBarRef = useRef<HTMLDivElement>(null);
   const tabButtonRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const mobileTabBarRef = useRef<HTMLDivElement>(null);
+  const mobileTabButtonRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   // Start tour 800ms after mount — only when localStorage key is absent
   useEffect(() => {
@@ -239,8 +241,12 @@ export default function FeedMemory() {
     setActiveTab(TOUR_STEPS[tourStep].id);
     requestAnimationFrame(() => {
       const tabIdx = TABS.findIndex((t) => t.id === TOUR_STEPS[tourStep].id);
-      const btn = tabButtonRefs.current[tabIdx];
-      const bar = tabBarRef.current;
+      const desktopBtn = tabButtonRefs.current[tabIdx];
+      const mobileBtn = mobileTabButtonRefs.current[tabIdx];
+      // Pick the visible button — offsetParent is null for display:none elements
+      const useDesktop = !!(desktopBtn && desktopBtn.offsetParent !== null);
+      const btn = useDesktop ? desktopBtn : mobileBtn;
+      const bar = useDesktop ? tabBarRef.current : mobileTabBarRef.current;
       if (btn && bar) {
         const barRect = bar.getBoundingClientRect();
         const btnRect = btn.getBoundingClientRect();
@@ -706,11 +712,11 @@ export default function FeedMemory() {
           ))}
         </div>
 
-        <div className="md:hidden flex gap-2 overflow-x-auto no-scrollbar pb-1" ref={tabBarRef}>
+        <div className="md:hidden flex gap-2 overflow-x-auto no-scrollbar pb-1" ref={mobileTabBarRef}>
           {TABS.map((tab, idx) => (
             <button
               key={tab.id}
-              ref={(el) => { tabButtonRefs.current[idx] = el; }}
+              ref={(el) => { mobileTabButtonRefs.current[idx] = el; }}
               onClick={() => handleTabChange(tab.id)}
               className={`shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-full text-[12px] font-medium tracking-wide transition-all duration-150 ${
                 activeTab === tab.id
