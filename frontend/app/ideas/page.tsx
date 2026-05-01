@@ -167,6 +167,7 @@ export default function IdeasPage() {
   const [count, setCount] = useState(8);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [sparse, setSparse] = useState(false);
   const [clearConfirm, setClearConfirm] = useState(false);
   const { showToast } = useToast();
 
@@ -193,10 +194,17 @@ export default function IdeasPage() {
   const handleGenerate = async () => {
     setLoading(true);
     setError("");
+    setSparse(false);
     try {
       const res = await api.getSuggestions(count, topic.trim() || undefined);
       if (!res.ok) throw new Error("Failed");
       const data = await res.json();
+      if (data.sparse) {
+        setSparse(true);
+        setIdeas([]);
+        lsRemove(LS_IDEAS);
+        return;
+      }
       const newIdeas: Idea[] = data.suggestions ?? [];
       setIdeas(newIdeas);
       showToast(`Generated ${newIdeas.length} ideas`, "success");
@@ -391,13 +399,36 @@ export default function IdeasPage() {
 
         {/* ── Empty state ────────────────────────────────────────────────── */}
         {!hasIdeas && !loading && (
-          <div className="flex flex-col items-center text-center py-12 gap-3">
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" className="text-outline-variant">
-              <path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5z"/>
-            </svg>
-            <p className="font-headline text-xl text-on-surface">No ideas yet</p>
-            <p className="text-outline text-sm max-w-xs">Configure your filters above and hit Generate Ideas to spark your next piece.</p>
-          </div>
+          sparse ? (
+            <div className="flex flex-col items-center text-center py-12 gap-4">
+              <div className="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-outline">
+                  <path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"/>
+                  <path d="M12 8v4M12 16h.01"/>
+                </svg>
+              </div>
+              <div className="space-y-1.5">
+                <p className="font-headline text-xl text-on-surface">Your knowledge base is empty</p>
+                <p className="text-outline text-sm max-w-sm leading-relaxed">
+                  Ideas are grounded in what you know. Feed some articles, notes, or videos first — then come back to generate.
+                </p>
+              </div>
+              <button
+                onClick={() => router.push("/feed-memory")}
+                className="btn-primary px-6 py-2.5 rounded-lg text-white text-[13px] font-semibold uppercase tracking-widest shadow-card hover:opacity-90 transition-all"
+              >
+                Feed Memory
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center text-center py-12 gap-3">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" className="text-outline-variant">
+                <path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5z"/>
+              </svg>
+              <p className="font-headline text-xl text-on-surface">No ideas yet</p>
+              <p className="text-outline text-sm max-w-xs">Configure your filters above and hit Generate Ideas to spark your next piece.</p>
+            </div>
+          )
         )}
 
         {/* ── Curated Archive ────────────────────────────────────────────── */}
