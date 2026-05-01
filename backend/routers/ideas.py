@@ -12,5 +12,11 @@ async def suggestions(
     topic: str | None = Query(default=None),
     user_id: str = Depends(get_user_id_dep),
 ) -> dict:
-    ideas = generate_suggestions(count=count, topic=topic, user_id=user_id)
-    return {"suggestions": ideas}
+    result = generate_suggestions(count=count, topic=topic, user_id=user_id)
+
+    # Sparse KB with no resume — return the signal so the frontend can
+    # prompt the user to feed memory before generating ideas.
+    if isinstance(result, dict) and result.get("sparse"):
+        return result
+
+    return {"suggestions": result}
