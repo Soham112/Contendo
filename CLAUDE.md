@@ -26,6 +26,7 @@ Frontend on Vercel (contendo-six.vercel.app), backend on Railway (contendo-produ
 - Tests live in `backend/tests/` and run against fakes set up in `tests/conftest.py`: in-memory Supabase, fake Claude, fake embedder, no network. They never touch real data or spend API credits.
 - In a test, queue every Claude response the code path needs with `claude.queue(...)`; an unexpected call fails the test.
 - New backend behaviour gets a test. Run `pytest` before reporting a backend task done.
+- Tests marked `xfail(strict=True)` document known bugs. When a fix makes one pass, pytest reports it as a failure: remove the `xfail` marker (or the `KNOWN_UNPROTECTED` entry) in the same change.
 
 ## Finding code
 - Search first with Grep or Glob, then Read only the line range you need. Don't read whole long files.
