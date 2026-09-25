@@ -194,6 +194,21 @@ npm run dev
 # http://localhost:3000
 ```
 
+**Tests.** Backend tests run against fakes (no real database or API calls):
+
+```bash
+pip install -r backend/requirements-dev.txt   # once, with the venv active
+cd backend && pytest
+```
+
+To run them automatically before every `git push`, enable the repo's hooks once per clone:
+
+```bash
+git config core.hooksPath scripts/git-hooks
+```
+
+A failing test then cancels the push. Skip once with `git push --no-verify`.
+
 ---
 
 ## Setup your profile
