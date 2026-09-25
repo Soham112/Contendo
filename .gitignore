@@ -56,3 +56,8 @@ npm-debug.log*
 .windsurfrules
 .opencode.json
 GEMINI.md
+.code-review-graph/
+
+# Claude Code — personal, not shared
+.claude/settings.local.json
+CLAUDE.local.md
