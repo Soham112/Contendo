@@ -20,6 +20,12 @@ Frontend on Vercel (contendo-six.vercel.app), backend on Railway (contendo-produ
 - Frontend: `cd frontend && npm run dev` (port 3000)
 - Frontend type check: `cd frontend && npx tsc --noEmit`
 - Frontend build check: `cd frontend && npm run build`
+- Backend tests: `cd backend && source venv/bin/activate && pytest` (install once with `pip install -r requirements-dev.txt`)
+
+## Tests
+- Tests live in `backend/tests/` and run against fakes set up in `tests/conftest.py`: in-memory Supabase, fake Claude, fake embedder, no network. They never touch real data or spend API credits.
+- In a test, queue every Claude response the code path needs with `claude.queue(...)`; an unexpected call fails the test.
+- New backend behaviour gets a test. Run `pytest` before reporting a backend task done.
 
 ## Finding code
 - Search first with Grep or Glob, then Read only the line range you need. Don't read whole long files.

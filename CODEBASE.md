@@ -30,6 +30,13 @@
 | `backend/db/__init__.py` | Empty — marks db/ as a Python package |
 | `backend/db/supabase_client.py` | Module-level Supabase client — `create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)`; exported as `supabase`; imported by all memory stores |
 | `backend/requirements.txt` | All Python dependencies pinned — includes httpx==0.28.1 (used for Supadata transcript fetch and Telegram notifications), rank-bm25>=0.2.2 for hybrid BM25 retrieval, supabase>=2.0.0, asyncpg>=0.29.0 |
+| `backend/requirements-dev.txt` | Test-only dependencies (`-r requirements.txt` + pytest). Not installed on Railway. |
+| `backend/pytest.ini` | pytest config — `testpaths = tests`, `pythonpath = .` so tests import backend modules directly |
+| `backend/tests/conftest.py` | Test harness. Before any backend import it forces test env vars (so `backend/.env` is never read), replaces `db.supabase_client` with an in-memory fake and `sentence_transformers` with a deterministic fake embedder. Autouse fixture resets fakes per test, patches Anthropic `Messages.create`/`AsyncMessages.create` to the fake, and blocks outbound network. Fixtures: `fake_db`, `claude`, `client` (TestClient), `auth_headers(user_id)`, `production` (auth in production mode) |
+| `backend/tests/fakes/supabase.py` | In-memory Supabase: `table()` select/insert/upsert/update/delete, eq/neq/in_/gt/gte/lt/lte, order, limit, and `rpc("match_embeddings")` (cosine over the fake `embeddings` table, filtered by user). Inspect with `fake_db.tables[...]` |
+| `backend/tests/fakes/claude.py` | Fake Anthropic Messages API — `claude.queue(text)` / `claude.respond_with(fn)`; records `claude.calls`; an unqueued call raises `UnexpectedClaudeCall` |
+| `backend/tests/fakes/embedder.py` | Deterministic 384-dim bag-of-words embedder; texts sharing words get similar vectors |
+| `backend/tests/test_setup.py` | Harness self-checks: app boots, fake DB isolates users and resets, Claude fake works and fails on unmocked calls, network blocked, production auth accepts a valid token |
 | `backend/.env.example` | Required env var template — `ANTHROPIC_API_KEY`, `DATA_DIR`, `FRONTEND_ORIGIN`, `ENVIRONMENT`, `SUPABASE_JWT_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_SECRET`, `SUPADATA_API_KEY` (required for YouTube transcript fetch — set in Railway env vars) |
 | `backend/Dockerfile` | Production Docker image for Railway — Python 3.11-slim; pre-installs CPU-only `torch==2.2.2` from PyTorch CPU wheel registry (avoids 4 GB image limit); sentence-transformers model downloads at first request (not baked in); uses `$PORT` and `$DATA_DIR` |
 | `backend/.dockerignore` | Excludes venv, pycache, local data files, .env from Docker build context |
