@@ -1,0 +1,30 @@
+#!/bin/sh
+# Runs the backend test suite before every `git push`.
+# If any test fails, the push is cancelled.
+#
+# One-time setup per clone (tells git to use this folder for hooks):
+#   git config core.hooksPath scripts/git-hooks
+#
+# Skip for a single push (e.g. docs-only emergency):
+#   git push --no-verify
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+PYTHON="$REPO_ROOT/backend/venv/bin/python"
+
+if [ ! -x "$PYTHON" ]; then
+  echo "pre-push: backend/venv not found, skipping backend tests." >&2
+  exit 0
+fi
+
+echo "pre-push: running backend tests..."
+cd "$REPO_ROOT/backend" || exit 1
+
+if ! "$PYTHON" -m pytest; then
+  echo "" >&2
+  echo "pre-push: tests failed, push cancelled." >&2
+  echo "Fix the failing tests, or skip once with: git push --no-verify" >&2
+  exit 1
+fi
+
+echo "pre-push: all tests passed."
+exit 0
