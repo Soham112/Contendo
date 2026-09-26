@@ -1,16 +1,11 @@
-import anthropic
 import json
-import os
 import random
-from dotenv import load_dotenv
 
+from llm.client import SONNET, complete
 from memory.vector_store import query_similar_hybrid_batch, get_all_tags, get_all_sources, get_total_chunks
 from memory.feedback_store import get_all_topics_posted
 from memory.profile_store import load_profile, profile_to_context_string
 from memory.experience_store import get_experience_nodes, experience_nodes_exist, experience_nodes_to_context_string
-from memory.usage_store import schedule_usage_event
-
-load_dotenv()
 
 # KB is considered sparse below this chunk count
 SPARSE_KB_THRESHOLD = 10
@@ -27,11 +22,6 @@ def _source_label(source_type: str) -> str:
         return "[from: note]"
     return "[from: general knowledge]"
 
-
-client = anthropic.Anthropic(
-    api_key=os.environ["ANTHROPIC_API_KEY"],
-    max_retries=3,
-)
 
 SYSTEM_PROMPT = """You are a content strategist who generates specific, fresh content ideas for a creator.
 
@@ -297,19 +287,14 @@ KNOWLEDGE BASE SAMPLE (use these to ground your ideas — every idea must trace 
 TOPICS ALREADY WRITTEN ABOUT (do not repeat these):
 {posted_section}"""
 
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
+    message = complete(
+        model=SONNET,
         max_tokens=2000,
         system=system,
         messages=[{"role": "user", "content": user_message}],
-    )
-
-    schedule_usage_event(
         user_id=user_id,
         event_type="ideation",
-        input_tokens=message.usage.input_tokens,
-        output_tokens=message.usage.output_tokens,
-        metadata={"count": count, "topic": topic or "", "kb_chunks": len(chunks)},
+        usage_metadata={"count": count, "topic": topic or "", "kb_chunks": len(chunks)},
     )
 
     return _parse_ideas(message.content[0].text.strip(), count)
@@ -343,19 +328,14 @@ WORK & PROJECT HISTORY (ground every idea in one of these entries):
 TOPICS ALREADY WRITTEN ABOUT (do not repeat these):
 {posted_section}"""
 
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
+    message = complete(
+        model=SONNET,
         max_tokens=2000,
         system=RESUME_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_message}],
-    )
-
-    schedule_usage_event(
         user_id=user_id,
         event_type="ideation",
-        input_tokens=message.usage.input_tokens,
-        output_tokens=message.usage.output_tokens,
-        metadata={"count": count, "topic": topic or "", "source": "resume_fallback"},
+        usage_metadata={"count": count, "topic": topic or "", "source": "resume_fallback"},
     )
 
     return _parse_ideas(message.content[0].text.strip(), count)

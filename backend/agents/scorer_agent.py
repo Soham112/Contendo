@@ -1,17 +1,8 @@
-import anthropic
 import json
-import os
 import re
-from dotenv import load_dotenv
 
+from llm.client import SONNET, complete
 from pipeline.state import PipelineState
-
-load_dotenv()
-
-client = anthropic.Anthropic(
-    api_key=os.environ["ANTHROPIC_API_KEY"],
-    max_retries=3,
-)
 
 SYSTEM_PROMPT = """You are a content authenticity scorer. Score the following post on how much it reads like a real human wrote it — specifically a founder/builder with a strong, direct voice. Not polished corporate content. Not AI-generated filler. Real.
 
@@ -91,10 +82,10 @@ def parse_scorer_response(response_text: str) -> dict:
     }
 
 
-def score_text(draft: str) -> tuple[int, list[str]]:
+def score_text(draft: str, *, user_id: str) -> tuple[int, list[str]]:
     """Score a draft and return (total_score, combined feedback+flagged_sentences list)."""
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
+    message = complete(
+        model=SONNET,
         max_tokens=800,
         system=SYSTEM_PROMPT,
         messages=[
@@ -103,6 +94,8 @@ def score_text(draft: str) -> tuple[int, list[str]]:
                 "content": f"Score this post:\n\n{draft}",
             }
         ],
+        user_id=user_id,
+        event_type="score",
     )
 
     raw = message.content[0].text.strip()
@@ -126,7 +119,7 @@ def scorer_node(state: PipelineState) -> PipelineState:
         state["score_feedback"] = []
         return state
 
-    score, score_feedback = score_text(state["current_draft"])
+    score, score_feedback = score_text(state["current_draft"], user_id=state.get("user_id", "default"))
     state["score"] = score
     state["score_feedback"] = score_feedback
     return state

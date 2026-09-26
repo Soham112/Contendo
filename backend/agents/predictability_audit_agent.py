@@ -1,24 +1,10 @@
 import logging
-import os
 import re
 
-import anthropic
-from dotenv import load_dotenv
-
+from llm.client import HAIKU, SONNET, complete
 from pipeline.state import PipelineState
-from memory.usage_store import schedule_usage_event
-
-load_dotenv()
 
 logger = logging.getLogger(__name__)
-
-client = anthropic.Anthropic(
-    api_key=os.environ["ANTHROPIC_API_KEY"],
-    max_retries=3,
-)
-
-_HAIKU = "claude-haiku-4-5-20251001"
-_SONNET = "claude-sonnet-4-6"
 
 # ── Prompts ───────────────────────────────────────────────────────────────────
 
@@ -95,17 +81,6 @@ def _replace_sentence(post: str, original: str, replacement: str) -> str:
     return post
 
 
-def _log(user_id: str, event_type: str, msg: anthropic.types.Message, model: str) -> None:
-    """Fire-and-forget usage log — same pattern as all other agents."""
-    schedule_usage_event(
-        user_id=user_id,
-        event_type=event_type,
-        input_tokens=msg.usage.input_tokens,
-        output_tokens=msg.usage.output_tokens,
-        model=model,
-    )
-
-
 # ── Node ──────────────────────────────────────────────────────────────────────
 
 def predictability_audit_node(state: PipelineState) -> PipelineState:
@@ -129,15 +104,16 @@ def predictability_audit_node(state: PipelineState) -> PipelineState:
 
     try:
         # ── Step 1: Find the worst sentence ───────────────────────────────────
-        step1_msg = client.messages.create(
-            model=_HAIKU,
+        step1_msg = complete(
+            model=HAIKU,
             max_tokens=200,
             messages=[{
                 "role": "user",
                 "content": _FIND_WORST_PROMPT.format(post=post),
             }],
+            user_id=user_id,
+            event_type="predictability_audit_step1",
         )
-        _log(user_id, "predictability_audit_step1", step1_msg, "haiku")
 
         flagged = step1_msg.content[0].text.strip()
 
@@ -147,8 +123,8 @@ def predictability_audit_node(state: PipelineState) -> PipelineState:
             logger.info("predictability_audit: flagged=%r", flagged[:120])
 
             # ── Step 2: Rewrite only that sentence ────────────────────────────
-            step2_msg = client.messages.create(
-                model=_SONNET,
+            step2_msg = complete(
+                model=SONNET,
                 max_tokens=200,
                 messages=[{
                     "role": "user",
@@ -157,8 +133,9 @@ def predictability_audit_node(state: PipelineState) -> PipelineState:
                         flagged_sentence=flagged,
                     ),
                 }],
+                user_id=user_id,
+                event_type="predictability_audit_step2",
             )
-            _log(user_id, "predictability_audit_step2", step2_msg, "sonnet")
 
             replacement = step2_msg.content[0].text.strip()
             logger.info("predictability_audit: replacement=%r", replacement[:120])
@@ -166,15 +143,16 @@ def predictability_audit_node(state: PipelineState) -> PipelineState:
             post = _replace_sentence(post, flagged, replacement)
 
         # ── Step 3: Burstiness fix ─────────────────────────────────────────────
-        step3_msg = client.messages.create(
-            model=_HAIKU,
+        step3_msg = complete(
+            model=HAIKU,
             max_tokens=2000,
             messages=[{
                 "role": "user",
                 "content": _BURSTINESS_PROMPT.format(post=post),
             }],
+            user_id=user_id,
+            event_type="predictability_audit_step3",
         )
-        _log(user_id, "predictability_audit_step3", step3_msg, "haiku")
 
         post = step3_msg.content[0].text.strip()
         state["current_draft"] = post

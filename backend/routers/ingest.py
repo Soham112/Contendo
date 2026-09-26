@@ -139,7 +139,9 @@ async def ingest(
                 media_type = "image/png"
             elif "image/webp" in header:
                 media_type = "image/webp"
-        extracted_text = await run_in_threadpool(extract_from_image, req.raw_image, media_type=media_type)
+        extracted_text = await run_in_threadpool(
+            extract_from_image, req.raw_image, media_type=media_type, user_id=user_id
+        )
         result = await run_in_threadpool(ingest_content, extracted_text, source_type="image", user_id=user_id)
     else:
         if not req.content or not req.content.strip():
@@ -196,7 +198,7 @@ async def suggest_memory_context(
     # to Haiku classifier when no known entity matches are found in the text.
     suggested = await run_in_threadpool(_crossref_experience_context, req.content, user_id)
     if not suggested:
-        suggested = await run_in_threadpool(_classify_memory_context, req.content)
+        suggested = await run_in_threadpool(_classify_memory_context, req.content, user_id=user_id)
     return {"suggested_context": suggested}
 
 

@@ -164,8 +164,9 @@ async def refine(
             refine_draft,
             current_draft=req.current_draft,
             refinement_instruction=processed_instruction,
+            user_id=user_id,
         )
-        score, score_feedback = await run_in_threadpool(score_text, refined)
+        score, score_feedback = await run_in_threadpool(score_text, refined, user_id=user_id)
     except (InternalServerError, APIStatusError) as e:
         _raise_anthropic_error(e)
     except Exception:
@@ -203,7 +204,7 @@ async def score(
     if not req.post_content.strip():
         raise HTTPException(status_code=400, detail="post_content is required")
     try:
-        s, score_feedback = await run_in_threadpool(score_text, req.post_content)
+        s, score_feedback = await run_in_threadpool(score_text, req.post_content, user_id=user_id)
     except (InternalServerError, APIStatusError) as e:
         _raise_anthropic_error(e)
     except Exception:
@@ -219,7 +220,7 @@ async def generate_visuals_endpoint(
     if not req.post_content.strip():
         raise HTTPException(status_code=400, detail="post_content is required")
     try:
-        visuals = await run_in_threadpool(generate_visuals, req.post_content)
+        visuals = await run_in_threadpool(generate_visuals, req.post_content, user_id=user_id)
     except (InternalServerError, APIStatusError) as e:
         _raise_anthropic_error(e)
     except Exception:
@@ -243,6 +244,7 @@ async def refine_visual_endpoint(
             style_hint=req.style_hint,
             current_svg=req.svg_code,
             refinement_instruction=req.refinement_instruction,
+            user_id=user_id,
         )
     except (InternalServerError, APIStatusError) as e:
         _raise_anthropic_error(e)

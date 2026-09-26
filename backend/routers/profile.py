@@ -1,15 +1,14 @@
 import json
 import logging
-import os
 import re
 from typing import Any
 
-import anthropic
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from auth.supabase_jwt import get_user_id_dep
+from llm.client import SONNET, complete
 from memory.experience_store import save_experience_nodes
 from memory.profile_store import load_profile, profile_exists, save_profile
 from utils.file_extractor import extract_from_pdf
@@ -17,9 +16,6 @@ from utils.file_extractor import extract_from_pdf
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-_anthropic_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-
 
 @router.get("/profile")
 async def get_profile(user_id: str = Depends(get_user_id_dep)) -> dict:
@@ -136,10 +132,12 @@ Resume text:
 
     try:
         message = await run_in_threadpool(
-            _anthropic_client.messages.create,
-            model="claude-sonnet-4-6",
+            complete,
+            model=SONNET,
             max_tokens=3000,
             messages=[{"role": "user", "content": prompt}],
+            user_id=user_id,
+            event_type="resume_extract",
         )
         raw = message.content[0].text.strip()
         logger.info(f"POST /extract-resume: raw response length={len(raw)}, stop_reason={message.stop_reason!r}, preview={raw[:200]!r}")

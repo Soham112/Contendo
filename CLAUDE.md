@@ -41,6 +41,7 @@ Frontend on Vercel (contendo-six.vercel.app), backend on Railway (contendo-produ
 
 ## Rules
 - Models: `claude-sonnet-4-6` for generation, `claude-haiku-4-5-20251001` for classification. Never change or add models without explicit instruction.
+- All Claude calls go through `complete()` in `backend/llm/client.py` (model constants `SONNET`/`HAIKU`, one shared client, usage logging). Never create an `anthropic.Anthropic` client or write a model string anywhere else; every call passes `user_id` and an `event_type`.
 - Every protected endpoint uses `Depends(get_user_id_dep)`. Never use `user_id="default"` in production paths (it's a local-dev fallback only).
 - The backend uses the Supabase service-role key, which bypasses RLS. Every query must filter by `user_id` or verify ownership first.
 - Async route handlers must not call slow sync code (Claude calls, ingestion) directly; wrap it with `run_in_threadpool`. One blocked request blocks the whole server.

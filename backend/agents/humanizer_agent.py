@@ -1,18 +1,8 @@
-import anthropic
-import os
 import re
-from dotenv import load_dotenv
 
+from llm.client import SONNET, complete
 from pipeline.state import PipelineState
 from memory.profile_store import load_profile, profile_to_context_string
-from memory.usage_store import schedule_usage_event
-
-load_dotenv()
-
-client = anthropic.Anthropic(
-    api_key=os.environ["ANTHROPIC_API_KEY"],
-    max_retries=3,
-)
 
 _WORD_COUNT_MAP = {
     "linkedin post": {
@@ -167,6 +157,8 @@ def refine_draft(
     current_draft: str,
     refinement_instruction: str,
     profile: dict = None,
+    *,
+    user_id: str,
 ) -> str:
     if profile is None:
         profile = load_profile()
@@ -182,10 +174,12 @@ def refine_draft(
     )
     placeholders = re.findall(r'\[(?:DIAGRAM|IMAGE):.*?\]', current_draft, re.DOTALL)
 
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
+    message = complete(
+        model=SONNET,
         max_tokens=2000,
         messages=[{"role": "user", "content": prompt}],
+        user_id=user_id,
+        event_type="refine",
     )
     refined_text = message.content[0].text.strip()
 
@@ -234,10 +228,12 @@ Rules:
 - Keep roughly the same length unless the instruction says otherwise
 - No em dashes anywhere in the output"""
 
-    response = client.messages.create(
-        model="claude-sonnet-4-6",
+    response = complete(
+        model=SONNET,
         max_tokens=500,
         messages=[{"role": "user", "content": prompt}],
+        user_id=user_id,
+        event_type="refine_selection",
     )
     return response.content[0].text.strip()
 
@@ -266,20 +262,15 @@ def humanizer_node(state: PipelineState) -> PipelineState:
         word_count_rule=word_count_rule,
     )
 
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
+    message = complete(
+        model=SONNET,
         max_tokens=2000,
         messages=[{"role": "user", "content": prompt}],
+        user_id=state.get("user_id", "default"),
+        event_type="humanize",
     )
 
     state["current_draft"] = message.content[0].text.strip()
     state["iterations"] = state.get("iterations", 0) + 1
-
-    schedule_usage_event(
-        user_id=state.get("user_id", "default"),
-        event_type="humanize",
-        input_tokens=message.usage.input_tokens,
-        output_tokens=message.usage.output_tokens,
-    )
 
     return state
