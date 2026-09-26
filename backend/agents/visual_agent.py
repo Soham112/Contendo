@@ -1,14 +1,6 @@
-import anthropic
-import os
 import re
-from dotenv import load_dotenv
 
-load_dotenv()
-
-client = anthropic.Anthropic(
-    api_key=os.environ["ANTHROPIC_API_KEY"],
-    max_retries=3,
-)
+from llm.client import SONNET, complete
 
 STYLE_VARIANTS = [
     {
@@ -100,6 +92,8 @@ def generate_svg_for_diagram(
     style_hint: str | None = None,
     current_svg: str | None = None,
     refinement_instruction: str | None = None,
+    *,
+    user_id: str,
 ) -> str:
     """Generate or refine an SVG diagram.
 
@@ -122,10 +116,12 @@ def generate_svg_for_diagram(
             style_description=style_description,
         )
 
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
+    message = complete(
+        model=SONNET,
         max_tokens=4000,
         messages=[{"role": "user", "content": prompt}],
+        user_id=user_id,
+        event_type="visual_svg",
     )
     return _strip_svg(message.content[0].text)
 
@@ -146,14 +142,14 @@ def _parse_placeholders(post_content: str) -> list[dict]:
     return results
 
 
-def generate_visuals(post_content: str) -> list[dict]:
+def generate_visuals(post_content: str, *, user_id: str) -> list[dict]:
     placeholders = _parse_placeholders(post_content)
     visuals = []
 
     for item in placeholders:
         if item["type"] == "DIAGRAM":
             try:
-                svg_code = generate_svg_for_diagram(item["description"])
+                svg_code = generate_svg_for_diagram(item["description"], user_id=user_id)
                 visuals.append({
                     "type": "diagram",
                     "placeholder": item["placeholder"],

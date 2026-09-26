@@ -1,23 +1,12 @@
-import anthropic
 import json
 import logging
-import os
 import re
 
-from dotenv import load_dotenv
-
+from llm.client import HAIKU, complete
 from pipeline.state import PipelineState
 from memory.profile_store import profile_to_context_string
-from memory.usage_store import schedule_usage_event
-
-load_dotenv()
 
 logger = logging.getLogger(__name__)
-
-client = anthropic.Anthropic(
-    api_key=os.environ["ANTHROPIC_API_KEY"],
-    max_retries=3,
-)
 
 _ARCHETYPE_NAMES: dict[str, str] = {
     "incident_report": "Incident Report / Retrospective",
@@ -115,22 +104,16 @@ def critic_node(state: PipelineState) -> PipelineState:
             current_draft=state.get("current_draft", ""),
         )
 
-        message = client.messages.create(
-            model="claude-haiku-4-5-20251001",
+        message = complete(
+            model=HAIKU,
             max_tokens=600,
             messages=[{"role": "user", "content": prompt}],
+            user_id=state.get("user_id", "default"),
+            event_type="critic",
         )
 
         raw = message.content[0].text.strip()
         state["critic_brief"] = _parse_critic_response(raw)
-
-        schedule_usage_event(
-            user_id=state.get("user_id", "default"),
-            event_type="critic",
-            input_tokens=message.usage.input_tokens,
-            output_tokens=message.usage.output_tokens,
-            model="haiku",
-        )
 
     except Exception as e:
         logger.warning("Critic agent failed: %s — setting critic_brief={}, pipeline continues", e)

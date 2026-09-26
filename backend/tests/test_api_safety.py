@@ -33,7 +33,7 @@ def test_newly_protected_routes_reject_missing_token_in_production(client, produ
 def test_score_accepts_valid_token(client, production, claude, auth_headers, monkeypatch):
     import routers.generate as generate
 
-    monkeypatch.setattr(generate, "score_text", lambda text: (80, ["ok"]))
+    monkeypatch.setattr(generate, "score_text", lambda text, *, user_id: (80, ["ok"]))
     resp = client.post("/score", json={"post_content": "p"}, headers=auth_headers("user-a"))
     assert resp.status_code == 200
     assert resp.json() == {"score": 80, "score_feedback": ["ok"]}
@@ -264,7 +264,7 @@ def test_hs256_tokens_never_fetch_jwks(production, es256, monkeypatch, auth_head
 def test_500_returns_generic_message_not_exception_text(client, monkeypatch, caplog):
     import routers.generate as generate
 
-    def boom(text):
+    def boom(text, *, user_id):
         raise RuntimeError("secret internal detail: /srv/app/key.pem")
 
     monkeypatch.setattr(generate, "score_text", boom)
@@ -279,7 +279,7 @@ def test_500_returns_generic_message_not_exception_text(client, monkeypatch, cap
 def test_overloaded_anthropic_error_keeps_503_message(client, monkeypatch):
     import routers.generate as generate
 
-    def overloaded(text):
+    def overloaded(text, *, user_id):
         response = httpx.Response(529, request=httpx.Request("POST", "https://api.anthropic.com"))
         raise InternalServerError("Overloaded", response=response, body=None)
 

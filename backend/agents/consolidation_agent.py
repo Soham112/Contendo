@@ -17,19 +17,13 @@ entity's distinct-source count to 3 or above.
 """
 
 import logging
-import os
 
-import anthropic
-
+from llm.client import HAIKU, complete
 from memory.entity_store import get_chunk_ids_for_entity, get_entities_with_source_count
 from memory.vector_store import get_chunks_by_ids
 from memory.consolidation_store import upsert_consolidation_chunk, get_consolidation_chunk
 
 logger = logging.getLogger(__name__)
-
-_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"], max_retries=2)
-
-CONSOLIDATION_MODEL = "claude-haiku-4-5-20251001"
 
 CONSOLIDATION_SYSTEM_PROMPT = """You are a knowledge consolidation assistant. You receive everything a specific person knows about a topic, organised by context bucket. Your job is to write a concise, factual memory brief in the exact format below.
 
@@ -124,11 +118,13 @@ def consolidate_entity(entity_id: str, entity_name: str, user_id: str) -> bool:
 
         consolidation_input = _build_consolidation_input(entity_name, chunks)
 
-        message = _client.messages.create(
-            model=CONSOLIDATION_MODEL,
+        message = complete(
+            model=HAIKU,
             max_tokens=300,
             system=CONSOLIDATION_SYSTEM_PROMPT.replace("{entity_name}", entity_name),
             messages=[{"role": "user", "content": consolidation_input}],
+            user_id=user_id,
+            event_type="consolidation",
         )
         brief = message.content[0].text.strip()
 

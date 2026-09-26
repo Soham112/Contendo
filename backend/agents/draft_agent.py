@@ -1,19 +1,8 @@
-import anthropic
-import os
-from dotenv import load_dotenv
-
+from llm.client import HAIKU, SONNET, complete
 from pipeline.state import PipelineState
 from utils.formatters import get_format_instructions, get_archetype_instructions
 from memory.profile_store import profile_to_context_string
-from memory.usage_store import schedule_usage_event
 from agents.retrieval_agent import resolve_attribution_frames
-
-load_dotenv()
-
-client = anthropic.Anthropic(
-    api_key=os.environ["ANTHROPIC_API_KEY"],
-    max_retries=3,
-)
 
 _ARCHETYPE_HUMAN_NAMES = {
     "incident_report": "Incident Report / Retrospective",
@@ -123,7 +112,7 @@ A post that shares a sharp observation is better than one that invents a story
 the user never lived."""
 
 
-def infer_archetype(topic: str, context: str, tone: str) -> str:
+def infer_archetype(topic: str, context: str, tone: str, *, user_id: str) -> str:
     """Use Claude Haiku to infer the best archetype. Falls back to incident_report on failure."""
     prompt = f"""You are a content strategist. Given a post topic, tone, and \
 optional context, choose the single best archetype for how this post should \
@@ -149,10 +138,12 @@ Think about what this topic is REALLY about, not just the keywords. \
 Return ONLY the archetype key, nothing else. No explanation."""
 
     try:
-        message = client.messages.create(
-            model="claude-haiku-4-5-20251001",
+        message = complete(
+            model=HAIKU,
             max_tokens=20,
-            messages=[{"role": "user", "content": prompt}]
+            messages=[{"role": "user", "content": prompt}],
+            user_id=user_id,
+            event_type="archetype",
         )
         result = message.content[0].text.strip().lower()
         valid = {
@@ -266,11 +257,12 @@ def _format_retrieval_context(state: PipelineState) -> str:
 
 
 def draft_node(state: PipelineState) -> PipelineState:
-    # Infer archetype from topic/context/tone — no Claude call, deterministic
+    # Infer archetype from topic/context/tone with one Haiku call (falls back to incident_report)
     archetype = infer_archetype(
         topic=state.get("topic", ""),
         context=state.get("context", ""),
         tone=state.get("tone", ""),
+        user_id=state.get("user_id", "default"),
     )
     state["archetype"] = archetype
     archetype_name = _ARCHETYPE_HUMAN_NAMES.get(archetype, archetype)
@@ -338,24 +330,19 @@ def draft_node(state: PipelineState) -> PipelineState:
         archetype_instructions=archetype_instructions,
     )
 
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
+    message = complete(
+        model=SONNET,
         max_tokens=2000,
         messages=[{"role": "user", "content": prompt}],
-    )
-
-    state["current_draft"] = message.content[0].text.strip()
-
-    schedule_usage_event(
         user_id=state.get("user_id", "default"),
         event_type="generate",
-        input_tokens=message.usage.input_tokens,
-        output_tokens=message.usage.output_tokens,
-        metadata={
+        usage_metadata={
             "topic": state.get("topic", ""),
             "format": state.get("format", ""),
             "archetype": state.get("archetype", ""),
         },
     )
+
+    state["current_draft"] = message.content[0].text.strip()
 
     return state

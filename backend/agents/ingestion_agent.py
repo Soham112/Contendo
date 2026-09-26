@@ -1,13 +1,11 @@
-import anthropic
 import hashlib
 import json
 import logging
-import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from dotenv import load_dotenv
 
+from llm.client import HAIKU, SONNET, complete
 from memory.vector_store import invalidate_bm25_cache, query_by_hash, upsert_chunks
 from memory.hierarchy_store import (
     add_source_to_topic,
@@ -19,14 +17,7 @@ from memory.hierarchy_store import (
 from memory.entity_store import upsert_entity, upsert_chunk_entities, _normalize_entity_name
 from utils.chunker import chunk_text
 
-load_dotenv()
-
 logger = logging.getLogger(__name__)
-
-client = anthropic.Anthropic(
-    api_key=os.environ["ANTHROPIC_API_KEY"],
-    max_retries=3,
-)
 
 TAG_SYSTEM_PROMPT = """You are a tag extraction assistant. Given a passage of text, extract 3–8 short, lowercase topic tags that best describe what this content is about.
 
@@ -86,19 +77,16 @@ Example output:
   {"entity_name": "OKRs", "entity_type": "methodology", "relationship_type": "explains"}
 ]"""
 
-SUMMARY_MODEL = "claude-haiku-4-5-20251001"
-
-
 def compute_content_hash(content: str) -> str:
     normalised = content.strip().lower()
     return hashlib.sha256(normalised.encode()).hexdigest()
 
 
-def _extract_tags(text: str) -> list[str]:
+def _extract_tags(text: str, *, user_id: str) -> list[str]:
     # Use first 1500 words for tag extraction to keep costs low
     preview = " ".join(text.split()[:1500])
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
+    message = complete(
+        model=SONNET,
         max_tokens=150,
         messages=[
             {
@@ -107,6 +95,8 @@ def _extract_tags(text: str) -> list[str]:
             }
         ],
         system=TAG_SYSTEM_PROMPT,
+        user_id=user_id,
+        event_type="ingest_tags",
     )
     raw = message.content[0].text.strip()
 
@@ -121,7 +111,7 @@ def _extract_tags(text: str) -> list[str]:
     return [t.strip().strip('"[]').lower() for t in raw.split(",") if t.strip()]
 
 
-def _generate_source_summary(content: str) -> str:
+def _generate_source_summary(content: str, *, user_id: str) -> str:
     """Generate a 2-3 sentence summary of the source via Claude Haiku.
 
     Uses first 700 words of content. Returns "" on any failure — never
@@ -129,11 +119,13 @@ def _generate_source_summary(content: str) -> str:
     """
     preview = " ".join(content.split()[:700])
     try:
-        message = client.messages.create(
-            model=SUMMARY_MODEL,
+        message = complete(
+            model=HAIKU,
             max_tokens=120,
             system="You are a summarization assistant. Summarize the provided text in 2-3 concise sentences that capture the key ideas. Return only the summary, no preamble.",
             messages=[{"role": "user", "content": f"Summarize this:\n\n{preview}"}],
+            user_id=user_id,
+            event_type="ingest_summary",
         )
         return message.content[0].text.strip()
     except Exception as e:
@@ -144,7 +136,7 @@ def _generate_source_summary(content: str) -> str:
 VALID_MEMORY_CONTEXTS = {"work", "personal_project", "learning", "observation"}
 
 
-def _classify_memory_context(text: str) -> str:
+def _classify_memory_context(text: str, *, user_id: str) -> str:
     """Classify text into a memory context using Claude Haiku language pattern detection.
 
     Uses first 200 words. Returns one of: "work" | "personal_project" |
@@ -155,11 +147,13 @@ def _classify_memory_context(text: str) -> str:
     """
     preview = " ".join(text.split()[:200])
     try:
-        message = client.messages.create(
-            model=SUMMARY_MODEL,
+        message = complete(
+            model=HAIKU,
             max_tokens=10,
             system=CONTEXT_CLASSIFY_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": preview}],
+            user_id=user_id,
+            event_type="memory_context_classify",
         )
         result = message.content[0].text.strip().lower().strip('"\'')
         if result in VALID_MEMORY_CONTEXTS:
@@ -169,18 +163,20 @@ def _classify_memory_context(text: str) -> str:
     return "learning"
 
 
-def _extract_entities_for_chunk(chunk_text: str) -> list[dict]:
+def _extract_entities_for_chunk(chunk_text: str, *, user_id: str) -> list[dict]:
     """Extract named entities from a single chunk via Claude Haiku.
 
     Returns list of dicts: [{entity_name, entity_type, relationship_type}].
     Returns [] on any failure — never blocks ingestion.
     """
     try:
-        message = client.messages.create(
-            model=SUMMARY_MODEL,
+        message = complete(
+            model=HAIKU,
             max_tokens=300,
             system=ENTITY_EXTRACT_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": f"Extract entities from:\n\n{chunk_text}"}],
+            user_id=user_id,
+            event_type="ingest_entities",
         )
         raw = message.content[0].text.strip()
         # Strip markdown fences if present
@@ -219,7 +215,7 @@ def _store_entities_for_chunks(
 
     def process_chunk(index: int, text: str) -> None:
         chunk_id = f"{source_id}_{index}"
-        raw_entities = _extract_entities_for_chunk(text)
+        raw_entities = _extract_entities_for_chunk(text, user_id=user_id)
         if not raw_entities:
             return
         resolved: list[dict] = []
@@ -350,7 +346,7 @@ def ingest_content(
             "duplicate": True,
         }
 
-    tags = _extract_tags(content)
+    tags = _extract_tags(content, user_id=user_id)
 
     # Infer memory_context when not explicitly provided.
     # Priority: experience cross-reference (deterministic) → Haiku classifier (LLM).
@@ -362,12 +358,12 @@ def ingest_content(
             memory_context = crossref
             logger.info("memory_context inferred via experience cross-ref: %s", memory_context)
         else:
-            memory_context = _classify_memory_context(content)
+            memory_context = _classify_memory_context(content, user_id=user_id)
         context_was_inferred = True
     elif memory_context not in VALID_MEMORY_CONTEXTS:
         logger.warning("invalid memory_context %r — falling back to classifier", memory_context)
         crossref = _crossref_experience_context(content, user_id)
-        memory_context = crossref or _classify_memory_context(content)
+        memory_context = crossref or _classify_memory_context(content, user_id=user_id)
         context_was_inferred = True
 
     if source_title is None:
@@ -420,7 +416,7 @@ def ingest_content(
     # Wrapped in try/except: a failure here must NEVER fail ingestion.
     try:
         if not source_node_exists(source_id, user_id=user_id):
-            source_summary = _generate_source_summary(content)
+            source_summary = _generate_source_summary(content, user_id=user_id)
             topic_id = _assign_to_topic(source_id, tags, user_id=user_id)
             upsert_source_node(
                 source_id=source_id,

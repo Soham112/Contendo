@@ -1,22 +1,9 @@
 import logging
-import os
 
-import anthropic
-from dotenv import load_dotenv
-
+from llm.client import HAIKU, complete
 from pipeline.state import PipelineState
-from memory.usage_store import schedule_usage_event
-
-load_dotenv()
 
 logger = logging.getLogger(__name__)
-
-client = anthropic.Anthropic(
-    api_key=os.environ["ANTHROPIC_API_KEY"],
-    max_retries=3,
-)
-
-_HAIKU = "claude-haiku-4-5-20251001"
 
 _WORD_COUNT_MAP = {
     "linkedin post": {
@@ -134,10 +121,12 @@ def word_count_enforcer_node(state: PipelineState) -> PipelineState:
             )
             action = "expand"
 
-        msg = client.messages.create(
-            model=_HAIKU,
+        msg = complete(
+            model=HAIKU,
             max_tokens=2000,
             messages=[{"role": "user", "content": prompt_text}],
+            user_id=user_id,
+            event_type="word_count_enforcer",
         )
 
         adjusted = msg.content[0].text.strip()
@@ -147,14 +136,6 @@ def word_count_enforcer_node(state: PipelineState) -> PipelineState:
             action, new_count, word_count,
         )
         state["current_draft"] = adjusted
-
-        schedule_usage_event(
-            user_id=user_id,
-            event_type="word_count_enforcer",
-            input_tokens=msg.usage.input_tokens,
-            output_tokens=msg.usage.output_tokens,
-            model="haiku",
-        )
 
     except Exception as exc:
         logger.warning(
