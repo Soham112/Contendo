@@ -7,6 +7,7 @@ from typing import Any
 import anthropic
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from auth.clerk import get_user_id_dep
 from memory.experience_store import save_experience_nodes
@@ -79,7 +80,7 @@ async def extract_resume(
     file_bytes = await file.read()
 
     try:
-        resume_text = extract_from_pdf(file_bytes)
+        resume_text = await run_in_threadpool(extract_from_pdf, file_bytes)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -134,7 +135,8 @@ Resume text:
     logger.info(f"POST /extract-resume: extracted text preview for user_id={user_id}: {resume_text[:200]!r}")
 
     try:
-        message = _anthropic_client.messages.create(
+        message = await run_in_threadpool(
+            _anthropic_client.messages.create,
             model="claude-sonnet-4-6",
             max_tokens=3000,
             messages=[{"role": "user", "content": prompt}],

@@ -1,12 +1,11 @@
 import anthropic
-import asyncio
 import os
 import re
 from dotenv import load_dotenv
 
 from pipeline.state import PipelineState
 from memory.profile_store import load_profile, profile_to_context_string
-from memory.usage_store import log_usage_event
+from memory.usage_store import schedule_usage_event
 
 load_dotenv()
 
@@ -200,7 +199,7 @@ def refine_draft(
     return refined_text
 
 
-async def refine_selection(
+def refine_selection(
     selected_text: str,
     instruction: str,
     full_post: str,
@@ -276,14 +275,11 @@ def humanizer_node(state: PipelineState) -> PipelineState:
     state["current_draft"] = message.content[0].text.strip()
     state["iterations"] = state.get("iterations", 0) + 1
 
-    try:
-        asyncio.get_running_loop().create_task(log_usage_event(
-            user_id=state.get("user_id", "default"),
-            event_type="humanize",
-            input_tokens=message.usage.input_tokens,
-            output_tokens=message.usage.output_tokens,
-        ))
-    except RuntimeError:
-        pass
+    schedule_usage_event(
+        user_id=state.get("user_id", "default"),
+        event_type="humanize",
+        input_tokens=message.usage.input_tokens,
+        output_tokens=message.usage.output_tokens,
+    )
 
     return state

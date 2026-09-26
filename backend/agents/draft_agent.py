@@ -1,12 +1,11 @@
 import anthropic
-import asyncio
 import os
 from dotenv import load_dotenv
 
 from pipeline.state import PipelineState
 from utils.formatters import get_format_instructions, get_archetype_instructions
 from memory.profile_store import profile_to_context_string
-from memory.usage_store import log_usage_event
+from memory.usage_store import schedule_usage_event
 from agents.retrieval_agent import resolve_attribution_frames
 
 load_dotenv()
@@ -347,19 +346,16 @@ def draft_node(state: PipelineState) -> PipelineState:
 
     state["current_draft"] = message.content[0].text.strip()
 
-    try:
-        asyncio.get_running_loop().create_task(log_usage_event(
-            user_id=state.get("user_id", "default"),
-            event_type="generate",
-            input_tokens=message.usage.input_tokens,
-            output_tokens=message.usage.output_tokens,
-            metadata={
-                "topic": state.get("topic", ""),
-                "format": state.get("format", ""),
-                "archetype": state.get("archetype", ""),
-            },
-        ))
-    except RuntimeError:
-        pass
+    schedule_usage_event(
+        user_id=state.get("user_id", "default"),
+        event_type="generate",
+        input_tokens=message.usage.input_tokens,
+        output_tokens=message.usage.output_tokens,
+        metadata={
+            "topic": state.get("topic", ""),
+            "format": state.get("format", ""),
+            "archetype": state.get("archetype", ""),
+        },
+    )
 
     return state

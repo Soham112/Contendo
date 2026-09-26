@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import os
 
@@ -6,7 +5,7 @@ import anthropic
 from dotenv import load_dotenv
 
 from pipeline.state import PipelineState
-from memory.usage_store import log_usage_event
+from memory.usage_store import schedule_usage_event
 
 load_dotenv()
 
@@ -149,16 +148,13 @@ def word_count_enforcer_node(state: PipelineState) -> PipelineState:
         )
         state["current_draft"] = adjusted
 
-        try:
-            asyncio.get_running_loop().create_task(log_usage_event(
-                user_id=user_id,
-                event_type="word_count_enforcer",
-                input_tokens=msg.usage.input_tokens,
-                output_tokens=msg.usage.output_tokens,
-                model="haiku",
-            ))
-        except RuntimeError:
-            pass
+        schedule_usage_event(
+            user_id=user_id,
+            event_type="word_count_enforcer",
+            input_tokens=msg.usage.input_tokens,
+            output_tokens=msg.usage.output_tokens,
+            model="haiku",
+        )
 
     except Exception as exc:
         logger.warning(
