@@ -12,19 +12,13 @@ PUBLIC_ROUTES = {
     ("GET", "/health"): "health check for Railway",
     ("GET", "/admin/usage"): "admin-only, protected by x-admin-secret",
     ("GET", "/admin/analytics-data"): "admin-only, protected by x-admin-secret",
-    ("POST", "/obsidian/preview"): "local-vault preview, disabled in production",
 }
 
-# Known gaps: these call Claude (or accept uploads) with no auth. Tracked as
-# expected failures so the suite stays green. When the fix/api-safety branch
-# adds auth to them, these tests start passing and pytest reports XPASS(strict)
-# as a failure, which is the signal to delete the entry from this dict.
-KNOWN_UNPROTECTED = {
-    ("POST", "/refine"): "calls Claude with no auth",
-    ("POST", "/score"): "calls Claude with no auth",
-    ("POST", "/generate-visuals"): "calls Claude with no auth",
-    ("POST", "/obsidian/preview-zip"): "accepts uploads with no auth",
-}
+# Known gaps: routes that should have auth but don't yet. Each one is tracked as
+# an expected failure so the suite stays green. When auth is added, the test
+# starts passing and pytest reports XPASS(strict) as a failure, which is the
+# signal to delete the entry from this dict.
+KNOWN_UNPROTECTED: dict[tuple[str, str], str] = {}
 
 
 def _uses_user_auth(dependant) -> bool:

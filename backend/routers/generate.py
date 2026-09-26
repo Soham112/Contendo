@@ -1,6 +1,9 @@
+import logging
+
 from anthropic import APIStatusError, InternalServerError
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from agents.humanizer_agent import refine_draft
 from agents.scorer_agent import score_text
@@ -8,7 +11,11 @@ from agents.visual_agent import generate_visuals, generate_svg_for_diagram
 from auth.clerk import get_user_id_dep
 from pipeline.graph import run_pipeline
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+_GENERIC_500 = "Something went wrong. Please try again."
 
 
 class GenerateRequest(BaseModel):
@@ -74,7 +81,14 @@ def _raise_anthropic_error(e: Exception) -> None:
             status_code=503,
             detail="Anthropic API is temporarily overloaded. Wait 30 seconds and try again.",
         )
-    raise HTTPException(status_code=500, detail=str(e))
+    logger.exception("Anthropic API error")
+    raise HTTPException(status_code=500, detail=_GENERIC_500)
+
+
+def _raise_internal_error(route: str) -> None:
+    """Log the active exception and return a generic 500 (never str(e) to the client)."""
+    logger.exception("%s failed", route)
+    raise HTTPException(status_code=500, detail=_GENERIC_500)
 
 
 def _feedback_to_instructions(feedback_items: list[str]) -> str:
@@ -103,7 +117,8 @@ async def generate(
         raise HTTPException(status_code=400, detail="topic is required")
 
     try:
-        result = run_pipeline(
+        result = await run_in_threadpool(
+            run_pipeline,
             topic=req.topic,
             format=req.format,
             tone=req.tone,
@@ -114,8 +129,8 @@ async def generate(
         )
     except (InternalServerError, APIStatusError) as e:
         _raise_anthropic_error(e)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        _raise_internal_error("POST /generate")
 
     return GenerateResponse(
         post=result["post"],
@@ -129,7 +144,10 @@ async def generate(
 
 
 @router.post("/refine", response_model=RefineResponse)
-async def refine(req: RefineRequest) -> RefineResponse:
+async def refine(
+    req: RefineRequest,
+    user_id: str = Depends(get_user_id_dep),
+) -> RefineResponse:
     if not req.current_draft.strip():
         raise HTTPException(status_code=400, detail="current_draft is required")
     if not req.refinement_instruction.strip():
@@ -142,15 +160,16 @@ async def refine(req: RefineRequest) -> RefineResponse:
     )
 
     try:
-        refined = refine_draft(
+        refined = await run_in_threadpool(
+            refine_draft,
             current_draft=req.current_draft,
             refinement_instruction=processed_instruction,
         )
-        score, score_feedback = score_text(refined)
+        score, score_feedback = await run_in_threadpool(score_text, refined)
     except (InternalServerError, APIStatusError) as e:
         _raise_anthropic_error(e)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        _raise_internal_error("POST /refine")
 
     return RefineResponse(
         refined_draft=refined,
@@ -166,7 +185,8 @@ async def refine_selection(
 ) -> dict:
     from agents.humanizer_agent import refine_selection as refine_selection_fn
 
-    rewritten = await refine_selection_fn(
+    rewritten = await run_in_threadpool(
+        refine_selection_fn,
         selected_text=req.selected_text,
         instruction=req.instruction,
         full_post=req.full_post,
@@ -176,28 +196,34 @@ async def refine_selection(
 
 
 @router.post("/score", response_model=ScoreResponse)
-async def score(req: ScoreRequest) -> ScoreResponse:
+async def score(
+    req: ScoreRequest,
+    user_id: str = Depends(get_user_id_dep),
+) -> ScoreResponse:
     if not req.post_content.strip():
         raise HTTPException(status_code=400, detail="post_content is required")
     try:
-        s, score_feedback = score_text(req.post_content)
+        s, score_feedback = await run_in_threadpool(score_text, req.post_content)
     except (InternalServerError, APIStatusError) as e:
         _raise_anthropic_error(e)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        _raise_internal_error("POST /score")
     return ScoreResponse(score=s, score_feedback=score_feedback)
 
 
 @router.post("/generate-visuals")
-async def generate_visuals_endpoint(req: GenerateVisualsRequest) -> dict:
+async def generate_visuals_endpoint(
+    req: GenerateVisualsRequest,
+    user_id: str = Depends(get_user_id_dep),
+) -> dict:
     if not req.post_content.strip():
         raise HTTPException(status_code=400, detail="post_content is required")
     try:
-        visuals = generate_visuals(req.post_content)
+        visuals = await run_in_threadpool(generate_visuals, req.post_content)
     except (InternalServerError, APIStatusError) as e:
         _raise_anthropic_error(e)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        _raise_internal_error("POST /generate-visuals")
     return {"visuals": visuals}
 
 
@@ -211,7 +237,8 @@ async def refine_visual_endpoint(
     if not req.refinement_instruction.strip():
         raise HTTPException(status_code=400, detail="refinement_instruction is required")
     try:
-        svg_code = generate_svg_for_diagram(
+        svg_code = await run_in_threadpool(
+            generate_svg_for_diagram,
             description=req.original_description,
             style_hint=req.style_hint,
             current_svg=req.svg_code,
@@ -219,6 +246,6 @@ async def refine_visual_endpoint(
         )
     except (InternalServerError, APIStatusError) as e:
         _raise_anthropic_error(e)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        _raise_internal_error("POST /refine-visual")
     return {"svg_code": svg_code}

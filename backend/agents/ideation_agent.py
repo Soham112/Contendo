@@ -1,5 +1,4 @@
 import anthropic
-import asyncio
 import json
 import os
 import random
@@ -9,7 +8,7 @@ from memory.vector_store import query_similar_hybrid_batch, get_all_tags, get_al
 from memory.feedback_store import get_all_topics_posted
 from memory.profile_store import load_profile, profile_to_context_string
 from memory.experience_store import get_experience_nodes, experience_nodes_exist, experience_nodes_to_context_string
-from memory.usage_store import log_usage_event
+from memory.usage_store import schedule_usage_event
 
 load_dotenv()
 
@@ -305,16 +304,13 @@ TOPICS ALREADY WRITTEN ABOUT (do not repeat these):
         messages=[{"role": "user", "content": user_message}],
     )
 
-    try:
-        asyncio.get_running_loop().create_task(log_usage_event(
-            user_id=user_id,
-            event_type="ideation",
-            input_tokens=message.usage.input_tokens,
-            output_tokens=message.usage.output_tokens,
-            metadata={"count": count, "topic": topic or "", "kb_chunks": len(chunks)},
-        ))
-    except RuntimeError:
-        pass
+    schedule_usage_event(
+        user_id=user_id,
+        event_type="ideation",
+        input_tokens=message.usage.input_tokens,
+        output_tokens=message.usage.output_tokens,
+        metadata={"count": count, "topic": topic or "", "kb_chunks": len(chunks)},
+    )
 
     return _parse_ideas(message.content[0].text.strip(), count)
 
@@ -354,16 +350,13 @@ TOPICS ALREADY WRITTEN ABOUT (do not repeat these):
         messages=[{"role": "user", "content": user_message}],
     )
 
-    try:
-        asyncio.get_running_loop().create_task(log_usage_event(
-            user_id=user_id,
-            event_type="ideation",
-            input_tokens=message.usage.input_tokens,
-            output_tokens=message.usage.output_tokens,
-            metadata={"count": count, "topic": topic or "", "source": "resume_fallback"},
-        ))
-    except RuntimeError:
-        pass
+    schedule_usage_event(
+        user_id=user_id,
+        event_type="ideation",
+        input_tokens=message.usage.input_tokens,
+        output_tokens=message.usage.output_tokens,
+        metadata={"count": count, "topic": topic or "", "source": "resume_fallback"},
+    )
 
     return _parse_ideas(message.content[0].text.strip(), count)
 

@@ -9,6 +9,7 @@ import httpx
 logger = logging.getLogger(__name__)
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from auth.clerk import get_user_id_dep
 
@@ -138,8 +139,8 @@ async def ingest(
                 media_type = "image/png"
             elif "image/webp" in header:
                 media_type = "image/webp"
-        extracted_text = extract_from_image(req.raw_image, media_type=media_type)
-        result = ingest_content(extracted_text, source_type="image", user_id=user_id)
+        extracted_text = await run_in_threadpool(extract_from_image, req.raw_image, media_type=media_type)
+        result = await run_in_threadpool(ingest_content, extracted_text, source_type="image", user_id=user_id)
     else:
         if not req.content or not req.content.strip():
             raise HTTPException(status_code=400, detail="content is required")
@@ -159,7 +160,8 @@ async def ingest(
                 effective_source_type = "personal_note"
             elif req.memory_context in ("learning", "observation"):
                 effective_source_type = "saved_content"
-        result = ingest_content(
+        result = await run_in_threadpool(
+            ingest_content,
             req.content,
             source_type=effective_source_type,
             source_title=req.source_title,
@@ -192,7 +194,9 @@ async def suggest_memory_context(
         return {"suggested_context": "learning"}
     # Experience cross-reference first (deterministic, no LLM) — falls back
     # to Haiku classifier when no known entity matches are found in the text.
-    suggested = _crossref_experience_context(req.content, user_id) or _classify_memory_context(req.content)
+    suggested = await run_in_threadpool(_crossref_experience_context, req.content, user_id)
+    if not suggested:
+        suggested = await run_in_threadpool(_classify_memory_context, req.content)
     return {"suggested_context": suggested}
 
 
@@ -207,12 +211,14 @@ async def ingest_file(
     if not raw:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
     try:
-        text = extract_text_from_file(file.filename or "", raw)
+        text = await run_in_threadpool(extract_text_from_file, file.filename or "", raw)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
     source_title = _title_from_text(text, file.filename or "")
-    result = ingest_content(text, source_type="article", source_title=source_title, user_id=user_id)
+    result = await run_in_threadpool(
+        ingest_content, text, source_type="article", source_title=source_title, user_id=user_id
+    )
     if result.get("duplicate"):
         return IngestResponse(
             chunks_stored=result["chunks_stored"],
@@ -229,10 +235,11 @@ async def scrape_and_ingest(
     user_id: str = Depends(get_user_id_dep),
 ) -> dict:
     try:
-        scraped = scrape_url(req.url)
+        scraped = await run_in_threadpool(scrape_url, req.url)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    result = ingest_content(
+    result = await run_in_threadpool(
+        ingest_content,
         content=scraped["content"],
         source_type="article",
         source_title=scraped["title"],
@@ -299,11 +306,14 @@ async def fetch_youtube_transcript(
 
 
 @router.post("/obsidian/preview")
-async def obsidian_preview(req: ObsidianRequest) -> dict:
+async def obsidian_preview(
+    req: ObsidianRequest,
+    user_id: str = Depends(get_user_id_dep),
+) -> dict:
     if _IS_PRODUCTION:
         raise HTTPException(status_code=400, detail=_OBSIDIAN_DISABLED_MSG)
     try:
-        return get_vault_stats(req.vault_path)
+        return await run_in_threadpool(get_vault_stats, req.vault_path)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -316,7 +326,7 @@ async def obsidian_ingest(
     if _IS_PRODUCTION:
         raise HTTPException(status_code=400, detail=_OBSIDIAN_DISABLED_MSG)
     try:
-        notes = list(read_vault(req.vault_path))
+        notes = await run_in_threadpool(lambda: list(read_vault(req.vault_path)))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -326,7 +336,8 @@ async def obsidian_ingest(
 
     for note in notes:
         try:
-            result = ingest_content(
+            result = await run_in_threadpool(
+                ingest_content,
                 content=note["content"],
                 source_type="note",
                 source_title=note["filename"],
@@ -350,6 +361,7 @@ async def obsidian_ingest(
 @router.post("/obsidian/preview-zip")
 async def obsidian_preview_zip(
     file: UploadFile = File(...),
+    user_id: str = Depends(get_user_id_dep),
 ) -> dict:
     """Preview an Obsidian vault from a zip file without ingesting it.
     
@@ -365,8 +377,8 @@ async def obsidian_preview_zip(
     temp_dir = None
     try:
         # Extract zip and get stats
-        temp_dir = extract_vault_from_zip(raw)
-        stats = get_vault_stats_from_dir(temp_dir)
+        temp_dir = await run_in_threadpool(extract_vault_from_zip, raw)
+        stats = await run_in_threadpool(get_vault_stats_from_dir, temp_dir)
         return stats
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -395,8 +407,8 @@ async def obsidian_ingest_zip(
     temp_dir = None
     try:
         # Extract zip and read vault
-        temp_dir = extract_vault_from_zip(raw)
-        notes = list(read_vault(temp_dir))
+        temp_dir = await run_in_threadpool(extract_vault_from_zip, raw)
+        notes = await run_in_threadpool(lambda: list(read_vault(temp_dir)))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     
@@ -408,7 +420,8 @@ async def obsidian_ingest_zip(
     try:
         for note in notes:
             try:
-                result = ingest_content(
+                result = await run_in_threadpool(
+                    ingest_content,
                     content=note["content"],
                     source_type="note",
                     source_title=note["filename"],

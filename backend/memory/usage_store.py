@@ -1,6 +1,8 @@
 """Usage event logging — fire-and-forget writes to Supabase usage_events table.
 
-Never raises. Wrap all call sites in asyncio.get_running_loop().create_task().
+Never raises. Agents call schedule_usage_event(), which works both on the event
+loop thread and from worker threads (routes run slow sync work through
+run_in_threadpool, where there is no running loop).
 """
 import asyncio
 import logging
@@ -70,3 +72,43 @@ async def log_usage_event(
         await _insert_event(payload)
     except Exception as exc:
         logger.warning("usage_store: unhandled error: %s", exc)
+
+
+# The server's event loop, captured in main.py's lifespan. Worker threads have
+# no running loop, so they hand usage writes to this one.
+_main_loop: asyncio.AbstractEventLoop | None = None
+# Strong references so fire-and-forget tasks aren't garbage-collected mid-run.
+_pending_tasks: set[asyncio.Task] = set()
+
+
+def set_main_loop(loop: asyncio.AbstractEventLoop | None) -> None:
+    global _main_loop
+    _main_loop = loop
+
+
+def schedule_usage_event(**kwargs: Any) -> None:
+    """Fire-and-forget log_usage_event(**kwargs) from any thread. Never raises."""
+    coro = log_usage_event(**kwargs)
+    try:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop is not None:
+            task = loop.create_task(coro)
+            _pending_tasks.add(task)
+            task.add_done_callback(_pending_tasks.discard)
+            return
+
+        main_loop = _main_loop
+        if main_loop is not None and main_loop.is_running():
+            asyncio.run_coroutine_threadsafe(coro, main_loop)
+            return
+
+        # No loop at all (scripts, some tests): skip logging.
+        coro.close()
+        logger.debug("usage_store: no event loop, skipping usage log")
+    except Exception as exc:
+        coro.close()
+        logger.warning("usage_store: could not schedule usage log: %s", exc)

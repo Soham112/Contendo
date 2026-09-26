@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import os
 import re
@@ -7,7 +6,7 @@ import anthropic
 from dotenv import load_dotenv
 
 from pipeline.state import PipelineState
-from memory.usage_store import log_usage_event
+from memory.usage_store import schedule_usage_event
 
 load_dotenv()
 
@@ -98,16 +97,13 @@ def _replace_sentence(post: str, original: str, replacement: str) -> str:
 
 def _log(user_id: str, event_type: str, msg: anthropic.types.Message, model: str) -> None:
     """Fire-and-forget usage log — same pattern as all other agents."""
-    try:
-        asyncio.get_running_loop().create_task(log_usage_event(
-            user_id=user_id,
-            event_type=event_type,
-            input_tokens=msg.usage.input_tokens,
-            output_tokens=msg.usage.output_tokens,
-            model=model,
-        ))
-    except RuntimeError:
-        pass  # No running event loop (e.g. in tests) — skip logging
+    schedule_usage_event(
+        user_id=user_id,
+        event_type=event_type,
+        input_tokens=msg.usage.input_tokens,
+        output_tokens=msg.usage.output_tokens,
+        model=model,
+    )
 
 
 # ── Node ──────────────────────────────────────────────────────────────────────
