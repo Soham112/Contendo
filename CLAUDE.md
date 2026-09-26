@@ -9,7 +9,7 @@ Frontend on Vercel (contendo-six.vercel.app), backend on Railway (contendo-produ
 ## Stack
 - Frontend: Next.js 14 App Router, `frontend/`
 - Backend: FastAPI, Python 3.11, `backend/` (venv at `backend/venv/`), Docker on Railway, one uvicorn worker
-- Auth: Supabase Auth (Google OAuth). Backend verifies Supabase JWTs in `backend/auth/clerk.py` (legacy filename)
+- Auth: Supabase Auth (Google OAuth). Backend verifies Supabase JWTs in `backend/auth/supabase_jwt.py`
 - Data: Supabase Postgres + pgvector for everything (embeddings, profiles, posts, post_versions, hierarchy, entities, experience nodes, usage and analytics events)
 - Retrieval: hybrid pgvector cosine + BM25 fused with RRF, in `backend/memory/vector_store.py`
 - Embeddings: sentence-transformers all-MiniLM-L6-v2, local
