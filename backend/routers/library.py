@@ -94,7 +94,8 @@ async def delete_library_source(
     req: DeleteSourceRequest,
     user_id: str = Depends(get_user_id_dep),
 ) -> dict:
-    chunks_removed = delete_source(req.source_title, user_id=user_id)
+    result = delete_source(req.source_title, user_id=user_id)
+    chunks_removed = result["chunks_removed"]
     if chunks_removed == 0:
         raise HTTPException(
             status_code=404,
