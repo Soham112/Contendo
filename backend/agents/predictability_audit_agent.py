@@ -3,6 +3,7 @@ import re
 
 from llm.client import HAIKU, SONNET, complete
 from pipeline.state import PipelineState
+from pipeline.trace import record_draft
 
 logger = logging.getLogger(__name__)
 
@@ -156,6 +157,7 @@ def predictability_audit_node(state: PipelineState) -> PipelineState:
 
         post = step3_msg.content[0].text.strip()
         state["current_draft"] = post
+        record_draft(state, "predictability_audit")
 
     except Exception as exc:
         logger.warning(

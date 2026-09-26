@@ -1,5 +1,6 @@
 from llm.client import HAIKU, SONNET, complete
 from pipeline.state import PipelineState
+from pipeline.trace import record_draft
 from utils.formatters import get_format_instructions, get_archetype_instructions
 from memory.profile_store import profile_to_context_string
 from agents.retrieval_agent import resolve_attribution_frames
@@ -344,5 +345,6 @@ def draft_node(state: PipelineState) -> PipelineState:
     )
 
     state["current_draft"] = message.content[0].text.strip()
+    record_draft(state, "draft")
 
     return state

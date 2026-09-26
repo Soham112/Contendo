@@ -1104,6 +1104,7 @@ function FirstPostContent() {
     let generatedPost = ''
     let score = 0
     let archetype = ''
+    let traceId: string | null = null
 
     try {
       const res = await api.generatePost({
@@ -1121,6 +1122,7 @@ function FirstPostContent() {
       generatedPost = data.post || ''
       score = data.score || 0
       archetype = data.archetype || ''
+      traceId = data.trace_id ?? null
 
       if (!generatedPost) {
         throw new Error('Generated post was empty')
@@ -1141,6 +1143,7 @@ function FirstPostContent() {
         authenticity_score: score || 0,
         svg_diagrams: null,
         archetype: archetype || '',
+        trace_id: traceId,
       })
 
       if (logRes.ok) {

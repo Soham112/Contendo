@@ -122,4 +122,8 @@ def scorer_node(state: PipelineState) -> PipelineState:
     score, score_feedback = score_text(state["current_draft"], user_id=state.get("user_id", "default"))
     state["score"] = score
     state["score_feedback"] = score_feedback
+    state["score_history"] = [
+        *state.get("score_history", []),
+        {"iteration": state.get("iterations", 0), "score": score, "score_feedback": score_feedback},
+    ]
     return state

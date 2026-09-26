@@ -1,4 +1,5 @@
 import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -15,6 +16,9 @@ from memory.feedback_store import (
     update_post,
 )
 from memory.profile_store import save_writing_sample
+from memory.trace_store import link_trace_to_post
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -27,6 +31,7 @@ class LogPostRequest(BaseModel):
     authenticity_score: int
     svg_diagrams: list | None = None
     archetype: str = ""
+    trace_id: str | None = None  # from /generate; links generation_traces.post_id
 
 
 class LogPostResponse(BaseModel):
@@ -81,6 +86,13 @@ async def log_post_endpoint(
         version_type="generated",
         user_id=user_id,
     )
+    if req.trace_id:
+        # Linking is diagnostic only: it must never fail saving the post.
+        try:
+            if not link_trace_to_post(req.trace_id, post_id, user_id=user_id):
+                logger.warning("trace %s not linked: no trace for user %s", req.trace_id, user_id)
+        except Exception:
+            logger.exception("linking trace %s to post %s failed", req.trace_id, post_id)
     return LogPostResponse(post_id=post_id, saved=True)
 
 

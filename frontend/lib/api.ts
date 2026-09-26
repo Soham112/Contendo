@@ -48,6 +48,7 @@ export interface GenerateResponse {
   iterations: number;
   archetype?: string;
   scored?: boolean;
+  trace_id?: string | null;
 }
 
 export interface RefineRequest {
@@ -74,6 +75,7 @@ export interface LogPostRequest {
   authenticity_score: number;
   svg_diagrams?: string | null;
   archetype?: string;
+  trace_id?: string | null;
 }
 
 export interface PatchPostRequest {

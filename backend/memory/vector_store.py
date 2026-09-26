@@ -151,6 +151,10 @@ def query_similar(
         content = row.get("content", "")
         results.append({
             # Flat fields — retrieval_agent accesses these directly
+            # Row id for generation traces. Deliberately not "id": _rrf_merge and
+            # entity enrichment key vector hits by source_id_chunk_index, which
+            # differs from the row id for consolidation chunks.
+            "chunk_id": row.get("id", ""),
             "text": content,
             "content": content,
             "source_id": row.get("source_id", ""),
@@ -321,7 +325,8 @@ def _rrf_merge(
 
     The vector result dict is preferred over the BM25 version for any chunk
     that appears in both lists — it carries a real cosine similarity score
-    which matters for _compute_retrieval_confidence downstream.
+    which matters for _compute_retrieval_confidence downstream. Its BM25 score
+    is copied onto it. Every returned chunk gets rrf_score and rrf_rank (1-based).
     """
     combined: dict = {}  # chunk_id → {"score": float, "result": dict}
 
@@ -336,11 +341,17 @@ def _rrf_merge(
         if cid in combined:
             combined[cid]["score"] += 1.0 / (k + rank + 1)
             # Already have the vector version — don't overwrite with BM25 proxy
+            if "bm25_score" in result:
+                combined[cid]["result"]["bm25_score"] = result["bm25_score"]
         else:
             combined[cid] = {"score": 1.0 / (k + rank + 1), "result": result}
 
     merged = sorted(combined.values(), key=lambda e: e["score"], reverse=True)
-    return [entry["result"] for entry in merged[:n_results]]
+    top = merged[:n_results]
+    for rank, entry in enumerate(top, start=1):
+        entry["result"]["rrf_score"] = entry["score"]
+        entry["result"]["rrf_rank"] = rank
+    return [entry["result"] for entry in top]
 
 
 def invalidate_bm25_cache(user_id: str) -> None:

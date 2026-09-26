@@ -459,6 +459,7 @@ def retrieval_node(state: PipelineState) -> PipelineState:
     user_id = state.get("user_id", "default")
 
     query = f"{topic}. {context}" if context else topic
+    state["retrieval_query"] = query
 
     # Load experience nodes once — used for attribution headers in resolve_attribution_frames
     experience_nodes: list[dict] = []
@@ -483,6 +484,7 @@ def retrieval_node(state: PipelineState) -> PipelineState:
         bundle = _build_retrieval_bundle(chunks, user_id)
         state["retrieval_bundle"] = bundle
         state["retrieved_context"] = _format_retrieved_context(bundle)
+        state["retrieval_path"] = "hybrid"
 
         # Track retrieval stats — never let this break retrieval
         try:
@@ -508,6 +510,7 @@ def retrieval_node(state: PipelineState) -> PipelineState:
             bundle = {"chunks": [], "source_contexts": {}, "topic_contexts": []}
         state["retrieval_bundle"] = bundle
         state["retrieved_context"] = ""
+        state["retrieval_path"] = "flat_fallback"
 
     # ALWAYS set retrieved_chunks — backward compat (critic_agent and others read this)
     retrieved_texts = []
