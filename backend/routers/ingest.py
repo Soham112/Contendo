@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from auth.clerk import get_user_id_dep
+from auth.supabase_jwt import get_user_id_dep
 
 _IS_PRODUCTION = os.environ.get("ENVIRONMENT", "").lower() == "production"
 _SUPADATA_API_KEY = os.getenv("SUPADATA_API_KEY")

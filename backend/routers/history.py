@@ -3,7 +3,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from auth.clerk import get_user_id_dep
+from auth.supabase_jwt import get_user_id_dep
 from memory.feedback_store import (
     add_version,
     delete_post,

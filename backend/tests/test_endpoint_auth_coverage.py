@@ -22,7 +22,7 @@ KNOWN_UNPROTECTED: dict[tuple[str, str], str] = {}
 
 
 def _uses_user_auth(dependant) -> bool:
-    from auth.clerk import get_user_id_dep
+    from auth.supabase_jwt import get_user_id_dep
 
     for dep in dependant.dependencies:
         if dep.call is get_user_id_dep or _uses_user_auth(dep):

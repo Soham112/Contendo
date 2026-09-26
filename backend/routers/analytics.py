@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel
 
-from auth.clerk import get_user_id_dep
+from auth.supabase_jwt import get_user_id_dep
 from db.supabase_client import supabase
 
 logger = logging.getLogger(__name__)

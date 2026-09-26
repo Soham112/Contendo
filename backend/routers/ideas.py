@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from starlette.concurrency import run_in_threadpool
 
 from agents.ideation_agent import generate_suggestions
-from auth.clerk import get_user_id_dep
+from auth.supabase_jwt import get_user_id_dep
 
 router = APIRouter()
 

@@ -8,7 +8,7 @@ import httpx
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from auth.clerk import get_user_id_dep
+from auth.supabase_jwt import get_user_id_dep
 from config.paths import FEEDBACK_PATH
 
 logger = logging.getLogger(__name__)

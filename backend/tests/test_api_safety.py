@@ -150,11 +150,11 @@ def test_schedule_usage_event_without_any_loop_is_a_silent_no_op(recorded_usage)
 @pytest.fixture
 def es256(monkeypatch):
     """Point auth at a fake JWKS endpoint; returns helpers to sign tokens and rotate keys."""
-    import auth.clerk as clerk
+    import auth.supabase_jwt as supabase_jwt
 
-    monkeypatch.setattr(clerk, "SUPABASE_URL", "https://project.supabase.co")
-    monkeypatch.setattr(clerk, "SUPABASE_JWT_SECRET", "")
-    clerk._clear_jwks_cache()
+    monkeypatch.setattr(supabase_jwt, "SUPABASE_URL", "https://project.supabase.co")
+    monkeypatch.setattr(supabase_jwt, "SUPABASE_JWT_SECRET", "")
+    supabase_jwt._clear_jwks_cache()
 
     keys: dict[str, ec.EllipticCurvePrivateKey] = {}
     published: list[str] = []
@@ -177,7 +177,7 @@ def es256(monkeypatch):
             jwks.append(jwk)
         return {"keys": jwks}
 
-    monkeypatch.setattr(clerk, "_fetch_jwks", fake_fetch)
+    monkeypatch.setattr(supabase_jwt, "_fetch_jwks", fake_fetch)
 
     def token(user_id: str, kid: str) -> str:
         now = int(time.time())
@@ -190,35 +190,35 @@ def es256(monkeypatch):
         pass
 
     h = Helpers()
-    h.add_key, h.publish, h.token, h.fetches, h.clerk = add_key, publish, token, fetches, clerk
+    h.add_key, h.publish, h.token, h.fetches, h.supabase_jwt = add_key, publish, token, fetches, supabase_jwt
     yield h
-    clerk._clear_jwks_cache()
+    supabase_jwt._clear_jwks_cache()
 
 
 def test_jwks_is_fetched_once_across_requests(production, es256):
     es256.add_key("k1")
     for _ in range(3):
-        assert es256.clerk.get_user_id(f"Bearer {es256.token('user-a', 'k1')}") == "user-a"
+        assert es256.supabase_jwt.get_user_id(f"Bearer {es256.token('user-a', 'k1')}") == "user-a"
     assert es256.fetches["count"] == 1
 
 
 def test_jwks_is_refetched_after_ttl(production, es256):
     es256.add_key("k1")
-    es256.clerk.get_user_id(f"Bearer {es256.token('user-a', 'k1')}")
-    es256.clerk._jwks_fetched_at -= es256.clerk._JWKS_TTL_SECONDS + 1
+    es256.supabase_jwt.get_user_id(f"Bearer {es256.token('user-a', 'k1')}")
+    es256.supabase_jwt._jwks_fetched_at -= es256.supabase_jwt._JWKS_TTL_SECONDS + 1
 
-    es256.clerk.get_user_id(f"Bearer {es256.token('user-a', 'k1')}")
+    es256.supabase_jwt.get_user_id(f"Bearer {es256.token('user-a', 'k1')}")
     assert es256.fetches["count"] == 2
 
 
 def test_unknown_kid_refetches_once_to_pick_up_rotated_key(production, es256):
     es256.add_key("k1")
-    es256.clerk.get_user_id(f"Bearer {es256.token('user-a', 'k1')}")
+    es256.supabase_jwt.get_user_id(f"Bearer {es256.token('user-a', 'k1')}")
     # Age the cache past the cooldown, then rotate: k2 exists only upstream.
-    es256.clerk._jwks_fetched_at -= es256.clerk._JWKS_REFETCH_COOLDOWN_SECONDS + 1
+    es256.supabase_jwt._jwks_fetched_at -= es256.supabase_jwt._JWKS_REFETCH_COOLDOWN_SECONDS + 1
     es256.add_key("k2")
 
-    assert es256.clerk.get_user_id(f"Bearer {es256.token('user-b', 'k2')}") == "user-b"
+    assert es256.supabase_jwt.get_user_id(f"Bearer {es256.token('user-b', 'k2')}") == "user-b"
     assert es256.fetches["count"] == 2
 
 
@@ -229,7 +229,7 @@ def test_unknown_kid_fails_after_one_refetch(production, es256):
     es256.add_key("rogue", publish=False)
 
     with pytest.raises(HTTPException) as exc:
-        es256.clerk.get_user_id(f"Bearer {es256.token('user-a', 'rogue')}")
+        es256.supabase_jwt.get_user_id(f"Bearer {es256.token('user-a', 'rogue')}")
     assert exc.value.status_code == 401
     # Initial fetch; the forced refetch is skipped because the cache is brand new.
     assert es256.fetches["count"] == 1
@@ -240,12 +240,12 @@ def test_repeated_unknown_kids_do_not_refetch_within_cooldown(production, es256)
 
     es256.add_key("k1")
     es256.add_key("rogue", publish=False)
-    es256.clerk.get_user_id(f"Bearer {es256.token('user-a', 'k1')}")
-    es256.clerk._jwks_fetched_at -= es256.clerk._JWKS_REFETCH_COOLDOWN_SECONDS + 1
+    es256.supabase_jwt.get_user_id(f"Bearer {es256.token('user-a', 'k1')}")
+    es256.supabase_jwt._jwks_fetched_at -= es256.supabase_jwt._JWKS_REFETCH_COOLDOWN_SECONDS + 1
 
     for _ in range(5):
         with pytest.raises(HTTPException):
-            es256.clerk.get_user_id(f"Bearer {es256.token('user-a', 'rogue')}")
+            es256.supabase_jwt.get_user_id(f"Bearer {es256.token('user-a', 'rogue')}")
     # One forced refetch for the first miss; the next four hit the cooldown.
     assert es256.fetches["count"] == 2
 
@@ -253,9 +253,9 @@ def test_repeated_unknown_kids_do_not_refetch_within_cooldown(production, es256)
 def test_hs256_tokens_never_fetch_jwks(production, es256, monkeypatch, auth_headers):
     from tests.conftest import TEST_JWT_SECRET
 
-    monkeypatch.setattr(es256.clerk, "SUPABASE_JWT_SECRET", TEST_JWT_SECRET)
+    monkeypatch.setattr(es256.supabase_jwt, "SUPABASE_JWT_SECRET", TEST_JWT_SECRET)
     header = auth_headers("user-a")["Authorization"]
-    assert es256.clerk.get_user_id(header) == "user-a"
+    assert es256.supabase_jwt.get_user_id(header) == "user-a"
     assert es256.fetches["count"] == 0
 
 

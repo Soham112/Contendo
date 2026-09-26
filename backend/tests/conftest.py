@@ -130,5 +130,5 @@ def auth_headers():
 @pytest.fixture
 def production(monkeypatch):
     """Run the test with auth in production mode (no 'default' user fallback)."""
-    import auth.clerk
-    monkeypatch.setattr(auth.clerk, "ENVIRONMENT", "production")
+    import auth.supabase_jwt
+    monkeypatch.setattr(auth.supabase_jwt, "ENVIRONMENT", "production")

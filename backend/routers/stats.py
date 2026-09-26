@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from auth.clerk import get_user_id_dep
+from auth.supabase_jwt import get_user_id_dep
 from db.supabase_client import supabase
 from memory.vector_store import get_all_tags, get_total_chunks
 

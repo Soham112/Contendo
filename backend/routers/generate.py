@@ -8,7 +8,7 @@ from starlette.concurrency import run_in_threadpool
 from agents.humanizer_agent import refine_draft
 from agents.scorer_agent import score_text
 from agents.visual_agent import generate_visuals, generate_svg_for_diagram
-from auth.clerk import get_user_id_dep
+from auth.supabase_jwt import get_user_id_dep
 from pipeline.graph import run_pipeline
 
 logger = logging.getLogger(__name__)

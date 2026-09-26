@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from auth.clerk import get_user_id_dep
+from auth.supabase_jwt import get_user_id_dep
 from memory.vector_store import delete_source, get_all_sources, get_total_chunks
 from memory.retrieval_stats_store import get_retrieval_counts
 
