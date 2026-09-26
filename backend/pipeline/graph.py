@@ -1,8 +1,13 @@
+import logging
+
 from langgraph.graph import StateGraph, END
 
+from llm.client import trace_calls
 from pipeline.state import PipelineState
+from pipeline.trace import build_trace_row
 from memory.profile_store import load_profile
 from memory.feedback_store import get_all_topics_posted
+from memory.trace_store import save_generation_trace
 from agents.retrieval_agent import retrieval_node
 from agents.draft_agent import draft_node
 from agents.critic_agent import critic_node
@@ -10,6 +15,8 @@ from agents.humanizer_agent import humanizer_node
 from agents.predictability_audit_agent import predictability_audit_node
 from agents.word_count_enforcer_agent import word_count_enforcer_node
 from agents.scorer_agent import scorer_node
+
+logger = logging.getLogger(__name__)
 
 SCORE_THRESHOLD = 75
 MAX_ITERATIONS = 3
@@ -118,9 +125,19 @@ def run_pipeline(
         "iterations": 0,
         "archetype": "",
         "critic_brief": {},
+        "draft_history": [],
+        "score_history": [],
     }
 
-    result = pipeline.invoke(initial_state)
+    with trace_calls() as calls:
+        result = pipeline.invoke(initial_state)
+
+    # The trace is diagnostic only: a failed write must never fail generation.
+    trace_id: str | None = None
+    try:
+        trace_id = save_generation_trace(build_trace_row(result, calls))
+    except Exception:
+        logger.exception("generation trace write failed for user %s", user_id)
 
     return {
         "post": result.get("final_post", result.get("current_draft", "")),
@@ -130,4 +147,5 @@ def run_pipeline(
         "archetype": result.get("archetype", ""),
         "scored": quality == "polished",
         "retrieval_confidence": result.get("retrieval_confidence", "medium"),
+        "trace_id": trace_id,
     }

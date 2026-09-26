@@ -35,6 +35,7 @@ class GenerateResponse(BaseModel):
     archetype: str = ""
     scored: bool = False
     retrieval_confidence: str = "medium"
+    trace_id: str | None = None  # generation_traces.id; None if the trace write failed
 
 
 class ScoreRequest(BaseModel):
@@ -140,6 +141,7 @@ async def generate(
         archetype=result.get("archetype", ""),
         scored=result.get("scored", False),
         retrieval_confidence=result.get("retrieval_confidence", "medium"),
+        trace_id=result.get("trace_id"),
     )
 
 

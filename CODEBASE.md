@@ -47,6 +47,10 @@
 | `backend/tests/test_library.py` | `DELETE /library/source` removes chunks, returns 404 for missing sources, and returns a flat response with an integer `chunks_removed` count |
 | `backend/tests/test_pipeline_routing.py` | Builds the real LangGraph with stub nodes to test routing only: draft/standard skip the scorer; polished retries humanizer→scorer while score < 75, at most 3 rewrites; `word_count_enforcer` runs once, after scoring |
 | `backend/tests/test_retrieval.py` | `_compute_retrieval_confidence` thresholds, `_rrf_merge` ordering/limits/similarity retention, `retrieval_node` user isolation and empty-KB behaviour. One strict xfail documents BM25-only hits inflating confidence (0.35 proxy similarity) |
+| `backend/tests/test_generation_trace.py` | `run_pipeline` writes one `generation_traces` row: inputs incl. `quality`, `retrieval_query`/`retrieval_path`, retrieved chunks with ids, scores and text, `draft_history` per rewriting node (standard, draft, polished), per-iteration `score_history`, `llm_calls`, profile snapshot; a failing trace write still returns the post with `trace_id=None`; `/generate` returns `trace_id`. Also checks hybrid retrieval returns the same chunks in the same order as the pre-trace `_rrf_merge` (incl. a consolidation chunk), and that vector hits only gain `chunk_id`. `/log-post` linking: `trace_id` sets `post_id` on the caller's trace; another user's trace is left alone; an unknown or failing `trace_id` still saves the post; no `trace_id` means no trace update |
+| `backend/pipeline/trace.py` | `record_draft(state, node)` appends `{node, iteration, text}` to `draft_history` (called by draft, humanizer, predictability_audit, word_count_enforcer after they rewrite `current_draft`); `build_trace_row(state, llm_calls)` turns the final pipeline state into a `generation_traces` row, snapshotting each retrieved chunk's id, scores, `source_title` and text |
+| `backend/memory/trace_store.py` | `save_generation_trace(row) -> str` inserts one `generation_traces` row and returns its id; `link_trace_to_post(trace_id, post_id, user_id) -> bool` sets `post_id` on the caller's own trace (False if none matched) |
+| `backend/migrations/005_generation_traces.sql` | Creates `generation_traces` (see section 4), indexes on `(user_id, created_at desc)` and `eval_status`, RLS enabled with no policies |
 | `scripts/git-hooks/pre-push` | Git pre-push hook: runs `backend/venv/bin/python -m pytest` from `backend/` and cancels the push on failure. Skips with a warning if `backend/venv` doesn't exist. Enable once per clone with `git config core.hooksPath scripts/git-hooks`; bypass once with `git push --no-verify` |
 | `backend/.env.example` | Required env var template — `ANTHROPIC_API_KEY`, `DATA_DIR`, `FRONTEND_ORIGIN`, `ENVIRONMENT`, `SUPABASE_JWT_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_SECRET`, `SUPADATA_API_KEY` (required for YouTube transcript fetch — set in Railway env vars) |
 | `backend/Dockerfile` | Production Docker image for Railway — Python 3.11-slim; pre-installs CPU-only `torch==2.2.2` from PyTorch CPU wheel registry (avoids 4 GB image limit); sentence-transformers model downloads at first request (not baked in); uses `$PORT` and `$DATA_DIR` |
@@ -66,9 +70,9 @@
 | `backend/agents/predictability_audit_agent.py` | Three-step post-humanizer audit: (1) Haiku finds the single most AI-sounding sentence or returns CLEAN; (2) Sonnet rewrites only that sentence to be shorter, more specific, or unresolved; (3) Haiku checks for burstiness (3+ consecutive sentences within 4 words of each other in length) and breaks rhythm if found. Skipped for draft quality mode. All exceptions caught — pipeline never breaks. Usage logged via `usage_store` as three separate event_types: `predictability_audit_step1/2/3`. |
 | `backend/agents/word_count_enforcer_agent.py` | Final word-count gate — runs once at the end of the pipeline after all passes are complete. Maps `(format, length)` to concrete `(min_words, max_words)` targets. If within range: returns unchanged. If over: Haiku trims while preserving voice. If under: Haiku expands with one specific detail. Skipped for draft quality mode and thread format (tweet-count based). All exceptions caught — pipeline never breaks. Usage logged as `event_type="word_count_enforcer"`. |
 | `backend/agents/scorer_agent.py` | Scores draft 0–100 across 5 dimensions, returns flagged sentences |
-| `backend/pipeline/state.py` | TypedDict schema for shared LangGraph pipeline state; includes `length` (`"concise" | "standard" | "long-form"`), `archetype`, `user_id`, `critic_brief`, retrieval calibration fields (`retrieval_confidence`, `retrieved_chunk_count`), `retrieved_chunks` (backward compat flat list), `retrieval_bundle` (full hierarchical bundle), `retrieved_context` (pre-formatted enriched text for draft prompt), and `first_post: bool` (set by `load_profile_node` when the user has no prior post history) |
-| `backend/pipeline/graph.py` | LangGraph graph definition — nodes, edges, conditional retry loop. Pipeline order: load_profile → retrieval → draft → critic → humanizer → predictability_audit → word_count_enforcer (standard/draft) OR scorer → word_count_enforcer (polished) → finalize. word_count_enforcer always runs exactly once, as the final gate before finalize. `load_profile_node` sets `first_post=True` when `posted_topics` is empty (user has no prior generation history). |
-| `backend/memory/vector_store.py` | Supabase pgvector store for embeddings; local sentence-transformer encoding + Supabase RPC retrieval (`match_embeddings`), upsert/delete/list helpers, dedup via `query_by_hash`, and source-level aggregation helpers. `query_similar_batch()` embeds all queries in one batched forward pass for speed. `query_similar_hybrid()` implements hybrid search: pgvector cosine similarity + BM25 Okapi full-corpus ranking, fused with RRF. BM25 cached in-memory per user (5-min TTL). `upsert_chunks()` accepts and stores `memory_context` (Phase 1). `query_similar()` and `_fetch_corpus_for_bm25()` return `memory_context` in every chunk dict. |
+| `backend/pipeline/state.py` | TypedDict schema for shared LangGraph pipeline state; includes `length` (`"concise" | "standard" | "long-form"`), `archetype`, `user_id`, `critic_brief`, trace fields (`retrieval_query`, `retrieval_path`, `draft_history`, `score_history`), retrieval calibration fields (`retrieval_confidence`, `retrieved_chunk_count`), `retrieved_chunks` (backward compat flat list), `retrieval_bundle` (full hierarchical bundle), `retrieved_context` (pre-formatted enriched text for draft prompt), and `first_post: bool` (set by `load_profile_node` when the user has no prior post history) |
+| `backend/pipeline/graph.py` | LangGraph graph definition — nodes, edges, conditional retry loop. Pipeline order: load_profile → retrieval → draft → critic → humanizer → predictability_audit → word_count_enforcer (standard/draft) OR scorer → word_count_enforcer (polished) → finalize. word_count_enforcer always runs exactly once, as the final gate before finalize. `load_profile_node` sets `first_post=True` when `posted_topics` is empty (user has no prior generation history). `run_pipeline()` wraps `pipeline.invoke()` in `trace_calls()`, then writes one `generation_traces` row (try/except + `logger.exception`; a failed write never fails the request) and returns its id as `trace_id` (None on failure). |
+| `backend/memory/vector_store.py` | Supabase pgvector store for embeddings; local sentence-transformer encoding + Supabase RPC retrieval (`match_embeddings`), upsert/delete/list helpers, dedup via `query_by_hash`, and source-level aggregation helpers. `query_similar_batch()` embeds all queries in one batched forward pass for speed. `query_similar_hybrid()` implements hybrid search: pgvector cosine similarity + BM25 Okapi full-corpus ranking, fused with RRF. BM25 cached in-memory per user (5-min TTL). `upsert_chunks()` accepts and stores `memory_context` (Phase 1). `query_similar()` and `_fetch_corpus_for_bm25()` return `memory_context` in every chunk dict. `query_similar()` also returns the row id as `chunk_id` (not `id`, so RRF and entity-enrichment keys for vector hits are unchanged). `_rrf_merge()` copies `bm25_score` onto chunks found by both searches and sets `rrf_score` and 1-based `rrf_rank` on every returned chunk; results and order are unchanged. When only one search returns hits, no merge runs and chunks have no `rrf_*` fields. |
 | `backend/memory/usage_store.py` | Fire-and-forget Claude API usage logging to Supabase `usage_events` table; `schedule_usage_event(**kwargs)` is what agents call — fire-and-forget from any thread (uses the running loop if there is one, otherwise `asyncio.run_coroutine_threadsafe` onto the server loop captured by `set_main_loop()` in lifespan; no loop at all → silently skipped); it wraps `log_usage_event(user_id, event_type, input_tokens, output_tokens, metadata={}, model="sonnet")`; calculates `estimated_cost_usd` using per-token pricing (Sonnet: $0.000003/$0.000015 in/out; Haiku: $0.00000025/$0.00000125); posts via `httpx.AsyncClient`; never raises; wraps the HTTP call in try/except and logs warnings on failure |
 | `backend/memory/profile_store.py` | Per-user profile read/write backed by Supabase `profiles` table — `load_profile(user_id)` selects row and merges missing keys from `DEFAULT_PROFILE`; `save_profile(profile, user_id)` upserts `{"id": user_id, "data": profile}`; `profile_exists(user_id)` returns True if a row exists; `DEFAULT_PROFILE` includes bio, location, target_audience, opinions, writing_samples; `profile_to_context_string()` formats all fields for prompt injection; `save_writing_sample(user_id, sample, max_samples=10)` appends a new sample (case-insensitive dedup, oldest dropped when over limit) |
 | `backend/memory/hierarchy_store.py` | Supabase Postgres store for `source_nodes` and `topic_nodes` tables — `upsert_source_node`, `get_source_node`, `source_node_exists`, `get_sources_for_user`, `upsert_topic_node`, `get_topic_node`, `get_topics_for_user`, `find_matching_topic` (tag-overlap heuristic), `add_source_to_topic`; `init_db()` is a no-op; tags and child_source_ids stored as comma-separated TEXT |
@@ -206,14 +210,14 @@ The old cluster-level assignment caused one personal_note sharing a tag with art
 | | |
 |---|---|
 | **Reads from state** | `topic`, `context`, `user_id` (defaults to `"default"` if absent) |
-| **Writes to state** | `retrieved_chunks: list[str]` |
+| **Writes to state** | `retrieved_chunks: list[str]`, `retrieval_bundle`, `retrieved_context`, `retrieval_confidence`, `retrieved_chunk_count`, `experience_nodes`, `retrieval_query: str` (topic + context as sent to search), `retrieval_path: "hybrid" | "flat_fallback"` |
 | **Side effects** | Calls `match_embeddings` Supabase RPC with a locally-generated embedding; pgvector returns similarity-ranked rows |
 
 ### draft_node (draft_agent.py)
 | | |
 |---|---|
 | **Reads from state** | `profile`, `retrieved_chunks`, `topic`, `format`, `tone`, `length`, `context`, `first_post` |
-| **Writes to state** | `current_draft: str`, `archetype: str` (inferred archetype key, e.g. `"incident_report"`) |
+| **Writes to state** | `current_draft: str`, `archetype: str` (inferred archetype key, e.g. `"incident_report"`), appends `{node: "draft", iteration: 0, text}` to `draft_history` |
 | **Side effects** | 2 Claude API calls: Haiku (`claude-haiku-4-5-20251001`) for `infer_archetype()`, then Sonnet (`claude-sonnet-4-6`) for the draft |
 
 **First-post mode (`first_post=True`):** When the user has no prior generation history, `draft_node` overrides the requested `length` to `"concise"`, replaces the word-count rule with a hard 120–150 word constraint, and injects `_FIRST_POST_INSTRUCTION` into the prompt. This instruction also suppresses all `[DIAGRAM:]` and `[IMAGE:]` placeholders, enforces a single-idea structure, and prevents multi-section layouts. The goal is a quick win: a short, sharp post that proves the system works without overwhelming the new user.
@@ -241,14 +245,14 @@ On JSON parse failure: returns `_NEUTRAL_BRIEF` (all "strong", overall "postable
 | | |
 |---|---|
 | **Reads from state** | `profile`, `current_draft`, `critic_brief` |
-| **Writes to state** | `current_draft: str` (overwrites), `iterations: int` (increments by 1) |
+| **Writes to state** | `current_draft: str` (overwrites), `iterations: int` (increments by 1), appends to `draft_history` (iteration = new `iterations`) |
 | **Side effects** | 1 Claude Sonnet call per invocation. `_format_critic_brief()` converts `critic_brief` into `(critic_section, rewrite_instruction)` injected into `SYSTEM_PROMPT`. When any area has `"needs_work"`, the humanizer fixes hook/substance/structure/voice first then humanizes. When all areas are "strong" or brief is `{}`, behavior is identical to the old prompt (preserve structure, language-only pass). |
 
 ### predictability_audit_node (predictability_audit_agent.py)
 | | |
 |---|---|
 | **Reads from state** | `current_draft`, `quality`, `user_id` |
-| **Writes to state** | `current_draft: str` (overwrites on any change; unchanged on CLEAN, burstiness-OK, or any exception) |
+| **Writes to state** | `current_draft: str` (overwrites on any change; unchanged on CLEAN, burstiness-OK, or any exception); appends to `draft_history` whenever it writes `current_draft` |
 | **Side effects** | Up to 3 Claude API calls: Haiku (step 1, max_tokens=200) + Sonnet (step 2, max_tokens=200, only if not CLEAN) + Haiku (step 3, max_tokens=2000). Usage logged as `predictability_audit_step1/2/3`. Skipped entirely for `draft` quality — returns state immediately with no API calls. |
 
 **Sentence replacement logic:**
@@ -263,7 +267,7 @@ The humanizer rewrites freely across the entire post, including sentence structu
 | | |
 |---|---|
 | **Reads from state** | `current_draft`, `format`, `length`, `quality`, `user_id` |
-| **Writes to state** | `current_draft: str` (overwrites only if adjustment was needed; unchanged if within range, thread format, or any exception) |
+| **Writes to state** | `current_draft: str` (overwrites only if adjustment was needed; unchanged if within range, thread format, or any exception); appends to `draft_history` only when it adjusts |
 | **Side effects** | 0 or 1 Claude Haiku call (`claude-haiku-4-5-20251001`, `max_tokens=2000`). Zero calls when post is already within target range or format is thread. Usage logged as `event_type="word_count_enforcer"`. Skipped entirely for `draft` quality mode. |
 
 **Word count targets (from `_WORD_COUNT_MAP`):**
@@ -280,7 +284,7 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
 | | |
 |---|---|
 | **Reads from state** | `current_draft` |
-| **Writes to state** | `score: int`, `score_feedback: list[str]` |
+| **Writes to state** | `score: int`, `score_feedback: list[str]`, appends `{iteration, score, score_feedback}` to `score_history` |
 | **Side effects** | 1 Claude API call — only invoked for polished mode. Skipped entirely for standard and draft modes (graph routes predictability_audit → word_count_enforcer directly). |
 
 ### load_profile_node (graph.py inline)
@@ -497,7 +501,8 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
   "iterations": 2,
   "archetype": "incident_report",
   "scored": true,
-  "retrieval_confidence": "medium"
+  "retrieval_confidence": "medium",
+  "trace_id": "uuid of the generation_traces row, or null if the trace write failed"
 }
 ```
 **Notes:** Runs the full LangGraph pipeline. `length` defaults to `"standard"` and is injected into draft prompt formatting via `get_format_instructions(format_type, length, tone)`. `quality` defaults to `"standard"` (1 humanizer pass, scorer skipped — lazy). Pass `"polished"` for up to 3 humanizer iterations with scorer running each pass. Pass `"draft"` to skip humanizer and scorer entirely. `scored` in the response indicates whether the scorer ran: `false` for `standard` and `draft` modes (use `POST /score` to score on demand), `true` for `polished` mode. `retrieval_confidence` is an informational internal retrieval-coverage signal (`"low" | "medium" | "high"`) returned for observability only; generation behavior never blocks on this value. Posts are NOT auto-saved by this endpoint — the frontend calls `/log-post` automatically after generation completes.
@@ -516,14 +521,15 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
   "svg_diagrams": [
     { "position": 0, "description": "...", "svg_code": "<svg>...</svg>" }
   ],
-  "archetype": "incident_report"
+  "archetype": "incident_report",
+  "trace_id": "uuid from /generate (optional)"
 }
 ```
 **Response:**
 ```json
 { "post_id": 7, "saved": true }
 ```
-**Notes:** Called automatically by the frontend immediately after generation completes. Returns `post_id` which the frontend stores in `contentOS_current_post_id` sessionStorage for subsequent PATCH calls. `svg_diagrams` is null on initial auto-save; updated later via PATCH when visuals are generated.
+**Notes:** Called automatically by the frontend immediately after generation completes. Returns `post_id` which the frontend stores in `contentOS_current_post_id` sessionStorage for subsequent PATCH calls. `svg_diagrams` is null on initial auto-save; updated later via PATCH when visuals are generated. When `trace_id` is set, after the insert it sets `generation_traces.post_id` via `link_trace_to_post()`, filtered by `id` and the caller's `user_id` (another user's trace is ignored with a warning log). Linking never fails the request: errors are caught and logged. The frontend sends `trace_id` only with the first successful `/log-post` for a generation (CreatePost holds it in `pendingTraceIdRef` and clears it on success, since `handleGenerateVisuals` can call `autoSavePost` again when no post id exists; first-post sends it on its single call).
 
 ---
 
@@ -942,6 +948,30 @@ CREATE INDEX idx_user_events_timestamp ON user_events(timestamp);
 | `source_title` | TEXT | Unique per user_id |
 | `retrieval_count` | INTEGER | Times retrieved in generation |
 | `last_retrieved_at` | TIMESTAMP | Last updated time |
+
+### Generation traces (Supabase Postgres)
+**Table:** `generation_traces`
+**Owned by:** `backend/memory/trace_store.py` (row built in `backend/pipeline/trace.py`, written by `run_pipeline()`)
+**Migration:** `backend/migrations/005_generation_traces.sql`. RLS enabled with no policies (service-role only).
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | UUID PK | `gen_random_uuid()`; returned as `trace_id` from `/generate` |
+| `user_id` | TEXT | Supabase user ID |
+| `post_id` | INTEGER FK NULL | References `posts.id`, `ON DELETE SET NULL`. Set by `/log-post` when the request carries `trace_id` |
+| `created_at` | TIMESTAMPTZ | Insert time |
+| `topic`, `context`, `format`, `tone`, `length`, `quality` | TEXT | Generation inputs as the pipeline received them |
+| `retrieval_query` | TEXT | Exact search query (`topic. context`) |
+| `retrieval_path` | TEXT | `hybrid` or `flat_fallback` |
+| `retrieval_confidence` | TEXT | `low` / `medium` / `high` |
+| `retrieved` | JSONB | Chunks actually used: `[{chunk_id, source_id, source_title, source_type, similarity, bm25_score, rrf_score, rrf_rank, entity_linked, text}]`. Text is snapshotted because ids dangle after a library delete. `similarity` is the 0.35 proxy for BM25-only and entity-linked chunks; `rrf_*` are null when only one search returned hits |
+| `retrieved_context` | TEXT | Formatted block injected into the draft prompt (`""` on flat fallback) |
+| `profile_snapshot` | JSONB | Profile used for this run |
+| `node_outputs` | JSONB | `{draft_history: [{node, iteration, text}], critic_brief, score_history: [{iteration, score, score_feedback}], final_post}` |
+| `llm_calls` | JSONB | From `trace_calls()`: `[{event_type, model, input_tokens, output_tokens, latency_ms}]` |
+| `score`, `iterations` | INT | Final values (score is 0 unless `quality="polished"`) |
+| `archetype` | TEXT | Inferred archetype |
+| `eval_status` | TEXT | Default `pending` |
 
 ---
 

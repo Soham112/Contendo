@@ -2,6 +2,7 @@ import logging
 
 from llm.client import HAIKU, complete
 from pipeline.state import PipelineState
+from pipeline.trace import record_draft
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +137,7 @@ def word_count_enforcer_node(state: PipelineState) -> PipelineState:
             action, new_count, word_count,
         )
         state["current_draft"] = adjusted
+        record_draft(state, "word_count_enforcer")
 
     except Exception as exc:
         logger.warning(

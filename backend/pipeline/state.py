@@ -16,6 +16,8 @@ class PipelineState(TypedDict, total=False):
     profile: dict[str, Any]
 
     # Retrieved knowledge
+    retrieval_query: str            # exact query string sent to retrieval (topic + context)
+    retrieval_path: str             # "hybrid" | "flat_fallback"
     retrieval_confidence: str       # "low" | "medium" | "high" — computed after retrieval
     retrieved_chunk_count: int      # count of chunks actually retrieved
     retrieved_chunks: list[str]       # flat list of "[source_type: X] text" strings — always set for backward compat
@@ -36,10 +38,15 @@ class PipelineState(TypedDict, total=False):
     iterations: int
     archetype: str  # inferred post archetype key, e.g. "incident_report"
     critic_brief: dict  # structured diagnosis from critic_node; {} if skipped (draft mode) or on error
+    # One {node, iteration, text} entry each time a node rewrites current_draft
+    # (draft, humanizer, predictability_audit, word_count_enforcer). Skipped and
+    # no-op runs add nothing. Persisted in generation_traces.
+    draft_history: list[dict[str, Any]]
 
     # Scoring
     score: int
     score_feedback: list[str]
+    score_history: list[dict[str, Any]]  # one {iteration, score, score_feedback} per scorer run
 
     # Final output
     final_post: str

@@ -2,6 +2,7 @@ import re
 
 from llm.client import SONNET, complete
 from pipeline.state import PipelineState
+from pipeline.trace import record_draft
 from memory.profile_store import load_profile, profile_to_context_string
 
 _WORD_COUNT_MAP = {
@@ -272,5 +273,6 @@ def humanizer_node(state: PipelineState) -> PipelineState:
 
     state["current_draft"] = message.content[0].text.strip()
     state["iterations"] = state.get("iterations", 0) + 1
+    record_draft(state, "humanizer")
 
     return state

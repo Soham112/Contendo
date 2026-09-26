@@ -79,6 +79,7 @@ interface GenerateResult {
   score_feedback: string[];
   iterations: number;
   scored: boolean;
+  trace_id?: string | null;
 }
 
 interface Suggestion {
@@ -779,6 +780,9 @@ export default function CreatePost() {
   // Stores the original generated post text with [DIAGRAM:/IMAGE:] placeholders intact
   // (editedPost stores the clean version; rawPostRef is used for /generate-visuals)
   const rawPostRef = useRef<string>("");
+  // trace_id from the latest /generate, sent with the first successful /log-post
+  // for that generation, then cleared so a later save never re-links it.
+  const pendingTraceIdRef = useRef<string | null>(null);
 
   // Responsive width detection
   useEffect(() => {
@@ -1016,8 +1020,10 @@ export default function CreatePost() {
         content: postContent,
         authenticity_score: data.score,
         svg_diagrams: null,
+        trace_id: pendingTraceIdRef.current,
       });
       if (!res.ok) return;
+      pendingTraceIdRef.current = null;
       const saved = await res.json();
       const postId: number = saved.post_id;
       setCurrentPostId(postId);
@@ -1116,6 +1122,7 @@ export default function CreatePost() {
       }
 
       const data: GenerateResult = await res.json();
+      pendingTraceIdRef.current = data.trace_id ?? null;
       // Store raw post (with placeholders) for /generate-visuals, strip for display/editing
       rawPostRef.current = data.post;
       const cleanPost = stripPlaceholders(data.post);
