@@ -38,7 +38,7 @@ flowchart TD
 
     subgraph Pipeline["LangGraph Pipeline"]
         N1["1. load_profile_node\nLoad profile + posted topics"]
-        N2["2. retrieval_node\nSemantic search via pgvector + frame resolution"]
+        N2["2. retrieval_node\nHybrid search: pgvector + BM25 (RRF) + entity-linked chunks, frame resolution"]
         N3["3. draft_node\nInfer archetype (Claude Haiku) → generate initial draft (Claude Sonnet)"]
         N4["4. critic_node\nDiagnose hook/substance/structure/voice"]
         N5["5. humanizer_node\nRemove AI patterns, inject voice"]
@@ -58,6 +58,8 @@ flowchart TD
         DB1["Supabase pgvector\n(embeddings table: chunks + metadata, user_id isolated)"]
         DB2["Supabase profiles\n(id + data JSON per user)"]
         DB3["Supabase posts + post_versions\n(versioned post history)"]
+        DB4["Supabase generation_traces\n(one trace per /generate, linked to its post by /log-post)"]
+        DB5["Supabase entities + chunk_entities + experience_nodes"]
     end
 
     NAV --> S1
@@ -102,7 +104,10 @@ flowchart TD
 
     N1 --- DB2
     N2 --- DB1
+    N2 --- DB5
     A2 --- DB1
+    R2 --> DB4
+    R3 --> DB4
 ```
 
 ---
@@ -132,13 +137,15 @@ Navigation is handled by a persistent left sidebar (`Sidebar.tsx`), rendered by 
 | Step | Agent | Job |
 |------|-------|-----|
 | 1 | `load_profile_node` | Reads profile from Supabase `profiles` table, injects user voice/style into state, and loads previously posted topics from Supabase post history to avoid repeated angles. |
-| 2 | `retrieval_node` | Queries Supabase pgvector for relevant chunks, builds a retrieval bundle, computes retrieval confidence, and pre-labels chunk groups with attribution frames (PERSONAL / EXPERT OUTSIDER / LEARNING) for reliable grounding. |
+| 2 | `retrieval_node` | Hybrid search: pgvector cosine similarity plus BM25 over the user's whole corpus, fused with Reciprocal Rank Fusion, then topped up with entity-linked chunks. Builds a retrieval bundle, computes retrieval confidence, and pre-labels chunk groups with attribution frames (PERSONAL / EXPERT OUTSIDER / LEARNING) for reliable grounding. Falls back to plain vector search if hybrid fails. |
 | 3 | `draft_node` | Uses Haiku to infer archetype, then Sonnet to generate a first draft using framed retrieval context plus format/tone/length constraints. |
 | 4 | `critic_node` | Calls Claude Haiku once to diagnose hook/substance/structure/voice issues and writes `critic_brief` into state |
 | 5 | `humanizer_node` | Rewrites for voice/authenticity and applies critic fixes while preserving meaning. |
 | 6 | `predictability_audit_node` | Runs a final anti-pattern pass to reduce AI-like rhythm and repetitive sentence structure. |
 | 7 | `scorer_node` (polished only) | Scores 0–100 across 5 dimensions; polished mode retries through humanizer+audit until threshold or max iterations. |
 | 8 | `word_count_enforcer_node` | Final gate that trims or expands to hit concrete format+length targets before finalize. |
+
+**Generation traces.** Every `/generate` run writes one row to the Supabase `generation_traces` table, for offline evaluation. A row records the inputs (including quality mode), the retrieval query and path, a snapshot of each retrieved chunk (id, similarity, BM25 score, RRF rank, entity-linked flag, text), the profile used, every draft each node produced, the critic brief, per-iteration scores, and every Claude call with its tokens and latency. `/generate` returns the row's `trace_id`, and the frontend passes it to `/log-post` so the trace is linked to the saved post. Writing or linking a trace never fails the request.
 
 ---
 
@@ -150,16 +157,17 @@ Navigation is handled by a persistent left sidebar (`Sidebar.tsx`), rendered by 
 | Styling | TailwindCSS | Utility-first, zero config, great with Next.js |
 | Font | Noto Serif + Inter (Google Fonts) | Noto Serif for headlines (`font-headline`), Inter for body/UI — loaded via `@import` in `globals.css`; editorial atelier aesthetic |
 | Backend | FastAPI (Python 3.11) | Async, typed, auto-docs, fast iteration |
-| LLM | claude-sonnet-4-6 (Anthropic) | Best balance of quality and speed for generation tasks |
+| LLM | claude-sonnet-4-6 for generation, claude-haiku-4-5 for classification (Anthropic) | Sonnet writes; Haiku handles archetype, critic, audit, and word-count steps cheaply. All calls go through `backend/llm/client.py`, which logs token usage per call |
 | Embeddings | sentence-transformers (all-MiniLM-L6-v2) | Local, no API key, good semantic quality for retrieval |
-| Vector DB | Supabase pgvector (`embeddings`) | User-scoped semantic retrieval with SQL visibility and production-ready storage |
+| Vector DB | Supabase pgvector (`embeddings`) + in-memory BM25 | Hybrid retrieval fused with RRF; user-scoped, with SQL visibility and production-ready storage |
+| Auth | Supabase Auth (Google OAuth) | Backend verifies Supabase JWTs; every query is scoped by `user_id` |
 | Agent orchestration | LangGraph | Stateful graph with conditional edges — perfect for retry loops |
 | Post history | Supabase Postgres (`posts`, `post_versions`) | Multi-user, versioned history with shared auth model |
 | HTTP client | httpx | URL scraping via Jina Reader |
 | PDF extraction | PyMuPDF (fitz) | Fast text extraction from PDFs; detects scanned/image-only files |
 | DOCX extraction | python-docx | Plain text extraction from Word documents |
 | Deployment (frontend) | Vercel | Native Next.js hosting |
-| Deployment (backend) | Railway or Render | Simple Python service hosting |
+| Deployment (backend) | Railway (Docker) | Simple Python service hosting |
 
 ---
 
@@ -209,6 +217,8 @@ git config core.hooksPath scripts/git-hooks
 
 A failing test then cancels the push. Skip once with `git push --no-verify`.
 
+**Database migrations.** Schema changes live in `backend/migrations/NNN_description.sql`, numbered in order. There is no migration runner: run each new file by hand in the Supabase SQL editor before deploying code that depends on it. The older core tables (`posts`, `post_versions`, `profiles`, `usage_events`, `user_events`, and others) were created before this folder existed, so they have no migration file. Their schemas are documented in `CODEBASE.md` section 4.
+
 ---
 
 ## Setup your profile
@@ -234,8 +244,18 @@ Note: profile files are gitignored — your personal details never get committed
 ├── PROMPTS.md                        # All agent system prompts verbatim — source of truth
 ├── DESIGN.md                         # Editorial Atelier design system — read before any UI change
 ├── scripts/
-│   └── migrate_to_supabase.py        # One-time migration: profile + posts + post_versions into Supabase
-├── .gitignore                        # Excludes venv, node_modules, .env, chroma data
+│   ├── migrate_to_supabase.py        # One-time legacy migration: profile + posts + post_versions into Supabase
+│   ├── migrate_hierarchy.py          # One-time legacy migration: backfills source/topic hierarchy
+│   └── git-hooks/
+│       └── pre-push                  # Runs backend pytest before every push (opt-in, see Tests)
+├── .gitignore                        # Excludes venv, node_modules, .env, legacy local data (chroma_db, *.db)
+│
+├── extension/                        # Chrome extension (Manifest V3): save the current page or YouTube video to memory
+│   ├── manifest.json
+│   ├── background.js                 # Calls /scrape-and-ingest, /fetch-youtube-transcript, /ingest
+│   ├── content.js
+│   ├── popup.html
+│   └── popup.js
 │
 ├── frontend/
 │   ├── app/
@@ -254,9 +274,17 @@ Note: profile files are gitignored — your personal details never get committed
 │   │   │   ├── page.tsx              # Screen 5: History (/history)
 │   │   │   └── [id]/
 │   │   │       └── page.tsx          # Post detail (/history/[id])
-│   │   └── welcome/
-│   │       └── page.tsx              # Landing page (/welcome) — own top nav, no sidebar
-│   ├── app/
+│   │   ├── welcome/
+│   │   │   └── page.tsx              # Landing page (/welcome) — own top nav, no sidebar
+│   │   ├── about/
+│   │   │   └── page.tsx              # About page (/about)
+│   │   ├── sign-in/ , sign-up/       # Auth pages
+│   │   ├── auth/callback/route.ts    # Supabase OAuth callback — exchanges code for session
+│   │   ├── sso-callback/
+│   │   │   └── page.tsx              # Legacy Clerk redirect target — sends stale links to /sign-in
+│   │   ├── admin/
+│   │   │   ├── page.tsx              # Admin usage dashboard (/admin)
+│   │   │   └── analytics/page.tsx    # Admin analytics (/admin/analytics)
 │   │   ├── onboarding/
 │   │   │   └── page.tsx              # Legacy route — immediately redirects to /first-post
 │   │   ├── first-post/
@@ -270,9 +298,22 @@ Note: profile files are gitignored — your personal details never get committed
 │   │   ├── Sidebar.tsx               # Left sidebar — core nav items (+ conditional Admin), user row
 │   │   ├── FeedMemory.tsx            # Feed Memory form — all input types, Obsidian vault flow
 │   │   ├── CreatePost.tsx            # Create Post — 4-state UI, settings drawer, resizable split-screen analysis
+│   │   ├── ContendoLogo.tsx          # Quill logo variants (sidebar, landing nav)
+│   │   ├── LoadingWordmark.tsx       # Full-screen loading state (profile check)
+│   │   ├── PageTransition.tsx        # Fade-and-rise entrance animation for pages
+│   │   ├── OnboardingIntercept.tsx   # Short question flow that fills missing profile fields (voice, rules, opinions, audience)
+│   │   ├── ExtensionInstallModal.tsx # Chrome extension install steps (Feed Memory)
 │   │   └── ui/
 │   │       ├── TagInput.tsx          # Shared tag pill input — used by onboarding + settings
-│   │       └── ToastProvider.tsx     # Global toast notifications context
+│   │       ├── ToastProvider.tsx     # Global toast notifications context
+│   │       └── FeedbackButton.tsx    # Floating "Send feedback" button + modal
+│   ├── lib/
+│   │   ├── api.ts                    # useApi() — every backend call goes through here
+│   │   ├── supabase.ts               # Browser Supabase client
+│   │   ├── supabase-server.ts        # Server Supabase client (Server Components, Route Handlers)
+│   │   ├── useTracking.ts            # Fire-and-forget analytics events (/log-event)
+│   │   └── first-post-constants.ts   # Roles, opinion statements, and other /first-post data
+│   ├── middleware.ts                 # Refreshes the Supabase session; redirects protected routes to /sign-in
 │   ├── .env.local                    # Sets NEXT_PUBLIC_API_URL=http://localhost:8000
 │   ├── tailwind.config.ts            # Tailwind config scoped to app/ and components/
 │   └── package.json                  # Next.js 14 + TypeScript + Tailwind
@@ -280,35 +321,61 @@ Note: profile files are gitignored — your personal details never get committed
 └── backend/
     ├── main.py                       # FastAPI entry point — CORS, lifespan, router registration, logging config
     ├── routers/
-    │   ├── ingest.py                 # /ingest, /ingest-file, /scrape-and-ingest, /obsidian/*
-    │   ├── generate.py               # /generate, /refine, /score, /generate-visuals
-    │   ├── history.py                # /history, /log-post, PATCH/DELETE/restore history
-    │   ├── library.py                # /library, DELETE /library/source
+    │   ├── ingest.py                 # /ingest, /ingest-file, /scrape-and-ingest, /fetch-youtube-transcript, /suggest-memory-context, /obsidian/*
+    │   ├── generate.py               # /generate, /refine, /refine-selection, /score, /generate-visuals, /refine-visual
+    │   ├── history.py                # /history, /log-post (links generation trace), PATCH/DELETE/restore/publish history
+    │   ├── library.py                # /library, /library/clusters, DELETE /library/source
     │   ├── ideas.py                  # /suggestions
-    │   ├── stats.py                  # /stats
-    │   ├── profile.py                # GET/POST /profile — per-user read/write, read-back verification
+    │   ├── stats.py                  # /stats, /usage/me
+    │   ├── profile.py                # /profile, /extract-resume, /save-experience-nodes
+    │   ├── feedback.py               # /feedback (appends to feedback.jsonl on DATA_DIR)
+    │   ├── analytics.py              # /log-event, /admin/analytics-data
     │   └── admin.py                  # GET /admin/usage (x-admin-secret)
     ├── requirements.txt              # All Python dependencies pinned
+    ├── requirements-dev.txt          # Test dependencies (pytest)
     ├── .env.example                  # Required env var keys with no values
+    ├── llm/
+    │   └── client.py                 # Shared Claude client: complete(), SONNET/HAIKU constants, usage logging, trace_calls()
+    ├── auth/
+    │   └── supabase_jwt.py           # Verifies Supabase JWTs; get_user_id_dep for protected endpoints
+    ├── db/
+    │   └── supabase_client.py        # Single shared Supabase client (service-role key)
+    ├── config/
+    │   └── paths.py                  # DATA_DIR-based paths for local files
     ├── agents/
     │   ├── ingestion_agent.py        # Chunks, tags, upserts content into Supabase embeddings
     │   ├── vision_agent.py           # Sends images to Claude vision for text extraction
     │   ├── visual_agent.py           # Parses [DIAGRAM:]/[IMAGE:] placeholders; generates SVGs
     │   ├── ideation_agent.py         # Multi-query diversity sampling + idea generation
-    │   ├── retrieval_agent.py        # Semantic search node in the LangGraph pipeline
+    │   ├── retrieval_agent.py        # Hybrid retrieval node (pgvector + BM25 + entity links) in the LangGraph pipeline
     │   ├── draft_agent.py            # Generates initial draft via Claude + confidence-based grounding calibration
+    │   ├── critic_agent.py           # Diagnoses the draft (hook/substance/structure/voice) into a critic brief
     │   ├── humanizer_agent.py        # Rewrites draft to remove AI patterns; exposes refine_draft()
     │   ├── scorer_agent.py           # Scores draft 0–100, robust JSON parse with fallback
     │   ├── predictability_audit_agent.py  # Post-humanizer anti-pattern + rhythm pass
-    │   └── word_count_enforcer_agent.py   # Final length gate (trim/expand)
+    │   ├── word_count_enforcer_agent.py   # Final length gate (trim/expand)
+    │   └── consolidation_agent.py    # Summarises everything known about an entity into one consolidation chunk
     ├── pipeline/
     │   ├── state.py                  # TypedDict defining shared LangGraph pipeline state
-    │   └── graph.py                  # LangGraph graph — includes predictability audit + final word_count_enforcer gate
+    │   ├── graph.py                  # LangGraph graph + run_pipeline(), which writes the generation trace
+    │   └── trace.py                  # record_draft() for nodes; build_trace_row() for generation_traces
     ├── memory/
-    │   ├── vector_store.py           # Supabase pgvector embeddings store + semantic query utilities
+    │   ├── vector_store.py           # Supabase pgvector embeddings store + hybrid (vector + BM25, RRF) search
     │   ├── hierarchy_store.py        # Supabase source_nodes + topic_nodes (hierarchical retrieval)
     │   ├── profile_store.py          # Supabase profiles table load/save with defaults auto-merge
-    │   └── feedback_store.py         # Supabase posts + post_versions tables — history, versions, restore
+    │   ├── feedback_store.py         # Supabase posts + post_versions tables — history, versions, restore
+    │   ├── entity_store.py           # Supabase entities + chunk_entities (entity extraction and linking)
+    │   ├── experience_store.py       # Supabase experience_nodes (work, projects, education from resume)
+    │   ├── consolidation_store.py    # Consolidation chunks in the embeddings table
+    │   ├── retrieval_stats_store.py  # Supabase source_retrieval_stats (how often each source is used)
+    │   ├── usage_store.py            # Fire-and-forget Claude token/cost logging to usage_events
+    │   └── trace_store.py            # Supabase generation_traces: save a trace, link it to a post
+    ├── migrations/                   # NNN_description.sql, run by hand in the Supabase SQL editor
+    │   ├── 002_add_memory_context.sql
+    │   ├── 003_add_experience_nodes.sql
+    │   ├── 004_add_entity_tables.sql
+    │   └── 005_generation_traces.sql
+    ├── tests/                        # pytest suite against in-memory fakes (no network, no real data)
     ├── tools/
     │   ├── scraper_tool.py           # URL scraper via Jina Reader — scrape_url(), clean_scraped_text()
     │   └── obsidian_tool.py          # Obsidian vault reader — read_vault(), get_vault_stats(), clean_obsidian_markdown()
@@ -343,7 +410,7 @@ cd frontend
 npm run dev                        # http://localhost:3000
 ```
 
-No extra env vars needed. `DATA_DIR` defaults to `backend/data/`.
+Copy `backend/.env.example` to `backend/.env` and fill in the Anthropic and Supabase values. `DATA_DIR` defaults to `backend/data/`.
 
 ---
 
@@ -357,9 +424,16 @@ No extra env vars needed. `DATA_DIR` defaults to `backend/data/`.
 | Variable | Value |
 |----------|-------|
 | `ANTHROPIC_API_KEY` | Your Anthropic key |
+| `SUPABASE_URL` | Your Supabase project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service-role key (bypasses RLS; the backend filters every query by `user_id`) |
+| `SUPABASE_JWT_SECRET` | Supabase JWT secret, used to verify user tokens |
+| `ADMIN_SECRET` | Shared secret for admin endpoints (`x-admin-secret` header) |
+| `SUPADATA_API_KEY` | Supadata key for YouTube transcript fetch |
 | `DATA_DIR` | `/data` |
 | `ENVIRONMENT` | `production` |
 | `FRONTEND_ORIGIN` | `https://your-app.vercel.app` (exact Vercel URL) |
+
+Before deploying code that needs a new table or column, run the matching file from `backend/migrations/` in the Supabase SQL editor (see **Database migrations** above).
 
 Railway injects `$PORT` automatically — the `CMD` in the Dockerfile uses it.
 
@@ -389,7 +463,7 @@ backend/data/posts.db          →  /data/posts.db
 backend/data/profiles/         →  /data/profiles/
 ```
 
-**How to migrate profile/posts into Supabase:**
+**How to migrate profile/posts into Supabase (legacy, pre-Supabase-Auth data only):**
 
 Use the one-time script in `scripts/migrate_to_supabase.py` after your backend env vars are configured.
 
