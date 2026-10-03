@@ -132,3 +132,12 @@ def production(monkeypatch):
     """Run the test with auth in production mode (no 'default' user fallback)."""
     import auth.supabase_jwt
     monkeypatch.setattr(auth.supabase_jwt, "ENVIRONMENT", "production")
+
+
+@pytest.fixture
+def no_specifics_on(monkeypatch):
+    """Force NO_SPECIFICS_MODE_ENABLED on: the mode is disabled by default, but its
+    code paths stay tested."""
+    from config import features
+
+    monkeypatch.setattr(features, "NO_SPECIFICS_MODE_ENABLED", True)

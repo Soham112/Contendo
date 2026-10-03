@@ -181,7 +181,7 @@ def test_low_coverage_stops_before_drafting(claude, fake_db, pgvector_kb):
     assert trace["retrieval_confidence"] == "low"
 
 
-def test_no_specifics_bypasses_the_gate(claude, fake_db, pgvector_kb):
+def test_no_specifics_bypasses_the_gate(claude, fake_db, pgvector_kb, no_specifics_on):
     claude.queue("personal_story", "Draft text.", "{}", "Humanized text.", "CLEAN", "Audited text.", "Final text.")
     result = _run(no_specifics=True)
 
@@ -211,7 +211,39 @@ def test_generate_endpoint_returns_low_coverage(client, claude, fake_db, pgvecto
     assert body["status"] == "low_coverage"
     assert body["post"] == ""
     assert body["closest_sources"][0].keys() == {"title", "preview", "similarity"}
+    assert body["no_specifics_enabled"] is False  # the notice hides the opinion-post option
     assert claude.calls == []
+
+
+def test_generate_rejects_no_specifics_while_the_mode_is_disabled(client, claude, fake_db, pgvector_kb, auth_headers):
+    response = client.post(
+        "/generate",
+        json={"topic": "Kubernetes GPU autoscaling", "format": "linkedin post", "tone": "casual",
+              "no_specifics": True},
+        headers=auth_headers(USER),
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"].startswith("Opinion posts without specifics are turned off for now.")
+    assert claude.calls == [] and fake_db.tables.get("generation_traces", []) == []
+
+
+def test_run_pipeline_refuses_no_specifics_while_the_mode_is_disabled(claude, fake_db, pgvector_kb):
+    with pytest.raises(ValueError, match="no-specifics mode is disabled"):
+        _run(no_specifics=True)
+    assert claude.calls == []
+
+
+def test_generate_accepts_no_specifics_when_the_mode_is_enabled(client, claude, fake_db, pgvector_kb, auth_headers,
+                                                                no_specifics_on):
+    claude.queue("personal_story", "Draft text.", "{}", "Humanized text.", "CLEAN", "Audited text.", "Final text.", "[]")
+    response = client.post(
+        "/generate",
+        json={"topic": "Kubernetes GPU autoscaling", "format": "linkedin post", "tone": "casual",
+              "no_specifics": True},
+        headers=auth_headers(USER),
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok" and response.json()["no_specifics_enabled"] is True
 
 
 def test_coverage_gate_skips_a_users_first_post():
@@ -292,7 +324,7 @@ def _generate_prompt(claude):
     return claude.calls[1]["messages"][-1]["content"]  # call 0 is the archetype, call 1 the draft
 
 
-def test_drafter_gets_the_no_specifics_rule_only_in_that_mode(claude, fake_db, pgvector_kb):
+def test_drafter_gets_the_no_specifics_rule_only_in_that_mode(claude, fake_db, pgvector_kb, no_specifics_on):
     claude.queue(*STANDARD)
     _run(no_specifics=True)
     prompt = _generate_prompt(claude)

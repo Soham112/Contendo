@@ -6,7 +6,7 @@ from pipeline.state import PipelineState
 from pipeline.trace import record_draft
 from memory.profile_store import load_profile, profile_to_context_string
 from utils.post_cleanup import strip_word_count_lines
-from utils.specifics import grounding_texts, guard_entry, retry_note, unsupported_specifics
+from utils.specifics import find_violations, guard_entry, guard_sources, retry_note
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,12 @@ SYSTEM_PROMPT = """You are a humanizing editor. You take drafts that may still h
 User profile:
 {profile_context}
 
+Facts are fixed. You may change only wording, rhythm and structure.
+- Never add or change any number, percentage, money amount, date, month, day of the week, duration, count, name or quoted figure. You may drop a detail if you need to cut for length, but prefer cutting words over cutting facts.
+- Every factual detail in your output must already be in the current draft. If a sentence feels vague, sharpen the wording, not the facts.
+- Do not invent incidents, timelines, customers, people or results.
+- The critic brief below describes problems, not content. It never permits a new fact, story, experience, name or number. If a fix can't be made without new facts, skip it.
+
 {critic_section}AI writing patterns to eliminate:
 - Sentences that start with "In today's..." or "It's important to note..."
 - Overuse of transition words: "Furthermore", "Moreover", "Additionally", "In conclusion"
@@ -67,15 +73,36 @@ What to inject instead:
 - Opinions stated with confidence, not hedged to death
 - The writer's actual voice as described in the profile
 
-Facts are fixed. You may change only wording, rhythm and structure.
-- Never add or change any number, percentage, money amount, date, month, day of the week, duration, count, name or quoted figure. You may drop a detail if you need to cut for length, but prefer cutting words over cutting facts.
-- Every factual detail in your output must already be in the current draft. If a sentence feels vague, sharpen the wording, not the facts.
-- Do not invent incidents, timelines, customers, people or results.
-
 {word_count_rule}Current draft:
 {current_draft}
 
 {rewrite_instruction}{specifics_retry}"""
+
+
+_QUOTED_RE = re.compile(
+    r'"[^"\n]*"'            # "double quotes"
+    r"|“[^”\n]*”"           # “curly double quotes”
+    r"|‘[^’\n]*’"           # ‘curly single quotes’
+    r"|(?<![\w])'(?:[^'\n]|(?<=\w)'(?=\w))+'(?![\w])"  # 'single quotes', apostrophes inside allowed
+)
+_EXAMPLE_RE = re.compile(
+    r"\(\s*(?:e\.g\.|eg\.|i\.e\.|(?:for example|for instance|such as|like)\b)[^)]*\)"
+    r"|[,;:]?\s*(?:\be\.g\.|\bfor example\b|\bfor instance\b)[^.;]*"
+    r"|\b(?:replace (?:it |this )?with )?something like\b",
+    re.I,
+)
+
+
+def strip_quoted(fix: str) -> str:
+    """A critic fix without quoted text or worked examples: the problem and the
+    direction only, never wording the humanizer could paste in as fact."""
+    text = _QUOTED_RE.sub("", fix)
+    text = _EXAMPLE_RE.sub("", text)
+    text = re.sub(r"\(\s*[,;:]?\s*\)", "", text)        # empty parentheses left behind
+    text = re.sub(r"([,;:])\s+(or|and)\b", r" \2", text)       # "Ground it: or connect" -> "Ground it or connect"
+    text = re.sub(r"\s+([,.;:])", r"\1", text)
+    text = re.sub(r"([,;:])\s*([.;])", r"\2", text)
+    return re.sub(r"\s{2,}", " ", text).strip()
 
 
 def _format_critic_brief(critic_brief: dict) -> tuple[str, str]:
@@ -92,7 +119,7 @@ def _format_critic_brief(critic_brief: dict) -> tuple[str, str]:
     )
     _fix_first = (
         "Rewrite the draft now. Fix the flagged issues above first — in this order: "
-        "hook, substance, structure, voice. You may rewrite the hook entirely and restructure sections, "
+        "topic, hook, substance, structure, voice. You may rewrite the hook entirely and restructure sections, "
         "using only facts already in the draft. Then do a full language humanization pass. "
         "Output only the rewritten post, no commentary."
     )
@@ -100,12 +127,14 @@ def _format_critic_brief(critic_brief: dict) -> tuple[str, str]:
     if not critic_brief:
         return "", _preserve
 
-    _areas = ["hook", "substance", "structure", "voice"]
+    _areas = ["topic", "hook", "substance", "structure", "voice"]
     flagged = []
     for area in _areas:
         entry = critic_brief.get(area, {})
         if isinstance(entry, dict) and entry.get("verdict") == "needs_work" and entry.get("fix"):
-            flagged.append(f"- {area.upper()}: {entry['fix']}")
+            fix = strip_quoted(str(entry["fix"]))
+            if fix:
+                flagged.append(f"- {area.upper()}: {fix}")
 
     if not flagged:
         return "", _preserve
@@ -293,12 +322,12 @@ def humanizer_node(state: PipelineState) -> PipelineState:
         )
         return strip_word_count_lines(message.content[0].text.strip())
 
-    sources = grounding_texts(state, current_draft)
+    sources = guard_sources(state, current_draft)
     rewritten = rewrite([], "humanize")
-    first = unsupported_specifics(rewritten, sources)
+    first = find_violations(rewritten, sources)
     if first:
         rewritten = rewrite(first, "humanize_retry")
-        second = unsupported_specifics(rewritten, sources)
+        second = find_violations(rewritten, sources)
         state["specifics_guard"] = [*state.get("specifics_guard", []),
                                     guard_entry("humanizer", iteration, first, second)]
         if second:

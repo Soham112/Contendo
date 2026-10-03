@@ -37,7 +37,11 @@ _WORD = (
     r"(?:" + "|".join(_TENS) + r")(?:[-\s](?:" + "|".join(_UNIT_DIGITS) + r"))?"
     r"|(?:" + "|".join(_ONES) + r")"
 )
-_WORD_SUFFIX = r"(?:\s(?:hundred|thousand|million|billion)\b)?"
+_WORD_SUFFIX = (
+    r"(?:\s(?:hundred|thousand|million|billion)\b"
+    r"(?:\s(?:and\s)?(?:" + _WORD + r")\b(?=\s(?:hundred|thousand|million|billion)\b|))*"
+    r"(?:\s(?:hundred|thousand|million|billion)\b)?)?"
+)
 _NUM = rf"(?:(?:{_DIGITS}){_DIGIT_SUFFIX}|\b(?:{_WORD})\b{_WORD_SUFFIX})"
 
 _UNITS = {
@@ -76,7 +80,7 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
 
 @dataclass(frozen=True)
 class Specific:
-    kind: str    # number | percent | duration | ago | time | month | weekday
+    kind: str    # number | percent | duration | ago | time | month | weekday (fact_check also uses event | statistic)
     text: str    # as written
     value: Any   # number value, or lowercased name/phrase
     unit: str = ""
@@ -94,26 +98,41 @@ def _number_value(raw: str) -> float | None:
     m = re.fullmatch(rf"({_DIGITS})\s?(k|m|bn|hundred|thousand|million|billion)?", s)
     if m:
         return float(m.group(1).replace(",", "")) * _SCALES.get(m.group(2) or "", 1)
-    words = re.split(r"[-\s]+", s)
-    scale = 1
-    if len(words) > 1 and words[-1] in _SCALES:
-        scale = _SCALES[words.pop()]
-    total = 0
-    for w in words:
+    # Word numbers, compounds included: "four hundred ten thousand" = 410,000.
+    total, current = 0, 0
+    for w in re.split(r"[-\s]+", s):
+        if w == "and":
+            continue
         if w in _TENS:
-            total += _TENS[w]
+            current += _TENS[w]
         elif w in _ONES:
-            total += _ONES[w]
+            current += _ONES[w]
         elif w in _UNIT_DIGITS:
-            total += _UNIT_DIGITS[w]
+            current += _UNIT_DIGITS[w]
+        elif w == "hundred":
+            current = (current or 1) * 100
+        elif w in ("thousand", "million", "billion"):
+            total += (current or 1) * _SCALES[w]
+            current = 0
         else:
             return None
-    return float(total * scale) if total else None
+    total += current
+    return float(total) if total else None
+
+
+# Thread and list numbering ("1/", "3/7", "(2/6)", "1." at the start of a line,
+# or a trailing "(4/6)"): structure, not facts.
+_STRUCTURAL_RE = re.compile(
+    r"^[ \t]*\(?\d{1,2}\s*/\s*\d{0,2}\)?(?=\s|$)"
+    r"|^[ \t]*\d{1,2}[.)](?=\s)"
+    r"|(?<=\s)\(?\d{1,2}/\d{1,2}\)?[ \t]*$",
+    re.M,
+)
 
 
 def extract_specifics(text: str) -> list[Specific]:
     """Every specific in text, in order of appearance."""
-    taken: list[tuple[int, int]] = []
+    taken: list[tuple[int, int]] = [m.span() for m in _STRUCTURAL_RE.finditer(text)]
     found: list[tuple[int, Specific]] = []
 
     def free(start: int, end: int) -> bool:
@@ -235,11 +254,21 @@ def grounding_texts(state: dict[str, Any], input_draft: str) -> list[str]:
 
 # ── Rewrite guard helpers ─────────────────────────────────────────────────────
 
-def retry_note(violations: list[Specific], no_specifics: bool = False) -> str:
-    """Prompt suffix for a rewrite's second attempt; "" when there is nothing to report."""
+def retry_note(violations: list[Specific], no_specifics: bool = False, node: str = "rewrite") -> str:
+    """Prompt suffix for a second attempt; "" when there is nothing to report.
+
+    node="draft" for draft_node (no input draft to rewrite from); "rewrite" otherwise.
+    """
     if not violations:
         return ""
     listed = "\n".join(f"- {v.text}" for v in violations)
+    if node == "draft":
+        where = "the topic, the context or the author profile" if no_specifics else "the knowledge base, the author profile or the request"
+        return (
+            f"\n\nYour previous attempt included these details, which are not in {where}:\n"
+            f"{listed}\n"
+            "Write the post again without them, and add no other specifics."
+        )
     if no_specifics:
         return (
             "\n\nThis is an opinion post without specifics. Your previous attempt included these details, "
@@ -254,16 +283,66 @@ def retry_note(violations: list[Specific], no_specifics: bool = False) -> str:
     )
 
 
-def guard_entry(node: str, iteration: int, first: list[Specific], second: list[Specific] | None) -> dict[str, Any]:
+def guard_entry(node: str, iteration: int, first: list[Specific], second: list[Specific] | None,
+                fallback: str = "reverted") -> dict[str, Any]:
     """One specifics_guard trace entry for a node run that needed a retry.
 
-    outcome: "accepted_after_retry" (the retry was clean) or "reverted" (the
-    retry still added facts, so the node's input draft was kept).
+    outcome: "accepted_after_retry" (the retry was clean), or the node's
+    fallback when the retry still had violations: "reverted" (rewrite nodes
+    keep their input draft) or "sentences_removed" (draft_node drops the
+    sentences at fault).
     """
     return {
         "node": node,
         "iteration": iteration,
         "first_attempt": [v.as_dict() for v in first],
         "retry": [v.as_dict() for v in (second or [])],
-        "outcome": "reverted" if second else "accepted_after_retry",
+        "outcome": fallback if second else "accepted_after_retry",
     }
+
+
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+@dataclass(frozen=True)
+class GuardSources:
+    facts: list[str]  # supports numbers, dates, durations, money (unsupported_specifics)
+
+
+def guard_sources(state: dict[str, Any], input_draft: str | None = None) -> GuardSources:
+    """What a node's output may take numbers, dates, durations and money from.
+
+    Normal mode: the input draft (rewrite nodes only), the chunks, the profile,
+    the topic and the context. No-specifics mode: the topic, context and profile
+    (as grounding_texts). Claims and events are judged by fact_check_node.
+    """
+    topic, context = state.get("topic") or "", state.get("context") or ""
+    profile = state.get("profile") or {}
+    if state.get("no_specifics"):
+        return GuardSources(facts=[topic, context, *_strings(profile)])
+    chunks = (state.get("retrieval_bundle") or {}).get("chunks", [])
+    return GuardSources(facts=[
+        *([input_draft] if input_draft is not None else []),
+        *[c.get("text") or c.get("content") or "" for c in chunks],
+        *(state.get("retrieved_chunks") or []),
+        *_strings(profile),
+        topic,
+        context,
+    ])
+
+
+def find_violations(output: str, sources: GuardSources) -> list[Specific]:
+    """Every number, date, duration and money amount no source supports."""
+    return unsupported_specifics(output, sources.facts)
+
+
+def remove_sentences(text: str, violations: Iterable[Specific]) -> str:
+    """Drop every sentence that contains a violation; keep paragraph breaks."""
+    needles = [v.text.lower() for v in violations if v.text]
+    out_lines: list[str] = []
+    for line in (text or "").splitlines():
+        kept = [s for s in _SENTENCE_SPLIT_RE.split(line)
+                if s.strip() and not any(n in s.lower() or s.strip().lower() in n for n in needles)]
+        out_lines.append(" ".join(s.strip() for s in kept))
+    cleaned = "\n".join(out_lines)
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip()

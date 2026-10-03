@@ -6,6 +6,24 @@ Frontend on Vercel (contendo-six.vercel.app), backend on Railway (contendo-produ
 <!-- Keep this file under ~100 lines. Area-specific rules live in .claude/rules/ and load
      only when Claude works in matching paths. Multi-step procedures belong in skills. -->
 
+## Engineering standard: no cheap fixes
+
+A cheap fix makes a failing case pass without addressing why it failed. Don't ship them. Examples from this codebase:
+- Adding words to a verb list to catch first-person incidents ("walked", "hiked"…). Language is open-ended; the list will always miss phrasings. Events need a semantic check, not patterns.
+- Hard-coding a threshold or special case so one golden passes.
+- Loosening a check until a test goes green without knowing why it failed.
+- Patching symptoms in a later pipeline step (stripping invented facts in the humanizer) when an earlier step (the critic) creates them.
+
+Before proposing a fix:
+1. Find the root cause: which step, prompt, data or assumption produced the failure? Show the evidence (trace, test, log).
+2. Match the tool to the problem: closed-vocabulary things (numbers, dates, money, formats) → deterministic code; open-ended meaning (events, claims, topic, voice) → semantic checks or model judgement.
+3. Prefer fixing the source over adding a filter downstream.
+4. Check that the fix generalises: test it on cases beyond the one that failed, including true negatives.
+5. If the only option available right now is a stopgap, say so explicitly, label it "stopgap" in code and in your summary, and propose the proper fix with its cost. Never present a stopgap as the solution.
+6. State the trade-offs (accuracy, latency, cost, complexity) when you propose a change.
+
+Every task summary must end with a "Stopgaps introduced" line: "none", or a list with file:line, why it's a stopgap, and the proper fix.
+
 ## Stack
 - Frontend: Next.js 14 App Router, `frontend/`
 - Backend: FastAPI, Python 3.11, `backend/` (venv at `backend/venv/`), Docker on Railway, one uvicorn worker

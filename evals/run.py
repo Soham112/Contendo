@@ -107,6 +107,8 @@ def main(argv: list[str] | None = None) -> int:
                     context=g["context"], quality=args.quality, user_id=user_id,
                 )
                 row["seconds"] = round(time.perf_counter() - start, 1)
+                if result.get("fact_check_job"):  # log-only fact check, outside the timing (as in /generate)
+                    result["fact_check_job"]()
                 row["trace_id"] = result.get("trace_id")
                 if result.get("status") == "low_coverage":
                     row["status"] = "gated"

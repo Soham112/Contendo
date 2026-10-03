@@ -42,6 +42,9 @@ class PipelineState(TypedDict, total=False):
     first_post: bool
 
     # Generation state
+    # The knowledge-base block exactly as the drafter saw it (frame headers and
+    # chunks). Persisted in generation_traces.node_outputs.
+    draft_frame_block: str
     current_draft: str
     iterations: int
     archetype: str  # inferred post archetype key, e.g. "incident_report"
@@ -56,6 +59,11 @@ class PipelineState(TypedDict, total=False):
     # outcome is "accepted_after_retry" or "reverted". Persisted in
     # generation_traces.node_outputs.
     specifics_guard: list[dict[str, Any]]
+
+    # Final fact check (fact_check_node): {flagged: [{i, sentence, type, why}],
+    # rewrites: [{sentence, type, why, rewrite, recheck, outcome}],
+    # outcome, error?}. Persisted in generation_traces.node_outputs.
+    fact_check: dict[str, Any]
 
     # Scoring
     score: int

@@ -13,6 +13,7 @@ from __future__ import annotations
 import copy
 import math
 import re
+import uuid
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -186,7 +187,13 @@ class FakeSupabase:
         self.log.clear()
         self._ids.clear()
 
-    def next_id(self, table: str) -> int:
+    # Tables whose primary key is a UUID in the real schema (gen_random_uuid()):
+    # their ids are strings, so code that passes an id around as str matches.
+    _UUID_TABLES = {"generation_traces"}
+
+    def next_id(self, table: str) -> int | str:
+        if table in self._UUID_TABLES:
+            return str(uuid.uuid4())
         self._ids[table] = self._ids.get(table, 0) + 1
         return self._ids[table]
 

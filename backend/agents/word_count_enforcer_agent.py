@@ -4,7 +4,7 @@ from llm.client import HAIKU, complete
 from pipeline.state import PipelineState
 from pipeline.trace import record_draft
 from utils.post_cleanup import strip_word_count_lines
-from utils.specifics import grounding_texts, guard_entry, retry_note, unsupported_specifics
+from utils.specifics import find_violations, guard_entry, guard_sources, retry_note
 
 logger = logging.getLogger(__name__)
 
@@ -134,12 +134,12 @@ def word_count_enforcer_node(state: PipelineState) -> PipelineState:
             )
             return strip_word_count_lines(msg.content[0].text.strip())
 
-        sources = grounding_texts(state, post)
+        sources = guard_sources(state, post)
         adjusted = adjust([], "word_count_enforcer")
-        first = unsupported_specifics(adjusted, sources)
+        first = find_violations(adjusted, sources)
         if first:
             adjusted = adjust(first, "word_count_enforcer_retry")
-            second = unsupported_specifics(adjusted, sources)
+            second = find_violations(adjusted, sources)
             state["specifics_guard"] = [*state.get("specifics_guard", []),
                                         guard_entry("word_count_enforcer", state.get("iterations", 0), first, second)]
             if second:

@@ -84,6 +84,7 @@ interface GenerateResult {
   scored: boolean;
   trace_id?: string | null;
   closest_sources?: ClosestSource[];
+  no_specifics_enabled?: boolean;
 }
 
 interface Suggestion {
@@ -714,6 +715,7 @@ export default function CreatePost() {
   const [error, setError] = useState("");
   // Set when /generate returns low_coverage: the closest sources it found.
   const [lowCoverage, setLowCoverage] = useState<ClosestSource[] | null>(null);
+  const [noSpecificsEnabled, setNoSpecificsEnabled] = useState(false);
   // True when the current post was generated in no-specifics mode.
   const [opinionMode, setOpinionMode] = useState(false);
   const [copiedLinkedIn, setCopiedLinkedIn] = useState(false);
@@ -1137,6 +1139,7 @@ export default function CreatePost() {
       const data: GenerateResult = await res.json();
       if (data.status === "low_coverage") {
         setLowCoverage(data.closest_sources ?? []);
+        setNoSpecificsEnabled(data.no_specifics_enabled ?? false);
         logEvent({ event_type: "feature_start", page_url: "/create", button_name: "low_coverage_notice" });
         return; // nothing was drafted, so nothing to autosave
       }
@@ -1984,21 +1987,21 @@ export default function CreatePost() {
                     {/* Own slot before the editor wrapper: present or not, the wrapper keeps its index */}
                     {opinionMode && <OpinionPostLabel />}
                     <div style={{ position: "relative" }}>
+                      {/* In-flow label, not an overlay: drawn on top of the editor it covered the post's first words */}
                       {!editorHinted && (
                         <div
+                          aria-hidden="true"
                           style={{
-                            position: "absolute",
-                            top: 0,
-                            left: 0,
                             pointerEvents: "none",
-                            color: "rgba(119,124,123,0.38)",
-                            fontSize: "15.5px",
-                            lineHeight: "1.9",
-                            fontFamily: "inherit",
+                            color: "rgba(119,124,123,0.6)",
+                            fontSize: "0.75rem",
+                            letterSpacing: "0.05rem",
+                            textTransform: "uppercase",
+                            marginBottom: 8,
                             userSelect: "none",
                           }}
                         >
-                          Click to edit…
+                          Click to edit
                         </div>
                       )}
                       {/* Single editor div — React reuses this DOM node on every layout switch */}
@@ -2569,12 +2572,17 @@ export default function CreatePost() {
                     <LowCoverageNotice
                       sources={lowCoverage}
                       busy={loading}
+                      opinionEnabled={noSpecificsEnabled}
                       onAddSource={() =>
                         logEvent({ event_type: "button_click", page_url: "/create", button_name: "low_coverage_add_source" })
                       }
                       onWriteOpinion={() => {
                         logEvent({ event_type: "button_click", page_url: "/create", button_name: "low_coverage_write_opinion" });
                         generate(undefined, { noSpecifics: true });
+                      }}
+                      onWriteWithDetails={(details) => {
+                        logEvent({ event_type: "button_click", page_url: "/create", button_name: "low_coverage_write_with_details" });
+                        generate({ context: details }, { noSpecifics: true });
                       }}
                     />
                   )}

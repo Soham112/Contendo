@@ -4,7 +4,7 @@ import re
 from llm.client import HAIKU, SONNET, complete
 from pipeline.state import PipelineState
 from pipeline.trace import record_draft
-from utils.specifics import grounding_texts, guard_entry, retry_note, unsupported_specifics
+from utils.specifics import find_violations, guard_entry, guard_sources, retry_note
 
 logger = logging.getLogger(__name__)
 
@@ -172,13 +172,13 @@ def predictability_audit_node(state: PipelineState) -> PipelineState:
             logger.info("predictability_audit: flagged=%r", flagged[:120])
 
         # ── Steps 2-3, checked for added facts ────────────────────────────────
-        sources = grounding_texts(state, post)
+        sources = guard_sources(state, post)
         audited = _rewrite(post, flagged, [], user_id, retry=False)
-        first = unsupported_specifics(audited, sources)
+        first = find_violations(audited, sources)
         if first:
             audited = _rewrite(post, flagged, first, user_id, retry=True,
                                no_specifics=bool(state.get("no_specifics")))
-            second = unsupported_specifics(audited, sources)
+            second = find_violations(audited, sources)
             state["specifics_guard"] = [*state.get("specifics_guard", []),
                                         guard_entry("predictability_audit", state.get("iterations", 0), first, second)]
             if second:

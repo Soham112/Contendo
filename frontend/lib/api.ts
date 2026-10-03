@@ -61,6 +61,8 @@ export interface GenerateResponse {
   trace_id?: string | null;
   closest_sources?: ClosestSource[];
   suggestion?: string;
+  /** False while the backend's NO_SPECIFICS_MODE_ENABLED flag is off. */
+  no_specifics_enabled?: boolean;
 }
 
 export interface RefineRequest {

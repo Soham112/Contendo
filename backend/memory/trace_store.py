@@ -19,3 +19,25 @@ def link_trace_to_post(trace_id: str, post_id: int, user_id: str) -> bool:
         .execute()
     )
     return len(result.data or []) > 0
+
+
+def update_trace_fact_check(trace_id: str, user_id: str, record: dict[str, Any]) -> bool:
+    """Set node_outputs.fact_check on the user's own trace. False if no trace matched."""
+    rows = (
+        supabase.table("generation_traces")
+        .select("node_outputs")
+        .eq("id", trace_id)
+        .eq("user_id", user_id)
+        .execute()
+    ).data or []
+    if not rows:
+        return False
+    node_outputs = {**(rows[0].get("node_outputs") or {}), "fact_check": record}
+    result = (
+        supabase.table("generation_traces")
+        .update({"node_outputs": node_outputs})
+        .eq("id", trace_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    return len(result.data or []) > 0

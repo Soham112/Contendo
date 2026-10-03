@@ -124,3 +124,23 @@ def test_grounding_texts_include_draft_chunks_profile_topic_and_context():
     output = "12 clinics, 38%, 61%, seven years, four weeks, 2024, and 40%."
     assert unsupported_specifics(output, sources) == []
     assert [s.text for s in unsupported_specifics("and 99%", sources)] == ["99%"]
+
+
+# --- found when draft_node got the guard (smoke run 20261003-190617) ------------
+
+def test_ds01_compound_word_number_matches_its_digit_form():
+    # The drafter wrote the real 410,000 SEK figure in words; read as "four
+    # hundred" + "ten thousand SEK" it was flagged and the hook sentence removed.
+    assert kinds("Four hundred ten thousand SEK in spot rates") == [("number", 410000.0, "")]
+    assert kinds("two hundred and fifty users") == [("number", 250.0, "")]
+    assert flagged("Four hundred ten thousand SEK.", "the overspend at roughly 410,000 SEK") == []
+
+
+@pytest.mark.parametrize("text", [
+    "1/\nEvery cancelled customer is a free consultant.\n\n5/\nThat call\n\n6/\nThe end.",
+    "3/7 Their payment provider shipped a sandbox.",
+    "1. First point\n2) Second point",
+    "That one landed. (4/6)",
+])
+def test_founder03_thread_and_list_numbering_is_not_a_specific(text):
+    assert extract_specifics(text) == []

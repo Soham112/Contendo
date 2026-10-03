@@ -13,46 +13,9 @@ from memory.vector_store import (
 )
 from memory.hierarchy_store import get_source_node, get_topic_node
 from memory.retrieval_stats_store import increment_retrieval
+from utils.frames import chunk_field, chunk_frame, chunk_tags, infer_seniority_level  # noqa: F401  (re-exported)
 
 logger = logging.getLogger(__name__)
-
-
-def infer_seniority_level(profile: dict) -> str:
-    """Infer the user's career seniority as 'junior', 'mid', or 'senior'.
-
-    Checks `years_of_experience` field first. Falls back to role title keyword
-    matching. Defaults to 'mid' when nothing matches.
-    """
-    years = profile.get("years_of_experience")
-    if years is not None:
-        try:
-            y = int(years)
-            if y <= 3:
-                return "junior"
-            elif y <= 10:
-                return "mid"
-            else:
-                return "senior"
-        except (TypeError, ValueError):
-            pass
-
-    role = (profile.get("role") or "").lower()
-
-    senior_keywords = [
-        "senior", "lead", "principal", "director", "vp", "head of",
-        "staff", "distinguished", "fellow", "cto", "ceo", "founder",
-    ]
-    junior_keywords = [
-        "junior", "intern", "associate", "student", "graduate", "entry", "jr",
-    ]
-    for kw in senior_keywords:
-        if kw in role:
-            return "senior"
-    for kw in junior_keywords:
-        if kw in role:
-            return "junior"
-
-    return "mid"
 
 
 def resolve_attribution_frames(
@@ -67,77 +30,18 @@ def resolve_attribution_frames(
     all other chunks in its tag cluster with a PERSONAL frame, leading to
     first-person hallucinations about article/video content.
 
-    Frame resolution per chunk (strict priority):
-    1. memory_context field (Phase 1 — most reliable signal):
-         "work"             → PERSONAL_WORK
-         "personal_project" → PERSONAL_PROJECT
-         "learning"         → LEARNING (never PERSONAL, even if source_type=personal_note)
-         "observation"      → OBSERVATION
-    2. source_type fallback (for legacy chunks where memory_context is None):
-         "personal_note"    → PERSONAL
-         others             → EXPERT_OUTSIDER if tags overlap with profile expertise,
-                              else LEARNING calibrated by seniority
+    Frame resolution per chunk: utils.frames.chunk_frame (memory_context first,
+    then source_type, then tag overlap with the profile's expertise).
 
     Output: structured labeled block for direct prompt injection.
     """
     if not chunks:
         return "No relevant knowledge base entries found. Draw on general expertise."
 
-    seniority = infer_seniority_level(profile)
-    topics_of_expertise = [t.lower().strip() for t in profile.get("topics_of_expertise", [])]
+    chunk_tag_sets: list[set[str]] = [chunk_tags(chunk) for chunk in chunks]
+    chunk_frames: list[str] = [chunk_frame(chunk, profile) for chunk in chunks]
 
-    def _get_field(chunk: dict, flat_key: str) -> str:
-        """Read a field from a flat chunk dict or its nested 'metadata' sub-dict."""
-        val = chunk.get(flat_key)
-        if val is not None:
-            return str(val)
-        return str(chunk.get("metadata", {}).get(flat_key) or "")
-
-    # ── Step 1: Per-chunk frame assignment ──────────────────────────────────
-    def _chunk_frame(chunk: dict, tags: set[str]) -> str:
-        # Consolidation chunks get their own frame — they span all contexts and
-        # should be surfaced as background context, not attributed to one frame.
-        node_type = _get_field(chunk, "node_type") or chunk.get("metadata", {}).get("node_id", "")
-        if node_type == "consolidation" or _get_field(chunk, "source_type") == "consolidation":
-            return "CONSOLIDATION"
-
-        memory_context = chunk.get("memory_context") or chunk.get("metadata", {}).get("memory_context")
-
-        # Primary signal: memory_context (set at ingest time — most reliable)
-        if memory_context == "work":
-            return "PERSONAL_WORK"
-        if memory_context == "personal_project":
-            return "PERSONAL_PROJECT"
-        if memory_context == "observation":
-            return "OBSERVATION"
-        if memory_context == "learning":
-            # Explicitly marked as external knowledge — never PERSONAL
-            in_expertise = any(
-                any(exp in tag or tag in exp for exp in topics_of_expertise)
-                for tag in tags
-            ) if topics_of_expertise and tags else False
-            return "EXPERT_OUTSIDER" if in_expertise else f"LEARNING_{seniority.upper()}"
-
-        # Fallback: legacy chunks without memory_context — use source_type heuristic
-        source_type = _get_field(chunk, "source_type")
-        if source_type == "personal_note":
-            return "PERSONAL"
-
-        in_expertise = any(
-            any(exp in tag or tag in exp for exp in topics_of_expertise)
-            for tag in tags
-        ) if topics_of_expertise and tags else False
-        return "EXPERT_OUTSIDER" if in_expertise else f"LEARNING_{seniority.upper()}"
-
-    chunk_tags: list[set[str]] = []
-    chunk_frames: list[str] = []
-    for chunk in chunks:
-        raw_tags = _get_field(chunk, "tags")
-        tags = {t.strip().lower() for t in raw_tags.split(",") if t.strip()} if raw_tags else set()
-        chunk_tags.append(tags)
-        chunk_frames.append(_chunk_frame(chunk, tags))
-
-    # ── Step 2: Build labeled output block grouped by frame ─────────────────
+    # ── Build labeled output block grouped by frame ─────────────────
     frame_order = [
         "CONSOLIDATION",
         "PERSONAL_WORK",
@@ -204,9 +108,9 @@ def resolve_attribution_frames(
         lines.append(frame_headers[frame])
         for chunk_idx in frame_to_chunk_indices[frame]:
             chunk = chunks[chunk_idx]
-            source_type = _get_field(chunk, "source_type") or "article"
-            tag_list = ", ".join(sorted(chunk_tags[chunk_idx])) if chunk_tags[chunk_idx] else "none"
-            text = _get_field(chunk, "text") or _get_field(chunk, "content")
+            source_type = chunk_field(chunk, "source_type") or "article"
+            tag_list = ", ".join(sorted(chunk_tag_sets[chunk_idx])) if chunk_tag_sets[chunk_idx] else "none"
+            text = chunk_field(chunk, "text") or chunk_field(chunk, "content")
             lines.append(f"[source: {source_type} | tags: {tag_list}]")
             lines.append(text)
             lines.append("")

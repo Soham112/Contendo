@@ -377,3 +377,62 @@ def test_enforcer_retry_is_recorded_with_its_own_event_type(claude, fake_db, see
     assert [c["event_type"] for c in trace["llm_calls"]][-2:] == ["word_count_enforcer", "word_count_enforcer_retry"]
     assert trace["node_outputs"]["specifics_guard"][0]["node"] == "word_count_enforcer"
     assert trace["node_outputs"]["final_post"] == "Audited text, plus a few more words."
+
+
+# --- Log-only fact check (normal mode; enforcement off by default) ---------------
+
+def test_normal_mode_fact_check_is_deferred_and_never_changes_the_post(claude, fake_db, seeded_kb):
+    claude.queue(*STANDARD_RUN)
+    result = _run()
+    calls_in_pipeline = len(claude.calls)
+
+    trace = _only_trace(fake_db)
+    assert trace["node_outputs"]["fact_check"] == {"mode": "log_only", "flagged": [], "rewrites": [], "outcome": "pending"}
+    assert callable(result["fact_check_job"])
+
+    # The job: one Haiku call, flags written to the trace, post untouched.
+    claude.queue('[{"i": 1, "type": "statistic", "why": "not in sources"}]')
+    result["fact_check_job"]()
+    assert len(claude.calls) == calls_in_pipeline + 1
+    assert claude.calls[-1]["model"] == "claude-haiku-4-5-20251001"
+    fc = _only_trace(fake_db)["node_outputs"]["fact_check"]
+    assert fc["mode"] == "log_only" and fc["outcome"] == "logged"
+    assert fc["flagged"][0]["type"] == "statistic"
+    assert _only_trace(fake_db)["node_outputs"]["final_post"] == result["post"]
+
+
+def test_no_specifics_mode_enforces_in_the_pipeline_and_returns_no_job(claude, fake_db, seeded_kb, no_specifics_on):
+    claude.queue(*STANDARD_RUN, "[]")  # the enforced fact check runs inside the pipeline
+    result = _run(no_specifics=True)
+    assert result["fact_check_job"] is None
+    assert _only_trace(fake_db)["node_outputs"]["fact_check"]["mode"] == "enforce"
+
+
+def test_log_only_job_writes_only_to_the_callers_trace_and_records_errors(claude, fake_db):
+    from agents.fact_check_agent import log_fact_check
+
+    fake_db.tables.setdefault("generation_traces", []).extend([
+        {"id": "t-a", "user_id": "user-a", "node_outputs": {"final_post": "A."}},
+        {"id": "t-b", "user_id": "user-b", "node_outputs": {"final_post": "B."}},
+    ])
+    claude.queue("not json")
+    log_fact_check({"user_id": "user-a", "final_post": "I shipped it.", "topic": "x"}, "t-a")
+    log_fact_check({"user_id": "user-a", "final_post": "I shipped it.", "topic": "x"}, "t-b")  # not theirs
+
+    rows = {r["id"]: r for r in fake_db.tables["generation_traces"]}
+    assert rows["t-a"]["node_outputs"]["fact_check"]["outcome"] == "error"
+    assert rows["t-a"]["node_outputs"]["final_post"] == "A."
+    assert "fact_check" not in rows["t-b"]["node_outputs"]
+
+
+def test_generate_endpoint_runs_the_log_only_fact_check_after_responding(client, claude, fake_db, seeded_kb, auth_headers):
+    claude.queue(*STANDARD_RUN, "[]")
+    resp = client.post(
+        "/generate",
+        json={"topic": "pgvector retrieval", "format": "linkedin post", "tone": "casual"},
+        headers=auth_headers(USER),
+    )
+    assert resp.status_code == 200
+    assert "fact_check_job" not in resp.json()
+    fc = _only_trace(fake_db)["node_outputs"]["fact_check"]
+    assert fc == {"mode": "log_only", "flagged": [], "rewrites": [], "outcome": "logged"}

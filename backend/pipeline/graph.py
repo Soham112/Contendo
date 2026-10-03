@@ -2,6 +2,7 @@ import logging
 
 from langgraph.graph import StateGraph, END
 
+from config import features
 from llm.client import trace_calls
 from pipeline.state import PipelineState
 from pipeline.trace import build_trace_row
@@ -15,6 +16,7 @@ from agents.critic_agent import critic_node
 from agents.humanizer_agent import humanizer_node
 from agents.predictability_audit_agent import predictability_audit_node
 from agents.word_count_enforcer_agent import word_count_enforcer_node
+from agents.fact_check_agent import fact_check_node, log_fact_check
 from agents.scorer_agent import scorer_node
 
 logger = logging.getLogger(__name__)
@@ -89,6 +91,7 @@ def build_graph() -> StateGraph:
     graph.add_node("humanizer", humanizer_node)
     graph.add_node("predictability_audit", predictability_audit_node)
     graph.add_node("word_count_enforcer", word_count_enforcer_node)
+    graph.add_node("fact_checker", fact_check_node)
     graph.add_node("scorer", scorer_node)
     graph.add_node("finalize", finalize_node)
     graph.add_node("low_coverage", low_coverage_node)
@@ -120,7 +123,8 @@ def build_graph() -> StateGraph:
             "word_count_enforcer": "word_count_enforcer",
         },
     )
-    graph.add_edge("word_count_enforcer", "finalize")
+    graph.add_edge("word_count_enforcer", "fact_checker")
+    graph.add_edge("fact_checker", "finalize")
     graph.add_edge("finalize", END)
 
     return graph.compile()
@@ -142,7 +146,10 @@ def run_pipeline(
 ) -> dict:
     """Run the pipeline. Returns status "ok" with the post, or status
     "low_coverage" (empty post, closest_sources, suggestion) when the coverage
-    gate stops it before drafting. no_specifics=True skips the gate."""
+    gate stops it before drafting. no_specifics=True skips the gate; it raises
+    ValueError while config.features.NO_SPECIFICS_MODE_ENABLED is off."""
+    if no_specifics and not features.NO_SPECIFICS_MODE_ENABLED:
+        raise ValueError("no-specifics mode is disabled (config.features.NO_SPECIFICS_MODE_ENABLED)")
     initial_state: PipelineState = {
         "topic": topic,
         "format": format,
@@ -170,6 +177,12 @@ def run_pipeline(
     except Exception:
         logger.exception("generation trace write failed for user %s", user_id)
 
+    # Log-only fact check (normal mode, see fact_check_agent.enforced): the caller
+    # runs this after responding (/generate: BackgroundTasks; evals: after timing).
+    fact_check_job = None
+    if trace_id and (result.get("fact_check") or {}).get("mode") == "log_only":
+        fact_check_job = lambda: log_fact_check(result, trace_id)  # noqa: E731
+
     gate = result.get("coverage_gate") or {}
     if gate.get("decision") == "low_coverage":
         return {
@@ -196,4 +209,5 @@ def run_pipeline(
         "scored": quality == "polished",
         "retrieval_confidence": result.get("retrieval_confidence", "medium"),
         "trace_id": trace_id,
+        "fact_check_job": fact_check_job,
     }
