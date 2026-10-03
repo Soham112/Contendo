@@ -217,6 +217,8 @@ git config core.hooksPath scripts/git-hooks
 
 A failing test then cancels the push. Skip once with `git push --no-verify`.
 
+The same setting enables a pre-commit secret check: a commit is blocked if a staged file contains something shaped like an Anthropic API key (`sk-ant-…`) or a JWT (`eyJhbGci…`, e.g. a Supabase service-role key). It prints the file and line with the value masked. Gitignored `.env` files are skipped. Skip once with `git commit --no-verify`.
+
 **Database migrations.** Schema changes live in `backend/migrations/NNN_description.sql`, numbered in order. There is no migration runner: run each new file by hand in the Supabase SQL editor before deploying code that depends on it. The older core tables (`posts`, `post_versions`, `profiles`, `usage_events`, `user_events`, and others) were created before this folder existed, so they have no migration file. Their schemas are documented in `CODEBASE.md` section 4.
 
 ---
@@ -247,6 +249,7 @@ Note: profile files are gitignored — your personal details never get committed
 │   ├── migrate_to_supabase.py        # One-time legacy migration: profile + posts + post_versions into Supabase
 │   ├── migrate_hierarchy.py          # One-time legacy migration: backfills source/topic hierarchy
 │   └── git-hooks/
+│       ├── pre-commit                # Blocks commits that stage API keys or JWTs (opt-in, see Tests)
 │       └── pre-push                  # Runs backend pytest before every push (opt-in, see Tests)
 ├── .gitignore                        # Excludes venv, node_modules, .env, legacy local data (chroma_db, *.db)
 │
