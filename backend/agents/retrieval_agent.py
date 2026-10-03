@@ -1,8 +1,11 @@
 import logging
 
+from config import retrieval as cfg
 from pipeline.state import PipelineState
 from memory.vector_store import (
-    RELEVANCE_THRESHOLD,
+    _chunk_key,
+    _fill_real_similarity,
+    embed_texts,
     get_adjacent_chunks,
     get_chunks_by_ids,
     query_similar,
@@ -211,25 +214,81 @@ def resolve_attribution_frames(
     return "\n".join(lines).strip()
 
 
+def _top_scores(results: list[dict]) -> tuple[float, float]:
+    """(top-1 real cosine, top-1 normalized BM25) over raw retrieval results."""
+    top_cosine = max((float(r.get("similarity") or 0.0) for r in results), default=0.0)
+    top_bm25 = max((float(r.get("bm25_norm") or 0.0) for r in results), default=0.0)
+    return top_cosine, top_bm25
+
+
+def _is_relevant(chunk: dict) -> bool:
+    """Use a chunk when its own cosine or its own normalized BM25 is strong enough."""
+    return (
+        float(chunk.get("similarity") or 0.0) >= cfg.RELEVANCE_THRESHOLD
+        or float(chunk.get("bm25_norm") or 0.0) >= cfg.STRONG_BM25
+    )
+
+
+def _has_coverage(top_cosine: float, top_bm25: float) -> bool:
+    return top_cosine >= cfg.COVERAGE_MIN_COSINE or top_bm25 >= cfg.COVERAGE_MIN_BM25
+
+
 def _compute_retrieval_confidence(results: list[dict]) -> str:
-    """Classify retrieval coverage based on unfiltered raw retrieval results.
+    """Classify coverage from the best real cosine and the best normalized BM25 score.
 
-    vector_store currently returns `similarity` (higher is better), not `distance`.
-    Threshold mapping from cosine distance to similarity:
-    - distance < 0.55  <=>  similarity > 0.45  (strong match)
-    - distance < 0.70  <=>  similarity > 0.30  (any match)
+    high:   top-1 cosine >= HIGH_CONFIDENCE_COSINE
+    medium: the coverage gate passes (top-1 cosine or top-1 BM25 strong enough)
+    low:    neither (the coverage gate blocks drafting)
     """
-    if not results:
-        return "low"
-
-    high_quality = [r for r in results if float(r.get("similarity", 0.0)) > 0.45]
-    any_quality = [r for r in results if float(r.get("similarity", 0.0)) > 0.30]
-
-    if len(high_quality) >= 3:
+    top_cosine, top_bm25 = _top_scores(results)
+    if top_cosine >= cfg.HIGH_CONFIDENCE_COSINE:
         return "high"
-    if len(high_quality) >= 1 or len(any_quality) >= 3:
+    if _has_coverage(top_cosine, top_bm25):
         return "medium"
     return "low"
+
+
+def coverage_gate(results: list[dict], bypass: bool = False, first_post: bool = False) -> dict:
+    """Decide whether the knowledge base covers the topic well enough to draft.
+
+    decision: "pass"; "low_coverage"; "bypassed" (low coverage, but the request
+    asked for a no-specifics post); or "skipped_first_post" (low coverage, but
+    a user's first post is written from their profile and onboarding answers,
+    not the knowledge base). Includes the scores, thresholds, and the closest
+    sources found, for the response and the generation trace.
+    """
+    top_cosine, top_bm25 = _top_scores(results)
+    covered = _has_coverage(top_cosine, top_bm25)
+    if covered:
+        decision = "pass"
+    elif bypass:
+        decision = "bypassed"
+    elif first_post:
+        decision = "skipped_first_post"
+    else:
+        decision = "low_coverage"
+    closest = sorted(results, key=lambda r: float(r.get("similarity") or 0.0), reverse=True)
+    closest_sources, seen = [], set()
+    for r in closest:
+        title = r.get("source_title") or ""
+        if title in seen:
+            continue
+        seen.add(title)
+        closest_sources.append({
+            "title": title,
+            "preview": (r.get("text") or r.get("content") or "")[:200],
+            "similarity": round(float(r.get("similarity") or 0.0), 3),
+        })
+        if len(closest_sources) == cfg.CLOSEST_SOURCES:
+            break
+    return {
+        "decision": decision,
+        "top_cosine": round(top_cosine, 4),
+        "top_bm25_norm": round(top_bm25, 4),
+        "min_cosine": cfg.COVERAGE_MIN_COSINE,
+        "min_bm25_norm": cfg.COVERAGE_MIN_BM25,
+        "closest_sources": closest_sources,
+    }
 
 
 def _build_retrieval_bundle(chunks: list[dict], user_id: str) -> dict:
@@ -413,7 +472,10 @@ def _enrich_with_entity_chunks(
     """Add entity-linked chunks not already in existing_chunks (up to max_additional).
 
     Total retrieval budget after enrichment: len(existing_chunks) + max_additional (≤ 12).
-    Entity-linked chunks are tagged with entity_linked=True for traceability.
+    Entity-linked chunks are tagged with entity_linked=True, given their real
+    cosine similarity to the query, and the closest ones are kept. They are
+    never counted by retrieval confidence or the coverage gate, which only use
+    chunks that matched the query directly.
     Returns existing_chunks unchanged on any failure.
     """
     try:
@@ -421,10 +483,7 @@ def _enrich_with_entity_chunks(
         if not entity_ids:
             return existing_chunks
 
-        existing_ids = {
-            c.get("id") or f"{c.get('source_id', '')}_{c.get('chunk_index', 0)}"
-            for c in existing_chunks
-        }
+        existing_ids = {_chunk_key(c) for c in existing_chunks}
 
         from memory.entity_store import get_chunk_ids_for_entity
         candidate_ids: list[str] = []
@@ -441,6 +500,8 @@ def _enrich_with_entity_chunks(
         additional = get_chunks_by_ids(candidate_ids[: max_additional * 2], user_id)
         for chunk in additional:
             chunk["entity_linked"] = True
+        _fill_real_similarity(additional, embed_texts([query_topic])[0], user_id)
+        additional.sort(key=lambda c: c.get("similarity", 0.0), reverse=True)
 
         added = additional[:max_additional]
         logger.info(
@@ -475,10 +536,7 @@ def retrieval_node(state: PipelineState) -> PipelineState:
     try:
         logger.info(f"Hybrid retrieval used for user {user_id}, topic: {topic[:50]}")
         raw_results = query_similar_hybrid(query, user_id=user_id, n_results=8)
-        chunks = [
-            r for r in raw_results
-            if float(r.get("similarity", 0.0)) >= RELEVANCE_THRESHOLD
-        ]
+        chunks = [r for r in raw_results if _is_relevant(r)]
         # Phase 4: enrich with entity-linked chunks not in top-8 (up to 4 additional, total ≤ 12)
         chunks = _enrich_with_entity_chunks(chunks, query_topic=query, user_id=user_id, max_additional=4)
         bundle = _build_retrieval_bundle(chunks, user_id)
@@ -500,10 +558,7 @@ def retrieval_node(state: PipelineState) -> PipelineState:
         print(f"[retrieval_node] hierarchical retrieval failed ({e}), falling back to flat")
         try:
             raw_results = query_similar(query, n_results=8, user_id=user_id)
-            chunks = [
-                r for r in raw_results
-                if float(r.get("similarity", 0.0)) >= RELEVANCE_THRESHOLD
-            ]
+            chunks = [r for r in raw_results if _is_relevant(r)]
             bundle = {"chunks": chunks, "source_contexts": {}, "topic_contexts": []}
         except Exception:
             raw_results = []
@@ -523,8 +578,20 @@ def retrieval_node(state: PipelineState) -> PipelineState:
         retrieved_texts.append(f"[source_type: {source_type}] {chunk['text']}")
 
     state["retrieved_chunks"] = retrieved_texts
+    # Confidence and the gate use raw_results only: chunks that matched the
+    # query directly, never entity-linked additions.
     state["retrieval_confidence"] = _compute_retrieval_confidence(raw_results)
     state["retrieved_chunk_count"] = len(retrieved_texts)
+    state["coverage_gate"] = coverage_gate(
+        raw_results,
+        bypass=bool(state.get("no_specifics")),
+        first_post=bool(state.get("first_post")),
+    )
+    logger.info(
+        "coverage gate: %s (top cosine %.3f, top bm25 %.3f) for user %s",
+        state["coverage_gate"]["decision"], state["coverage_gate"]["top_cosine"],
+        state["coverage_gate"]["top_bm25_norm"], user_id,
+    )
 
     # Debug: print a sample so attribution labels can be verified at runtime.
     if retrieved_texts:

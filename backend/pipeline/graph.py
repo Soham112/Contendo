@@ -34,6 +34,24 @@ def load_profile_node(state: PipelineState) -> PipelineState:
     return state
 
 
+LOW_COVERAGE_SUGGESTION = (
+    "Your memory doesn't cover this topic yet. Add a source about it, "
+    "or write an opinion post without specifics."
+)
+
+
+def route_after_retrieval(state: PipelineState) -> str:
+    """Stop before drafting when the knowledge base doesn't cover the topic."""
+    if (state.get("coverage_gate") or {}).get("decision") == "low_coverage":
+        return "low_coverage"
+    return "draft"
+
+
+def low_coverage_node(state: PipelineState) -> PipelineState:
+    state["final_post"] = ""
+    return state
+
+
 def finalize_node(state: PipelineState) -> PipelineState:
     state["final_post"] = strip_word_count_lines(state["current_draft"])
     return state
@@ -73,10 +91,16 @@ def build_graph() -> StateGraph:
     graph.add_node("word_count_enforcer", word_count_enforcer_node)
     graph.add_node("scorer", scorer_node)
     graph.add_node("finalize", finalize_node)
+    graph.add_node("low_coverage", low_coverage_node)
 
     graph.set_entry_point("load_profile")
     graph.add_edge("load_profile", "retrieval")
-    graph.add_edge("retrieval", "draft")
+    graph.add_conditional_edges(
+        "retrieval",
+        route_after_retrieval,
+        {"draft": "draft", "low_coverage": "low_coverage"},
+    )
+    graph.add_edge("low_coverage", END)
     graph.add_edge("draft", "critic")
     graph.add_edge("critic", "humanizer")
     graph.add_edge("humanizer", "predictability_audit")
@@ -114,7 +138,11 @@ def run_pipeline(
     context: str = "",
     quality: str = "standard",
     user_id: str = "default",
+    no_specifics: bool = False,
 ) -> dict:
+    """Run the pipeline. Returns status "ok" with the post, or status
+    "low_coverage" (empty post, closest_sources, suggestion) when the coverage
+    gate stops it before drafting. no_specifics=True skips the gate."""
     initial_state: PipelineState = {
         "topic": topic,
         "format": format,
@@ -129,6 +157,7 @@ def run_pipeline(
         "draft_history": [],
         "score_history": [],
         "specifics_guard": [],
+        "no_specifics": no_specifics,
     }
 
     with trace_calls() as calls:
@@ -141,7 +170,24 @@ def run_pipeline(
     except Exception:
         logger.exception("generation trace write failed for user %s", user_id)
 
+    gate = result.get("coverage_gate") or {}
+    if gate.get("decision") == "low_coverage":
+        return {
+            "status": "low_coverage",
+            "post": "",
+            "score": 0,
+            "score_feedback": [],
+            "iterations": 0,
+            "archetype": "",
+            "scored": False,
+            "retrieval_confidence": result.get("retrieval_confidence", "low"),
+            "closest_sources": gate.get("closest_sources", []),
+            "suggestion": LOW_COVERAGE_SUGGESTION,
+            "trace_id": trace_id,
+        }
+
     return {
+        "status": "ok",
         "post": result.get("final_post", result.get("current_draft", "")),
         "score": result.get("score", 0),
         "score_feedback": result.get("score_feedback", []),

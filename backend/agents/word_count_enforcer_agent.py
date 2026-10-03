@@ -127,7 +127,7 @@ def word_count_enforcer_node(state: PipelineState) -> PipelineState:
                     max_words=max_words,
                     current_count=word_count,
                     post=post,
-                    specifics_retry=retry_note(violations),
+                    specifics_retry=retry_note(violations, no_specifics=bool(state.get("no_specifics"))),
                 )}],
                 user_id=user_id,
                 event_type=event_type,

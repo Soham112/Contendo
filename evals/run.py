@@ -108,7 +108,11 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 row["seconds"] = round(time.perf_counter() - start, 1)
                 row["trace_id"] = result.get("trace_id")
-                if not row["trace_id"]:
+                if result.get("status") == "low_coverage":
+                    row["status"] = "gated"
+                    row["closest_sources"] = [s["title"] for s in result.get("closest_sources", [])]
+                    print(f"  {g['id']}: GATED (low coverage) in {row['seconds']}s")
+                elif not row["trace_id"]:
                     row["status"] = "no_trace"
                     print(f"  {g['id']}: SKIPPED, trace was not saved (trace_id None)")
                 else:

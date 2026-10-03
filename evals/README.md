@@ -109,6 +109,15 @@ python report.py <run_id>                         # writes and prints results/<r
   `run.py`/`judge.py` refuse to start when the account is out of credits). Re-run after fixing
   it: finished results stay cached and errored ones are retried.
 
+## Known retrieval gaps
+
+- **pm-04** ("How to say no to sales without becoming the villain"): the knowledge base
+  covers it ("Saying no to a sales-driven feature request"), but the topic and the
+  source use different words, so the best chunk scores cosine 0.24 and BM25 0.09 and
+  the coverage gate blocks it (`low_coverage`). The right source is listed as the
+  closest one. Candidate fix: query rewriting (expand the topic into the vocabulary
+  the user's notes use) before retrieval.
+
 ## Editing fixtures and goldens
 
 - `fixtures/personas/<slug>/sources/*.md`: one source per file. A header block

@@ -39,9 +39,19 @@ export interface GenerateRequest {
   length?: "concise" | "standard" | "long-form";
   context?: string;
   quality?: string;
+  /** Skip the coverage gate and write an opinion post without specifics. */
+  no_specifics?: boolean;
+}
+
+export interface ClosestSource {
+  title: string;
+  preview: string;
+  similarity: number;
 }
 
 export interface GenerateResponse {
+  /** "low_coverage": the knowledge base doesn't cover the topic; post is "". */
+  status?: "ok" | "low_coverage";
   post: string;
   score: number;
   score_feedback: string[];
@@ -49,6 +59,8 @@ export interface GenerateResponse {
   archetype?: string;
   scored?: boolean;
   trace_id?: string | null;
+  closest_sources?: ClosestSource[];
+  suggestion?: string;
 }
 
 export interface RefineRequest {

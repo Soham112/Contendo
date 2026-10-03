@@ -214,7 +214,14 @@ def _strings(value: Any) -> Iterable[str]:
 
 def grounding_texts(state: dict[str, Any], input_draft: str) -> list[str]:
     """Everything a rewrite may draw facts from: its input draft, the retrieved
-    chunks, the profile, and the request's own topic and context."""
+    chunks, the profile, and the request's own topic and context.
+
+    In no-specifics mode (state["no_specifics"]) only the topic, the context and
+    the profile count: not the chunks, and not the input draft, so a fact the
+    drafter took from the chunks is flagged rather than carried forward.
+    """
+    if state.get("no_specifics"):
+        return [state.get("topic") or "", state.get("context") or "", *_strings(state.get("profile") or {})]
     chunks = [c.get("text") or c.get("content") or "" for c in (state.get("retrieval_bundle") or {}).get("chunks", [])]
     return [
         input_draft,
@@ -228,11 +235,18 @@ def grounding_texts(state: dict[str, Any], input_draft: str) -> list[str]:
 
 # ── Rewrite guard helpers ─────────────────────────────────────────────────────
 
-def retry_note(violations: list[Specific]) -> str:
+def retry_note(violations: list[Specific], no_specifics: bool = False) -> str:
     """Prompt suffix for a rewrite's second attempt; "" when there is nothing to report."""
     if not violations:
         return ""
     listed = "\n".join(f"- {v.text}" for v in violations)
+    if no_specifics:
+        return (
+            "\n\nThis is an opinion post without specifics. Your previous attempt included these details, "
+            "which are not in the topic, the context or the author profile:\n"
+            f"{listed}\n"
+            "Rewrite again from the draft above without them. Keep the argument; add no other specifics."
+        )
     return (
         "\n\nYour previous attempt added or changed these details, which are not in the draft or its sources:\n"
         f"{listed}\n"

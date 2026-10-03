@@ -23,6 +23,14 @@ class PipelineState(TypedDict, total=False):
     retrieved_chunks: list[str]       # flat list of "[source_type: X] text" strings — always set for backward compat
     retrieval_bundle: dict            # structured hierarchical bundle {chunks, source_contexts, topic_contexts}
     retrieved_context: str            # pre-formatted text block for draft prompt injection; "" triggers flat fallback
+    # Coverage gate set by retrieval_node: {decision: "pass" | "low_coverage" |
+    # "bypassed", top_cosine, top_bm25_norm, min_cosine, min_bm25_norm,
+    # closest_sources: [{title, preview, similarity}]}. "low_coverage" ends the
+    # pipeline before drafting. Persisted in generation_traces.node_outputs.
+    coverage_gate: dict[str, Any]
+    # Request flag: skip the coverage gate and draft without specifics
+    # (no numbers, dates, names, incidents or results unless in topic/context).
+    no_specifics: bool
 
     # Phase 4: user's experience nodes loaded at retrieval time for attribution context
     experience_nodes: list[dict[str, Any]]

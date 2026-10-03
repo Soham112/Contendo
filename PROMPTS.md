@@ -238,6 +238,8 @@ Be thorough. Every detail that carries information should make it into your outp
 You are a retrieval agent. You surface semantically relevant chunks from a personal knowledge base to support content generation. Chunks are pre-filtered by cosine similarity — you receive only the most relevant ones.
 ```
 
+*(Behaviour since the coverage gate: a chunk is kept when its real cosine or its normalized BM25 score reaches 0.30; if neither the best cosine nor the best BM25 score reaches 0.30, the pipeline stops before drafting with `status: "low_coverage"`. Thresholds in `backend/config/retrieval.py`.)*
+
 *(Note: This prompt is defined as a docstring/comment for documentation purposes. The retrieval_node function does not pass it to Claude — it calls vector-store retrieval directly.)*
 
 **Input variables injected:**
@@ -393,6 +395,26 @@ Write entirely from an observational or analytical perspective:
 A post that shares a sharp observation is better than one that invents a story
 the user never lived.
 ```
+
+---
+
+### No-specifics rule (injected when the request sets no_specifics)
+
+**Trigger condition:** `state["no_specifics"]` is true. Set by `POST /generate` with `no_specifics: true`, which the frontend sends after a `low_coverage` response when the user picks "Write an opinion post without specifics". The coverage gate is skipped (decision `bypassed`).
+
+**Behaviour:** Prepended to `grounding_instruction` (after the zero-notes guard, if that applied), so it comes first.
+
+**Full instruction text:**
+```
+NO-SPECIFICS RULE (highest priority — overrides all other instructions, including the knowledge base, profile and writing samples):
+The user's notes don't cover this topic, and they asked for an opinion post anyway.
+- Write what you think about the topic and why: a view, an argument, a pattern.
+- Use no number, percentage, money amount, date, month, day of the week, duration, count, or name of a person, company, product or project, unless it appears in the topic or the additional context above.
+- Tell no stories presented as things that happened: no incidents, customers, colleagues, projects or results ("at my last job", "we shipped", "last quarter").
+- Frame claims as views: "I think", "the pattern I keep seeing", "most teams".
+```
+
+In this mode the humanizer, predictability audit and word count enforcer guards accept facts only from the topic, the context and the profile (not the chunks, and not their input draft), and their retry uses the no-specifics wording (see the humanizer's `specifics_retry`).
 
 ---
 
@@ -563,8 +585,16 @@ Facts are fixed. You may change only wording, rhythm and structure.
   - Thursday
   Rewrite again from the draft above. Keep every factual detail exactly as the draft states it, and add none.
   ```
+  In no-specifics mode the retry text is instead:
+  ```
 
-**Specifics guard (code, not prompt):** after the rewrite, `utils.specifics.unsupported_specifics()` lists every number, percentage, money amount, duration, month, weekday and time phrase ("last winter", "first month") in the output that is not in the input draft, the retrieved chunks, the profile, or the request's topic/context. Equivalent forms match ("~410k SEK" = "410,000 SEK", "three months" ≈ "90 days"); changed values do not ("eleven pages" vs "twelve-page"). If any are found, the node retries once with `specifics_retry` filled in (`event_type="humanize_retry"`). If the retry still adds facts, the input draft is kept unchanged and no `draft_history` entry is written; `iterations` still increments. Each retry is logged in `state["specifics_guard"]` (saved to `generation_traces.node_outputs.specifics_guard`) with outcome `accepted_after_retry` or `reverted`.
+
+  This is an opinion post without specifics. Your previous attempt included these details, which are not in the topic, the context or the author profile:
+  - 34%
+  Rewrite again from the draft above without them. Keep the argument; add no other specifics.
+  ```
+
+**Specifics guard (code, not prompt):** after the rewrite, `utils.specifics.unsupported_specifics()` lists every number, percentage, money amount, duration, month, weekday and time phrase ("last winter", "first month") in the output that is not in the input draft, the retrieved chunks, the profile, or the request's topic/context (in no-specifics mode: only the topic, context and profile). Equivalent forms match ("~410k SEK" = "410,000 SEK", "three months" ≈ "90 days"); changed values do not ("eleven pages" vs "twelve-page"). If any are found, the node retries once with `specifics_retry` filled in (`event_type="humanize_retry"`). If the retry still adds facts, the input draft is kept unchanged and no `draft_history` entry is written; `iterations` still increments. Each retry is logged in `state["specifics_guard"]` (saved to `generation_traces.node_outputs.specifics_guard`) with outcome `accepted_after_retry` or `reverted`.
 
 **Quality-mode bypass:** If `state.get("quality") == "draft"`, `humanizer_node` returns state unchanged with no Claude call. The raw draft agent output passes through unmodified.
 

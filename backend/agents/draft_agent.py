@@ -93,6 +93,14 @@ Rules for this post:
 """.strip()
 
 
+_NO_SPECIFICS_RULE = """NO-SPECIFICS RULE (highest priority — overrides all other instructions, including the knowledge base, profile and writing samples):
+The user's notes don't cover this topic, and they asked for an opinion post anyway.
+- Write what you think about the topic and why: a view, an argument, a pattern.
+- Use no number, percentage, money amount, date, month, day of the week, duration, count, or name of a person, company, product or project, unless it appears in the topic or the additional context above.
+- Tell no stories presented as things that happened: no incidents, customers, colleagues, projects or results ("at my last job", "we shipped", "last quarter").
+- Frame claims as views: "I think", "the pattern I keep seeing", "most teams"."""
+
+
 _FIRST_POST_INSTRUCTION = """FIRST POST RULE (overrides word-count and visual placeholder rules):
 This is the user's very first generated post. Keep it short and punchy — a quick win.
 - Target length: 120–150 words. Do not exceed 150 words under any circumstance.
@@ -315,6 +323,11 @@ def draft_node(state: PipelineState) -> PipelineState:
     if "No relevant knowledge base entries found" in chunks_text:
         grounding_instruction = (
             _ZERO_NOTES_GUARD + ("\n\n" + grounding_instruction if grounding_instruction else "")
+        )
+
+    if state.get("no_specifics"):
+        grounding_instruction = (
+            _NO_SPECIFICS_RULE + ("\n\n" + grounding_instruction if grounding_instruction else "")
         )
 
     first_post_instruction = _FIRST_POST_INSTRUCTION if is_first_post else ""

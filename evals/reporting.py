@@ -72,8 +72,8 @@ def build_report(meta: dict[str, Any], runs: list[dict[str, Any]], scores: list[
         f"- Quality: **{meta['quality']}** · project `{meta['project_ref']}` · "
         f"commit `{git.get('commit', '?')}`{' (uncommitted changes)' if git.get('dirty') else ''}",
         f"- Judge: **{judge_model}** via `llm.client.complete()`",
-        f"- Goldens: {len(runs)} run · {status_counts['ok']} ok · {status_counts['no_trace']} skipped (no trace) "
-        f"· {status_counts['error']} errored",
+        f"- Goldens: {len(runs)} run · {status_counts['ok']} ok · {status_counts['gated']} gated (low coverage, "
+        f"not drafted or judged) · {status_counts['no_trace']} skipped (no trace) · {status_counts['error']} errored",
         "",
         "## Metrics",
         "",

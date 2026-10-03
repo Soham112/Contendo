@@ -217,28 +217,28 @@ def _strip(chunks, extra=()):
     return [{k: v for k, v in c.items() if k not in drop} for c in chunks]
 
 
-def test_hybrid_results_and_order_match_the_pre_trace_merge():
+def test_hybrid_returns_each_chunk_once_with_a_real_similarity():
     from memory.consolidation_store import upsert_consolidation_chunk
-    from memory.vector_store import _query_bm25, query_similar, query_similar_hybrid, upsert_chunks
+    from memory.vector_store import query_similar, query_similar_hybrid, upsert_chunks
 
     upsert_chunks(
         ["pgvector retrieval basics", "retrieval with bm25 ranking",
          "pgvector index tuning", "a note about cooking"],
         source_title="Notes", source_id="notes", user_id=USER,
     )
-    # Consolidation chunk: its row id differs from source_id_chunk_index.
+    # Consolidation chunk: its row id differs from source_id_chunk_index, and
+    # both searches find it.
     upsert_consolidation_chunk(USER, "ent1", "pgvector", "pgvector retrieval summary")
 
     query = "pgvector retrieval"
-    vector = _strip(query_similar(query, user_id=USER))
-    bm25 = [dict(r) for r in _query_bm25(query, user_id=USER)]
-    expected = _rrf_merge_before(copy.deepcopy(vector), copy.deepcopy(bm25))
-
     actual = query_similar_hybrid(query, user_id=USER)
+    keys = [c.get("chunk_id") or c.get("id") for c in actual]
+    assert len(keys) == len(set(keys))
+    assert sum(1 for c in actual if c["source_title"].startswith("[Consolidated")) == 1
 
-    # Same chunks, same order, same values; only the new trace fields and a
-    # BM25 score on shared chunks are added.
-    assert _strip(actual, extra={"bm25_score"}) == _strip(expected, extra={"bm25_score"})
+    cosine = {h["chunk_id"]: h["similarity"] for h in query_similar(query, user_id=USER, n_results=50)}
+    for c in actual:
+        assert c["similarity"] == pytest.approx(cosine[c.get("chunk_id") or c.get("id")], abs=1e-3)
     assert [c["rrf_rank"] for c in actual] == list(range(1, len(actual) + 1))
 
 

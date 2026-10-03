@@ -88,10 +88,11 @@ def _replace_sentence(post: str, original: str, replacement: str) -> str:
 
 # ── Node ──────────────────────────────────────────────────────────────────────
 
-def _rewrite(post: str, flagged: str | None, violations, user_id: str, retry: bool) -> str:
+def _rewrite(post: str, flagged: str | None, violations, user_id: str, retry: bool,
+             no_specifics: bool = False) -> str:
     """Steps 2 and 3 on post. Step 2 runs only when step 1 flagged a sentence."""
     suffix = "_retry" if retry else ""
-    note = retry_note(violations)
+    note = retry_note(violations, no_specifics=no_specifics)
     if flagged is not None:
         step2_msg = complete(
             model=SONNET,
@@ -175,7 +176,8 @@ def predictability_audit_node(state: PipelineState) -> PipelineState:
         audited = _rewrite(post, flagged, [], user_id, retry=False)
         first = unsupported_specifics(audited, sources)
         if first:
-            audited = _rewrite(post, flagged, first, user_id, retry=True)
+            audited = _rewrite(post, flagged, first, user_id, retry=True,
+                               no_specifics=bool(state.get("no_specifics")))
             second = unsupported_specifics(audited, sources)
             state["specifics_guard"] = [*state.get("specifics_guard", []),
                                         guard_entry("predictability_audit", state.get("iterations", 0), first, second)]

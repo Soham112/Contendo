@@ -282,7 +282,7 @@ def humanizer_node(state: PipelineState) -> PipelineState:
             critic_section=critic_section,
             rewrite_instruction=rewrite_instruction,
             word_count_rule=word_count_rule,
-            specifics_retry=retry_note(violations),
+            specifics_retry=retry_note(violations, no_specifics=bool(state.get("no_specifics"))),
         )
         message = complete(
             model=SONNET,

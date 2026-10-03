@@ -25,9 +25,20 @@ class GenerateRequest(BaseModel):
     length: str = "standard"
     context: str = ""
     quality: str = "standard"
+    # Skip the coverage gate and write an opinion post without specifics.
+    no_specifics: bool = False
+
+
+class ClosestSource(BaseModel):
+    title: str
+    preview: str
+    similarity: float
 
 
 class GenerateResponse(BaseModel):
+    # "ok", or "low_coverage": the knowledge base doesn't cover the topic, so
+    # nothing was drafted (post is ""); see closest_sources and suggestion.
+    status: str = "ok"
     post: str
     score: int
     score_feedback: list[str]
@@ -36,6 +47,8 @@ class GenerateResponse(BaseModel):
     scored: bool = False
     retrieval_confidence: str = "medium"
     trace_id: str | None = None  # generation_traces.id; None if the trace write failed
+    closest_sources: list[ClosestSource] = []
+    suggestion: str = ""
 
 
 class ScoreRequest(BaseModel):
@@ -127,6 +140,7 @@ async def generate(
             context=req.context,
             quality=req.quality,
             user_id=user_id,
+            no_specifics=req.no_specifics,
         )
     except (InternalServerError, APIStatusError) as e:
         _raise_anthropic_error(e)
@@ -134,6 +148,9 @@ async def generate(
         _raise_internal_error("POST /generate")
 
     return GenerateResponse(
+        status=result.get("status", "ok"),
+        closest_sources=result.get("closest_sources", []),
+        suggestion=result.get("suggestion", ""),
         post=result["post"],
         score=result["score"],
         score_feedback=result["score_feedback"],
