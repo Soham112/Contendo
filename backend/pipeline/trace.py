@@ -58,6 +58,7 @@ def build_trace_row(state: PipelineState, llm_calls: list[dict]) -> dict[str, An
             "draft_history": state.get("draft_history", []),
             "critic_brief": state.get("critic_brief", {}),
             "score_history": state.get("score_history", []),
+            "specifics_guard": state.get("specifics_guard", []),
             "final_post": state.get("final_post", state.get("current_draft", "")),
         },
         "llm_calls": llm_calls,

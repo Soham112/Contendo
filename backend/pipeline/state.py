@@ -42,6 +42,12 @@ class PipelineState(TypedDict, total=False):
     # (draft, humanizer, predictability_audit, word_count_enforcer). Skipped and
     # no-op runs add nothing. Persisted in generation_traces.
     draft_history: list[dict[str, Any]]
+    # One entry per humanizer / predictability_audit run whose output added or
+    # changed a fact (number, date, duration, ...) not in its input, the chunks
+    # or the profile: {node, iteration, first_attempt, retry, outcome}, where
+    # outcome is "accepted_after_retry" or "reverted". Persisted in
+    # generation_traces.node_outputs.
+    specifics_guard: list[dict[str, Any]]
 
     # Scoring
     score: int

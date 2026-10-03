@@ -110,8 +110,9 @@ def test_polished_records_a_score_per_iteration(claude, fake_db, seeded_kb, monk
     # 2 loops of humanizer + audit (step 1 CLEAN, step 3), then the enforcer.
     claude.queue(
         "personal_story", "Draft text.", "{}",
-        "Humanized 1.", "CLEAN", "Audited 1.",
-        "Humanized 2.", "CLEAN", "Audited 2.",
+        # Number-free text: a "2" the input lacks would trip the specifics guard.
+        "Humanized once.", "CLEAN", "Audited once.",
+        "Humanized twice.", "CLEAN", "Audited twice.",
         "Final text.",
     )
     _run(quality="polished")
@@ -124,7 +125,7 @@ def test_polished_records_a_score_per_iteration(claude, fake_db, seeded_kb, monk
     assert trace["score"] == 90
     assert trace["iterations"] == 2
     humanized = [d for d in trace["node_outputs"]["draft_history"] if d["node"] == "humanizer"]
-    assert [(d["iteration"], d["text"]) for d in humanized] == [(1, "Humanized 1."), (2, "Humanized 2.")]
+    assert [(d["iteration"], d["text"]) for d in humanized] == [(1, "Humanized once."), (2, "Humanized twice.")]
 
 
 def test_llm_calls_are_recorded_in_order(claude, fake_db, seeded_kb):
@@ -338,3 +339,27 @@ def test_log_post_without_trace_id_does_not_touch_traces(client, fake_db, auth_h
     assert resp.json()["saved"] is True
     assert _trace(fake_db, "trace-1")["post_id"] is None
     assert ("generation_traces", "update") not in fake_db.log
+
+
+def test_specifics_guard_retries_are_recorded_in_the_trace(claude, fake_db, seeded_kb):
+    claude.queue(
+        "personal_story", "Draft text.", "{}",
+        "Draft text, now 34% better.",   # humanizer adds a figure
+        "Draft text, rewritten.",        # humanizer retry is clean
+        "CLEAN", "Audited text.", "Final text.",
+    )
+    _run()
+
+    trace = _only_trace(fake_db)
+    assert trace["node_outputs"]["specifics_guard"] == [{
+        "node": "humanizer", "iteration": 1,
+        "first_attempt": [{"text": "34%", "kind": "percent"}],
+        "retry": [], "outcome": "accepted_after_retry",
+    }]
+    assert [c["event_type"] for c in trace["llm_calls"]][3:5] == ["humanize", "humanize_retry"]
+
+
+def test_trace_has_empty_specifics_guard_when_nothing_was_added(claude, fake_db, seeded_kb):
+    claude.queue(*STANDARD_RUN)
+    _run()
+    assert _only_trace(fake_db)["node_outputs"]["specifics_guard"] == []

@@ -4,6 +4,7 @@ import re
 from llm.client import HAIKU, SONNET, complete
 from pipeline.state import PipelineState
 from pipeline.trace import record_draft
+from utils.specifics import grounding_texts, guard_entry, retry_note, unsupported_specifics
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +29,10 @@ Sentence to rewrite:
 
 Rules:
 - Rewrite only the sentence above
-- Make it unexpected: shorter, more specific, slightly imperfect, or unresolved
+- Make it unexpected: shorter, plainer, slightly imperfect, or unresolved
+- Keep every number, percentage, money amount, date, day, duration, count, name and quoted figure exactly as in the sentence. Add none and remove none.
 - Never use em dashes
-- Output only the rewritten sentence — no explanation, no quotes, no preamble"""
+- Output only the rewritten sentence — no explanation, no quotes, no preamble{specifics_retry}"""
 
 _BURSTINESS_PROMPT = """Check this post for monotonous sentence rhythm.
 
@@ -38,7 +40,9 @@ If 3 or more consecutive sentences are within 4 words of each other in length, r
 
 If the rhythm is already varied, return the post unchanged.
 
-Output only the full post — no explanation, no preamble.
+Change only sentence length and rhythm. Keep every number, percentage, money amount, date, month, day of the week, duration, count, name and quoted figure exactly as written. Add none and remove none.
+
+Output only the full post — no explanation, no preamble.{specifics_retry}
 
 Post:
 {post}"""
@@ -84,12 +88,54 @@ def _replace_sentence(post: str, original: str, replacement: str) -> str:
 
 # ── Node ──────────────────────────────────────────────────────────────────────
 
+def _rewrite(post: str, flagged: str | None, violations, user_id: str, retry: bool) -> str:
+    """Steps 2 and 3 on post. Step 2 runs only when step 1 flagged a sentence."""
+    suffix = "_retry" if retry else ""
+    note = retry_note(violations)
+    if flagged is not None:
+        step2_msg = complete(
+            model=SONNET,
+            max_tokens=200,
+            messages=[{
+                "role": "user",
+                "content": _REWRITE_SENTENCE_PROMPT.format(
+                    post=post,
+                    flagged_sentence=flagged,
+                    specifics_retry=note,
+                ),
+            }],
+            user_id=user_id,
+            event_type=f"predictability_audit_step2{suffix}",
+        )
+        replacement = step2_msg.content[0].text.strip()
+        logger.info("predictability_audit: replacement=%r", replacement[:120])
+        post = _replace_sentence(post, flagged, replacement)
+
+    step3_msg = complete(
+        model=HAIKU,
+        max_tokens=2000,
+        messages=[{
+            "role": "user",
+            "content": _BURSTINESS_PROMPT.format(post=post, specifics_retry=note),
+        }],
+        user_id=user_id,
+        event_type=f"predictability_audit_step3{suffix}",
+    )
+    return step3_msg.content[0].text.strip()
+
+
 def predictability_audit_node(state: PipelineState) -> PipelineState:
     """Three-step predictability audit that runs after humanizer_node.
 
     Step 1 (Haiku)  — find the single most AI-sounding sentence, or CLEAN.
     Step 2 (Sonnet) — rewrite only that sentence to be unexpected.
     Step 3 (Haiku)  — fix burstiness if 3+ consecutive sentences have similar length.
+
+    The result may not add or change facts: every specific must already be in
+    the node's input, the retrieved chunks or the profile. If it does, steps 2-3
+    are retried once with the violations listed (reusing step 1's sentence); if
+    the retry still adds facts, the input post is kept. Retries are logged in
+    state["specifics_guard"].
 
     Skipped entirely for draft quality mode.
     All exceptions are caught — the pipeline never breaks.
@@ -116,47 +162,29 @@ def predictability_audit_node(state: PipelineState) -> PipelineState:
             event_type="predictability_audit_step1",
         )
 
-        flagged = step1_msg.content[0].text.strip()
+        flagged: str | None = step1_msg.content[0].text.strip()
 
         if flagged.upper() == "CLEAN":
             logger.info("predictability_audit: step1=CLEAN, skipping step 2")
+            flagged = None
         else:
             logger.info("predictability_audit: flagged=%r", flagged[:120])
 
-            # ── Step 2: Rewrite only that sentence ────────────────────────────
-            step2_msg = complete(
-                model=SONNET,
-                max_tokens=200,
-                messages=[{
-                    "role": "user",
-                    "content": _REWRITE_SENTENCE_PROMPT.format(
-                        post=post,
-                        flagged_sentence=flagged,
-                    ),
-                }],
-                user_id=user_id,
-                event_type="predictability_audit_step2",
-            )
+        # ── Steps 2-3, checked for added facts ────────────────────────────────
+        sources = grounding_texts(state, post)
+        audited = _rewrite(post, flagged, [], user_id, retry=False)
+        first = unsupported_specifics(audited, sources)
+        if first:
+            audited = _rewrite(post, flagged, first, user_id, retry=True)
+            second = unsupported_specifics(audited, sources)
+            state["specifics_guard"] = [*state.get("specifics_guard", []),
+                                        guard_entry("predictability_audit", state.get("iterations", 0), first, second)]
+            if second:
+                logger.warning("predictability_audit: retry still added %s; keeping the input post",
+                               [v.text for v in second])
+                return state
 
-            replacement = step2_msg.content[0].text.strip()
-            logger.info("predictability_audit: replacement=%r", replacement[:120])
-
-            post = _replace_sentence(post, flagged, replacement)
-
-        # ── Step 3: Burstiness fix ─────────────────────────────────────────────
-        step3_msg = complete(
-            model=HAIKU,
-            max_tokens=2000,
-            messages=[{
-                "role": "user",
-                "content": _BURSTINESS_PROMPT.format(post=post),
-            }],
-            user_id=user_id,
-            event_type="predictability_audit_step3",
-        )
-
-        post = step3_msg.content[0].text.strip()
-        state["current_draft"] = post
+        state["current_draft"] = audited
         record_draft(state, "predictability_audit")
 
     except Exception as exc:

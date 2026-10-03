@@ -5,6 +5,7 @@ from langgraph.graph import StateGraph, END
 from llm.client import trace_calls
 from pipeline.state import PipelineState
 from pipeline.trace import build_trace_row
+from utils.post_cleanup import strip_word_count_lines
 from memory.profile_store import load_profile
 from memory.feedback_store import get_all_topics_posted
 from memory.trace_store import save_generation_trace
@@ -34,7 +35,7 @@ def load_profile_node(state: PipelineState) -> PipelineState:
 
 
 def finalize_node(state: PipelineState) -> PipelineState:
-    state["final_post"] = state["current_draft"]
+    state["final_post"] = strip_word_count_lines(state["current_draft"])
     return state
 
 
@@ -127,6 +128,7 @@ def run_pipeline(
         "critic_brief": {},
         "draft_history": [],
         "score_history": [],
+        "specifics_guard": [],
     }
 
     with trace_calls() as calls:

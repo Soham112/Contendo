@@ -486,7 +486,7 @@ Stored in pipeline state as `critic_brief: dict`.
 
 ### Humanizer Agent — agents/humanizer_agent.py
 
-**Purpose:** Rewrite the current draft to remove AI writing patterns, inject the user's authentic human voice, and — when a critic brief is present — fix flagged structural and substance issues first.
+**Purpose:** Rewrite the current draft to remove AI writing patterns, inject the user's authentic human voice, and — when a critic brief is present — fix flagged structural and substance issues first. It may change wording, rhythm and structure only: facts are fixed (see the specifics guard below).
 
 **System prompt:**
 *(Injected as the user message — no separate system role.)*
@@ -512,15 +512,19 @@ Never use the em dash character (—) anywhere in the output. If you are about t
 
 What to inject instead:
 - Sentence variety: mix 4-word punches with longer, winding observations
-- Specific details: if the draft says "many companies", name one or say "the last startup I advised"
 - Incomplete thoughts that feel real: "Which, honestly, caught me off guard."
 - Opinions stated with confidence, not hedged to death
 - The writer's actual voice as described in the profile
 
-Current draft:
+Facts are fixed. You may change only wording, rhythm and structure.
+- Never add or change any number, percentage, money amount, date, month, day of the week, duration, count, name or quoted figure. You may drop a detail if you need to cut for length, but prefer cutting words over cutting facts.
+- Every factual detail in your output must already be in the current draft. If a sentence feels vague, sharpen the wording, not the facts.
+- Do not invent incidents, timelines, customers, people or results.
+
+{word_count_rule}Current draft:
 {current_draft}
 
-{rewrite_instruction}
+{rewrite_instruction}{specifics_retry}
 ```
 
 **Input variables injected:**
@@ -538,7 +542,29 @@ Current draft:
     ```
 - `rewrite_instruction` — varies based on whether critic flagged any issues:
   - **No flagged issues:** `"Rewrite the draft now. Preserve the structure and all factual content — only change the language and sentence patterns. Output only the rewritten post, no commentary."`
-  - **Has flagged issues:** `"Rewrite the draft now. Fix the flagged issues above first — in this order: hook, substance, structure, voice. You may rewrite the hook entirely, restructure sections, and add specific grounding from the knowledge base. Then do a full language humanization pass. Output only the rewritten post, no commentary."`
+  - **Has flagged issues:** `"Rewrite the draft now. Fix the flagged issues above first — in this order: hook, substance, structure, voice. You may rewrite the hook entirely and restructure sections, using only facts already in the draft. Then do a full language humanization pass. Output only the rewritten post, no commentary."`
+- `word_count_rule` — from `_get_word_count_rule(format, length)`; `""` for threads. The same rule (with a fixed 120–150 range for a user's first post) is injected into the draft agent's prompt:
+  ```
+  ---
+  WORD COUNT RULE — this overrides everything else:
+  The final post must be {min_w}–{max_w} words.
+  Count before outputting. If over {max_w}, cut until you are within range.
+  Never exceed {max_w} words under any circumstance.
+  Do not print the word count.
+  ---
+  ```
+  `finalize_node` also strips any line matching `^\s*word count\s*:?\s*\d+` (case-insensitive) from the final post, and the humanizer strips it from its own output.
+- `specifics_retry` — `""` on the first attempt. On the retry (see below), from `utils.specifics.retry_note()`:
+  ```
+
+
+  Your previous attempt added or changed these details, which are not in the draft or its sources:
+  - 34%
+  - Thursday
+  Rewrite again from the draft above. Keep every factual detail exactly as the draft states it, and add none.
+  ```
+
+**Specifics guard (code, not prompt):** after the rewrite, `utils.specifics.unsupported_specifics()` lists every number, percentage, money amount, duration, month, weekday and time phrase ("last winter", "first month") in the output that is not in the input draft, the retrieved chunks, the profile, or the request's topic/context. Equivalent forms match ("~410k SEK" = "410,000 SEK", "three months" ≈ "90 days"); changed values do not ("eleven pages" vs "twelve-page"). If any are found, the node retries once with `specifics_retry` filled in (`event_type="humanize_retry"`). If the retry still adds facts, the input draft is kept unchanged and no `draft_history` entry is written; `iterations` still increments. Each retry is logged in `state["specifics_guard"]` (saved to `generation_traces.node_outputs.specifics_guard`) with outcome `accepted_after_retry` or `reverted`.
 
 **Quality-mode bypass:** If `state.get("quality") == "draft"`, `humanizer_node` returns state unchanged with no Claude call. The raw draft agent output passes through unmodified.
 
@@ -691,9 +717,10 @@ Sentence to rewrite:
 
 Rules:
 - Rewrite only the sentence above
-- Make it unexpected: shorter, more specific, slightly imperfect, or unresolved
+- Make it unexpected: shorter, plainer, slightly imperfect, or unresolved
+- Keep every number, percentage, money amount, date, day, duration, count, name and quoted figure exactly as in the sentence. Add none and remove none.
 - Never use em dashes
-- Output only the rewritten sentence — no explanation, no quotes, no preamble
+- Output only the rewritten sentence — no explanation, no quotes, no preamble{specifics_retry}
 ```
 
 **Input variables injected:**
@@ -717,7 +744,9 @@ If 3 or more consecutive sentences are within 4 words of each other in length, r
 
 If the rhythm is already varied, return the post unchanged.
 
-Output only the full post — no explanation, no preamble.
+Change only sentence length and rhythm. Keep every number, percentage, money amount, date, month, day of the week, duration, count, name and quoted figure exactly as written. Add none and remove none.
+
+Output only the full post — no explanation, no preamble.{specifics_retry}
 
 Post:
 {post}
@@ -729,6 +758,8 @@ Post:
 **Output handling:**
 - The full returned text replaces `state["current_draft"]`
 - If Haiku returns the post unchanged (rhythm already varied), `current_draft` is still overwritten with the same content (safe no-op)
+
+**Specifics guard (code, not prompt):** after step 3 the result is checked against the node's input post, the retrieved chunks and the profile, exactly as in the humanizer. On a violation, steps 2 and 3 are retried once with `specifics_retry` (the humanizer's retry text) filled into both prompts, reusing step 1's flagged sentence (`event_type` `predictability_audit_step2_retry` / `predictability_audit_step3_retry`). If the retry still adds facts, the input post is kept. Retries are logged in `state["specifics_guard"]`.
 
 ---
 

@@ -49,6 +49,7 @@ def _get_word_count_rule(format_type: str, length: str) -> str:
         f"The final post must be {min_w}–{max_w} words.\n"
         f"Count before outputting. If over {max_w}, cut until you are within range.\n"
         f"Never exceed {max_w} words under any circumstance.\n"
+        f"Do not print the word count.\n"
         f"---"
     )
 
@@ -286,6 +287,7 @@ def draft_node(state: PipelineState) -> PipelineState:
             "The final post must be 120–150 words.\n"
             "Count before outputting. If over 150, cut until you are within range.\n"
             "Never exceed 150 words under any circumstance.\n"
+            "Do not print the word count.\n"
             "---"
         )
     else:
