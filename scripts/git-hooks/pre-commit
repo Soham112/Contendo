@@ -1,0 +1,48 @@
+#!/bin/sh
+# Blocks a commit when a staged file contains something that looks like a real
+# secret: an Anthropic API key or a JWT (e.g. a Supabase service-role key).
+# It checks the staged version of each file, and prints file:line with the
+# secret masked.
+#
+# Patterns are key-shaped, so code and tests that only mention the prefix
+# (guard.py's startswith("sk-ant-"), the fake keys in evals/tests) pass.
+# Gitignored .env files are skipped.
+#
+# One-time setup per clone (tells git to use this folder for hooks):
+#   git config core.hooksPath scripts/git-hooks
+#
+# Skip for a single commit (only if you are sure it is not a secret):
+#   git commit --no-verify
+
+ANTHROPIC_KEY='sk-ant-[A-Za-z0-9_-]{20,}'
+JWT='eyJhbGci[A-Za-z0-9_-]{10,}'
+
+# Masked matches, one "file:line:text" per line. Runs in a pipeline subshell,
+# so results come back through stdout rather than a variable.
+matches=$(git diff --cached --name-only --diff-filter=ACMR | while IFS= read -r file; do
+  case "$(basename "$file")" in
+    (.env|.env.*)
+      if git check-ignore -q --no-index -- "$file"; then
+        continue
+      fi
+      ;;
+  esac
+  git grep --cached -n -I -E -e "$ANTHROPIC_KEY" -e "$JWT" -- "$file" 2>/dev/null
+done)
+
+found=0
+if [ -n "$matches" ]; then
+  found=1
+  printf '%s\n' "$matches" \
+    | sed -E 's/(sk-ant-[A-Za-z0-9]{0,5})[A-Za-z0-9_-]+/\1…[masked]/g; s/(eyJhbGci)[A-Za-z0-9_.-]+/\1…[masked]/g' \
+    | cut -c1-200 >&2
+fi
+
+if [ "$found" -ne 0 ]; then
+  echo "" >&2
+  echo "pre-commit: possible secret in the staged files above, commit blocked." >&2
+  echo "Move it to a gitignored .env file and unstage it (git restore --staged <file>)." >&2
+  echo "If it is definitely not a secret, skip once with: git commit --no-verify" >&2
+  exit 1
+fi
+exit 0

@@ -1,0 +1,18 @@
+[
+  {
+    "topic": "What support taught me about product management",
+    "format": "linkedin post",
+    "tone": "storytelling",
+    "archetype": "personal_story",
+    "authenticity_score": 80,
+    "content": "Two years answering support tickets taught me more product than any course.\n\nTickets are unfiltered discovery. Nobody writes a ticket to be polite.\n\nI still read twenty a week. It is the cheapest research I do."
+  },
+  {
+    "topic": "Roadmaps as bets, not promises",
+    "format": "linkedin post",
+    "tone": "casual",
+    "archetype": "contrarian_take",
+    "authenticity_score": 76,
+    "content": "Our roadmap used to be a list of promises with dates.\n\nNow every item is a bet: what we believe, how we will know, and when we stop.\n\nSales hated it for a month. Then they liked never having to explain a missed date."
+  }
+]

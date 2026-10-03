@@ -1,0 +1,26 @@
+[
+  {
+    "topic": "Why I stopped trusting offline validation scores",
+    "format": "linkedin post",
+    "tone": "casual",
+    "archetype": "contrarian_take",
+    "authenticity_score": 82,
+    "content": "Our best offline model was our worst December model.\n\nOffline validation used ten random weeks. None of them were peak season.\n\nNow every validation split includes the hardest month we have, even if it makes the leaderboard ugly.\n\nUgly leaderboards are honest leaderboards."
+  },
+  {
+    "topic": "SQL review habits for junior analysts",
+    "format": "linkedin post",
+    "tone": "technical",
+    "archetype": "list_that_isnt",
+    "authenticity_score": 78,
+    "content": "Three things I check in every junior analyst's SQL before the logic:\n\n1. What is one row of the output?\n2. Which join can duplicate rows?\n3. Which filter silently drops nulls?\n\nThe logic is usually fine. The grain usually is not."
+  },
+  {
+    "topic": "Dashboards nobody opens",
+    "format": "thread",
+    "tone": "casual",
+    "archetype": "personal_story",
+    "authenticity_score": 74,
+    "content": "1/ I checked the view counts on the 31 dashboards my team maintains.\n\n2/ Nine were opened in the last month. Four by me.\n\n3/ We deleted 19. Nobody complained.\n\n4/ Ask who makes a decision with it before you build it."
+  }
+]

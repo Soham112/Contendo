@@ -61,3 +61,9 @@ GEMINI.md
 # Claude Code — personal, not shared
 .claude/settings.local.json
 CLAUDE.local.md
+
+# Evals: run outputs and DeepEval caches (evals/.env is covered by .env above)
+evals/results/
+.deepeval/
+.deepeval-cache.json
+.pytest_cache/

@@ -1,0 +1,26 @@
+[
+  {
+    "topic": "Why I started a second company",
+    "format": "linkedin post",
+    "tone": "storytelling",
+    "archetype": "personal_story",
+    "authenticity_score": 81,
+    "content": "My first startup was acqui-hired. Everyone said congratulations. I felt like I had quit halfway.\n\nTwo years later I started Saltmarsh Labs, mostly to finish the sentence.\n\nThe second time is not easier. You just recognise the hard parts sooner."
+  },
+  {
+    "topic": "Founder-led sales is not optional",
+    "format": "linkedin post",
+    "tone": "casual",
+    "archetype": "contrarian_take",
+    "authenticity_score": 79,
+    "content": "Every founder wants to hire a salesperson early.\n\nI did the first 40 demos myself. By demo 30 the pitch was boring to me and finally clear to customers.\n\nThat is the moment to hire, not before."
+  },
+  {
+    "topic": "Our first price was too low",
+    "format": "thread",
+    "tone": "technical",
+    "archetype": "before_after",
+    "authenticity_score": 77,
+    "content": "1/ Driftwood launched at 9 euros per user per month.\n\n2/ Customers who paid it did not use it. Customers who asked for invoices did.\n\n3/ We moved to team pricing. Fewer sign-ups, better customers.\n\n4/ A low price attracts people who are not sure they have the problem."
+  }
+]

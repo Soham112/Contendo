@@ -1,0 +1,29 @@
+[
+  {
+    "node_type": "work",
+    "entity_name": "Brightloom",
+    "role": "Senior Product Manager",
+    "start_date": "2021-09",
+    "end_date": null,
+    "domain_areas": ["scheduling", "onboarding", "pricing"],
+    "description": "Owns onboarding and the Clinic Pulse analytics feature."
+  },
+  {
+    "node_type": "work",
+    "entity_name": "Brightloom",
+    "role": "Customer Support Lead",
+    "start_date": "2019-04",
+    "end_date": "2021-08",
+    "domain_areas": ["support operations", "customer research"],
+    "description": "Ran a five-person support team before moving into product."
+  },
+  {
+    "node_type": "personal_project",
+    "entity_name": "Pantryline",
+    "role": "Builder",
+    "start_date": "2024-02",
+    "end_date": null,
+    "domain_areas": ["no-code", "meal planning"],
+    "description": "Family meal planning app built with a no-code tool."
+  }
+]
