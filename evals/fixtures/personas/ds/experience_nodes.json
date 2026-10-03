@@ -1,0 +1,38 @@
+[
+  {
+    "node_type": "work",
+    "entity_name": "Fernhollow Logistics",
+    "role": "Senior Data Scientist",
+    "start_date": "2022-03",
+    "end_date": null,
+    "domain_areas": ["demand forecasting", "experimentation", "MLOps"],
+    "description": "Owns the Kestrel freight demand forecast and the Tidepool feature store."
+  },
+  {
+    "node_type": "work",
+    "entity_name": "Ostra Retail Analytics",
+    "role": "Data Analyst",
+    "start_date": "2019-01",
+    "end_date": "2022-02",
+    "domain_areas": ["SQL", "dashboards", "A/B testing"],
+    "description": "Fictional retailer. Built weekly sales reporting and ran pricing tests."
+  },
+  {
+    "node_type": "personal_project",
+    "entity_name": "Wrenlog",
+    "role": "Builder",
+    "start_date": "2024-05",
+    "end_date": null,
+    "domain_areas": ["audio classification", "PyTorch"],
+    "description": "Weekend birdsong classifier for garden recordings."
+  },
+  {
+    "node_type": "education",
+    "entity_name": "Fictional Institute of Technology",
+    "role": "MSc Statistics",
+    "start_date": "2016-09",
+    "end_date": "2018-06",
+    "domain_areas": ["time series", "Bayesian statistics"],
+    "description": "Thesis on intermittent demand forecasting."
+  }
+]

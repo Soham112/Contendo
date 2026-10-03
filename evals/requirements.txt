@@ -1,0 +1,4 @@
+# Eval-only extras. Install into backend/venv on top of backend/requirements.txt:
+#   backend/venv/bin/pip install -r evals/requirements.txt
+# Never add these to backend/requirements.txt (Railway installs that file).
+deepeval==4.2.7

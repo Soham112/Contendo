@@ -1,0 +1,38 @@
+[
+  {
+    "node_type": "work",
+    "entity_name": "Saltmarsh Labs",
+    "role": "Founder and CEO",
+    "start_date": "2023-01",
+    "end_date": null,
+    "domain_areas": ["developer tools", "fundraising", "sales"],
+    "description": "Building Driftwood, an API mocking tool. Seed round led by Harbor Ventures."
+  },
+  {
+    "node_type": "work",
+    "entity_name": "Quayside Payments",
+    "role": "Co-founder and CTO",
+    "start_date": "2018-02",
+    "end_date": "2022-06",
+    "domain_areas": ["payments", "backend engineering"],
+    "description": "Fictional first startup, acqui-hired in 2022."
+  },
+  {
+    "node_type": "personal_project",
+    "entity_name": "Levain Timer",
+    "role": "Builder",
+    "start_date": "2024-11",
+    "end_date": null,
+    "domain_areas": ["mobile apps"],
+    "description": "Sourdough schedule app for my own baking."
+  },
+  {
+    "node_type": "education",
+    "entity_name": "Fictional University of Porto",
+    "role": "BSc Computer Science",
+    "start_date": "2011-09",
+    "end_date": "2014-06",
+    "domain_areas": ["distributed systems"],
+    "description": "Undergraduate degree."
+  }
+]

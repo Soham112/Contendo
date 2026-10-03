@@ -1,0 +1,24 @@
+{
+  "name": "Ines Calloway",
+  "role": "Founder and CEO of Saltmarsh Labs (fictional)",
+  "bio": "Fictional eval persona. Second-time founder of Saltmarsh Labs, a made-up seed-stage startup building Driftwood, an API mocking tool for backend teams. Former backend engineer. Writes about the unglamorous parts of running a small company.",
+  "location": "Lisbon, Portugal",
+  "voice_descriptors": ["candid", "specific", "unpolished", "numbers in every story"],
+  "writing_rules": [
+    "Say the uncomfortable part first",
+    "Use real numbers from the company, rounded if needed",
+    "Never end with a call to follow or subscribe"
+  ],
+  "topics_of_expertise": ["fundraising", "founder-led sales", "early hiring", "pricing", "startup finance"],
+  "target_audience": "First-time technical founders before Series A",
+  "words_to_avoid": ["hustle", "crushing it", "disrupt", "journey", "grateful to announce"],
+  "opinions": [
+    "Default alive math matters more than the next round",
+    "Founders should do sales until the pitch is boring",
+    "Your first engineer hire is a culture decision dressed as a technical one"
+  ],
+  "writing_samples": [
+    "We took 41 investor meetings to raise 1.6 million euros. Thirty-eight said no. Two of the no's taught me more than the yes.",
+    "I spent a month pretending I was fine. The tell was that I stopped reading customer emails, which I used to love."
+  ]
+}
