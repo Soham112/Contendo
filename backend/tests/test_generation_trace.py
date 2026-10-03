@@ -363,3 +363,17 @@ def test_trace_has_empty_specifics_guard_when_nothing_was_added(claude, fake_db,
     claude.queue(*STANDARD_RUN)
     _run()
     assert _only_trace(fake_db)["node_outputs"]["specifics_guard"] == []
+
+
+def test_enforcer_retry_is_recorded_with_its_own_event_type(claude, fake_db, seeded_kb):
+    claude.queue(
+        "personal_story", "Draft text.", "{}", "Humanized text.", "CLEAN", "Audited text.",
+        "Audited text, plus 34% more words.",   # enforcer expansion adds a figure
+        "Audited text, plus a few more words.",  # retry is clean
+    )
+    _run()
+
+    trace = _only_trace(fake_db)
+    assert [c["event_type"] for c in trace["llm_calls"]][-2:] == ["word_count_enforcer", "word_count_enforcer_retry"]
+    assert trace["node_outputs"]["specifics_guard"][0]["node"] == "word_count_enforcer"
+    assert trace["node_outputs"]["final_post"] == "Audited text, plus a few more words."

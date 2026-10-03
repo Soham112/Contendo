@@ -200,3 +200,78 @@ def test_finalize_keeps_prose_that_mentions_word_count():
 
     text = "Nobody cares about word count. They care whether it is true."
     assert finalize_node({"current_draft": text})["final_post"] == text
+
+
+# --- word count enforcer ---------------------------------------------------------
+
+SHORT_POST = DRAFT  # well under 250 words for a standard LinkedIn post -> expand
+LONG_POST = " ".join([DRAFT] * 30)  # over 350 words -> trim
+
+
+def _enforcer_state(post):
+    return _state(format="linkedin post", length="standard", current_draft=post, iterations=1)
+
+
+def test_enforcer_expand_prompt_uses_only_existing_material(claude):
+    from agents.word_count_enforcer_agent import word_count_enforcer_node
+
+    claude.queue(DRAFT + " That is why the contract matters.")
+    word_count_enforcer_node(_enforcer_state(SHORT_POST))
+    prompt = _prompt(claude.calls[0])
+    assert "Add one specific detail" not in prompt
+    assert "Expand only with material already in the post" in prompt
+    assert "Never add or change any number" in prompt
+
+
+def test_enforcer_clean_expansion_needs_no_retry(claude):
+    from agents.word_count_enforcer_agent import word_count_enforcer_node
+
+    expanded = DRAFT + " Nobody noticed, which is the real problem."
+    claude.queue(expanded)
+    state = word_count_enforcer_node(_enforcer_state(SHORT_POST))
+    assert len(claude.calls) == 1
+    assert state["current_draft"] == expanded
+    assert state.get("specifics_guard", []) == []
+
+
+def test_enforcer_retries_an_expansion_that_adds_facts(claude):
+    from agents.word_count_enforcer_agent import word_count_enforcer_node
+
+    clean = DRAFT + " Nobody noticed."
+    claude.queue(DRAFT + " It cost us 34% of a quarter's margin.", clean)
+    state = word_count_enforcer_node(_enforcer_state(SHORT_POST))
+
+    assert len(claude.calls) == 2
+    assert "- 34%" in _prompt(claude.calls[1])
+    assert state["current_draft"] == clean
+    assert state["specifics_guard"][0]["node"] == "word_count_enforcer"
+    assert state["specifics_guard"][0]["outcome"] == "accepted_after_retry"
+
+
+def test_enforcer_keeps_its_input_when_the_retry_still_adds_facts(claude):
+    from agents.word_count_enforcer_agent import word_count_enforcer_node
+
+    claude.queue(DRAFT + " Every Thursday it happens.", DRAFT + " Every Thursday it happens again.")
+    state = word_count_enforcer_node(_enforcer_state(SHORT_POST))
+    assert state["current_draft"] == SHORT_POST
+    assert state["specifics_guard"][0]["outcome"] == "reverted"
+    assert state["draft_history"] == []
+
+
+def test_enforcer_guards_trimming_too(claude):
+    from agents.word_count_enforcer_agent import word_count_enforcer_node
+
+    # The trim turns "six days" into "nine days", twice.
+    claude.queue("For nine days the forecast saw zero bookings.", "For nine days, zero bookings.")
+    state = word_count_enforcer_node(_enforcer_state(LONG_POST))
+    assert state["current_draft"] == LONG_POST
+    assert state["specifics_guard"][0]["first_attempt"] == [{"text": "nine days", "kind": "duration"}]
+
+
+def test_enforcer_strips_a_printed_word_count(claude):
+    from agents.word_count_enforcer_agent import word_count_enforcer_node
+
+    claude.queue(DRAFT + " Nobody noticed.\n\nWord count: 262")
+    state = word_count_enforcer_node(_enforcer_state(SHORT_POST))
+    assert len(claude.calls) == 1
+    assert state["current_draft"] == DRAFT + " Nobody noticed."

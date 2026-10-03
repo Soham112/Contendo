@@ -785,7 +785,7 @@ Rules:
 - Preserve the voice, meaning, and key ideas exactly
 - Cut weaker sentences, redundant phrases, and padding first
 - Do not add any new content
-- Output only the trimmed post — no commentary, no preamble
+- Output only the trimmed post — no commentary, no preamble{specifics_retry}
 
 Current word count: {current_count}
 Target: {min_words}–{max_words} words
@@ -799,10 +799,11 @@ Post:
 You are a precise editor. Expand this post slightly to reach at least {min_words} words.
 
 Rules:
-- Add one specific detail, concrete example, or clarifying sentence — not filler
+- Expand only with material already in the post: elaborate a point it already makes, add a transition, or spell out a consequence of something it already says — not filler
+- Never add or change any number, percentage, money amount, date, month, day of the week, duration, count, name or quoted figure, and do not introduce new examples, incidents, people or results
 - Preserve the voice and meaning exactly
 - Stay under {max_words} words
-- Output only the expanded post — no commentary, no preamble
+- Output only the expanded post — no commentary, no preamble{specifics_retry}
 
 Current word count: {current_count}
 Target: {min_words}–{max_words} words
@@ -818,8 +819,11 @@ Post:
 
 **Output handling:**
 - If within range: returns state unchanged (no Claude call)
-- If trim/expand needed: replaces `state["current_draft"]` with Haiku output
+- If trim/expand needed: replaces `state["current_draft"]` with Haiku output (any printed "Word count: N" line stripped)
 - Usage logged as `event_type="word_count_enforcer"`, `model="haiku"`
+- `specifics_retry` — `""` on the first attempt; the humanizer's retry text on the retry
+
+**Specifics guard (code, not prompt):** the trimmed or expanded post is checked against the input post, the retrieved chunks, the profile, topic and context, exactly as in the humanizer. On a violation the same prompt is retried once with `specifics_retry` filled in (`event_type="word_count_enforcer_retry"`); if the retry still adds facts, the input post is kept. Retries are logged in `state["specifics_guard"]`.
 - All exceptions caught — pipeline never breaks
 
 **Pipeline position:** `predictability_audit → word_count_enforcer → finalize` (standard/draft); `scorer → word_count_enforcer → finalize` (polished, after all retry iterations). The retry loop (`scorer → humanizer → predictability_audit → scorer`) never passes through this node.
