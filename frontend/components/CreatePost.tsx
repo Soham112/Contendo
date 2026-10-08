@@ -758,6 +758,10 @@ export default function CreatePost() {
   // trace_id from the latest /generate, sent with the first successful /log-post
   // for that generation, then cleared so a later save never re-links it.
   const pendingTraceIdRef = useRef<string | null>(null);
+  // trace_id of the post generated in this session, kept so selection refines
+  // can be checked against its sources. In memory only: a stored copy could
+  // outlive the post and point a different post at the wrong sources.
+  const currentTraceIdRef = useRef<string | null>(null);
 
   // Responsive width detection
   useEffect(() => {
@@ -965,6 +969,7 @@ export default function CreatePost() {
       sessionStorage.removeItem(k)
     );
     rawPostRef.current = "";
+    currentTraceIdRef.current = null;
     sessionStorage.removeItem("contentOS_last_topic");
 
     const prefillFormat = sessionStorage.getItem("contentOS_prefill_format");
@@ -1110,6 +1115,7 @@ export default function CreatePost() {
       }
       setOpinionMode(opts?.noSpecifics ?? false);
       pendingTraceIdRef.current = data.trace_id ?? null;
+      currentTraceIdRef.current = data.trace_id ?? null;
       // Store raw post (with placeholders) for /generate-visuals, strip for display/editing
       rawPostRef.current = data.post;
       const cleanPost = stripPlaceholders(data.post);
@@ -1154,11 +1160,21 @@ export default function CreatePost() {
     if (!inlineSelection || !inlineInstruction.trim() || inlineLoading) return;
     setInlineLoading(true);
     try {
-      const result = await api.refineSelection(
-        inlineSelection.text,
-        inlineInstruction,
-        editedPost
-      );
+      const postId = currentPostId ?? (() => {
+        try { return Number(sessionStorage.getItem(SS_CURRENT_POST_ID)) || null; } catch { return null; }
+      })();
+      const result = await api.refineSelection({
+        selected_text: inlineSelection.text,
+        instruction: inlineInstruction,
+        full_post: editedPost,
+        trace_id: currentTraceIdRef.current,
+        post_id: postId,
+      });
+      if (result.status === "reverted") {
+        // Nothing changed. Keep the selection and instruction so they can be amended.
+        showToast([result.message, result.sources_message].filter(Boolean).join(" "), "error");
+        return;
+      }
       const rewrittenText = result.rewritten_text;
       const newPost =
         editedPost.slice(0, inlineSelection.start) +
@@ -1174,12 +1190,17 @@ export default function CreatePost() {
       }
 
       await patchHistory({ content: newPost });
-    } catch (err) {
-      console.error("Inline edit failed:", err);
-    } finally {
-      setInlineLoading(false);
+      if (result.note) showToast(result.note, "info");
       setInlineSelection(null);
       setInlineInstruction("");
+    } catch (err) {
+      console.error("Inline edit failed:", err);
+      showToast(
+        err instanceof Error && err.message ? err.message : "Couldn't refine that selection. Please try again.",
+        "error"
+      );
+    } finally {
+      setInlineLoading(false);
     }
   };
 

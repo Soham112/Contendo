@@ -86,10 +86,11 @@ def _seed_chunks(user_id, title, chunks):
 
 
 def _refine_prompt(client, claude, headers) -> str:
-    """Call /refine and return the prompt it sent for the refine call."""
-    claude.queue("refined draft", '{"total_score": 70}')
-    resp = client.post("/refine", headers=headers, json={
-        "current_draft": "draft", "refinement_instruction": "tighten the ending",
+    """Call /refine-selection and return the prompt it sent."""
+    claude.queue("a tighter ending")
+    resp = client.post("/refine-selection", headers=headers, json={
+        "selected_text": "the ending", "instruction": "tighten the ending",
+        "full_post": "The opening. Then the ending",
     })
     assert resp.status_code == 200
     return claude.calls[0]["messages"][0]["content"]

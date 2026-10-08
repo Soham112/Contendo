@@ -25,7 +25,7 @@ flowchart TD
         R1["POST /ingest\nPOST /ingest-file\nPOST /scrape-and-ingest"]
         R1b["POST /obsidian/preview, /obsidian/ingest (local path)\nPOST /obsidian/preview-zip, /obsidian/ingest-zip (zip upload — production-ready)"]
         R2["POST /generate"]
-        R2b["POST /refine"]
+        R2b["POST /refine-selection"]
         R3["POST /log-post (auto-save)"]
         R4["GET /history\nPATCH /history/{id}\nDELETE /history/{id}\nPOST /history/{id}/restore/{vid}"]
         R5["GET /library\nDELETE /library/source"]
@@ -120,7 +120,7 @@ Navigation is handled by a persistent left sidebar (`Sidebar.tsx`), rendered by 
 
 **Screen 2 — Library (`/library`):** Shows everything the user has fed into memory, grouped by source (one card per ingest call, not per chunk). A stats bar shows total sources, total chunks, and unique tag count. Source cards display the type badge (Article/Note/Image/YouTube), title derived from the first 80 characters of the content, date added, chunk count, and tag pills. Searchable by title and tags, filterable by source type, sortable newest/oldest. This gives the user full visibility into what knowledge the system has before generating a post.
 
-**Screen 3 — Create Post (`/create`):** The user enters a topic, picks format/tone/length, and clicks Generate. Before generation, all settings are shown inline. After generation, the settings form is replaced by the generated post in an editable textarea, with a small topic header displayed above the post. A "View authenticity analysis" toggle reveals the score panel; when open on wide viewports (≥ 900px), the layout switches to a split screen — post on the left, score and refine controls on the right — escaping the normal max-width container to use the full viewport beside the sidebar. The split ratio is resizable with a draggable divider and defaults to a 75/25 post-to-analysis balance when opened. The settings drawer (opened via "Regenerate") lets the user edit topic/format/tone/length/context and re-run without losing the current post. "Generate visuals" parses `[DIAGRAM:]` and `[IMAGE:]` placeholders and generates SVGs via Claude. Posts are **auto-saved** to history immediately after generation with a realtime tracking indicator ("Saved just now") — no manual save step required. Session state (post, score, visuals, ideas, length) persists in sessionStorage so navigating away and back restores the last session cleanly on the editor view.
+**Screen 3 — Create Post (`/create`):** The user enters a topic, picks format/tone/length, and clicks Generate. Before generation, all settings are shown inline. After generation, the settings form is replaced by the generated post in an editable textarea, with a small topic header displayed above the post. A "View authenticity analysis" toggle reveals the score panel; when open on wide viewports (≥ 900px), the layout switches to a split screen — post on the left, score and feedback on the right — escaping the normal max-width container to use the full viewport beside the sidebar. The split ratio is resizable with a draggable divider and defaults to a 75/25 post-to-analysis balance when opened. The settings drawer (opened via "Regenerate") lets the user edit topic/format/tone/length/context and re-run without losing the current post. To refine the post, the user selects any passage in the editor, types a short instruction in the inline toolbar that appears, and the selection is rewritten in place (`POST /refine-selection`); there is no whole-post refine. The rewrite may change wording, structure and emphasis but not facts: new details must come from the post, the instruction or the post's original sources, and if the rewrite would add an unsupported number or date the selection is left unchanged with a message asking for the detail in the instruction. "Generate visuals" parses `[DIAGRAM:]` and `[IMAGE:]` placeholders and generates SVGs via Claude. Posts are **auto-saved** to history immediately after generation with a realtime tracking indicator ("Saved just now") — no manual save step required. Session state (post, score, visuals, ideas, length) persists in sessionStorage so navigating away and back restores the last session cleanly on the editor view.
 
 **Screen 4 — Get Ideas (`/ideas`):** A dedicated brainstorm screen. The user optionally enters a topic focus and picks how many ideas to generate (3–15). The ideation agent runs multi-query diversity sampling across the knowledge base and returns content suggestions. Ideas generated in a session persist in localStorage (`contendo_ideas`) and are restored on page revisit. Individual ideas can be saved for later (`contendo_saved_ideas` localStorage key); saved ideas appear in a "SAVED" subsection. Clicking "Use this" writes the idea title to `contentOS_last_topic` and the format to `contentOS_prefill_format` in sessionStorage, then redirects to Create Post where both are pre-filled.
 
@@ -325,7 +325,7 @@ Note: profile files are gitignored — your personal details never get committed
     ├── main.py                       # FastAPI entry point — CORS, lifespan, router registration, logging config
     ├── routers/
     │   ├── ingest.py                 # /ingest, /ingest-file, /scrape-and-ingest, /fetch-youtube-transcript, /suggest-memory-context, /obsidian/*
-    │   ├── generate.py               # /generate, /refine, /refine-selection, /score, /generate-visuals, /refine-visual
+    │   ├── generate.py               # /generate, /refine-selection, /score, /generate-visuals, /refine-visual
     │   ├── history.py                # /history, /log-post (links generation trace), PATCH/DELETE/restore/publish history
     │   ├── library.py                # /library, /library/clusters, DELETE /library/source
     │   ├── ideas.py                  # /suggestions
@@ -353,7 +353,8 @@ Note: profile files are gitignored — your personal details never get committed
     │   ├── retrieval_agent.py        # Hybrid retrieval node (pgvector + BM25 + entity links) in the LangGraph pipeline
     │   ├── draft_agent.py            # Generates initial draft via Claude + confidence-based grounding calibration
     │   ├── critic_agent.py           # Diagnoses the draft (hook/substance/structure/voice) into a critic brief
-    │   ├── humanizer_agent.py        # Rewrites draft to remove AI patterns; exposes refine_draft()
+    │   ├── humanizer_agent.py        # Rewrites draft to remove AI patterns
+    │   ├── refine_agent.py           # Selection refine (/refine-selection), guarded against invented specifics
     │   ├── scorer_agent.py           # Scores draft 0–100, robust JSON parse with fallback
     │   ├── predictability_audit_agent.py  # Post-humanizer anti-pattern + rhythm pass
     │   ├── word_count_enforcer_agent.py   # Final length gate (trim/expand)

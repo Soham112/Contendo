@@ -644,107 +644,71 @@ What to inject instead:
 
 **Quality-mode bypass:** If `state.get("quality") == "draft"`, `humanizer_node` returns state unchanged with no Claude call. The raw draft agent output passes through unmodified.
 
-**Standalone refinement function — `refine_draft(current_draft, refinement_instruction, profile=None)`:**
+---
 
-Used by `POST /refine` outside the LangGraph pipeline. Uses `REFINE_PROMPT` (separate constant in the same file) — completely unchanged by this feature. If `profile` is not passed, `load_profile()` is called automatically. Profile context is now included identically to the main humanizer prompt — refinement targets the user's specific voice, not generic "better writing".
+### Selection Refine — agents/refine_agent.py (refine_selection)
 
-**Standalone refinement function — `refine_draft(current_draft, refinement_instruction, profile=None)`:**
+**Purpose:** Rewrite a single selected fragment of a post according to the author's instruction, outside the LangGraph pipeline (`POST /refine-selection`). It may change wording, structure and emphasis, never what the post claims. Returns the rewritten fragment plus a status. This is the only refine path: the whole-post `refine_draft()` / `REFINE_PROMPT` (which told the model to "write something that sounds like it actually happened") and `POST /refine` were removed.
 
-Used by `POST /refine` outside the LangGraph pipeline. Uses `REFINE_PROMPT` (separate constant in the same file). If `profile` is not passed, `load_profile()` is called automatically. Profile context is now included identically to the main humanizer prompt — refinement targets the user's specific voice, not generic "better writing".
+**Model:** `claude-sonnet-4-6`, `max_tokens=500`. Event types: `refine_selection`, and `refine_selection_retry` for the guard's second attempt.
 
+**Prompt (`REFINE_SELECTION_PROMPT`):**
 ```
-You are a sharp editor rewriting a post draft based on specific feedback. Your job is to make meaningful improvements, not cosmetic tweaks.
+You are editing one selected section of a post. You may change its wording, structure and emphasis. You may not change what it claims.
 
-User profile: write in this person's voice:
-{profile_context}
-
-Words this person never uses:
-{words_to_avoid}
-
-Never use the em dash character (—) anywhere in the output. If you are about to write an em dash, stop and use a period or comma instead.
-
-AI writing patterns to eliminate from the output:
-- Em dashes used as clause connectors or parenthetical separators (e.g. 'the data was messy, noisy and sparse' or 'one feature, which had low fill rate, was dropped'). Replace with a period, a comma, or rewrite the sentence entirely. Em dashes are one of the strongest signals of AI-generated text and must never appear in the output.
-- Hyphenated compound modifiers used decoratively (e.g. 'data-driven', 'production-ready', 'well-known', 'high-value' when plain language works just as well). Write 'drives decisions with data' not 'data-driven'. Only use hyphens when they are grammatically required and cannot be avoided.
-
-Current draft:
-{current_draft}
-
-Feedback to act on:
-{refinement_instruction}
-
-How to approach this:
-
-For STRUCTURAL feedback (move this section, cut this paragraph, the ending is weak):
-  Make the structural change. Move paragraphs. Cut what is not working. Rewrite the ending if the feedback says it is weak. Do not preserve structure at the cost of quality.
-
-For VOICE feedback (too clean, too generic, reads like LLM output, lacks specificity):
-  Rewrite the affected sentences from scratch in the user's voice. Use the profile above as your guide. One specific detail beats three general claims every time.
-
-For CONTENT feedback (reference feels parachuted, missing what actually happened, no friction):
-  Add the missing substance. If the feedback asks for what actually happened: write something that sounds like it actually happened, grounded in the user's profile and experience. If you don't have the specific detail, write something honest: "I don't have the exact number, but the pattern was clear."
-
-What to always preserve:
-  - [DIAGRAM:] and [IMAGE:] placeholders are MANDATORY. They must appear in the output exactly as written. If you restructure paragraphs, place the placeholder where it best fits the new structure, but never omit it. Missing a placeholder is a critical error.
-  - Specific real numbers and named facts that are clearly sourced
-  - The overall topic and argument
-
-What you are allowed to change:
-  - Paragraph order
-  - Sentence structure throughout
-  - The opening and closing
-  - Any section the feedback identifies as weak
-  - Length: shorter is often better
-
-Output only the refined post. No commentary. No "Here is the refined version:" preamble.
-```
-
-**Input variables injected into REFINE_PROMPT:**
-- `profile_context` — string-formatted output of `profile_to_context_string(profile)`; loaded via `load_profile()` if not passed explicitly
-- `words_to_avoid` — comma-separated list from `profile["words_to_avoid"]`
-- `current_draft` — the draft string passed directly to the function
-- `refinement_instruction` — pre-processed by `_feedback_to_instructions()` in `routers/generate.py` before being passed; each scorer feedback item is prefixed with `"ACTION NEEDED:"` so Claude treats them as directives rather than observations
-
-### Inline Selection Editor — agents/humanizer_agent.py (refine_selection)
-
-**Purpose:** Rewrite a single selected fragment of a post according to a short user instruction. Returns only the rewritten fragment — not the full post.
-
-**Model:** `claude-sonnet-4-6`, `max_tokens=500`
-
-**Prompt:**
-```
-You are editing a specific section of a social media post.
-
-User profile — match this person's voice exactly:
+Author profile. Match this person's voice exactly:
 {profile_context}
 
 Words this person never uses: {words_to_avoid}
 
 Never use the em dash character (—) anywhere in the output.
 
-Full post for context (do NOT rewrite this — for voice reference only):
+Full post (for voice and context only; do NOT rewrite it):
 {full_post}
+
+The post's original sources (what the author's knowledge base held when the post was written):
+{sources_block}
 
 Selected section to rewrite:
 {selected_text}
 
-Instruction: {instruction}
+Instruction from the author:
+{instruction}
+
+Where facts may come from:
+- Every fact, number, date, name and event in your rewrite must already be in the selected section, the full post, the author's instruction or the original sources above.
+- Never invent an example, anecdote, statistic, name, quote or event, and never write something that only sounds like it happened.
+- Keep each source's attribution. Do not present something a source attributes to someone else as the author's own experience.
+- If the instruction asks for something none of those contain (for example "add a real example" when no source has one), do not make it up. Make the part of the change you can, keep the section's facts as they are, and end your output with one short note on its own line, in exactly this form:
+  <note>what you could not add, and what the author could put in the instruction so you can</note>
+- Add a note only in that case.
 
 Rules:
 - Rewrite ONLY the selected section according to the instruction
 - Match the voice, tone, and style of the surrounding post exactly
-- Output ONLY the rewritten text — no explanation, no preamble, no quotes
+- Output ONLY the rewritten text (and the note, if one is needed): no explanation, no preamble, no quotes
 - Do not add line breaks unless the original had them
 - Keep roughly the same length unless the instruction says otherwise
-- No em dashes anywhere in the output
+- No em dashes anywhere in the output{specifics_retry}
 ```
 
 **Input variables:**
 - `profile_context` — `profile_to_context_string(profile)` loaded by `user_id`
 - `words_to_avoid` — comma-separated from `profile["words_to_avoid"]`
 - `full_post` — entire post, context only
+- `sources_block` — the post's original sources: `generation_traces.retrieved_context` (the attributed context the draft agent saw) from the caller's own trace, found by `trace_id`, else by `post_id`. When there is no trace, or the trace is a no-specifics post: `(No saved sources for this post. Use only the post and the instruction.)`
 - `selected_text` — the highlighted fragment to rewrite
-- `instruction` — user's short edit instruction
+- `instruction` — the author's instruction, passed through unchanged
+- `specifics_retry` — empty on the first attempt; on the retry, `retry_note(violations, node="selection")`:
+  ```
+  Your previous attempt added or changed these details, which are not in the post, the author's instruction or the original sources:
+  - <violation>
+  Rewrite the selected section again without them. Keep every factual detail exactly as the post states it, and add none. If the instruction cannot be followed without them, say so in the note.
+  ```
+
+**Note (output format):** when the instruction asks for something no source contains, the model ends its output with `<note>…</note>`. `_split_note()` removes it from the text and returns it as the response's `note`; a reply that is only a note leaves the selection unchanged.
+
+**Specifics guard (code, not prompt):** after the rewrite, `utils.specifics.find_violations()` lists every number, date, duration and money amount that none of these support: the full post, the instruction, the current profile, and (with a trace) its retrieved chunks, profile snapshot, topic and context. On a violation the call is retried once with `specifics_retry`; if the retry still has one, the selection is returned unchanged with `status: "reverted"` and the message "Couldn't refine without adding details that aren't in your sources. Try adding them to your instruction." When the post has a trace, each retry is appended to its `node_outputs.specifics_guard` (node `refine_selection`). The guard does not judge names or events that carry no number or date; those are constrained by the prompt only.
 
 ---
 
@@ -1049,7 +1013,7 @@ If all three fail: logs raw response, returns `score=50`, `feedback=["Score pars
 
 **Standalone scoring function — `score_text(draft: str) -> tuple[int, list[str]]`:**
 
-The full 3-attempt JSON parse and Claude call is extracted into `score_text()`. `scorer_node` calls it internally. `POST /refine` also calls it directly without constructing a `PipelineState`. Returns `(total_score, feedback + flagged_sentences combined list)`.
+The full 3-attempt JSON parse and Claude call is extracted into `score_text()`. `scorer_node` calls it internally. `POST /score` also calls it directly without constructing a `PipelineState`. Returns `(total_score, feedback + flagged_sentences combined list)`.
 
 ---
 

@@ -257,11 +257,21 @@ def grounding_texts(state: dict[str, Any], input_draft: str) -> list[str]:
 def retry_note(violations: list[Specific], no_specifics: bool = False, node: str = "rewrite") -> str:
     """Prompt suffix for a second attempt; "" when there is nothing to report.
 
-    node="draft" for draft_node (no input draft to rewrite from); "rewrite" otherwise.
+    node="draft" for draft_node (no input draft to rewrite from), "selection"
+    for the selection refine (no draft; the author's instruction is a source),
+    "rewrite" otherwise.
     """
     if not violations:
         return ""
     listed = "\n".join(f"- {v.text}" for v in violations)
+    if node == "selection":
+        return (
+            "\n\nYour previous attempt added or changed these details, which are not in the post, "
+            "the author's instruction or the original sources:\n"
+            f"{listed}\n"
+            "Rewrite the selected section again without them. Keep every factual detail exactly as the "
+            "post states it, and add none. If the instruction cannot be followed without them, say so in the note."
+        )
     if node == "draft":
         where = "the topic, the context or the author profile" if no_specifics else "the knowledge base, the author profile or the request"
         return (
@@ -309,19 +319,25 @@ class GuardSources:
     facts: list[str]  # supports numbers, dates, durations, money (unsupported_specifics)
 
 
-def guard_sources(state: dict[str, Any], input_draft: str | None = None) -> GuardSources:
+def guard_sources(state: dict[str, Any], input_draft: str | None = None,
+                  extra: Iterable[Any] = ()) -> GuardSources:
     """What a node's output may take numbers, dates, durations and money from.
 
     Normal mode: the input draft (rewrite nodes only), the chunks, the profile,
     the topic and the context. No-specifics mode: the topic, context and profile
     (as grounding_texts). Claims and events are judged by fact_check_node.
+
+    extra: further sources that count in both modes (strings, or dicts/lists of
+    them), e.g. the author's own instruction and post in a selection refine.
     """
     topic, context = state.get("topic") or "", state.get("context") or ""
     profile = state.get("profile") or {}
+    extra_facts = [s for item in extra for s in _strings(item)]
     if state.get("no_specifics"):
-        return GuardSources(facts=[topic, context, *_strings(profile)])
+        return GuardSources(facts=[topic, context, *_strings(profile), *extra_facts])
     chunks = (state.get("retrieval_bundle") or {}).get("chunks", [])
     return GuardSources(facts=[
+        *extra_facts,
         *([input_draft] if input_draft is not None else []),
         *[c.get("text") or c.get("content") or "" for c in chunks],
         *(state.get("retrieved_chunks") or []),

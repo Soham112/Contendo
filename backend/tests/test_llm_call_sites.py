@@ -88,13 +88,8 @@ def test_scorer_node_passes_state_user_id(claude, usage_calls):
 
 # --- Standalone agent functions -----------------------------------------------
 
-def _refine_draft():
-    from agents.humanizer_agent import refine_draft
-    refine_draft("draft", "fix it", user_id=USER)
-
-
 def _refine_selection():
-    from agents.humanizer_agent import refine_selection
+    from agents.refine_agent import refine_selection
     refine_selection("sel", "shorter", "full post", user_id=USER)
 
 
@@ -144,7 +139,6 @@ def _visuals():
 
 
 @pytest.mark.parametrize("call,expected", [
-    (_refine_draft, ("refine", "sonnet")),
     (_refine_selection, ("refine_selection", "sonnet")),
     (_score_text, ("score", "sonnet")),
     (_resume_ideas, ("ideation", "sonnet")),
@@ -211,13 +205,17 @@ def test_extract_resume_logs_with_authenticated_user(client, claude, usage_calls
     _assert_user(usage_calls, "user-r")
 
 
-@pytest.mark.parametrize("path,body,expected", [
-    ("/score", {"post_content": "p"}, [("score", "sonnet")]),
-    ("/refine", {"current_draft": "d", "refinement_instruction": "i"}, [("refine", "sonnet"), ("score", "sonnet")]),
-    ("/suggest-memory-context", {"content": "some text"}, [("memory_context_classify", "haiku")]),
+_SCORE_JSON = '{"total_score": 70}'
+
+
+@pytest.mark.parametrize("path,body,reply,expected", [
+    ("/score", {"post_content": "p"}, _SCORE_JSON, [("score", "sonnet")]),
+    ("/refine-selection", {"selected_text": "s", "instruction": "i", "full_post": "s and more"},
+     "a rewritten selection", [("refine_selection", "sonnet")]),
+    ("/suggest-memory-context", {"content": "some text"}, _SCORE_JSON, [("memory_context_classify", "haiku")]),
 ])
-def test_router_passes_authenticated_user_id(client, claude, usage_calls, auth_headers, path, body, expected):
-    claude.respond_with(lambda kw: '{"total_score": 70}')
+def test_router_passes_authenticated_user_id(client, claude, usage_calls, auth_headers, path, body, reply, expected):
+    claude.respond_with(lambda kw: reply)
     resp = client.post(path, json=body, headers=auth_headers("user-r"))
     assert resp.status_code == 200
     assert _events(usage_calls) == expected
@@ -227,10 +225,10 @@ def test_router_passes_authenticated_user_id(client, claude, usage_calls, auth_h
 # --- Guards -------------------------------------------------------------------
 
 def _threaded_functions():
-    from agents import draft_agent, humanizer_agent, ingestion_agent, scorer_agent, vision_agent, visual_agent
+    from agents import draft_agent, ingestion_agent, refine_agent, scorer_agent, vision_agent, visual_agent
 
     return [
-        draft_agent.infer_archetype, humanizer_agent.refine_draft, scorer_agent.score_text,
+        draft_agent.infer_archetype, refine_agent.refine_selection, scorer_agent.score_text,
         ingestion_agent._extract_tags, ingestion_agent._generate_source_summary,
         ingestion_agent._classify_memory_context, ingestion_agent._extract_entities_for_chunk,
         vision_agent.extract_from_image, visual_agent.generate_svg_for_diagram, visual_agent.generate_visuals,

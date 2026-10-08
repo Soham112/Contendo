@@ -65,15 +65,24 @@ export interface GenerateResponse {
   no_specifics_enabled?: boolean;
 }
 
-export interface RefineRequest {
-  current_draft: string;
-  refinement_instruction: string;
+export interface RefineSelectionRequest {
+  selected_text: string;
+  instruction: string;
+  full_post: string;
+  /** Either one lets the backend find the post's original sources. */
+  trace_id?: string | null;
+  post_id?: number | null;
 }
 
-export interface RefineResponse {
-  refined_draft: string;
-  score: number;
-  score_feedback: string[];
+export interface RefineSelectionResponse {
+  rewritten_text: string;
+  /** "reverted": the rewrite kept adding unsupported details; the text is unchanged. */
+  status: "ok" | "reverted";
+  message: string;
+  /** The model's note when the instruction asked for something no source has. */
+  note: string;
+  sources_used: "trace" | "post_and_profile";
+  sources_message: string;
 }
 
 export interface ScoreResponse {
@@ -234,35 +243,19 @@ export function useApi() {
         body: JSON.stringify(body),
       }),
 
-    refinePost: (body: RefineRequest) =>
-      apiFetch("/refine", {
+    /** Throws an Error carrying the backend's message when the request fails. */
+    refineSelection: async (body: RefineSelectionRequest): Promise<RefineSelectionResponse> => {
+      const res = await apiFetch("/refine-selection", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
-      }),
-
-    refineSelection: async (
-      selectedText: string,
-      instruction: string,
-      fullPost: string
-    ): Promise<{ rewritten_text: string }> => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const token = session?.access_token ?? null;
-      const res = await fetch(`${API}/refine-selection`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          selected_text: selectedText,
-          instruction,
-          full_post: fullPost,
-        }),
       });
-      if (!res.ok) throw new Error("refineSelection failed");
+      if (!res.ok) {
+        const detail = (await res.json().catch(() => null))?.detail;
+        throw new Error(
+          typeof detail === "string" ? detail : "Couldn't refine that selection. Please try again."
+        );
+      }
       return res.json();
     },
 
