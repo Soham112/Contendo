@@ -170,3 +170,45 @@ def test_api_errors_are_not_retried_by_the_structured_helper(claude):
     with pytest.raises(RuntimeError, match="anthropic down"):
         score_text("post", user_id=USER)
     assert len(claude.calls) == 1
+
+
+def test_background_fact_check_retries_a_fenced_reply_then_logs_tool_flags(claude, fake_db):
+    import json
+    from agents.fact_check_agent import log_fact_check
+
+    flags = {"flagged": [{"i": 1, "type": "event", "why": "no supporting note"}]}
+    fake_db.tables.setdefault("generation_traces", []).append(
+        {"id": "fenced", "user_id": "user-a", "node_outputs": {"final_post": "I shipped it."}})
+    claude.queue("```json\n" + json.dumps(flags) + "\n```", json.dumps(flags))
+    log_fact_check({"user_id": "user-a", "final_post": "I shipped it.", "topic": "shipping"}, "fenced")
+    record = fake_db.tables["generation_traces"][0]["node_outputs"]["fact_check"]
+    assert len(claude.calls) == 2
+    assert record["outcome"] == "logged"
+    assert record["flagged"] == [{**flags["flagged"][0], "sentence": "I shipped it."}]
+    assert claude.calls[0]["tool_choice"]["name"] == "record_fact_check"
+
+
+def test_background_fact_check_records_error_after_two_fenced_replies(claude, fake_db):
+    from agents.fact_check_agent import log_fact_check
+
+    fake_db.tables.setdefault("generation_traces", []).append(
+        {"id": "fenced", "user_id": "user-a", "node_outputs": {"final_post": "I shipped it."}})
+    reply = '```json\n{"flagged": []}\n```'
+    claude.queue(reply, reply)
+    log_fact_check({"user_id": "user-a", "final_post": "I shipped it.", "topic": "shipping"}, "fenced")
+    outputs = fake_db.tables["generation_traces"][0]["node_outputs"]
+    assert len(claude.calls) == 2
+    assert outputs["fact_check"]["outcome"] == "error"
+    assert outputs["final_post"] == "I shipped it."
+
+
+@pytest.mark.parametrize("first_reply", [
+    '{"flagged": [{"i": "two", "type": "event", "why": "unsupported"}]}',
+    '{}',
+])
+def test_fact_check_retries_invalid_claim_index_or_missing_flags(claude, first_reply):
+    from agents.fact_check_agent import _judge
+
+    claude.queue(first_reply, '{"flagged": []}')
+    assert _judge("A supported view.", {"topic": "views"}, "user-a", "fact_check") == []
+    assert len(claude.calls) == 2

@@ -399,7 +399,7 @@ def test_normal_mode_fact_check_is_deferred_and_never_changes_the_post(claude, f
     assert callable(result["fact_check_job"])
 
     # The job: one Haiku call, flags written to the trace, post untouched.
-    claude.queue('[{"i": 1, "type": "statistic", "why": "not in sources"}]')
+    claude.queue('{"flagged": [{"i": 1, "type": "statistic", "why": "not in sources"}]}')
     result["fact_check_job"]()
     assert len(claude.calls) == calls_in_pipeline + 1
     assert claude.calls[-1]["model"] == "claude-haiku-4-5-20251001"
@@ -410,7 +410,7 @@ def test_normal_mode_fact_check_is_deferred_and_never_changes_the_post(claude, f
 
 
 def test_no_specifics_mode_enforces_in_the_pipeline_and_returns_no_job(claude, fake_db, seeded_kb, no_specifics_on):
-    claude.queue(*STANDARD_RUN, "[]")  # the enforced fact check runs inside the pipeline
+    claude.queue(*STANDARD_RUN, '{"flagged": []}')  # the enforced fact check runs inside the pipeline
     result = _run(no_specifics=True)
     assert result["fact_check_job"] is None
     assert _only_trace(fake_db)["node_outputs"]["fact_check"]["mode"] == "enforce"
@@ -423,7 +423,7 @@ def test_log_only_job_writes_only_to_the_callers_trace_and_records_errors(claude
         {"id": "t-a", "user_id": "user-a", "node_outputs": {"final_post": "A."}},
         {"id": "t-b", "user_id": "user-b", "node_outputs": {"final_post": "B."}},
     ])
-    claude.queue("not json")
+    claude.queue("not json", "not json")
     log_fact_check({"user_id": "user-a", "final_post": "I shipped it.", "topic": "x"}, "t-a")
     log_fact_check({"user_id": "user-a", "final_post": "I shipped it.", "topic": "x"}, "t-b")  # not theirs
 
@@ -434,7 +434,7 @@ def test_log_only_job_writes_only_to_the_callers_trace_and_records_errors(claude
 
 
 def test_generate_endpoint_runs_the_log_only_fact_check_after_responding(client, claude, fake_db, seeded_kb, auth_headers):
-    claude.queue(*STANDARD_RUN, "[]")
+    claude.queue(*STANDARD_RUN, '{"flagged": []}')
     resp = client.post(
         "/generate",
         json={"topic": "pgvector retrieval", "format": "linkedin post", "tone": "casual"},

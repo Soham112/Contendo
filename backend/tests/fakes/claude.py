@@ -31,7 +31,7 @@ class UnexpectedClaudeCall(AssertionError):
 class FakeClaude:
     def __init__(self):
         self.calls: list[dict] = []
-        self._queue: list[str] = []
+        self._queue: list[str | Message] = []
         self._responder: Callable[[dict], str] | None = None
 
     def reset(self) -> None:
@@ -39,13 +39,13 @@ class FakeClaude:
         self._queue.clear()
         self._responder = None
 
-    def queue(self, *texts: str) -> None:
+    def queue(self, *texts: str | Message) -> None:
         self._queue.extend(texts)
 
     def respond_with(self, fn: Callable[[dict], str]) -> None:
         self._responder = fn
 
-    def _next_text(self, kwargs: dict) -> str:
+    def _next_text(self, kwargs: dict) -> str | Message:
         if self._queue:
             return self._queue.pop(0)
         if self._responder is not None:
@@ -60,6 +60,8 @@ class FakeClaude:
     def create(self, **kwargs) -> Message:
         self.calls.append(kwargs)
         text = self._next_text(kwargs)
+        if isinstance(text, Message):
+            return text
         block, stop_reason = TextBlock(type="text", text=text), "end_turn"
         forced_tool = (kwargs.get("tool_choice") or {}).get("name")
         if forced_tool:

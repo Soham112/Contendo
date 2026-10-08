@@ -402,7 +402,7 @@ def _flags(post, *items):
     from agents.fact_check_agent import _split_sentences
 
     sentences = _split_sentences(post)
-    return json.dumps([{"i": sentences.index(sent) + 1, "type": t, "why": why} for sent, t, why in items])
+    return json.dumps({"flagged": [{"i": sentences.index(sent) + 1, "type": t, "why": why} for sent, t, why in items]})
 
 
 def _fc_state(post, **overrides):
@@ -422,7 +422,7 @@ def test_fact_check_rewrites_an_invented_event_in_no_specifics_mode(claude):
 
     post = f"{LEGS}\n\nGradient matters more than total ascent."
     rewrite = "A trail that looks easy on paper can still wear your legs down."
-    claude.queue(_flags(post, (LEGS, "event", "no source describes this")), json.dumps([rewrite]), "[]")
+    claude.queue(_flags(post, (LEGS, "event", "no source describes this")), json.dumps([rewrite]), '{"flagged": []}')
     state = fact_check_node(_hiking_state(current_draft=post))
 
     judge = _prompt(claude.calls[0])
@@ -446,7 +446,7 @@ def test_fact_check_rewrites_trail_names_in_no_specifics_mode(claude):
 
     named = "The trails I keep returning to are Helvellyn via Striding Edge and the Langdale Pikes circuit."
     rewrite = "The trails worth returning to are the ones that stay honest in the middle section."
-    claude.queue(_flags(named, (named, "name", "trail names not in topic")), json.dumps([rewrite]), "[]")
+    claude.queue(_flags(named, (named, "name", "trail names not in topic")), json.dumps([rewrite]), '{"flagged": []}')
     state = fact_check_node(_hiking_state(current_draft=named))
     assert state["current_draft"] == rewrite
     assert state["fact_check"]["flagged"][0]["type"] == "name"
@@ -480,7 +480,7 @@ def test_fact_check_removes_the_data_axle_event_when_the_rewrite_is_still_unsupp
 def test_fact_check_accepts_a_paraphrase_of_a_self_authored_note(claude, enforce_normal):
     from agents.fact_check_agent import fact_check_node
 
-    claude.queue("[]")
+    claude.queue('{"flagged": []}')
     state = fact_check_node(_fc_state(PARAPHRASE, retrieval_bundle={"chunks": [SELF_NOTE]}))
 
     judge = _prompt(claude.calls[0])
@@ -493,7 +493,7 @@ def test_fact_check_accepts_a_paraphrase_of_a_self_authored_note(claude, enforce
 def test_fact_check_accepts_a_research_claim_backed_by_an_external_chunk(claude, enforce_normal):
     from agents.fact_check_agent import fact_check_node
 
-    claude.queue("[]")
+    claude.queue('{"flagged": []}')
     state = fact_check_node(_fc_state(RESEARCH, retrieval_bundle={"chunks": [IBM_CHUNK]}))
     assert len(claude.calls) == 1
     assert state["current_draft"] == RESEARCH
@@ -502,7 +502,7 @@ def test_fact_check_accepts_a_research_claim_backed_by_an_external_chunk(claude,
 def test_fact_check_ignores_out_of_range_sentence_numbers(claude, enforce_normal):
     from agents.fact_check_agent import fact_check_node
 
-    claude.queue('[{"i": 7, "type": "event", "why": "x"}, {"i": "two", "type": "event", "why": "y"}]')
+    claude.queue('{"flagged": [{"i": 7, "type": "event", "why": "x"}]}')
     state = fact_check_node(_fc_state(RESEARCH))
     assert state["fact_check"]["outcome"] == "all_supported" and len(claude.calls) == 1
 
@@ -511,7 +511,7 @@ def test_fact_check_identity_lists_employers_from_work_experience_in_normal_mode
     from agents.fact_check_agent import fact_check_node
 
     nodes = [{"node_type": "work", "entity_name": "Data Axle"}, {"node_type": "education", "entity_name": "UTD"}]
-    claude.queue("[]", "[]")
+    claude.queue('{"flagged": []}', '{"flagged": []}')
     fact_check_node(_fc_state("I work at Data Axle.", experience_nodes=nodes))
     fact_check_node(_hiking_state(current_draft="I work at Data Axle.", experience_nodes=nodes))
     assert "Employers: Data Axle" in _prompt(claude.calls[0]) and "UTD" not in _prompt(claude.calls[0])
@@ -521,7 +521,7 @@ def test_fact_check_identity_lists_employers_from_work_experience_in_normal_mode
 def test_fact_check_error_leaves_the_post_unchanged(claude, enforce_normal):
     from agents.fact_check_agent import fact_check_node
 
-    claude.queue("not json at all")
+    claude.queue("not json at all", "not json at all")
     state = fact_check_node(_fc_state(DATA_AXLE))
     assert state["current_draft"] == DATA_AXLE
     assert state["fact_check"]["outcome"] == "error"
@@ -530,7 +530,7 @@ def test_fact_check_error_leaves_the_post_unchanged(claude, enforce_normal):
 def test_fact_check_runs_in_draft_quality_too(claude, enforce_normal):
     from agents.fact_check_agent import fact_check_node
 
-    claude.queue("[]")
+    claude.queue('{"flagged": []}')
     state = fact_check_node(_fc_state("Define the exit first.", quality="draft"))
     assert len(claude.calls) == 1 and state["fact_check"]["outcome"] == "all_supported"
 

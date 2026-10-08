@@ -119,6 +119,10 @@ class StructuredOutputError(RuntimeError):
     explicit failure looks like for them; they must not substitute a made-up one."""
 
 
+class TruncatedStructuredOutputError(StructuredOutputError):
+    """Both structured attempts exhausted their output budget."""
+
+
 _Schema = TypeVar("_Schema", bound=BaseModel)
 
 
@@ -139,12 +143,13 @@ def complete_structured(
 
     The answer is requested as a forced tool call whose input must match the
     schema's JSON schema, so there is no free-text JSON to parse. A reply with
-    no such tool call (for example cut off by max_tokens) or one that fails
+    stop_reason=max_tokens (even with valid tool input), no tool call, or one that fails
     validation is retried once with the same request; both attempts are logged.
     If the second also fails, raises StructuredOutputError naming both
     failures. API errors propagate, as in complete() (the SDK retries those).
     """
     failures: list[str] = []
+    truncations = 0
     for attempt in (1, 2):
         message = complete(
             model=model,
@@ -166,7 +171,10 @@ def complete_structured(
              if getattr(block, "type", "") == "tool_use" and getattr(block, "name", "") == tool_name),
             None,
         )
-        if tool_input is None:
+        if message.stop_reason == "max_tokens":
+            truncations += 1
+            failure = "truncated (stop_reason=max_tokens)"
+        elif tool_input is None:
             failure = f"no {tool_name} tool call in the reply (stop_reason={message.stop_reason})"
         else:
             try:
@@ -175,7 +183,8 @@ def complete_structured(
                 failure = f"reply does not match the schema: {exc}"
         failures.append(failure)
         logger.warning("llm.complete_structured: %s attempt %d of 2 failed: %s", event_type, attempt, failure)
-    raise StructuredOutputError(
+    error = TruncatedStructuredOutputError if truncations == 2 else StructuredOutputError
+    raise error(
         f"{event_type}: no valid structured answer after 2 attempts. "
         f"First: {failures[0]} Second: {failures[1]}"
     )

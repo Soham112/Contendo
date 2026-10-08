@@ -53,7 +53,7 @@ def test_story_archetype_is_never_offered_without_a_self_authored_chunk(claude):
         assert f"- {key}:" not in options
     assert not (set(decision["allowed"]) & STORY)
     assert "storytelling" not in last_prompt(claude)  # tone is not an input to the choice
-    assert claude.calls[0]["max_tokens"] == 100
+    assert claude.calls[0]["max_tokens"] == 300
 
 
 def _story(note=1, quote=OWN["text"], archetype="before_after") -> str:
@@ -195,3 +195,36 @@ def test_unknown_stored_archetype_key_gets_the_general_block():
 
     assert get_archetype("no_such_type") is ARCHETYPES["general"]
     assert get_archetype("") is ARCHETYPES["general"]
+
+
+def _truncated_story():
+    from anthropic.types import Message, ToolUseBlock, Usage
+
+    return Message(id="msg_truncated", type="message", role="assistant", model="fake",
+                   content=[ToolUseBlock(type="tool_use", id="tool_partial", name="choose_post_type",
+                                         input={"archetype": "before_after", "event_note": 1})],
+                   stop_reason="max_tokens", stop_sequence=None,
+                   usage=Usage(input_tokens=10, output_tokens=300))
+
+
+def test_truncated_schema_valid_story_retries_before_accepting_the_event(claude):
+    from agents.archetype_agent import choose_archetype
+
+    claude.queue(_truncated_story(), _story())
+    decision = choose_archetype(make_state([OWN]))
+    assert len(claude.calls) == 2
+    assert decision["archetype"] == "before_after"
+    assert decision["event_quote"] == OWN["text"]
+    assert decision["reason"] is None
+
+
+def test_two_truncated_schema_valid_stories_fall_back_with_truncated_reason(claude):
+    from agents.draft_agent import draft_node
+
+    claude.queue(_truncated_story(), _truncated_story(), "A general draft.")
+    state = draft_node(make_state([OWN]))
+    decision = state["archetype_decision"]
+    assert len(claude.calls) == 3
+    assert decision["archetype"] == "general"
+    assert decision["reason"] == "truncated"
+    assert decision["chosen"] is None and decision["event_quote"] is None

@@ -6,7 +6,7 @@ from config import features
 from llm.client import trace_calls
 from pipeline.state import PipelineState
 from pipeline.trace import build_trace_row
-from utils.formatters import resolve_length_target
+from utils.formatters import normalise_post_punctuation, resolve_length_target
 from utils.frames import decide_perspective
 from memory.profile_store import load_profile
 from memory.feedback_store import get_all_topics_posted
@@ -82,7 +82,7 @@ def low_coverage_node(state: PipelineState) -> PipelineState:
 
 
 def finalize_node(state: PipelineState) -> PipelineState:
-    state["final_post"] = state["current_draft"]
+    state["final_post"] = normalise_post_punctuation(state["current_draft"])
     return state
 
 
