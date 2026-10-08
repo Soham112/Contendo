@@ -40,6 +40,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("run_id")
     parser.add_argument("--judge-model", choices=sorted(config.SCORES_FILES), default=config.JUDGE_MODEL)
     parser.add_argument("--only", action="append", help="golden id (repeatable); default: every ok run")
+    parser.add_argument("--metric", action="append", choices=list(config.METRIC_ORDER),
+                        help="judge only this metric (repeatable); default: all")
     args = parser.parse_args(argv)
 
     run_dir = config.RESULTS_DIR / args.run_id
@@ -73,7 +75,8 @@ def main(argv: list[str] | None = None) -> int:
     scores_path = run_dir / config.SCORES_FILES[args.judge_model]
     print(f"Judge: {args.judge_model} -> {scores_path.name}")
     done = {cache_key(r) for r in read_jsonl(scores_path) if r["status"] in ("ok", "skipped")}
-    specs = metrics.judge_metric_specs()
+    specs = [s for s in metrics.judge_metric_specs() if not args.metric or s.name in args.metric]
+    want_recall = not args.metric or "source_recall" in args.metric
 
     with scores_path.open("a") as out:
         def write(row: dict[str, Any]) -> None:
@@ -92,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
                 "golden_id": golden["id"], "trace_id": run["trace_id"], "persona": golden["persona"],
                 "difficulty": golden["difficulty"], "judge_model": args.judge_model,
             }
-            pending = [s.name for s in specs] + ["source_recall"]
+            pending = [s.name for s in specs] + (["source_recall"] if want_recall else [])
             if all(cache_key({**base, "metric": m}) in done for m in pending):
                 print(f"  {golden['id']:<12} cached")
                 continue
@@ -105,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
             cases = metrics.build_cases(trace, golden)
 
             # Deterministic metric: no judge calls.
-            if cache_key({**base, "metric": "source_recall"}) not in done:
+            if want_recall and cache_key({**base, "metric": "source_recall"}) not in done:
                 recall = metrics.SourceRecallMetric(golden["expected_source_titles"])
                 recall.measure(cases["chunks"], retrieved=metrics.retrieved_titles(trace))
                 write({**base, "metric": "source_recall", "status": "skipped" if recall.skipped else "ok",

@@ -118,10 +118,17 @@ def main(argv: list[str] | None = None) -> int:
                     row["status"] = "no_trace"
                     print(f"  {g['id']}: SKIPPED, trace was not saved (trace_id None)")
                 else:
-                    trace = (client.table("generation_traces").select("llm_calls")
+                    trace = (client.table("generation_traces").select("llm_calls,node_outputs")
                              .eq("id", row["trace_id"]).eq("user_id", user_id).execute().data or [{}])[0]
                     row["status"] = "ok"
                     row["pipeline"] = summarize_llm_calls(trace.get("llm_calls") or [])
+                    # Background (log-only) fact check, as written to the trace by fact_check_job.
+                    fc = (trace.get("node_outputs") or {}).get("fact_check") or {}
+                    row["fact_check"] = {
+                        "mode": fc.get("mode"), "outcome": fc.get("outcome"),
+                        "flagged": [{"type": f.get("type"), "why": f.get("why"), "sentence": f.get("sentence")}
+                                    for f in fc.get("flagged") or []],
+                    }
                     row["score"] = result.get("score")
                     row["retrieval_confidence"] = result.get("retrieval_confidence")
                     ok += 1

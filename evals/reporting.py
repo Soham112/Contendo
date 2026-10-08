@@ -56,9 +56,45 @@ def _breakdown(title: str, key: str, rows: list[dict[str, Any]], metrics: list[s
     return lines + [""]
 
 
+def _fact_check_section(runs: list[dict[str, Any]]) -> list[str]:
+    """Background (log-only) fact-check flags per drafted golden, from runs.jsonl."""
+    checked = [r for r in runs if r.get("status") == "ok" and r.get("fact_check")]
+    if not checked:
+        return []
+    flags = sum(len(r["fact_check"].get("flagged") or []) for r in checked)
+    with_flags = sum(1 for r in checked if r["fact_check"].get("flagged"))
+    errors = sum(1 for r in checked if r["fact_check"].get("outcome") == "error")
+    lines = [
+        "## Background fact-check flags (log-only)",
+        "",
+        f"{flags} flag(s) on {with_flags} of {len(checked)} drafted posts; {errors} check(s) errored. "
+        "Log-only: nothing was changed in the posts. The find-prompt is known to over-flag paraphrases, "
+        "so read these as leads, not verdicts.",
+        "",
+        "| golden | outcome | flags | types |",
+        "|---|---|---|---|",
+    ]
+    for r in checked:
+        flagged = r["fact_check"].get("flagged") or []
+        types = ", ".join(sorted({f.get("type") or "?" for f in flagged})) or "–"
+        lines.append(f"| {r['golden_id']} | {r['fact_check'].get('outcome')} | {len(flagged)} | {types} |")
+    lines.append("")
+    for r in checked:
+        for f in r["fact_check"].get("flagged") or []:
+            sentence = (f.get("sentence") or "").replace("\n", " ")
+            lines.append(f"- **{r['golden_id']}** [{f.get('type')}] {sentence[:160]} (why: {f.get('why')})")
+    return lines + [""]
+
+
 def build_report(meta: dict[str, Any], runs: list[dict[str, Any]], scores: list[dict[str, Any]],
-                 goldens: dict[str, dict[str, Any]], judge_model: str = config.JUDGE_MODEL) -> str:
-    latest = _latest(scores, judge_model)
+                 goldens: dict[str, dict[str, Any]], judge_model: str = config.JUDGE_MODEL,
+                 metric_judges: dict[str, str] | None = None) -> str:
+    """metric_judges: metric -> judge model for metrics judged by another model than
+    judge_model (scores must then hold both models' rows)."""
+    metric_judges = metric_judges or {}
+    latest = {k: v for k, v in _latest(scores, judge_model).items() if k[1] not in metric_judges}
+    for metric, model in metric_judges.items():
+        latest.update({k: v for k, v in _latest(scores, model).items() if k[1] == metric})
     rows = list(latest.values())
     metrics = [m for m in config.METRIC_ORDER if any(r["metric"] == m for r in rows)]
     status_counts = defaultdict(int)
@@ -71,7 +107,8 @@ def build_report(meta: dict[str, Any], runs: list[dict[str, Any]], scores: list[
         "",
         f"- Quality: **{meta['quality']}** · project `{meta['project_ref']}` · "
         f"commit `{git.get('commit', '?')}`{' (uncommitted changes)' if git.get('dirty') else ''}",
-        f"- Judge: **{judge_model}** via `llm.client.complete()`",
+        f"- Judge: **{judge_model}** via `llm.client.complete()`"
+        + "".join(f"; **{model}** for `{metric}`" for metric, model in metric_judges.items()),
         f"- Goldens: {len(runs)} run · {status_counts['ok']} ok · {status_counts['gated']} gated (low coverage, "
         f"not drafted or judged) · {status_counts['no_trace']} skipped (no trace) · {status_counts['error']} errored",
         "",
@@ -112,6 +149,8 @@ def build_report(meta: dict[str, Any], runs: list[dict[str, Any]], scores: list[
                 reason = reason[:_REASON_CHARS] + "…"
             lines.append(f"- **{r['metric']}** {_fmt(r.get('score'))} ({flag}): {reason}")
         lines.append("")
+
+    lines += _fact_check_section(runs)
 
     # Cost.
     pipeline = [r["pipeline"] for r in runs if r.get("status") == "ok" and r.get("pipeline")]

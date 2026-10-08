@@ -105,6 +105,12 @@ python report.py <run_id>                         # writes and prints results/<r
 - Second-opinion judge: `python judge.py <run_id> --judge-model SONNET --only <golden_id> ...`
   writes `scores-sonnet.jsonl` (each judge model has its own file), then
   `python report.py <run_id> --judge-model HAIKU --compare SONNET` writes a side-by-side table.
+- One metric from another judge: `python judge.py <run_id> --judge-model SONNET --metric unsupported_specifics`
+  judges only that metric with Sonnet, then `python report.py <run_id> --metric-judge unsupported_specifics=SONNET`
+  writes `report-mixed.md` (Haiku for the rest).
+- `run.py` runs each post's background (log-only) fact check after the timing stops and saves its flags in
+  `runs.jsonl`; the report lists them under "Background fact-check flags". They are leads, not verdicts: the
+  find-prompt over-flags paraphrases.
 - Out of credits, a bad key or a forbidden key stops `judge.py` at the first failure (and
   `run.py`/`judge.py` refuse to start when the account is out of credits). Re-run after fixing
   it: finished results stay cached and errored ones are retried.
