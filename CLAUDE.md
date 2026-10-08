@@ -24,10 +24,17 @@ Before proposing a fix:
 
 Every task summary must end with a "Stopgaps introduced" line: "none", or a list with file:line, why it's a stopgap, and the proper fix.
 
+## Files and code organisation
+- Before creating a new file, check whether the code belongs in an existing module. Create a new file only when it has a clear, separate responsibility that existing modules don't cover. Say in your summary which new files you created and why.
+- Don't create one-off scripts, scratch files, or experiment files in the repo. Use the scratchpad outside the repo, and delete them when the task is done.
+- Don't duplicate helpers: search for existing functions before writing a new one.
+- Keep source files under ~400 lines and functions under ~80 lines. If a change would push a file past that, propose a split instead of growing it.
+- Every task summary must include a "Files created" line: "none", or each new file with a one-line reason.
+
 ## Stack
 - Frontend: Next.js 14 App Router, `frontend/`
 - Backend: FastAPI, Python 3.11, `backend/` (venv at `backend/venv/`), Docker on Railway, one uvicorn worker
-- Auth: Supabase Auth (Google OAuth). Backend verifies Supabase JWTs in `backend/auth/supabase_jwt.py`
+- Auth: Supabase Auth (Google OAuth). Backend verifies Supabase JWTs in `backend/auth/supabase_jwt.py`; security flags are read in `backend/config/security.py`
 - Data: Supabase Postgres + pgvector for everything (embeddings, profiles, posts, post_versions, hierarchy, entities, experience nodes, usage and analytics events)
 - Retrieval: hybrid pgvector cosine + BM25 fused with RRF, in `backend/memory/vector_store.py`
 - Embeddings: sentence-transformers all-MiniLM-L6-v2, local
@@ -38,6 +45,7 @@ Every task summary must end with a "Stopgaps introduced" line: "none", or a list
 - Frontend: `cd frontend && npm run dev` (port 3000)
 - Frontend type check: `cd frontend && npx tsc --noEmit`
 - Frontend build check: `cd frontend && npm run build`
+- Frontend tests: `cd frontend && npm test` (vitest; pure logic in `frontend/lib/`)
 - Backend tests: `cd backend && source venv/bin/activate && pytest` (install once with `pip install -r requirements-dev.txt`)
 
 ## Tests
@@ -60,7 +68,9 @@ Every task summary must end with a "Stopgaps introduced" line: "none", or a list
 ## Rules
 - Models: `claude-sonnet-4-6` for generation, `claude-haiku-4-5-20251001` for classification. Never change or add models without explicit instruction.
 - All Claude calls go through `complete()` in `backend/llm/client.py` (model constants `SONNET`/`HAIKU`, one shared client, usage logging). Never create an `anthropic.Anthropic` client or write a model string anywhere else; every call passes `user_id` and an `event_type`.
-- Every protected endpoint uses `Depends(get_user_id_dep)`. Never use `user_id="default"` in production paths (it's a local-dev fallback only).
+- Every protected endpoint uses `Depends(get_user_id_dep)`; admin endpoints use `Depends(require_admin)` (user ID in `ADMIN_USER_IDS`). Never put a secret in a `NEXT_PUBLIC_*` variable: those ship in the public JavaScript.
+- Auth fails closed: a missing or invalid token is a 401 in every environment. `user_id` is a required argument everywhere, never defaulted. `"default"` exists only as `DEV_USER_ID` in `auth/supabase_jwt.py`, used when `ALLOW_DEV_AUTH=1` (local development; the server refuses to start with it in production).
+- Never render model-generated or user-supplied markup with `dangerouslySetInnerHTML`. SVG diagrams go through `frontend/components/DiagramView.tsx`.
 - The backend uses the Supabase service-role key, which bypasses RLS. Every query must filter by `user_id` or verify ownership first.
 - Async route handlers must not call slow sync code (Claude calls, ingestion) directly; wrap it with `run_in_threadpool`. One blocked request blocks the whole server.
 - Endpoints live in `backend/routers/`. `main.py` only does CORS, lifespan, logging, and router registration.

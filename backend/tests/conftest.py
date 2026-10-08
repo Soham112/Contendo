@@ -22,13 +22,17 @@ import types
 # --- 1. Environment: set every variable the backend reads. load_dotenv() never
 #        overrides a variable that already exists, so backend/.env is ignored.
 TEST_JWT_SECRET = "test-jwt-secret-that-is-at-least-32-bytes-long"
+TEST_ADMIN_USER_ID = "admin-user"
 os.environ.update({
     "ENVIRONMENT": "development",
     "ANTHROPIC_API_KEY": "test-anthropic-key",
     "SUPABASE_URL": "",
     "SUPABASE_SERVICE_ROLE_KEY": "",
     "SUPABASE_JWT_SECRET": TEST_JWT_SECRET,
-    "ADMIN_SECRET": "test-admin-secret",
+    "ADMIN_USER_IDS": f"{TEST_ADMIN_USER_ID}, another-admin",
+    # Set (to off) so a developer's backend/.env can't switch them on for tests.
+    "ALLOW_DEV_AUTH": "",
+    "ALLOW_LOCAL_PATH_INGEST": "",
     "SUPADATA_API_KEY": "",
     "FRONTEND_ORIGIN": "",
     "DATA_DIR": tempfile.mkdtemp(prefix="contendo-test-data-"),
@@ -129,9 +133,15 @@ def auth_headers():
 
 @pytest.fixture
 def production(monkeypatch):
-    """Run the test with auth in production mode (no 'default' user fallback)."""
-    import auth.supabase_jwt
-    monkeypatch.setattr(auth.supabase_jwt, "ENVIRONMENT", "production")
+    """Run the test with ENVIRONMENT=production. Auth is strict in every
+    environment; this only proves production behaves the same."""
+    monkeypatch.setenv("ENVIRONMENT", "production")
+
+
+@pytest.fixture
+def dev_auth(monkeypatch):
+    """ALLOW_DEV_AUTH=1: requests without a valid token act as the dev user."""
+    monkeypatch.setenv("ALLOW_DEV_AUTH", "1")
 
 
 @pytest.fixture

@@ -11,6 +11,7 @@ load_dotenv()
 import logging
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper())
 
+from config import security
 from memory.feedback_store import init_db
 from memory.hierarchy_store import init_db as init_hierarchy_db
 from memory.retrieval_stats_store import init_retrieval_stats_db
@@ -18,8 +19,35 @@ from memory.usage_store import set_main_loop
 from routers import admin, analytics, feedback, generate, history, ideas, ingest, library, profile, stats
 
 
+logger = logging.getLogger(__name__)
+
+
+def _log_security_mode() -> None:
+    """Log which auth mode is active. security.current() raises on an unsafe
+    combination (ALLOW_DEV_AUTH=1 with ENVIRONMENT=production), which aborts startup."""
+    settings = security.current()
+    environment = settings.environment or "(unset)"
+    if settings.allow_dev_auth:
+        logger.warning(
+            "AUTH MODE: dev. ALLOW_DEV_AUTH=1, so requests without a valid token act as "
+            "the local dev user. Never set this on a deployed server. ENVIRONMENT=%s",
+            environment,
+        )
+    else:
+        logger.info(
+            "AUTH MODE: strict. Every request needs a valid Supabase token. ENVIRONMENT=%s",
+            environment,
+        )
+    logger.info(
+        "Admin user IDs configured: %d. Local-path Obsidian ingest: %s.",
+        len(settings.admin_user_ids),
+        "ENABLED (ALLOW_LOCAL_PATH_INGEST=1)" if settings.allow_local_path_ingest else "disabled",
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _log_security_mode()
     init_db()
     init_hierarchy_db()
     init_retrieval_stats_db()

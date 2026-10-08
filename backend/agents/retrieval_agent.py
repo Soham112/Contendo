@@ -421,7 +421,7 @@ def _enrich_with_entity_chunks(
 def retrieval_node(state: PipelineState) -> PipelineState:
     topic = state["topic"]
     context = state.get("context", "")
-    user_id = state.get("user_id", "default")
+    user_id = state["user_id"]
 
     query = f"{topic}. {context}" if context else topic
     state["retrieval_query"] = query

@@ -1,4 +1,4 @@
-import json
+import logging
 import os
 import threading
 import time
@@ -7,11 +7,18 @@ import jwt
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from config import security
+
+logger = logging.getLogger(__name__)
+
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "")
-ENVIRONMENT = os.environ.get("ENVIRONMENT", "development")
 
-security = HTTPBearer(auto_error=False)
+# The identity given to requests without a valid token when ALLOW_DEV_AUTH=1
+# (local development). This is the only place the "default" user is named.
+DEV_USER_ID = "default"
+
+security_scheme = HTTPBearer(auto_error=False)
 
 # JWKS cache: fetched at most once per TTL. On a `kid` miss we refetch once
 # (Supabase key rotation), but no more than once per cooldown, so tokens with
@@ -54,13 +61,28 @@ def _find_jwk(jwks: dict, kid: str | None) -> dict | None:
             return k
     return None
 
+def _reject(reason: str) -> str:
+    """Handle a request that has no valid token.
+
+    Returns the dev user when ALLOW_DEV_AUTH=1; otherwise raises a 401 whose
+    body never carries the reason (it is logged here instead).
+    """
+    if security.current().allow_dev_auth:
+        return DEV_USER_ID
+    logger.warning("auth: request rejected: %s", reason)
+    raise HTTPException(
+        status_code=401,
+        detail="Invalid or missing token",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
 def get_user_id(authorization: str | None) -> str:
     if not authorization or not authorization.startswith("Bearer "):
-        if ENVIRONMENT != "production":
-            return "default"
-        raise HTTPException(status_code=401, detail="Missing token")
+        return _reject("missing or malformed Authorization header")
 
     token = authorization.removeprefix("Bearer ").strip()
+    failures: list[str] = []
 
     # Try HS256 with legacy JWT secret first
     if SUPABASE_JWT_SECRET:
@@ -73,8 +95,8 @@ def get_user_id(authorization: str | None) -> str:
                 options={"verify_exp": True}
             )
             return payload["sub"]
-        except Exception:
-            pass
+        except Exception as e:
+            failures.append(f"HS256: {e!r}")
 
     # Try ES256 via Supabase JWKS
     if SUPABASE_URL:
@@ -103,16 +125,25 @@ def get_user_id(authorization: str | None) -> str:
             )
             return payload["sub"]
         except Exception as e:
-            if ENVIRONMENT != "production":
-                return "default"
-            raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
+            failures.append(f"ES256: {e!r}")
 
-    if ENVIRONMENT != "production":
-        return "default"
-    raise HTTPException(status_code=401, detail="Token verification failed")
+    return _reject("token verification failed (" + "; ".join(failures or ["no verifier configured"]) + ")")
+
 
 async def get_user_id_dep(
-    credentials: HTTPAuthorizationCredentials | None = Depends(security)
+    credentials: HTTPAuthorizationCredentials | None = Depends(security_scheme)
 ) -> str:
     auth_header = f"Bearer {credentials.credentials}" if credentials else None
     return get_user_id(auth_header)
+
+
+def is_admin(user_id: str) -> bool:
+    return user_id in security.current().admin_user_ids
+
+
+async def require_admin(user_id: str = Depends(get_user_id_dep)) -> str:
+    """The one check for admin routes: the caller's verified user ID must be in
+    ADMIN_USER_IDS. Authenticated non-admins get 403."""
+    if not is_admin(user_id):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return user_id

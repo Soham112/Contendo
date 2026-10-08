@@ -8,6 +8,7 @@ import supabase from "@/lib/supabase";
 import FeedbackModal from "@/components/ui/FeedbackButton";
 import { ContendoLogoSmall } from "@/components/ContendoLogo";
 import { useTracking } from "@/lib/useTracking";
+import { useIsAdmin } from "@/lib/useIsAdmin";
 
 const NAV_ITEMS = [
   {
@@ -71,8 +72,6 @@ const NAV_ITEMS = [
   },
 ];
 
-const ADMIN_EMAIL = "soham112000@gmail.com";
-
 export default function Sidebar({
   mobileOpen,
   onClose,
@@ -84,6 +83,8 @@ export default function Sidebar({
   const router = useRouter();
   const { logEvent } = useTracking();
   const [user, setUser] = useState<User | null>(null);
+  // Hides the links for everyone else; the backend is what protects the data.
+  const isAdmin = useIsAdmin();
   const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   useEffect(() => {
@@ -140,7 +141,7 @@ export default function Sidebar({
 
       {/* Nav */}
       <nav className="flex-1 px-3 pb-4 space-y-0.5 overflow-y-auto">
-        {[...NAV_ITEMS, ...(user?.email === ADMIN_EMAIL ? [
+        {[...NAV_ITEMS, ...(isAdmin ? [
           {
             href: "/admin",
             label: "Admin",

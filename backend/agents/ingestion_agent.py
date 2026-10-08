@@ -321,7 +321,8 @@ def ingest_content(
     content: str,
     source_type: str,
     source_title: str | None = None,
-    user_id: str = "default",
+    *,
+    user_id: str,
     memory_context: str | None = None,
 ) -> dict:
     """Ingest content into the knowledge base.

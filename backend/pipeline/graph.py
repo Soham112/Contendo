@@ -26,7 +26,7 @@ MAX_ITERATIONS = 3
 
 
 def load_profile_node(state: PipelineState) -> PipelineState:
-    user_id = state.get("user_id", "default")
+    user_id = state["user_id"]
     state["profile"] = load_profile(user_id=user_id)
     state["iterations"] = 0
     state["archetype"] = state.get("archetype", "")
@@ -141,7 +141,8 @@ def run_pipeline(
     length: str = "standard",
     context: str = "",
     quality: str = "standard",
-    user_id: str = "default",
+    *,
+    user_id: str,
     no_specifics: bool = False,
 ) -> dict:
     """Run the pipeline. Returns status "ok" with the post, or status

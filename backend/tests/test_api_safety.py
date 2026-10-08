@@ -24,7 +24,7 @@ NEWLY_PROTECTED = [
 
 
 @pytest.mark.parametrize("path,kwargs", NEWLY_PROTECTED, ids=[p for p, _ in NEWLY_PROTECTED])
-def test_newly_protected_routes_reject_missing_token_in_production(client, production, path, kwargs):
+def test_newly_protected_routes_reject_missing_token(client, path, kwargs):
     # No Claude response queued: a 401 must happen before any Claude call.
     resp = client.post(path, **kwargs)
     assert resp.status_code == 401
@@ -39,9 +39,52 @@ def test_score_accepts_valid_token(client, production, claude, auth_headers, mon
     assert resp.json() == {"score": 80, "score_feedback": ["ok"]}
 
 
+# --- Local-path Obsidian ingest is opt-in -------------------------------------
+
+LOCAL_PATH_ROUTES = ["/obsidian/preview", "/obsidian/ingest"]
+
+
+@pytest.mark.parametrize("environment", [None, "development", "production"])
+@pytest.mark.parametrize("path", LOCAL_PATH_ROUTES)
+def test_local_path_ingest_is_refused_without_the_flag(client, auth_headers, monkeypatch, tmp_path, path, environment):
+    """Off by default in every environment, including a missing ENVIRONMENT."""
+    if environment is None:
+        monkeypatch.delenv("ENVIRONMENT")
+    else:
+        monkeypatch.setenv("ENVIRONMENT", environment)
+    (tmp_path / "note.md").write_text("A note long enough to count as content. " * 10)
+
+    resp = client.post(path, json={"vault_path": str(tmp_path)}, headers=auth_headers("user-a"))
+
+    assert resp.status_code == 403
+    assert str(tmp_path) not in resp.text
+
+
+@pytest.mark.parametrize("value", ["0", "true", "yes", " "])
+def test_local_path_ingest_flag_must_be_exactly_1(client, auth_headers, monkeypatch, tmp_path, value):
+    monkeypatch.setenv("ALLOW_LOCAL_PATH_INGEST", value)
+    resp = client.post("/obsidian/preview", json={"vault_path": str(tmp_path)}, headers=auth_headers("user-a"))
+    assert resp.status_code == 403
+
+
+def test_local_path_ingest_works_with_the_flag(client, auth_headers, monkeypatch, tmp_path):
+    monkeypatch.setenv("ALLOW_LOCAL_PATH_INGEST", "1")
+    (tmp_path / "note.md").write_text("A note long enough to count as content. " * 10)
+
+    resp = client.post("/obsidian/preview", json={"vault_path": str(tmp_path)}, headers=auth_headers("user-a"))
+
+    assert resp.status_code == 200
+
+
+def test_local_path_ingest_flag_does_not_bypass_auth(client, monkeypatch, tmp_path):
+    monkeypatch.setenv("ALLOW_LOCAL_PATH_INGEST", "1")
+    resp = client.post("/obsidian/preview", json={"vault_path": str(tmp_path)})
+    assert resp.status_code == 401
+
+
 # --- Slow sync work doesn't block the event loop ------------------------------
 
-def test_health_responds_while_generate_is_running(client, monkeypatch):
+def test_health_responds_while_generate_is_running(client, monkeypatch, auth_headers):
     import routers.generate as generate
 
     entered = threading.Event()
@@ -57,7 +100,8 @@ def test_health_responds_while_generate_is_running(client, monkeypatch):
     result = {}
     worker = threading.Thread(
         target=lambda: result.update(resp=client.post(
-            "/generate", json={"topic": "t", "format": "linkedin post", "tone": "casual"}
+            "/generate", json={"topic": "t", "format": "linkedin post", "tone": "casual"},
+            headers=auth_headers("user-a"),
         ))
     )
     worker.start()
@@ -261,7 +305,7 @@ def test_hs256_tokens_never_fetch_jwks(production, es256, monkeypatch, auth_head
 
 # --- Error leakage ------------------------------------------------------------
 
-def test_500_returns_generic_message_not_exception_text(client, monkeypatch, caplog):
+def test_500_returns_generic_message_not_exception_text(client, monkeypatch, caplog, auth_headers):
     import routers.generate as generate
 
     def boom(text, *, user_id):
@@ -269,14 +313,14 @@ def test_500_returns_generic_message_not_exception_text(client, monkeypatch, cap
 
     monkeypatch.setattr(generate, "score_text", boom)
     with caplog.at_level("ERROR"):
-        resp = client.post("/score", json={"post_content": "p"})
+        resp = client.post("/score", json={"post_content": "p"}, headers=auth_headers("user-a"))
 
     assert resp.status_code == 500
     assert "secret internal detail" not in resp.text
     assert "secret internal detail" in caplog.text  # logged with traceback
 
 
-def test_overloaded_anthropic_error_keeps_503_message(client, monkeypatch):
+def test_overloaded_anthropic_error_keeps_503_message(client, monkeypatch, auth_headers):
     import routers.generate as generate
 
     def overloaded(text, *, user_id):
@@ -284,14 +328,14 @@ def test_overloaded_anthropic_error_keeps_503_message(client, monkeypatch):
         raise InternalServerError("Overloaded", response=response, body=None)
 
     monkeypatch.setattr(generate, "score_text", overloaded)
-    resp = client.post("/score", json={"post_content": "p"})
+    resp = client.post("/score", json={"post_content": "p"}, headers=auth_headers("user-a"))
 
     assert resp.status_code == 503
     assert "overloaded" in resp.json()["detail"].lower()
 
 
-def test_4xx_validation_messages_are_unchanged(client):
-    resp = client.post("/score", json={"post_content": "  "})
+def test_4xx_validation_messages_are_unchanged(client, auth_headers):
+    resp = client.post("/score", json={"post_content": "  "}, headers=auth_headers("user-a"))
     assert resp.status_code == 400
     assert resp.json()["detail"] == "post_content is required"
 

@@ -4,11 +4,12 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import supabase from "@/lib/supabase";
+import { safeRedirectPath } from "@/lib/safe-redirect";
 
 export default function SignInPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTo = searchParams.get("redirect_url") ?? "/create";
+  const redirectTo = safeRedirectPath(searchParams.get("redirect_url"));
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -25,7 +26,8 @@ export default function SignInPage() {
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: window.location.origin + "/auth/callback",
+        redirectTo:
+          window.location.origin + "/auth/callback?next=" + encodeURIComponent(redirectTo),
       },
     });
   }
@@ -39,7 +41,7 @@ export default function SignInPage() {
       setError(error.message);
       setLoading(false);
     } else {
-      router.push(redirectTo.startsWith("/") ? redirectTo : "/create");
+      router.push(redirectTo);
     }
   }
 

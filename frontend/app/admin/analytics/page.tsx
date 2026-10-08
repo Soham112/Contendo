@@ -2,11 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import supabase from "@/lib/supabase";
-
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-const ADMIN_SECRET = process.env.NEXT_PUBLIC_ADMIN_SECRET ?? "";
-const ADMIN_EMAIL = "soham112000@gmail.com";
+import { useApi } from "@/lib/api";
+import { useIsAdmin } from "@/lib/useIsAdmin";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -193,31 +190,24 @@ function FunnelRow({ label, count, base }: { label: string; count: number; base:
 
 export default function AnalyticsDashboard() {
   const router = useRouter();
-  const [authorized, setAuthorized] = useState<boolean | null>(null);
+  const api = useApi();
+  // Decides what to show; GET /admin/analytics-data enforces access itself.
+  const authorized = useIsAdmin();
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [days, setDays] = useState(30);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
-  // Auth guard
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user?.email === ADMIN_EMAIL) {
-        setAuthorized(true);
-      } else {
-        router.replace("/");
-      }
-    });
-  }, [router]);
+    if (authorized === false) router.replace("/");
+  }, [authorized, router]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API}/admin/analytics-data?days=${days}`, {
-        headers: { "x-admin-secret": ADMIN_SECRET },
-      });
+      const res = await api.getAdminAnalytics(days);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json() as AnalyticsData;
       setData(json);
@@ -242,7 +232,7 @@ export default function AnalyticsDashboard() {
     return () => clearInterval(id);
   }, [authorized, fetchData]);
 
-  if (authorized === null) {
+  if (!authorized) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <span className="text-sm text-secondary opacity-60">Checking access…</span>

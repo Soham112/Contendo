@@ -1,11 +1,13 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
+import { safeRedirectPath } from '@/lib/safe-redirect'
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
-  const next = searchParams.get('next') ?? '/create'
+  // `next` comes from the URL: only ever follow a path on this site.
+  const next = safeRedirectPath(searchParams.get('next'))
 
   if (code) {
     const cookieStore = cookies()
@@ -32,7 +34,7 @@ export async function GET(request: Request) {
 
     if (error) {
       console.error('exchangeCodeForSession error:', error.message)
-      return NextResponse.redirect(`${origin}/sign-in?error=${error.message}`)
+      return NextResponse.redirect(`${origin}/sign-in?error=${encodeURIComponent(error.message)}`)
     }
 
     return NextResponse.redirect(`${origin}${next}`)

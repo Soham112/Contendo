@@ -3,6 +3,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useApi } from "@/lib/api";
+import DiagramView from "@/components/DiagramView";
+import { svgToPngDataURL } from "@/lib/svg";
 import type { ClosestSource } from "@/lib/api";
 import { LowCoverageNotice, OpinionPostLabel } from "@/components/LowCoverageNotice";
 import { useTracking } from "@/lib/useTracking";
@@ -120,44 +122,6 @@ function stripMarkdown(text: string): string {
     .replace(/_([^_\n]+)_/g, "$1")
     .replace(/`([^`]+)`/g, "$1")
     .replace(/^#{1,6}\s+/gm, "");
-}
-
-// ─── SVG / Visual helpers ─────────────────────────────────────────────────────
-
-function svgToDataURL(svgCode: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(svgCode, "image/svg+xml");
-    const svgEl = doc.querySelector("svg");
-    const viewBox = svgEl?.getAttribute("viewBox") ?? "0 0 680 400";
-    const parts = viewBox.split(/[\s,]+/);
-    const vbW = parseFloat(parts[2]) || 680;
-    const vbH = parseFloat(parts[3]) || 400;
-
-    const canvas = document.createElement("canvas");
-    canvas.width = vbW * 2;
-    canvas.height = vbH * 2;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      reject(new Error("No canvas context"));
-      return;
-    }
-
-    const img = new Image();
-    const blob = new Blob([svgCode], { type: "image/svg+xml" });
-    const url = URL.createObjectURL(blob);
-
-    img.onload = () => {
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL("image/png"));
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("Image load failed"));
-    };
-    img.src = url;
-  });
 }
 
 function getSelectionOffsetsWithin(node: HTMLElement) {
@@ -358,9 +322,10 @@ function DiagramBlock({ visual, api, onActiveVersionChange }: DiagramBlockProps)
       </div>
 
       {/* SVG display */}
-      <div
+      <DiagramView
         className="p-4 overflow-x-auto"
-        dangerouslySetInnerHTML={{ __html: versions[activeVersion] }}
+        svg={versions[activeVersion]}
+        description={visual.description}
       />
 
       {/* Controls */}
@@ -468,7 +433,7 @@ function DiagramCard({ visual }: { visual: Visual }) {
 
   const handleOpen = async () => {
     try {
-      const dataURL = await svgToDataURL(visual.svg_code!);
+      const dataURL = await svgToPngDataURL(visual.svg_code!);
       const win = window.open();
       if (win) {
         win.document.write(
@@ -500,7 +465,7 @@ function DiagramCard({ visual }: { visual: Visual }) {
           </span>
         </p>
       </div>
-      <div className="p-4 overflow-x-auto" dangerouslySetInnerHTML={{ __html: visual.svg_code }} />
+      <DiagramView className="p-4 overflow-x-auto" svg={visual.svg_code} description={visual.description} />
       <div className="px-5 py-3 border-t border-surface-container-high space-y-2">
         <div className="flex items-center gap-3">
           <button

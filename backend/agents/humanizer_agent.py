@@ -196,13 +196,11 @@ Output only the refined post. No commentary. No "Here is the refined version:" p
 def refine_draft(
     current_draft: str,
     refinement_instruction: str,
-    profile: dict = None,
     *,
     user_id: str,
 ) -> str:
-    if profile is None:
-        profile = load_profile()
-
+    """Refine a draft in the voice of user_id's own profile."""
+    profile = load_profile(user_id)
     profile_context = profile_to_context_string(profile)
     words_to_avoid = ", ".join(profile.get("words_to_avoid", []))
 
@@ -237,7 +235,7 @@ def refine_selection(
     selected_text: str,
     instruction: str,
     full_post: str,
-    user_id: str = "default",
+    user_id: str,
 ) -> str:
     """Rewrite only a selected fragment using full-post context for voice matching."""
     profile = load_profile(user_id)
@@ -293,7 +291,7 @@ def humanizer_node(state: PipelineState) -> PipelineState:
     profile_context = profile_to_context_string(profile)
     words_to_avoid = ", ".join(profile.get("words_to_avoid", []))
     current_draft = state["current_draft"]
-    user_id = state.get("user_id", "default")
+    user_id = state["user_id"]
     iteration = state.get("iterations", 0) + 1
     state["iterations"] = iteration
 

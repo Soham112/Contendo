@@ -12,14 +12,21 @@ from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from auth.supabase_jwt import get_user_id_dep
+from config import security
 
-_IS_PRODUCTION = os.environ.get("ENVIRONMENT", "").lower() == "production"
 _SUPADATA_API_KEY = os.getenv("SUPADATA_API_KEY")
 _OBSIDIAN_DISABLED_MSG = (
-    "Obsidian vault ingestion is a local-only feature. "
-    "It reads directly from your filesystem and cannot work on a remote server. "
-    "Run the backend locally to use this feature."
+    "Obsidian vault ingestion from a folder path is disabled on this server. "
+    "It reads directly from the server's filesystem, so it only makes sense when "
+    "the backend runs on your own machine. Upload the vault as a zip instead."
 )
+
+
+def _require_local_path_ingest() -> None:
+    """Reading a caller-supplied path from the server's disk is opt-in
+    (ALLOW_LOCAL_PATH_INGEST=1), whatever ENVIRONMENT says."""
+    if not security.current().allow_local_path_ingest:
+        raise HTTPException(status_code=403, detail=_OBSIDIAN_DISABLED_MSG)
 
 from agents.ingestion_agent import ingest_content, _classify_memory_context, _crossref_experience_context
 from agents.vision_agent import extract_from_image
@@ -312,8 +319,7 @@ async def obsidian_preview(
     req: ObsidianRequest,
     user_id: str = Depends(get_user_id_dep),
 ) -> dict:
-    if _IS_PRODUCTION:
-        raise HTTPException(status_code=400, detail=_OBSIDIAN_DISABLED_MSG)
+    _require_local_path_ingest()
     try:
         return await run_in_threadpool(get_vault_stats, req.vault_path)
     except ValueError as e:
@@ -325,8 +331,7 @@ async def obsidian_ingest(
     req: ObsidianRequest,
     user_id: str = Depends(get_user_id_dep),
 ) -> dict:
-    if _IS_PRODUCTION:
-        raise HTTPException(status_code=400, detail=_OBSIDIAN_DISABLED_MSG)
+    _require_local_path_ingest()
     try:
         notes = await run_in_threadpool(lambda: list(read_vault(req.vault_path)))
     except ValueError as e:
