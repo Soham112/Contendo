@@ -1,11 +1,12 @@
 import logging
+from uuid import UUID
 
 from anthropic import APIStatusError, InternalServerError
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from agents.humanizer_agent import refine_draft
+from agents.refine_agent import refine_selection
 from agents.scorer_agent import score_text
 from agents.visual_agent import generate_visuals, generate_svg_for_diagram
 from auth.supabase_jwt import get_user_id_dep
@@ -17,6 +18,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _GENERIC_500 = "Something went wrong. Please try again."
+
+# Request size bounds for /refine-selection: far above any real post or
+# instruction, low enough that one request can't carry an arbitrarily large prompt.
+_MAX_POST_CHARS = 30_000
+_MAX_INSTRUCTION_CHARS = 2_000
 
 
 class GenerateRequest(BaseModel):
@@ -63,21 +69,26 @@ class ScoreResponse(BaseModel):
     score_feedback: list[str]
 
 
-class RefineRequest(BaseModel):
-    current_draft: str
-    refinement_instruction: str
-
-
-class RefineResponse(BaseModel):
-    refined_draft: str
-    score: int
-    score_feedback: list[str]
-
-
 class RefineSelectionRequest(BaseModel):
     selected_text: str
     instruction: str
     full_post: str
+    # Either one locates the post's generation trace (its original sources).
+    # Without a trace the rewrite is checked against the post and profile only.
+    trace_id: UUID | None = None
+    post_id: int | None = None
+
+
+class RefineSelectionResponse(BaseModel):
+    rewritten_text: str
+    # "ok", or "reverted": the rewrite kept adding unsupported specifics, so
+    # rewritten_text is the selection unchanged and message says why.
+    status: str = "ok"
+    message: str = ""
+    # The model's own note when the instruction asked for something no source has.
+    note: str = ""
+    sources_used: str = "trace"  # "trace" | "post_and_profile"
+    sources_message: str = ""
 
 
 class GenerateVisualsRequest(BaseModel):
@@ -106,23 +117,6 @@ def _raise_internal_error(route: str) -> None:
     """Log the active exception and return a generic 500 (never str(e) to the client)."""
     logger.exception("%s failed", route)
     raise HTTPException(status_code=500, detail=_GENERIC_500)
-
-
-def _feedback_to_instructions(feedback_items: list[str]) -> str:
-    """Convert scorer feedback from critique format to action instruction format.
-
-    Prefixes each item with 'ACTION NEEDED:' so Claude treats them as directives
-    rather than observations to acknowledge and lightly adjust around.
-    """
-    if not feedback_items:
-        return "Improve the overall flow and make the voice feel more natural and specific."
-    instructions = []
-    for item in feedback_items:
-        item = item.strip().lstrip("—").strip()
-        if not item:
-            continue
-        instructions.append(f"ACTION NEEDED: {item}")
-    return "\n\n".join(instructions)
 
 
 @router.post("/generate", response_model=GenerateResponse)
@@ -177,57 +171,43 @@ async def generate(
     )
 
 
-@router.post("/refine", response_model=RefineResponse)
-async def refine(
-    req: RefineRequest,
+@router.post("/refine-selection", response_model=RefineSelectionResponse)
+async def refine_selection_endpoint(
+    req: RefineSelectionRequest,
     user_id: str = Depends(get_user_id_dep),
-) -> RefineResponse:
-    if not req.current_draft.strip():
-        raise HTTPException(status_code=400, detail="current_draft is required")
-    if not req.refinement_instruction.strip():
-        raise HTTPException(status_code=400, detail="refinement_instruction is required")
-
-    processed_instruction = (
-        _feedback_to_instructions(req.refinement_instruction.split(". "))
-        if req.refinement_instruction
-        else ""
-    )
+) -> RefineSelectionResponse:
+    """Rewrite one selected passage. The instruction reaches the model unchanged."""
+    if not req.selected_text.strip():
+        raise HTTPException(status_code=400, detail="selected_text is required")
+    if not req.instruction.strip():
+        raise HTTPException(status_code=400, detail="instruction is required")
+    if not req.full_post.strip():
+        raise HTTPException(status_code=400, detail="full_post is required")
+    if len(req.full_post) > _MAX_POST_CHARS:
+        raise HTTPException(status_code=400, detail=f"full_post is too long (limit {_MAX_POST_CHARS} characters)")
+    if len(req.instruction) > _MAX_INSTRUCTION_CHARS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"instruction is too long (limit {_MAX_INSTRUCTION_CHARS} characters)",
+        )
+    if len(req.selected_text) > len(req.full_post):
+        raise HTTPException(status_code=400, detail="selected_text cannot be longer than full_post")
 
     try:
-        refined = await run_in_threadpool(
-            refine_draft,
-            current_draft=req.current_draft,
-            refinement_instruction=processed_instruction,
+        result = await run_in_threadpool(
+            refine_selection,
+            selected_text=req.selected_text,
+            instruction=req.instruction,
+            full_post=req.full_post,
             user_id=user_id,
+            trace_id=str(req.trace_id) if req.trace_id else None,
+            post_id=req.post_id,
         )
-        score, score_feedback = await run_in_threadpool(score_text, refined, user_id=user_id)
     except (InternalServerError, APIStatusError) as e:
         _raise_anthropic_error(e)
     except Exception:
-        _raise_internal_error("POST /refine")
-
-    return RefineResponse(
-        refined_draft=refined,
-        score=score,
-        score_feedback=score_feedback,
-    )
-
-
-@router.post("/refine-selection")
-async def refine_selection(
-    req: RefineSelectionRequest,
-    user_id: str = Depends(get_user_id_dep),
-) -> dict:
-    from agents.humanizer_agent import refine_selection as refine_selection_fn
-
-    rewritten = await run_in_threadpool(
-        refine_selection_fn,
-        selected_text=req.selected_text,
-        instruction=req.instruction,
-        full_post=req.full_post,
-        user_id=user_id,
-    )
-    return {"rewritten_text": rewritten}
+        _raise_internal_error("POST /refine-selection")
+    return RefineSelectionResponse(**result)
 
 
 @router.post("/score", response_model=ScoreResponse)

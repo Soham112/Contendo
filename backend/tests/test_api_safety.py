@@ -15,7 +15,7 @@ from jwt.algorithms import ECAlgorithm
 # --- Auth on routes that had none ---------------------------------------------
 
 NEWLY_PROTECTED = [
-    ("/refine", {"json": {"current_draft": "d", "refinement_instruction": "i"}}),
+    ("/refine-selection", {"json": {"selected_text": "s", "instruction": "i", "full_post": "s and more"}}),
     ("/score", {"json": {"post_content": "p"}}),
     ("/generate-visuals", {"json": {"post_content": "p"}}),
     ("/obsidian/preview", {"json": {"vault_path": "/tmp"}}),
