@@ -1107,12 +1107,12 @@ What to check:
 - Paraphrase is fine. A changed number, name, place, time or outcome is not supported.
 - Never flag opinions: views, arguments, recommendations, predictions, hypotheticals, or widely known general statements with no numbers, named studies or specific outcomes.
 
-Return ONLY a JSON array of the unsupported claims, no prose, no markdown fences:
-[{"i": <sentence number>, "type": "event|statistic|name", "why": "<under 10 words>"}]
-Return [] when everything is supported.
+Use the record_fact_check tool to return the unsupported claims in flagged.
+Each claim has i (sentence number), type (event, statistic or name), and why (under 10 words).
+Return an empty flagged list when everything is supported.
 ```
 
-**Input variables:** `numbered` — the post (after the word count enforcer; re-check: the revised post) split into sentences per line, numbered `1. …`; `self_notes` — self-authored chunk texts (`utils.frames.is_self_authored`) joined by `---`, or `none` (always `none` in no-specifics mode); `other_sources` — all other chunk texts, or `none`; `topic`, `context` (or `none`); `identity` — `Name: …`, `Role: …`, `Employers: …` (from work `experience_nodes`) in normal mode, `none (not allowed in this mode)` in no-specifics mode; `no_specifics_rule` — `""`, or in no-specifics mode: ` This is an opinion post without specifics: only the request can support an event, never the notes or the identity.` followed by the line `- name: in this mode, any named place, person, organisation, product or trail that is not in the topic or context is unsupported, even when the name is real (for example "Acme Corp" in a post on the topic "Startup hiring mistakes").` Output: only unsupported claims, `[{i, type, why}]`, `[]` when all supported; `max_tokens=400`.
+**Input variables:** `numbered` — the post (after the word count enforcer; re-check: the revised post) split into sentences per line, numbered `1. …`; `self_notes` — self-authored chunk texts (`utils.frames.is_self_authored`) joined by `---`, or `none` (always `none` in no-specifics mode); `other_sources` — all other chunk texts, or `none`; `topic`, `context` (or `none`); `identity` — `Name: …`, `Role: …`, `Employers: …` (from work `experience_nodes`) in normal mode, `none (not allowed in this mode)` in no-specifics mode; `no_specifics_rule` — `""`, or in no-specifics mode: ` This is an opinion post without specifics: only the request can support an event, never the notes or the identity.` followed by the line `- name: in this mode, any named place, person, organisation, product or trail that is not in the topic or context is unsupported, even when the name is real (for example "Acme Corp" in a post on the topic "Startup hiring mistakes").` Output: forced `record_fact_check` tool input `{flagged: [{i, type, why}]}`, `{flagged: []}` when all supported; validated by `FactCheckResult`, with one retry for invalid or truncated replies; `max_tokens=400`.
 
 **Rewrite prompt** *(only when a claim is unsupported)*:
 ```

@@ -10,8 +10,23 @@ and post archetype. One table per concern; every agent reads from here.
 - Tone describes voice only. It never asks for a scene, a story or specifics.
 """
 
+import re
 from dataclasses import dataclass
 from typing import Any
+
+
+def normalise_post_punctuation(text: str) -> str:
+    """Replace em dashes with a sentence break before capitals, otherwise a comma.
+
+    Consume adjacent horizontal whitespace but preserve paragraph boundaries.
+    Other dash characters and all other text stay unchanged.
+    """
+    return re.sub(
+        r"[ \t]*—[ \t]*",
+        lambda match: ". " if text[match.end():match.end() + 1].isupper() else ", ",
+        text,
+    )
+
 
 # ── Length ────────────────────────────────────────────────────────────────────
 

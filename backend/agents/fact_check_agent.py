@@ -30,11 +30,13 @@ error is recorded in state["fact_check"].
 import json
 import logging
 import re
-from typing import Any
+from typing import Any, Literal
+
+from pydantic import BaseModel
 
 from config import fact_check as cfg
 from utils.specifics import Specific, remove_sentences
-from llm.client import HAIKU, SONNET, complete
+from llm.client import HAIKU, SONNET, complete, complete_structured
 from pipeline.state import PipelineState
 from pipeline.trace import record_draft
 from utils.frames import chunk_field, is_self_authored
@@ -70,9 +72,9 @@ What to check:
 - Paraphrase is fine. A changed number, name, place, time or outcome is not supported.
 - Never flag opinions: views, arguments, recommendations, predictions, hypotheticals, or widely known general statements with no numbers, named studies or specific outcomes.
 
-Return ONLY a JSON array of the unsupported claims, no prose, no markdown fences:
-[{{"i": <sentence number>, "type": "event|statistic|name", "why": "<under 10 words>"}}]
-Return [] when everything is supported."""
+Use the record_fact_check tool to return the unsupported claims in flagged.
+Each claim has i (sentence number), type (event, statistic or name), and why (under 10 words).
+Return an empty flagged list when everything is supported."""
 
 _NO_SPECIFICS_RULE = (
     " This is an opinion post without specifics: only the request can support an event, "
@@ -146,11 +148,24 @@ def _split_sentences(post: str) -> list[str]:
             for s in re.split(r"(?<=[.!?])\s+", line) if s.strip()]
 
 
+class UnsupportedClaim(BaseModel):
+    i: int
+    type: Literal["event", "statistic", "name"]
+    why: str
+
+
+class FactCheckResult(BaseModel):
+    flagged: list[UnsupportedClaim]
+
+
 def _judge(post: str, state: PipelineState, user_id: str, event_type: str) -> list[dict[str, Any]]:
     """Unsupported claims only: [{i, sentence, type, why}]. [] when all supported."""
     sentences = _split_sentences(post)
     self_notes, other_sources = _source_sections(state)
-    message = complete(
+    result = complete_structured(
+        schema=FactCheckResult,
+        tool_name="record_fact_check",
+        tool_description="Record unsupported claims in the final post.",
         model=HAIKU,
         max_tokens=400,
         messages=[{"role": "user", "content": FACT_CHECK_PROMPT.format(
@@ -166,7 +181,8 @@ def _judge(post: str, state: PipelineState, user_id: str, event_type: str) -> li
         event_type=event_type,
     )
     flagged, seen = [], set()
-    for item in _parse_json_array(message.content[0].text):
+    for claim in result.flagged:
+        item = claim.model_dump()
         try:
             i = int(item.get("i"))
         except (AttributeError, TypeError, ValueError):

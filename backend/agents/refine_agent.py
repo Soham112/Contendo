@@ -14,6 +14,7 @@ from typing import Any
 from llm.client import SONNET, complete
 from memory.profile_store import load_profile, profile_to_context_string
 from memory.trace_store import append_trace_guard_entry, get_trace_sources
+from utils.formatters import normalise_post_punctuation
 from utils.specifics import GuardSources, find_violations, guard_entry, guard_sources, profile_facts, retry_note
 
 logger = logging.getLogger(__name__)
@@ -194,4 +195,4 @@ def refine_selection(
             return {**result, "status": "reverted", "message": REVERTED_MESSAGE}
 
     # A reply that is only a note leaves the selection as it was.
-    return {**result, "rewritten_text": rewritten or selected_text, "note": note}
+    return {**result, "rewritten_text": normalise_post_punctuation(rewritten) if rewritten else selected_text, "note": note}

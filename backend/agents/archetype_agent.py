@@ -15,7 +15,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from llm.client import HAIKU, complete_structured
+from llm.client import HAIKU, TruncatedStructuredOutputError, complete_structured
 from pipeline.state import PipelineState
 from utils.formatters import ARCHETYPES, GENERAL_ARCHETYPE, STORY_ARCHETYPES
 from utils.frames import chunk_field, chunk_tags, is_self_authored
@@ -142,7 +142,7 @@ def choose_archetype(state: PipelineState) -> dict[str, Any]:
             tool_name="choose_post_type",
             tool_description="Record the post type chosen for this post.",
             model=HAIKU,
-            max_tokens=100,
+            max_tokens=300,
             messages=[{"role": "user", "content": ARCHETYPE_PROMPT.format(
                 topic=state.get("topic", ""),
                 context=(state.get("context") or "").strip() or "none",
@@ -154,6 +154,8 @@ def choose_archetype(state: PipelineState) -> dict[str, Any]:
             user_id=state["user_id"],
             event_type="archetype",
         )
+    except TruncatedStructuredOutputError:
+        return fall_back("truncated", None)
     except Exception as exc:
         return fall_back(f"inference failed: {exc}", None)
 
