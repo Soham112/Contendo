@@ -4,54 +4,24 @@ import re
 from llm.client import SONNET, complete
 from pipeline.state import PipelineState
 from pipeline.trace import record_draft
-from memory.profile_store import profile_to_context_string
-from utils.post_cleanup import strip_word_count_lines
+from memory.profile_store import profile_voice_context
+from utils.formatters import word_count_rule
 from utils.specifics import find_violations, guard_entry, guard_sources, retry_note
 
 logger = logging.getLogger(__name__)
 
-_WORD_COUNT_MAP = {
-    "linkedin post": {
-        "concise":   (100, 180),
-        "standard":  (250, 350),
-        "long-form": (450, 600),
-    },
-    "medium article": {
-        "concise":   (350, 500),
-        "standard":  (700, 900),
-        "long-form": (1200, 1800),
-    },
-    # thread is tweet-count based, not word-count — no enforcement
-}
-
-
-def _get_word_count_rule(format_type: str, length: str) -> str:
-    fmt = format_type.lower().strip()
-    lng = length.lower().strip()
-    format_lengths = _WORD_COUNT_MAP.get(fmt)
-    if format_lengths is None:
-        return ""
-    min_w, max_w = format_lengths.get(lng, format_lengths["standard"])
-    return (
-        f"---\n"
-        f"WORD COUNT RULE — this overrides everything else:\n"
-        f"The final post must be {min_w}–{max_w} words.\n"
-        f"Count before outputting. If over {max_w}, cut until you are within range.\n"
-        f"Never exceed {max_w} words under any circumstance.\n"
-        f"Do not print the word count.\n"
-        f"---\n\n"
-    )
-
-
 SYSTEM_PROMPT = """You are a humanizing editor. You take drafts that may still have AI-writing fingerprints and rewrite them to sound like a real human wrote them, specifically like the person described in the profile below.
 
-User profile:
+Author voice (voice and style only; never a source of content, stories or facts):
 {profile_context}
 
 Facts are fixed. You may change only wording, rhythm and structure.
 - Never add or change any number, percentage, money amount, date, month, day of the week, duration, count, name or quoted figure. You may drop a detail if you need to cut for length, but prefer cutting words over cutting facts.
 - Every factual detail in your output must already be in the current draft. If a sentence feels vague, sharpen the wording, not the facts.
 - Do not invent incidents, timelines, customers, people or results.
+- Keep the draft's perspective. Never turn something the draft presents as read, watched or observed into something the author did, and never add a personal reaction, memory or connection to the author's own work that the draft does not state.
+- Don't attribute feelings, reactions or habits to the author about a source (e.g. "I haven't been able to put down", "I kept seeing... until I came across") unless the draft states them. Present the source's idea and the author's view of it plainly.
+- Never link facts as cause and effect, sequence or result unless the draft already states that link. Facts the draft keeps separate stay separate.
 - The critic brief below describes problems, not content. It never permits a new fact, story, experience, name or number. If a fix can't be made without new facts, skip it.
 
 {critic_section}AI writing patterns to eliminate:
@@ -69,7 +39,7 @@ Never use the em dash character (—) anywhere in the output. If you are about t
 
 What to inject instead:
 - Sentence variety: mix 4-word punches with longer, winding observations
-- Incomplete thoughts that feel real: "Which, honestly, caught me off guard."
+- Short asides that comment on a point the draft already makes. An aside is a remark, never a new reaction, memory or event.
 - Opinions stated with confidence, not hedged to death
 - The writer's actual voice as described in the profile
 
@@ -124,7 +94,8 @@ def _format_critic_brief(critic_brief: dict) -> tuple[str, str]:
         "Output only the rewritten post, no commentary."
     )
 
-    if not critic_brief:
+    # {} (draft mode) or an error marker (the critic failed): no critic-driven changes.
+    if not critic_brief or critic_brief.get("error"):
         return "", _preserve
 
     _areas = ["topic", "hook", "substance", "structure", "voice"]
@@ -159,7 +130,7 @@ def humanizer_node(state: PipelineState) -> PipelineState:
         return state  # pass raw draft through unchanged
 
     profile = state["profile"]
-    profile_context = profile_to_context_string(profile)
+    profile_context = profile_voice_context(profile)
     words_to_avoid = ", ".join(profile.get("words_to_avoid", []))
     current_draft = state["current_draft"]
     user_id = state["user_id"]
@@ -167,10 +138,7 @@ def humanizer_node(state: PipelineState) -> PipelineState:
     state["iterations"] = iteration
 
     critic_section, rewrite_instruction = _format_critic_brief(state.get("critic_brief", {}))
-    word_count_rule = _get_word_count_rule(
-        state.get("format", "linkedin post"),
-        state.get("length", "standard"),
-    )
+    length_rule = word_count_rule(state.get("length_target"))
 
     def rewrite(violations, event_type: str) -> str:
         prompt = SYSTEM_PROMPT.format(
@@ -179,7 +147,7 @@ def humanizer_node(state: PipelineState) -> PipelineState:
             current_draft=current_draft,
             critic_section=critic_section,
             rewrite_instruction=rewrite_instruction,
-            word_count_rule=word_count_rule,
+            word_count_rule=f"{length_rule}\n\n" if length_rule else "",
             specifics_retry=retry_note(violations, no_specifics=bool(state.get("no_specifics"))),
         )
         message = complete(
@@ -189,7 +157,7 @@ def humanizer_node(state: PipelineState) -> PipelineState:
             user_id=user_id,
             event_type=event_type,
         )
-        return strip_word_count_lines(message.content[0].text.strip())
+        return message.content[0].text.strip()
 
     sources = guard_sources(state, current_draft)
     rewritten = rewrite([], "humanize")

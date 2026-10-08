@@ -1,23 +1,29 @@
-import json
 import logging
-import re
+from typing import Literal
 
-from llm.client import HAIKU, complete
+from pydantic import BaseModel, Field
+
+from llm.client import HAIKU, complete_structured
 from pipeline.state import PipelineState
-from memory.profile_store import profile_to_context_string
+from memory.profile_store import profile_voice_context
+from utils.formatters import get_archetype
 from utils.frames import authorship, chunk_field, chunk_frame
 
 logger = logging.getLogger(__name__)
 
-_ARCHETYPE_NAMES: dict[str, str] = {
-    "incident_report": "Incident Report / Retrospective",
-    "contrarian_take": "Contrarian Take",
-    "personal_story": "Personal Story",
-    "teach_me_something": "Teach Me Something",
-    "list_that_isnt": "List That Isn't",
-    "prediction_bet": "Prediction / Bet",
-    "before_after": "Before & After",
-}
+class Verdict(BaseModel):
+    verdict: Literal["strong", "needs_work"]
+    fix: str | None = Field(default=None, description="One fix when the verdict is needs_work; null when strong.")
+
+
+class CriticBrief(BaseModel):
+    topic: Verdict
+    hook: Verdict
+    substance: Verdict
+    structure: Verdict
+    voice: Verdict
+    overall: Literal["postable", "needs_work"]
+
 
 CRITIC_PROMPT = """You are a content critic. Your job is to diagnose weaknesses in a LinkedIn post draft before it is humanized. You diagnose only: you never write any part of the post.
 
@@ -29,10 +35,10 @@ Examine the draft across five dimensions, in this order:
 1. TOPIC — Does the post stay on the topic as given (and the additional context, if any)? Flag any drift away from it, including turns toward the author's opinions, expertise or work that the topic does not ask for.
 2. HOOK — Does the opening sentence stop a scroller immediately? Is it specific and surprising, or generic and forgettable?
 3. SUBSTANCE — Does the draft use the ideas in the knowledge base chunks, or make vague claims any post could make? Judge substance only against what the chunks, the topic and the context actually contain.
-4. STRUCTURE — Does the draft follow the expected pattern for a {archetype_name} post? Is the order of sections correct?
+4. STRUCTURE — Does the draft follow the pattern of a {archetype_name} post, as far as the sources allow? Judge only the sections the chunks or the request have material for. A section the sources cannot fill is correctly left out: never count it as missing and never ask for it.
 5. VOICE — Does this sound like the specific person in the profile, or like generic LinkedIn content?
 
-Profile summary (voice reference only):
+Author voice (voice reference only; never a source of content or angles):
 {profile_context}
 
 Post archetype (structural reference): {archetype_name}
@@ -48,14 +54,10 @@ Rules for every fix:
 - Never write example sentences, replacement text, or anything in quotation marks. Never quote the draft or the chunks.
 - Never suggest a name, number, date, time, place or event that is not already in the draft or the chunks.
 - Never suggest connecting the post to the author's opinions, expertise, projects or work unless the topic or context asks for it. The profile is a voice reference, not a source of angles.
+- Each chunk is a separate source. If the draft links facts from different chunks as cause and effect, sequence or result, and no single chunk states that link, mark SUBSTANCE "needs_work" and say which link to remove. Facts from separate notes stay separate.
 {experience_rule}
 
-For each dimension, return a verdict ("strong" or "needs_work") and — if "needs_work" — one fix that follows the rules above. If "strong", set fix to null.
-
-Return ONLY valid JSON with this exact structure — no preamble, no explanation, no markdown fences:
-{{"topic": {{"verdict": "strong", "fix": null}}, "hook": {{"verdict": "strong", "fix": null}}, "substance": {{"verdict": "strong", "fix": null}}, "structure": {{"verdict": "strong", "fix": null}}, "voice": {{"verdict": "strong", "fix": null}}, "overall": "postable"}}
-
-Use this exact shape — replace values with your actual verdicts and fix instructions."""
+For each dimension, give a verdict ("strong" or "needs_work") and — if "needs_work" — one fix that follows the rules above. If "strong", the fix is null. Set overall to "postable" only when every verdict is "strong"."""
 
 _NO_SPECIFICS_MODE = """
 MODE: opinion post without specifics. The author's notes don't cover this topic, and they asked for an opinion post anyway. The post must contain no numbers, dates, names, incidents, customers or results unless the topic or context gives them. Judge substance by the quality of the argument, never by whether it has specifics or stories.
@@ -90,51 +92,23 @@ def _label_chunks(state: PipelineState) -> tuple[str, int]:
     return "\n---\n".join(lines), self_count
 
 
-_NEUTRAL_BRIEF: dict = {
-    "topic": {"verdict": "strong", "fix": None},
-    "hook": {"verdict": "strong", "fix": None},
-    "substance": {"verdict": "strong", "fix": None},
-    "structure": {"verdict": "strong", "fix": None},
-    "voice": {"verdict": "strong", "fix": None},
-    "overall": "postable",
-}
-
-
-def _parse_critic_response(raw: str) -> dict:
-    """Three-attempt JSON parse with neutral fallback."""
-    attempts = [
-        lambda r: json.loads(r),
-        lambda r: json.loads(
-            r.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        ),
-        lambda r: json.loads(re.search(r"\{.*\}", r, re.DOTALL).group()),
-    ]
-    for attempt in attempts:
-        try:
-            return attempt(raw)
-        except Exception:
-            continue
-    logger.warning("Critic agent: JSON parse failed, using neutral brief. Raw: %.200s", raw)
-    return dict(_NEUTRAL_BRIEF)
-
-
 def critic_node(state: PipelineState) -> PipelineState:
     """Diagnose the draft and write critic_brief to pipeline state.
 
     Skipped for draft quality mode (sets critic_brief={} immediately).
-    All exceptions caught — sets critic_brief={} and continues so the
-    pipeline never breaks.
+    If the call or its structured answer fails, critic_brief is {"error": "..."}:
+    an explicit marker, never a made-up "all strong" brief. The humanizer then
+    makes no critic-driven changes, and the pipeline continues.
     """
     if state.get("quality") == "draft":
         state["critic_brief"] = {}
         return state
 
     try:
-        archetype_key = state.get("archetype") or "incident_report"
-        archetype_name = _ARCHETYPE_NAMES.get(archetype_key, "Incident Report / Retrospective")
+        archetype_name = get_archetype(state.get("archetype", "")).name
 
         profile = state.get("profile", {})
-        profile_context = profile_to_context_string(profile) if profile else ""
+        profile_context = profile_voice_context(profile) if profile else ""
 
         chunks_text, self_count = _label_chunks(state)
 
@@ -149,19 +123,20 @@ def critic_node(state: PipelineState) -> PipelineState:
             experience_rule=_SELF_CHUNKS_RULE if self_count else _NO_SELF_CHUNKS_RULE,
         )
 
-        message = complete(
+        brief = complete_structured(
+            schema=CriticBrief,
+            tool_name="record_critique",
+            tool_description="Record the diagnosis of the draft.",
             model=HAIKU,
             max_tokens=600,
             messages=[{"role": "user", "content": prompt}],
             user_id=state["user_id"],
             event_type="critic",
         )
-
-        raw = message.content[0].text.strip()
-        state["critic_brief"] = _parse_critic_response(raw)
+        state["critic_brief"] = brief.model_dump()
 
     except Exception as e:
-        logger.warning("Critic agent failed: %s — setting critic_brief={}, pipeline continues", e)
-        state["critic_brief"] = {}
+        logger.warning("critic: failed (%s); no critic-driven changes for this post", e)
+        state["critic_brief"] = {"error": str(e)}
 
     return state

@@ -36,7 +36,7 @@ def test_score_accepts_valid_token(client, production, claude, auth_headers, mon
     monkeypatch.setattr(generate, "score_text", lambda text, *, user_id: (80, ["ok"]))
     resp = client.post("/score", json={"post_content": "p"}, headers=auth_headers("user-a"))
     assert resp.status_code == 200
-    assert resp.json() == {"score": 80, "score_feedback": ["ok"]}
+    assert resp.json() == {"score": 80, "score_feedback": ["ok"], "message": ""}
 
 
 # --- Local-path Obsidian ingest is opt-in -------------------------------------

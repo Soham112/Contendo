@@ -6,7 +6,8 @@ from config import features
 from llm.client import trace_calls
 from pipeline.state import PipelineState
 from pipeline.trace import build_trace_row
-from utils.post_cleanup import strip_word_count_lines
+from utils.formatters import resolve_length_target
+from utils.frames import decide_perspective
 from memory.profile_store import load_profile
 from memory.feedback_store import get_all_topics_posted
 from memory.trace_store import save_generation_trace
@@ -36,6 +37,32 @@ def load_profile_node(state: PipelineState) -> PipelineState:
     return state
 
 
+def plan_node(state: PipelineState) -> PipelineState:
+    """Decide once, from the request and what retrieval found, the two things
+    every later node works to: the post's length target and its perspective.
+
+    Runs after retrieval because both depend on it (thin sources change the
+    length target; the chunks' authorship sets the perspective).
+    """
+    gate = (state.get("coverage_gate") or {}).get("decision")
+    state["length_target"] = resolve_length_target(
+        state.get("format", ""),
+        state.get("length", ""),
+        first_post=bool(state.get("first_post")),
+        thin_sources=state.get("retrieval_confidence") == "low",
+    )
+    # The notes don't cover the topic, but a post is written anyway (a first
+    # post from the onboarding answers, or an opinion post without specifics).
+    not_covered = bool(state.get("no_specifics")) or gate in ("skipped_first_post", "bypassed")
+    state["perspective"] = decide_perspective(
+        (state.get("retrieval_bundle") or {}).get("chunks", []),
+        state.get("profile") or {},
+        opinion_only=not_covered,
+    )
+    logger.info("plan: length_target=%s perspective=%s", state["length_target"], state["perspective"])
+    return state
+
+
 LOW_COVERAGE_SUGGESTION = (
     "Your memory doesn't cover this topic yet. Add a source about it, "
     "or write an opinion post without specifics."
@@ -55,7 +82,7 @@ def low_coverage_node(state: PipelineState) -> PipelineState:
 
 
 def finalize_node(state: PipelineState) -> PipelineState:
-    state["final_post"] = strip_word_count_lines(state["current_draft"])
+    state["final_post"] = state["current_draft"]
     return state
 
 
@@ -76,6 +103,8 @@ def should_retry(state: PipelineState) -> str:
     Retry loop (humanizer → predictability_audit → scorer) never passes through
     word_count_enforcer — it runs exactly once when scoring is finished.
     """
+    if state.get("score_error"):
+        return "word_count_enforcer"
     if state.get("score", 0) < SCORE_THRESHOLD and state.get("iterations", 0) < MAX_ITERATIONS:
         return "humanizer"
     return "word_count_enforcer"
@@ -86,6 +115,7 @@ def build_graph() -> StateGraph:
 
     graph.add_node("load_profile", load_profile_node)
     graph.add_node("retrieval", retrieval_node)
+    graph.add_node("plan", plan_node)
     graph.add_node("draft", draft_node)
     graph.add_node("critic", critic_node)
     graph.add_node("humanizer", humanizer_node)
@@ -101,8 +131,9 @@ def build_graph() -> StateGraph:
     graph.add_conditional_edges(
         "retrieval",
         route_after_retrieval,
-        {"draft": "draft", "low_coverage": "low_coverage"},
+        {"draft": "plan", "low_coverage": "low_coverage"},
     )
+    graph.add_edge("plan", "draft")
     graph.add_edge("low_coverage", END)
     graph.add_edge("draft", "critic")
     graph.add_edge("critic", "humanizer")
@@ -207,7 +238,7 @@ def run_pipeline(
         "score_feedback": result.get("score_feedback", []),
         "iterations": result.get("iterations", 1),
         "archetype": result.get("archetype", ""),
-        "scored": quality == "polished",
+        "scored": quality == "polished" and not result.get("score_error"),
         "retrieval_confidence": result.get("retrieval_confidence", "medium"),
         "trace_id": trace_id,
         "fact_check_job": fact_check_job,

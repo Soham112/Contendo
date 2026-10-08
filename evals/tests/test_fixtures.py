@@ -37,7 +37,11 @@ def test_persona_fixture_shape(personas, slug):
 
 def test_goldens_are_valid_and_balanced(personas):
     goldens = load_goldens(personas=personas)
-    assert Counter(g["persona"] for g in goldens) == {slug: 8 for slug in PERSONAS}
+    assert Counter(g["persona"] for g in goldens) == {slug: 9 for slug in PERSONAS}
+    # One targeted golden per persona, aimed at a single external source. For pm and founder
+    # the post should be "learned"; for ds retrieval also returns the persona's own notes ("mixed").
+    assert {g["id"]: g["expected_perspective"] for g in goldens if "expected_perspective" in g} == {
+        "ds-09": "mixed", "pm-09": "learned", "founder-09": "learned"}
     for slug in PERSONAS:
         difficulties = {g["difficulty"] for g in goldens if g["persona"] == slug}
         assert difficulties == {"rich", "sparse", "off_topic"}, slug

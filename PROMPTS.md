@@ -262,29 +262,27 @@ You are a retrieval agent. You surface semantically relevant chunks from a perso
 
 ### Draft Agent — agents/draft_agent.py
 
-**Purpose:** Generate the initial content draft using the user's profile, retrieved knowledge chunks, and format/tone instructions.
+**Purpose:** Write the first draft from the retrieved sources, in the author's voice. The sources decide what the post says; the profile decides only how it sounds. Model: `claude-sonnet-4-6`, `max_tokens=2000`.
 
-**System prompt:**
-*(Injected as the user message — no separate system role. The full prompt is constructed dynamically.)*
-
+**System prompt (`SYSTEM_PROMPT`):**
 ```
-You are a ghostwriter. You write content that sounds exactly like the person described in the user profile below, not like an AI assistant, not generically "professional", but like this specific person.
+You are a ghostwriter. You write a post from the sources below, in the voice of the author described below. The sources decide what the post says. The author profile decides only how it sounds.
 
-You have access to their knowledge base: real chunks of content they've read, watched, or written. Use this knowledge to make the draft specific and grounded. Reference real ideas from the chunks; don't write generic claims.
-
-User profile:
+Author voice (voice, audience and style only; never a source of content, stories or facts):
 {profile_context}
 
 Format and tone instructions:
 {format_instructions}
+{word_count_rule}
 
 Knowledge base (use what's relevant, ignore the rest):
 {retrieved_chunks}
 
 Topic: {topic}
 {context_section}
-TOPIC RULE: Write about the topic as given. Don't frame it as an analogy or metaphor for the author's professional field, and don't pull in their expertise, projects or opinions unless the topic or context asks for it. The profile shapes voice, not subject.
+TOPIC RULE: Write about the topic as given. Don't frame it as an analogy or metaphor for the author's professional field, and don't pull in their work, projects or opinions unless the topic or context asks for it.
 {posted_topics_section}
+{perspective_rule}
 {grounding_instruction}
 {first_post_instruction}
 Write the draft now. Do not add any preamble or explanation; output only the post content itself.
@@ -292,48 +290,18 @@ Write the draft now. Do not add any preamble or explanation; output only the pos
 ---
 POST STRUCTURE: write this post as a {archetype_name}:
 {archetype_instructions}
+The structure is a shape, not a checklist: leave out any section the sources cannot fill.
 ---
 
 ---
-SOURCE ATTRIBUTION RULES (mandatory — read chunk labels above before writing):
-
-Chunks are pre-grouped into three frames. Use the frame label to determine
-how to write each claim.
-
-PERSONAL frame:
-The user directly experienced or built this. Write in first person.
-"I ran into this exact problem", "we switched to X because", "I built this and found..."
-Never fabricate specific incidents not in the chunk. The chunk is the evidence.
-
-EXPERT OUTSIDER frame:
-The user knows adjacent territory deeply but this specific topic is newer to them.
-Write with authority and honest curiosity combined.
-"Coming from X background, what surprised me about Y is...",
-"The mental model shift from X to Y took longer than expected",
-"This is what people with X background consistently miss about Y"
-Never use passive or student-like framing. They are an expert, just not in this exact thing yet.
-
-LEARNING frame — calibrated by seniority:
-Junior (0-3 years): "Been going deep on X lately. Here is what actually matters."
-Mid (4-10 years): "X is worth understanding properly. Most explanations miss this."
-Senior (10+ years): "X keeps coming up. Here is what I keep seeing people get wrong."
-All three are confident. None of them are passive. Never write "I came across an article about X."
-
-CROSS-FRAME RULE:
-Never mix frames within a single sentence.
-If a paragraph draws on both PERSONAL and LEARNING chunks,
-lead with the personal claim and use the learning chunk as supporting evidence.
-"I saw this break in production. The pattern is documented — most teams hit it at scale."
-
-FABRICATION RULE (still applies):
-Never invent personal incidents, timestamps, colleague names, or events
-not explicitly present in the PERSONAL EXPERIENCE chunks above or in the
-topic and additional context. The profile says who the author is; it is
-not a source of stories. Never set an incident at a company or project
-named in the profile unless a PERSONAL EXPERIENCE chunk describes it.
+SOURCE RULES (mandatory):
+{source_rules}
+FABRICATION RULE:
+Never invent incidents, dates, names, numbers, results or events. A first-person
+event may come only from an OWN EXPERIENCE chunk above, or from what the author
+states in the topic or the additional context. The author profile is not a
+source of stories: never set an incident at a company, project or role it names.
 ---
-
-*(Note: Chunk grouping and frame resolution happen upstream in `retrieval_agent.py → resolve_attribution_frames()`. The draft agent receives chunks pre-labeled with PERSONAL / EXPERT OUTSIDER / LEARNING headers — it reads the labels directly rather than interpreting source_type values itself. This is structural and reliable; in-prompt attribution interpretation is brittle.)*
 
 ---
 VISUAL PLACEHOLDER RULES (mandatory):
@@ -349,16 +317,17 @@ Never force a diagram into opinion pieces or short punchy posts where the words 
 ```
 
 **Input variables injected:**
-- `profile_context` — string-formatted output of `profile_to_context_string(profile)`, containing name, role, voice descriptors, writing rules, topics of expertise, words to avoid. A writing rule matching "real numbers / real situations / real examples / real moments / specific number(s) / concrete examples / use numbers" is rendered with this suffix (same in every prompt that renders the profile): ` (Only numbers and situations stated in the knowledge base, the profile or the request. Never invent them; without them, make the point through reasoning.)`
-- `format_instructions` — output of `get_format_instructions(format, tone)` from `utils/formatters.py`
-- `retrieved_chunks` — structured labeled block produced by `resolve_attribution_frames()` in `retrieval_agent.py`; chunks are grouped under explicit frame headers (PERSONAL EXPERIENCE / EXPERT OUTSIDER PERSPECTIVE / LEARNING) with `[source: X | tags: Y]` labels per chunk; the draft agent reads these headers directly to determine writing frame without any source_type interpretation; falls back to a flat numbered list when `retrieval_bundle` is absent (backward compat), and "No relevant knowledge base entries found." when empty
-- `topic` — the generation topic
-- `context_section` — optional context string prefixed with "Additional context:", or empty string
-- `posted_topics_section` — bullet list of all previously saved topics from `feedback_store.get_all_topics_posted()`, prefixed with "Topics you have already written about — do not repeat these angles, find a fresh perspective:"; empty string if no posts saved yet
-- `grounding_instruction` — output of `_get_grounding_instruction(retrieval_confidence, retrieved_chunk_count)`; empty string for high confidence (prompt unchanged); calibration text for medium/low; injected between `{posted_topics_section}` and "Write the draft now."
-- `first_post_instruction` — `_FIRST_POST_INSTRUCTION` constant when `state["first_post"] == True`; empty string otherwise. Injected immediately after `grounding_instruction`.
-- `archetype_name` — human-readable archetype name (e.g. "Incident Report / Retrospective"), resolved from the inferred archetype key
-- `archetype_instructions` — structural prompt block for the inferred archetype, returned by `get_archetype_instructions()` in `utils/formatters.py`
+- `profile_context` — `profile_voice_context(profile)`: name, role, target audience, voice descriptors, writing rules, words to avoid and writing samples. The samples appear under the line "These are examples of the author's style. Do not reuse any facts, numbers, names or events from them.", and the specifics guard does not accept them as a source (`utils.specifics.profile_facts`). The bio, topics of expertise and opinions are **not** included (they are content). After the writing rules comes one overriding line: "These rules are about style only. Where one asks for examples, numbers, real moments or specifics, it means the ones the sources give. Never invent one to satisfy a rule."
+- `format_instructions` — `get_format_instructions(format, length, tone)` from `utils/formatters.py`: the format block, a tweet count for threads, and the tone (see **Tone** below). No word length.
+- `word_count_rule` — `word_count_rule(state["length_target"])`: see **Length** below. `""` for threads.
+- `retrieved_chunks` — `format_chunks_by_frame()` from `utils/frames.py`: chunks grouped under their frame's label, each with `[source: <type> | tags: <tags>]`. The source title is not shown (stopgap: stored metadata doesn't record whether a title is real; see `format_chunks_by_frame` and CODEBASE.md section 6), so the rules refer to sources by type and subject. `(No notes relevant to this topic were found.)` when there are none.
+- `topic`, `context_section` — the request; context prefixed with "Additional context:".
+- `posted_topics_section` — earlier topics, so angles aren't repeated.
+- `perspective_rule` — `PERSPECTIVES[state["perspective"]]`: see **Perspective** below.
+- `grounding_instruction` — `_get_grounding_instruction(retrieval_confidence)`, with the no-notes rule and the no-specifics rule prepended when they apply.
+- `first_post_instruction` — `_FIRST_POST_INSTRUCTION` when `state["first_post"]`.
+- `archetype_name`, `archetype_instructions` — the chosen archetype's name and structure block (see **Archetypes** below).
+- `source_rules` — one rule per frame present in this post's chunks, generated from `utils.frames.FRAMES`, followed by the cross-source rule; `""` when there are no chunks.
 
 **Specifics guard on the draft (code + retry prompt):** the draft is checked with `utils.specifics.find_violations()` for numbers, dates, durations and money not in the chunks, the profile, the topic or the context (no-specifics mode: topic, context, profile). On violation the same prompt is sent again (`event_type="generate_retry"`) with this suffix from `retry_note(..., node="draft")`:
 ```
@@ -370,30 +339,200 @@ Write the post again without them, and add no other specifics.
 ```
 (no-specifics mode: "which are not in the topic, the context or the author profile"). If the retry still violates, the sentences at fault are removed (`remove_sentences`). Claims and events are checked once, at the end, by the Fact Check Agent. The knowledge-base block exactly as sent is saved as `node_outputs.draft_frame_block`.
 
+---
+
+### Length (one table, one target per post) — utils/formatters.py
+
+`WORD_RANGES` is the only place word counts live:
+
+| Format | concise | standard | long-form |
+|---|---|---|---|
+| linkedin post | 100–180 | 250–350 | 450–600 |
+| medium article | 350–500 | 700–900 | 1200–1800 |
+
+Threads are measured in tweets (concise: 4–6, standard: 7–10, long-form: 10–15) and are not enforced. A user's first post is 70–100 words whatever length was requested.
+
+`plan_node` (pipeline/graph.py) calls `resolve_length_target()` once, after retrieval, and stores `state["length_target"] = {min_words, max_words, may_expand, basis}`. The drafter, humanizer and word count enforcer all read it; none computes its own.
+
+| basis | When | Target | Enforcer |
+|---|---|---|---|
+| `first_post` | the user has no saved posts | 70–100 words | trims if over; never expands |
+| `thin_sources` | retrieval confidence is `low` | ceiling only: the requested range's maximum, no minimum | trims if over; never expands |
+| `length_setting` | otherwise | the requested range | trims if over; expands if under |
+
+`word_count_rule(target)` is the only wording of the rule. With a minimum:
+```
+LENGTH: 250–350 words. Never go over 350.
+```
+Ceiling only (thin sources):
+```
+LENGTH: at most 350 words. A short post is complete: say what the sources support and stop. Never pad to reach a length.
+```
+No prompt asks the model to count its words: `word_count_enforcer_node` counts in code.
+
+---
+
+### Perspective (dynamic — from chunk authorship) — utils/frames.py
+
+`plan_node` calls `decide_perspective()` and stores `state["perspective"]` (also in the trace as `node_outputs.perspective`): `experience` when every chunk is self-authored, `learned` when every chunk is external, `mixed` when both, `opinion` when there are no chunks or the post is written without them (no-specifics mode, or the coverage gate was skipped for a first post or bypassed).
+
+`experience`
+```
+PERSPECTIVE: experience.
+The sources are the author's own notes. Write in first person, and only about what those notes describe.
+Don't make claims about what most people, most founders or most teams do unless a source says so; state it as the author's view instead ("I think many teams...").
+```
+
+`learned`
+```
+PERSPECTIVE: learned.
+The sources are things the author read, watched or saved, not things the author did. Share what they say and what you make of it, and say where each idea came from by what the source is and what it covers ("an article on...", "a talk on...", "a video about..."), without giving it a title. Do not connect the material to the author's own work, career or life, and do not present any of it as something the author did, saw or went through.
+Don't attribute feelings, reactions or habits to the author about a source (e.g. "I haven't been able to put down", "I kept seeing... until I came across") unless a source or the request states them. Present the source's idea and the author's view of it plainly.
+Don't make claims about what most people, most founders or most teams do unless a source says so; state it as the author's view instead ("I think many teams...").
+```
+
+`opinion`
+```
+PERSPECTIVE: opinion.
+The author's notes do not cover this topic. Write views and observations with their reasoning. Claim no event, result or experience, except one the author states in the topic or the additional context.
+Don't make claims about what most people, most founders or most teams do unless a source says so; state it as the author's view instead ("I think many teams...").
+```
+
+`mixed`
+```
+PERSPECTIVE: mixed.
+Some sources are the author's own notes and some are things the author read or watched. Each point keeps its origin: first person only for what the author's own notes describe; everything else is attributed to where it came from, by what the source is and what it covers ("an article on...", "a talk on..."), without a title. Never merge the two in one sentence, and never stretch the author's experience to cover external material.
+Don't attribute feelings, reactions or habits to the author about a source (e.g. "I haven't been able to put down", "I kept seeing... until I came across") unless a source or the request states them. Present the source's idea and the author's view of it plainly.
+Don't make claims about what most people, most founders or most teams do unless a source says so; state it as the author's view instead ("I think many teams...").
+```
+
+---
+
+### Source rules (dynamic — one per frame present) — utils/frames.py
+
+`FRAMES` is the single list of frames: every value `chunk_frame()` can return, with the label its chunks get in the knowledge base block and the rule for writing from them. The draft prompt's `{source_rules}` contains only the rules for frames present in this post, each under the same label as in the knowledge base block.
+
+`CONSOLIDATION`
+```
+CONSOLIDATED SUMMARY:
+A summary of what the author's notes say about this topic. Background only: absorb it, don't quote it. It cannot be the evidence for a first-person event.
+```
+
+`PERSONAL_WORK`
+```
+OWN EXPERIENCE: WORK:
+Something the author did or built professionally. First person. Tell only what the note describes: never add an incident, result, person, place or date to it.
+```
+
+`PERSONAL_PROJECT`
+```
+OWN EXPERIENCE: PERSONAL PROJECT:
+The author's own side project or experiment. First person. Tell only what the note describes: never add an incident, result, person, place or date to it.
+```
+
+`PERSONAL`
+```
+OWN EXPERIENCE: NOTES:
+The author's own notes. First person. Tell only what the note describes: never add an incident, result, person, place or date to it.
+```
+
+`OBSERVATION`
+```
+OBSERVATION:
+A pattern the author has noticed. Write it as noticing ("I keep seeing", "the pattern is"), never as an event that happened to the author.
+```
+
+`EXPERT_OUTSIDER`
+```
+EXTERNAL SOURCE: IN THE AUTHOR'S FIELD:
+Something the author read, watched or saved, not something the author did. Refer to it by what it is and what it covers ("an article on...", "a talk on...", "a video about..."); do not give it a title. Never present it as the author's own experience, and never connect it to the author's own work, background or life. The author knows this field, so write about the idea with authority.
+```
+
+`LEARNING_SENIOR`
+```
+EXTERNAL SOURCE: LEARNING (senior voice):
+Something the author read, watched or saved, not something the author did. Refer to it by what it is and what it covers ("an article on...", "a talk on...", "a video about..."); do not give it a title. Never present it as the author's own experience, and never connect it to the author's own work, background or life. Say what the source argues and give a firm judgement on it.
+```
+
+`LEARNING_MID`
+```
+EXTERNAL SOURCE: LEARNING (mid-career voice):
+Something the author read, watched or saved, not something the author did. Refer to it by what it is and what it covers ("an article on...", "a talk on...", "a video about..."); do not give it a title. Never present it as the author's own experience, and never connect it to the author's own work, background or life. Say what the source argues and what you make of it, without hedging.
+```
+
+`LEARNING_JUNIOR`
+```
+EXTERNAL SOURCE: LEARNING (early-career voice):
+Something the author read, watched or saved, not something the author did. Refer to it by what it is and what it covers ("an article on...", "a talk on...", "a video about..."); do not give it a title. Never present it as the author's own experience, and never connect it to the author's own work, background or life. Say plainly what the source argues and what stood out, without hedging.
+```
+
+Followed, whenever there are chunks, by:
+```
+CROSS-SOURCE RULE:
+Each chunk above is a separate source. Never link facts from different sources as
+cause and effect, sequence or result unless one source states that link. Facts
+from separate notes stay separate.
+Never put an own-experience claim and an external-source claim in the same sentence.
+When a paragraph uses both, state the author's own point first, then bring in the
+source as support and say where it came from.
+```
+
+---
+
+### Tone (voice only) — utils/formatters.py
+
+Tone sets word choice, register and rhythm. It never decides structure and is not an input to archetype selection.
+
+`casual`
+```
+Tone: casual and conversational. Write like you're texting a smart friend. Short sentences. Contractions are fine.
+```
+
+`technical`
+```
+Tone: technical and precise. Assume the reader is an engineer or builder. Use accurate terminology and state mechanisms exactly. Use the numbers and names the sources give; add none.
+```
+
+`storytelling`
+```
+Tone: narrative voice. Plain, vivid wording and sentences that pull the reader forward. This is how the post sounds, not what it contains: it does not license a scene, a moment or an event the sources don't describe.
+```
+
+---
+
 ### Grounding calibration (dynamic — confidence-dependent)
 
-`{grounding_instruction}` is injected immediately before "Write the draft now."
+`_get_grounding_instruction(retrieval_confidence)`: `""` for `high`. It says how to write with thin material; it sets no length.
 
-| Confidence | Trigger | Instruction |
-|---|---|---|
-| high | 3+ chunks with distance < 0.55 (implemented as similarity > 0.45) | Empty string — prompt unchanged |
-| medium | 1+ chunk < 0.55, or 3+ chunks < 0.70 (implemented as similarity > 0.45 / > 0.30) | Observational frame reminder, aim for shorter end of format range |
-| low | Fewer than 3 strong matches, below medium trigger thresholds | Write one idea well and stop. 60–100 words is a complete post. No padding, no fabrication. |
+`medium`:
+```
+GROUNDING CALIBRATION:
+You have moderate knowledge base coverage on this topic.
+Use what is available. Do not invent specifics not present in the chunks.
+If you lack an example, make the point through reasoning rather than
+supplying a named incident, a number or a date.
+A tighter post with real grounding beats a longer post with filler.
+```
 
-Design principle: always generate. Calibrate output length and frame to available grounding. A 70-word post built on one real idea is better than a 400-word post built on fabrication.
+`low`:
+```
+GROUNDING CALIBRATION:
+You have moderate knowledge base coverage on this topic.
+Use what is available. Do not invent specifics not present in the chunks.
+If you lack an example, make the point through reasoning rather than
+supplying a named incident, a number or a date.
+A tighter post with real grounding beats a longer post with filler.
+```
+
+---
 
 ### First-post instruction (injected on user's first generation)
 
-**Trigger condition:** `state["first_post"] == True` — set by `load_profile_node` when `posted_topics` is empty (user has never generated a post before).
+**Trigger condition:** `state["first_post"]`, set by `load_profile_node` when the user has no saved posts. Its length (70–100 words) comes from the length target, not from this text.
 
-**Behaviour:** `_FIRST_POST_INSTRUCTION` is injected as `{first_post_instruction}` immediately after `{grounding_instruction}`. Additionally, `draft_node` overrides `effective_length` to `"concise"` and replaces the word-count rule with a hard 120–150 word constraint. The VISUAL PLACEHOLDER RULES in `SYSTEM_PROMPT` are overridden by this instruction — no `[DIAGRAM:]` or `[IMAGE:]` placeholders in a first post.
-
-**Full instruction text:**
 ```
-FIRST POST RULE (overrides word-count and visual placeholder rules):
+FIRST POST RULE (overrides visual placeholder rules):
 This is the user's very first generated post. Keep it short and punchy — a quick win.
-- Target length: 120–150 words. Do not exceed 150 words under any circumstance.
-- Count your words before outputting. Cut ruthlessly if over 150.
 - Do NOT include any [DIAGRAM: ...] or [IMAGE: ...] placeholders. None. Ever. In a first post.
 - No multi-section structure. One tight idea, one strong finish.
 - The goal is to prove the system works, not to show off every feature.
@@ -401,38 +540,31 @@ This is the user's very first generated post. Keep it short and punchy — a qui
 
 ---
 
-### Zero-notes guard (injected when retrieved_chunks is empty)
+### No-notes rule (injected when retrieval found no relevant chunk)
 
-**Trigger condition:** `chunks_text` (the formatted retrieval context passed to the prompt) contains the string `"No relevant knowledge base entries found"` — meaning both `state["retrieved_context"]` and `state["retrieved_chunks"]` are empty. This indicates the user has not ingested any notes yet.
+**Trigger condition:** `state["has_chunks"]` is false. `retrieval_node` sets the flag; nothing looks for a sentence in the chunk text. Prepended to `grounding_instruction`.
 
-**Behaviour:** Prepended to `grounding_instruction` regardless of retrieval confidence level, before the existing calibration text (if any).
-
-**Full instruction text:**
 ```
-ZERO PERSONAL NOTES RULE (highest priority — overrides all other instructions):
-This user has no ingested notes yet. You have ZERO first-person source material.
+NO NOTES RULE (highest priority — overrides all other instructions):
+No notes relevant to this topic were found. Your only material is the topic and
+the additional context above.
 Do NOT write any personal stories, specific incidents, named colleagues,
-specific numbers (AUC scores, percentages, timeframes), or events presented
-as things that happened to this person.
-Write entirely from an observational or analytical perspective:
+specific numbers (scores, percentages, timeframes), or events presented
+as things that happened to this person, unless the topic or context states them.
+Write from an observational or analytical perspective:
 - "Most teams underestimate feature engineering" not "At my last job we saw..."
-- "The pattern I keep seeing is..." not "When we hit 0.71 AUC..."
+- "The pattern is..." not "When we hit 0.71 AUC..."
 - "The instinct is usually to change the model. It's rarely the right call."
 A post that shares a sharp observation is better than one that invents a story
-the user never lived.
+the author never lived.
 ```
 
 ---
 
 ### No-specifics rule (injected when the request sets no_specifics)
 
-*No-specifics mode is disabled (feature flag) until citation-based drafting lands in the pipeline redesign. Known issues found: rewrites create dangling references, the find-prompt over-flags generalisations, first-person claims like 'I keep going back' are inconsistently caught, and an em dash slipped past the humanizer.*
+**Trigger condition:** `state["no_specifics"]` is true (`POST /generate` with `no_specifics: true`; disabled while `config.features.NO_SPECIFICS_MODE_ENABLED` is off). Prepended to `grounding_instruction`, before the no-notes rule.
 
-**Trigger condition:** `state["no_specifics"]` is true. Set by `POST /generate` with `no_specifics: true`, which the frontend sends after a `low_coverage` response when the user picks "Write an opinion post without specifics". The coverage gate is skipped (decision `bypassed`).
-
-**Behaviour:** Prepended to `grounding_instruction` (after the zero-notes guard, if that applied), so it comes first.
-
-**Full instruction text:**
 ```
 NO-SPECIFICS RULE (highest priority — overrides all other instructions, including the knowledge base, profile and writing samples):
 The user's notes don't cover this topic, and they asked for an opinion post anyway.
@@ -442,38 +574,120 @@ The user's notes don't cover this topic, and they asked for an opinion post anyw
 - Frame claims as views: "I think", "the pattern I keep seeing", "most teams".
 ```
 
-In this mode the humanizer, predictability audit and word count enforcer guards accept facts only from the topic, the context and the profile (not the chunks, and not their input draft), and their retry uses the no-specifics wording (see the humanizer's `specifics_retry`).
-
 ---
 
-### POST STRUCTURE (Dynamic — Archetype System)
+### Archetypes (structure only) — utils/formatters.py and agents/archetype_agent.py
 
-The structure block is no longer hardcoded. `infer_archetype(topic, context, tone)` in `draft_agent.py` calls Claude Haiku (`claude-haiku-4-5-20251001`, `max_tokens=20`) to semantically classify the topic into one of 7 archetypes. Haiku is used because it understands intent beyond keyword matching — e.g. "My experience with Kubernetes after 2 years" is correctly classified as `personal_story`, not `before_after`. Fallback chain: valid archetype key returned → use it; invalid/unrecognised key → `incident_report`; any exception → `incident_report`. The archetype key is stored in pipeline state and returned in the API response.
+`ARCHETYPES` is the registry: each archetype's name, structure block, the line shown when choosing, and whether it needs a real event. A block describes structure only: no lengths, no diagram advice, and no demand for a date, name or number the sources may not have.
 
-**Archetypes:**
-| Key | Human Name | Use case |
-|-----|-----------|----------|
-| incident_report | Incident Report / Retrospective | Failures, bugs, production stories |
-| contrarian_take | Contrarian Take | Unpopular opinions, pushing back on consensus |
-| personal_story | Personal Story | Specific moments, revelations, decisions |
-| teach_me_something | Teach Me Something | Concept explanations, analogies, how-it-works |
-| list_that_isnt | List That Isn't | Subverted listicles with genuine opinion |
-| prediction_bet | Prediction / Bet | Forward-looking claims with credibility at stake |
-| before_after | Before & After | Chronological change stories |
+| Key | Name | Needs an event | Offered as |
+|---|---|---|---|
+| `incident_report` | Incident Report / Retrospective | yes | something that went wrong in the author's own work and what it showed |
+| `personal_story` | Personal Story | yes | a moment the author lived through and what it revealed |
+| `before_after` | Before & After | yes | a change the author made and what was different afterwards |
+| `contrarian_take` | Contrarian Take | no | disagreeing with a common view; an opinion with reasons |
+| `teach_me_something` | Teach Me Something | no | explaining a concept or how something works |
+| `list_that_isnt` | List That Isn't | no | several observations or lessons where one matters most |
+| `prediction_bet` | Prediction / Bet | no | a forward-looking view about where something is heading |
+| `general` | General Post | no | anything else, or when no other type clearly fits |
 
-The full structural instructions for each archetype live in `backend/utils/formatters.py → get_archetype_instructions()`.
+**Which archetypes are allowed (code, `allowed_archetypes()`):** with the `opinion` perspective, only `contrarian_take`, `teach_me_something` and `general`. Otherwise every archetype that needs no event, plus the three that do when at least one chunk is self-authored.
+
+**Selection prompt (`ARCHETYPE_PROMPT`)** — Haiku, `max_tokens=100`, structured output `{archetype, event_note, event_quote}` through `complete_structured()`. Inputs: topic, context, format, the author's own notes (numbered, in full) and each external source's type and tags (no titles). Tone is not an input.
+```
+You are choosing the structure for a post. Choose by what the author has to write from, not by how the topic is phrased.
+
+Topic: {topic}
+Additional context: {context}
+Format: {format}
+
+What the author has to write from:
+{material}
+
+Post types you may choose from (choose one of these keys and nothing else):
+{options}
+
+Rules:
+- Pick the type whose structure the material above can fill.
+- Choose "general" when no other type clearly fits.{story_rule}
+```
+`{story_rule}` is added only when story types are on offer:
+```
+- These types tell something that happened to the author: {story_keys}. Choose one only if one of the author's own notes above describes the event this post is about. Then give that note's number as event_note, and copy one sentence from that note, word for word, that describes the event as event_quote. If no own note describes the event, choose a different type.
+```
+
+**After the call (code):** a key that is not in the allowed set becomes `general`. A story type is kept only if `event_note` is the number of one of the author's own notes (only self-authored notes are numbered) **and** `event_quote` appears word for word in that note (`quote_is_in_note()`: whitespace and case are ignored, nothing else; a quote under 4 words is refused); otherwise it becomes `general`. The check proves the sentence is in the cited note; whether it describes the event is the model's judgement. A failed call or an invalid answer also becomes `general` (never `incident_report`). Every downgrade is logged and stored in the trace as `node_outputs.archetype_decision = {archetype, chosen, allowed, event_note, event_quote, downgraded_from, reason}`.
+
+**Structure blocks:**
+
+`incident_report` (Incident Report / Retrospective):
+```
+Structure: Hook → Problem → Insight → Lesson → Action → Honesty.
+Tell only the incident the author's own notes describe. Include a section only if the notes cover it: if they record no action taken, there is no Action section.
+The Honesty section says what is still unresolved; it never ends optimistic.
+Use the dates, places, names and numbers the sources give. Where they give none, write the point without one; never supply one.
+```
+
+`personal_story` (Personal Story):
+```
+Structure: A specific moment → What you expected → What actually happened → What it revealed → One line that generalises.
+Tell only the moment the author's own notes describe. Start with a person, not a system or concept.
+The generalising line states what you now know, not what others should do.
+Use the dates, places, names and numbers the sources give. Where they give none, write the point without one; never supply one.
+```
+
+`before_after` (Before & After):
+```
+Structure: State before → The thing that changed it → State after → What you'd tell yourself before.
+Tell only the change the author's own notes describe. Compact and chronological, no detours.
+The closing line is honest, not inspirational.
+Use the dates, places, names and numbers the sources give. Where they give none, write the point without one; never supply one.
+```
+
+`contrarian_take` (Contrarian Take):
+```
+Structure: Bold falsifiable claim → The strongest version of the opposing view → The reasoning or evidence against it → Where the opposing view is right → Clear final position, no hedge.
+The opening claim must be specific enough that a reader can disagree with it.
+Evidence means what the sources contain. Where they contain none, argue from reasoning; never supply a statistic, study or example.
+```
+
+`teach_me_something` (Teach Me Something):
+```
+Structure: Surprising premise → Core concept explained through one analogy → Why this matters beyond the obvious → One thing to try or watch for.
+The analogy carries the post: if it is weak, the post fails. An analogy is a comparison, not a story about something that happened.
+The premise must be something the target reader does not already know.
+```
+
+`list_that_isnt` (List That Isn't):
+```
+Structure: Opens like a list, then subverts it: one item gets most of the space, or the last item contradicts the others.
+Works only with a real opinion about which item matters most.
+The subversion must be earned: the reader should feel surprised, not tricked.
+```
+
+`prediction_bet` (Prediction / Bet):
+```
+Structure: What I think is about to happen → Why most people don't see it yet (the signal) → What would follow from it → How you'll know if I'm wrong.
+The signal must be something observable that the sources or the request contain.
+State what would prove the prediction wrong.
+Say what the author is doing about it only if the sources or the request say so.
+```
+
+`general` (General Post):
+```
+Structure: no fixed sections. Lead with the strongest point the sources support, develop it, and stop when it is made.
+Do not add a story, an example or a lesson to fill out a shape.
+```
 
 ---
 
 ### Critic Agent — agents/critic_agent.py
 
-**Purpose:** Diagnose weaknesses in the initial draft across four dimensions (hook, substance, structure, voice) and produce a structured brief. Runs between `draft_node` and `humanizer_node`. The humanizer then acts on this brief to fix substance and structure — not just polish language.
+**Purpose:** Diagnose weaknesses in the initial draft across five dimensions (topic, hook, substance, structure, voice) before the humanizer runs. It diagnoses only; it never writes any part of the post.
 
-**Model:** `claude-haiku-4-5-20251001` — diagnosis only, not creative writing. `max_tokens=600`.
+**Model:** `claude-haiku-4-5-20251001` — diagnosis only, not creative writing. `max_tokens=600`. Structured output through `complete_structured()` (forced tool call `record_critique`, schema `CriticBrief`).
 
-**System prompt:**
-*(Injected as the user message — no separate system role.)*
-
+**Prompt (`CRITIC_PROMPT`):**
 ```
 You are a content critic. Your job is to diagnose weaknesses in a LinkedIn post draft before it is humanized. You diagnose only: you never write any part of the post.
 
@@ -485,10 +699,10 @@ Examine the draft across five dimensions, in this order:
 1. TOPIC — Does the post stay on the topic as given (and the additional context, if any)? Flag any drift away from it, including turns toward the author's opinions, expertise or work that the topic does not ask for.
 2. HOOK — Does the opening sentence stop a scroller immediately? Is it specific and surprising, or generic and forgettable?
 3. SUBSTANCE — Does the draft use the ideas in the knowledge base chunks, or make vague claims any post could make? Judge substance only against what the chunks, the topic and the context actually contain.
-4. STRUCTURE — Does the draft follow the expected pattern for a {archetype_name} post? Is the order of sections correct?
+4. STRUCTURE — Does the draft follow the pattern of a {archetype_name} post, as far as the sources allow? Judge only the sections the chunks or the request have material for. A section the sources cannot fill is correctly left out: never count it as missing and never ask for it.
 5. VOICE — Does this sound like the specific person in the profile, or like generic LinkedIn content?
 
-Profile summary (voice reference only):
+Author voice (voice reference only; never a source of content or angles):
 {profile_context}
 
 Post archetype (structural reference): {archetype_name}
@@ -504,19 +718,15 @@ Rules for every fix:
 - Never write example sentences, replacement text, or anything in quotation marks. Never quote the draft or the chunks.
 - Never suggest a name, number, date, time, place or event that is not already in the draft or the chunks.
 - Never suggest connecting the post to the author's opinions, expertise, projects or work unless the topic or context asks for it. The profile is a voice reference, not a source of angles.
+- Each chunk is a separate source. If the draft links facts from different chunks as cause and effect, sequence or result, and no single chunk states that link, mark SUBSTANCE "needs_work" and say which link to remove. Facts from separate notes stay separate.
 {experience_rule}
 
-For each dimension, return a verdict ("strong" or "needs_work") and — if "needs_work" — one fix that follows the rules above. If "strong", set fix to null.
-
-Return ONLY valid JSON with this exact structure — no preamble, no explanation, no markdown fences:
-{"topic": {"verdict": "strong", "fix": null}, "hook": {"verdict": "strong", "fix": null}, "substance": {"verdict": "strong", "fix": null}, "structure": {"verdict": "strong", "fix": null}, "voice": {"verdict": "strong", "fix": null}, "overall": "postable"}
-
-Use this exact shape — replace values with your actual verdicts and fix instructions.
+For each dimension, give a verdict ("strong" or "needs_work") and — if "needs_work" — one fix that follows the rules above. If "strong", the fix is null. Set overall to "postable" only when every verdict is "strong".
 ```
 
 **Input variables injected:**
 - `topic` — the topic as given; `context` — the additional context, or `none`
-- `profile_context` — string-formatted output of `profile_to_context_string(profile)`
+- `profile_context` — string-formatted output of `profile_voice_context(profile)` (voice only: no bio, topics of expertise or opinions)
 - `archetype_name` — human-readable archetype name (e.g. "Incident Report / Retrospective"), resolved from `state["archetype"]` via `_ARCHETYPE_NAMES` dict in `critic_agent.py`
 - `mode_section` — `""`, or in no-specifics mode:
   ```
@@ -527,7 +737,7 @@ Use this exact shape — replace values with your actual verdicts and fix instru
 - `experience_rule` — with no self-authored chunk: `- None of the chunks are self-authored. Never ask for personal experience, a story, an incident, a real example, or specific numbers or names: the author has given none for this topic. Ask instead for sharper reasoning, clearer structure, or better use of the chunks.` With at least one: `- Ask for first-person experience only where a self-authored chunk describes it, and say which chunk's point to use.`
 - `current_draft` — the draft string from pipeline state
 
-**Output schema:**
+**Output (`CriticBrief`, validated):**
 ```json
 {
   "topic":     { "verdict": "strong" | "needs_work", "fix": "string or null" },
@@ -540,7 +750,7 @@ Use this exact shape — replace values with your actual verdicts and fix instru
 ```
 Stored in pipeline state as `critic_brief: dict`.
 
-**JSON parse fallback:** Three-attempt parse (direct → strip fences → regex extract). If all fail: logs warning, returns neutral brief (`_NEUTRAL_BRIEF`) so pipeline never breaks.
+**Failure:** if the call fails or the answer does not validate, `critic_brief = {"error": "<reason>"}`. There is no neutral "all strong" brief. The humanizer treats the marker like an empty brief (no critic-driven changes), and the trace shows the error.
 
 **Quality-mode behaviour:**
 - `draft` — skipped entirely; sets `critic_brief: {}` and returns immediately. No Claude call.
@@ -559,13 +769,16 @@ Stored in pipeline state as `critic_brief: dict`.
 ```
 You are a humanizing editor. You take drafts that may still have AI-writing fingerprints and rewrite them to sound like a real human wrote them, specifically like the person described in the profile below.
 
-User profile:
+Author voice (voice and style only; never a source of content, stories or facts):
 {profile_context}
 
 Facts are fixed. You may change only wording, rhythm and structure.
 - Never add or change any number, percentage, money amount, date, month, day of the week, duration, count, name or quoted figure. You may drop a detail if you need to cut for length, but prefer cutting words over cutting facts.
 - Every factual detail in your output must already be in the current draft. If a sentence feels vague, sharpen the wording, not the facts.
 - Do not invent incidents, timelines, customers, people or results.
+- Keep the draft's perspective. Never turn something the draft presents as read, watched or observed into something the author did, and never add a personal reaction, memory or connection to the author's own work that the draft does not state.
+- Don't attribute feelings, reactions or habits to the author about a source (e.g. "I haven't been able to put down", "I kept seeing... until I came across") unless the draft states them. Present the source's idea and the author's view of it plainly.
+- Never link facts as cause and effect, sequence or result unless the draft already states that link. Facts the draft keeps separate stay separate.
 - The critic brief below describes problems, not content. It never permits a new fact, story, experience, name or number. If a fix can't be made without new facts, skip it.
 
 {critic_section}AI writing patterns to eliminate:
@@ -583,7 +796,7 @@ Never use the em dash character (—) anywhere in the output. If you are about t
 
 What to inject instead:
 - Sentence variety: mix 4-word punches with longer, winding observations
-- Incomplete thoughts that feel real: "Which, honestly, caught me off guard."
+- Short asides that comment on a point the draft already makes. An aside is a remark, never a new reaction, memory or event.
 - Opinions stated with confidence, not hedged to death
 - The writer's actual voice as described in the profile
 
@@ -594,7 +807,7 @@ What to inject instead:
 ```
 
 **Input variables injected:**
-- `profile_context` — string-formatted output of `profile_to_context_string(profile)`
+- `profile_context` — `profile_voice_context(profile)` (voice only: no bio, topics of expertise or opinions)
 - `words_to_avoid` — comma-separated list from `profile["words_to_avoid"]`
 - `current_draft` — the current draft string from pipeline state
 - `critic_section` — formatted block from `_format_critic_brief()`:
@@ -611,17 +824,7 @@ What to inject instead:
 - `rewrite_instruction` — varies based on whether critic flagged any issues:
   - **No flagged issues:** `"Rewrite the draft now. Preserve the structure and all factual content — only change the language and sentence patterns. Output only the rewritten post, no commentary."`
   - **Has flagged issues:** `"Rewrite the draft now. Fix the flagged issues above first — in this order: topic, hook, substance, structure, voice. You may rewrite the hook entirely and restructure sections, using only facts already in the draft. Then do a full language humanization pass. Output only the rewritten post, no commentary."`
-- `word_count_rule` — from `_get_word_count_rule(format, length)`; `""` for threads. The same rule (with a fixed 120–150 range for a user's first post) is injected into the draft agent's prompt:
-  ```
-  ---
-  WORD COUNT RULE — this overrides everything else:
-  The final post must be {min_w}–{max_w} words.
-  Count before outputting. If over {max_w}, cut until you are within range.
-  Never exceed {max_w} words under any circumstance.
-  Do not print the word count.
-  ---
-  ```
-  `finalize_node` also strips any line matching `^\s*word count\s*:?\s*\d+` (case-insensitive) from the final post, and the humanizer strips it from its own output.
+- `word_count_rule` — `word_count_rule(state["length_target"])`, the same rule the drafter gets (see **Length**); `""` for threads. It states the target; it does not ask the model to count.
 - `specifics_retry` — `""` on the first attempt. On the retry (see below), from `utils.specifics.retry_note()`:
   ```
 
@@ -805,36 +1008,36 @@ Post:
 
 ### Word Count Enforcer Agent — agents/word_count_enforcer_agent.py
 
-**Purpose:** Final word-count gate. Runs once at the very end of the pipeline (after predictability_audit for standard/draft; after all scorer/retry iterations for polished). Counts words deterministically, then makes one targeted Haiku call to trim or expand only if needed.
+**Purpose:** Final length gate. Runs once at the end of the pipeline (after predictability_audit for standard; after all scorer/retry iterations for polished). Counts words in code and works to `state["length_target"]`, the one target computed for the post (see **Length**).
 
 **Model:** `claude-haiku-4-5-20251001`, `max_tokens=2000`
 
-**Skipped:** `draft` quality mode; thread format (tweet-count based, no word target).
+**Skipped:** `draft` quality mode; posts with no word target (threads).
 
-**Word count targets:**
-| Format | concise | standard | long-form |
-|---|---|---|---|
-| linkedin post | 100–180 | 250–350 | 450–600 |
-| medium article | 350–500 | 700–900 | 1200–1800 |
+**Behaviour:**
+- Within the target: unchanged, no Claude call.
+- Over the maximum: trim. Always allowed.
+- Under the minimum: expand, but only when the target's `may_expand` is true. A first post or a post written from thin sources is never expanded.
 
-**Trim prompt** *(used when word count > max_words):*
+**Trim prompt (`_TRIM_PROMPT`):** `{target_text}` is "250–350 words", or "at most 350 words" for a ceiling-only target.
 ```
-You are a precise editor. Trim this post to fit within {min_words}–{max_words} words.
+You are a precise editor. Trim this post to {target_text}.
 
 Rules:
 - Preserve the voice, meaning, and key ideas exactly
 - Cut weaker sentences, redundant phrases, and padding first
 - Do not add any new content
+- Never use the em dash character (—) anywhere in the output. Use a period or a comma instead
 - Output only the trimmed post — no commentary, no preamble{specifics_retry}
 
 Current word count: {current_count}
-Target: {min_words}–{max_words} words
+Target: {target_text}
 
 Post:
 {post}
 ```
 
-**Expand prompt** *(used when word count < min_words):*
+**Expand prompt (`_EXPAND_PROMPT`):**
 ```
 You are a precise editor. Expand this post slightly to reach at least {min_words} words.
 
@@ -843,30 +1046,27 @@ Rules:
 - Never add or change any number, percentage, money amount, date, month, day of the week, duration, count, name or quoted figure, and do not introduce new examples, incidents, people or results
 - Preserve the voice and meaning exactly
 - Stay under {max_words} words
+- Never use the em dash character (—) anywhere in the output. Use a period or a comma instead
 - Output only the expanded post — no commentary, no preamble{specifics_retry}
 
 Current word count: {current_count}
-Target: {min_words}–{max_words} words
+Target: {target_text}
 
 Post:
 {post}
 ```
 
 **Input variables injected:**
-- `min_words`, `max_words` — from `_WORD_COUNT_MAP[(format, length)]`
-- `current_count` — `len(post.split())`
+- `min_words`, `max_words`, `target_text` — from `state["length_target"]`
+- `current_count` — `len(post.split())`, counted in code
 - `post` — `state["current_draft"]`
-
-**Output handling:**
-- If within range: returns state unchanged (no Claude call)
-- If trim/expand needed: replaces `state["current_draft"]` with Haiku output (any printed "Word count: N" line stripped)
-- Usage logged as `event_type="word_count_enforcer"`, `model="haiku"`
 - `specifics_retry` — `""` on the first attempt; the humanizer's retry text on the retry
 
 **Specifics guard (code, not prompt):** the trimmed or expanded post is checked against the input post, the retrieved chunks, the profile, topic and context, exactly as in the humanizer. On a violation the same prompt is retried once with `specifics_retry` filled in (`event_type="word_count_enforcer_retry"`); if the retry still adds facts, the input post is kept. Retries are logged in `state["specifics_guard"]`.
-- All exceptions caught — pipeline never breaks
 
-**Pipeline position:** `predictability_audit → word_count_enforcer → finalize` (standard/draft); `scorer → word_count_enforcer → finalize` (polished, after all retry iterations). The retry loop (`scorer → humanizer → predictability_audit → scorer`) never passes through this node.
+**Output handling:** replaces `state["current_draft"]` with Haiku's output. Usage logged as `word_count_enforcer` (`word_count_enforcer_retry` for the guard's second attempt). All exceptions are caught; the pipeline never breaks.
+
+**Pipeline position:** `predictability_audit → word_count_enforcer → fact_checker → finalize` (standard); `scorer → word_count_enforcer → …` (polished, after the retry loop).
 
 ---
 
@@ -934,69 +1134,38 @@ A rewrite still judged unsupported, or a sentence that could not be placed, is r
 
 ### Scorer Agent — agents/scorer_agent.py
 
-**Purpose:** Score the current draft 0–100 across 5 dimensions of human authenticity. Return flagged sentences and actionable feedback.
+**Purpose:** Score a post 0–100 across 5 dimensions of how human it reads, and return flagged sentences and notes. The scorer cannot see the sources, so it judges how the post is written, never how many details it contains.
 
-**System prompt:**
+**Model:** `claude-sonnet-4-6`, `max_tokens=800`. Structured output through `complete_structured()` (forced tool call `record_score`, schema `ScoreResult`).
+
+**System prompt (`SYSTEM_PROMPT`):**
 ```
-You are a content authenticity scorer. Score the following post on how much it reads like a real human wrote it — specifically a founder/builder with a strong, direct voice. Not polished corporate content. Not AI-generated filler. Real.
+You are a content authenticity scorer. Score the following post on how much it reads like a real person wrote it: one specific person with a direct voice. Not polished corporate content. Not AI-generated filler. Real.
 
-Score across exactly these 5 dimensions, each out of 20 points (total: 100):
+You cannot see the author's sources, so you cannot know which details are true. Judge how the post is written, never how many details it contains. A post that argues precisely from reasoning, or that shares what the author learned from someone else's work, can score full marks. Never reward a post for containing personal anecdotes, numbers or named examples, and never mark one down for lacking them.
+
+Score across exactly these 5 dimensions, each out of 20 points:
 
 1. Natural voice (0–20): Does it sound like a specific person talking? Does it have personality, opinions, or quirks? Or does it sound like a template?
 
 2. Sentence variety (0–20): Is there rhythm and variation in sentence length? Short punches mixed with longer thoughts? Or is every sentence the same length and structure?
 
-3. Specificity (0–20): Does it reference concrete details — real numbers, named examples, specific situations? Or does it deal in vague generalities?
+3. Precision (0–20): Does each sentence say something exact that a reader could agree or disagree with? Or does it hedge and deal in vague generalities? Precision is about how claims are stated, not about adding detail.
 
 4. No LLM fingerprints (0–20): Is it free from AI tells? No "In today's world", no "It's worth noting", no perfectly balanced lists of three, no corporate buzzwords, no passive voice chains?
 
 5. Value delivery (0–20): Does the reader get something real — an insight, a lesson, a new way to see something? Or is it fluff?
 
-Also identify up to 3 specific sentences that most hurt the score. These are the sentences that most need fixing.
+Also identify up to 3 specific sentences that most hurt the score, and give up to 3 actionable notes.
 
-Return ONLY raw JSON — no markdown, no explanation, no code blocks. The response must start with { and end with }. No text before or after the JSON object.
-
-{
-  "total_score": <integer 0-100>,
-  "dimension_scores": {
-    "natural_voice": <integer 0-20>,
-    "sentence_variety": <integer 0-20>,
-    "specificity": <integer 0-20>,
-    "no_llm_fingerprints": <integer 0-20>,
-    "value_delivery": <integer 0-20>
-  },
-  "flagged_sentences": [
-    "<sentence that hurts the score>",
-    "<sentence that hurts the score>"
-  ],
-  "feedback": [
-    "<one specific actionable note>",
-    "<one specific actionable note>"
-  ]
-}
+Rules for the notes: each one says how to rewrite what is already there (tighten, cut, reorder, state more plainly). Never ask the author to add an anecdote, a personal story, an example, a number, a name or any other new detail.
 ```
 
-**Input variables injected:**
-- `current_draft` — the humanized draft string (formatted into the user message)
+**Input:** the post, as the user message `Score this post:\n\n<post>`.
 
-**Scoring rubric:**
+**Output (`ScoreResult`, validated):** `dimension_scores` (`natural_voice`, `sentence_variety`, `precision`, `no_llm_fingerprints`, `value_delivery`, each an integer 0–20), `flagged_sentences`, `feedback`. The total is the sum of the five dimensions, added in code; the model is not asked for a total.
 
-| Dimension | Points | What it measures |
-|-----------|--------|-----------------|
-| Natural voice | 0–20 | Sounds like a specific person with personality and opinions, not a template |
-| Sentence variety | 0–20 | Rhythm and variation in sentence length; short punches mixed with longer thoughts |
-| Specificity | 0–20 | Concrete details — real numbers, named examples, specific situations vs. vague generalities |
-| No LLM fingerprints | 0–20 | Free from AI tells: no buzzwords, no "In today's world", no passive voice chains, no formulaic lists |
-| Value delivery | 0–20 | Reader gets a real insight, lesson, or new perspective — not fluff |
-| **Total** | **0–100** | Sum of all five dimensions |
-
-**JSON parsing (defined in scorer_agent.py):**
-Three-attempt parse with fallback:
-1. `json.loads(raw)` directly
-2. Strip markdown code fences (```` ```json ``` ````), then `json.loads`
-3. `re.search(r'\{.*\}', raw, re.DOTALL)` to extract embedded object, then `json.loads`
-
-If all three fail: logs raw response, returns `score=50`, `feedback=["Score parsing failed — retry to get fresh evaluation."]`.
+**Failure:** if the answer is missing or does not validate, `score_text()` returns `(None, [])`. There is no placeholder score. `POST /score` then returns `{"score": null, "score_feedback": [], "message": "Couldn't score this post. Try again."}`. In polished mode `scorer_node` sets `state["score_error"]`, which ends the retry loop, and the post is returned with `scored: false`.
 
 **Quality modes (defined in pipeline/graph.py `should_score()` and `should_retry()`):**
 
@@ -1011,9 +1180,9 @@ If all three fail: logs raw response, returns `score=50`, `feedback=["Score pars
 - Score < 75 AND iterations < 3 → route back to humanizer_node
 - Iterations ≥ 3 → finalize regardless of score (surfaces best attempt)
 
-**Standalone scoring function — `score_text(draft: str) -> tuple[int, list[str]]`:**
+**Standalone scoring function — `score_text(draft, *, user_id) -> tuple[int | None, list[str]]`:**
 
-The full 3-attempt JSON parse and Claude call is extracted into `score_text()`. `scorer_node` calls it internally. `POST /score` also calls it directly without constructing a `PipelineState`. Returns `(total_score, feedback + flagged_sentences combined list)`.
+`scorer_node` calls it internally. `POST /score` also calls it directly without constructing a `PipelineState`. Returns `(total, feedback + flagged_sentences)`, or `(None, [])` when the scorer returned no valid result.
 
 ---
 

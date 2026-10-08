@@ -3,35 +3,21 @@ import logging
 from llm.client import HAIKU, complete
 from pipeline.state import PipelineState
 from pipeline.trace import record_draft
-from utils.post_cleanup import strip_word_count_lines
 from utils.specifics import find_violations, guard_entry, guard_sources, retry_note
 
 logger = logging.getLogger(__name__)
 
-_WORD_COUNT_MAP = {
-    "linkedin post": {
-        "concise":   (100, 180),
-        "standard":  (250, 350),
-        "long-form": (450, 600),
-    },
-    "medium article": {
-        "concise":   (350, 500),
-        "standard":  (700, 900),
-        "long-form": (1200, 1800),
-    },
-    # thread is tweet-count based, not word-count — no enforcement
-}
-
-_TRIM_PROMPT = """You are a precise editor. Trim this post to fit within {min_words}–{max_words} words.
+_TRIM_PROMPT = """You are a precise editor. Trim this post to {target_text}.
 
 Rules:
 - Preserve the voice, meaning, and key ideas exactly
 - Cut weaker sentences, redundant phrases, and padding first
 - Do not add any new content
+- Never use the em dash character (—) anywhere in the output. Use a period or a comma instead
 - Output only the trimmed post — no commentary, no preamble{specifics_retry}
 
 Current word count: {current_count}
-Target: {min_words}–{max_words} words
+Target: {target_text}
 
 Post:
 {post}"""
@@ -43,10 +29,11 @@ Rules:
 - Never add or change any number, percentage, money amount, date, month, day of the week, duration, count, name or quoted figure, and do not introduce new examples, incidents, people or results
 - Preserve the voice and meaning exactly
 - Stay under {max_words} words
+- Never use the em dash character (—) anywhere in the output. Use a period or a comma instead
 - Output only the expanded post — no commentary, no preamble{specifics_retry}
 
 Current word count: {current_count}
-Target: {min_words}–{max_words} words
+Target: {target_text}
 
 Post:
 {post}"""
@@ -56,22 +43,15 @@ def _count_words(text: str) -> int:
     return len(text.split())
 
 
-def _get_target_range(format_type: str, length: str) -> tuple[int, int] | None:
-    """Return (min_words, max_words) for the given format/length, or None for tweet-based formats."""
-    fmt = format_type.lower().strip()
-    lng = length.lower().strip()
-    format_lengths = _WORD_COUNT_MAP.get(fmt)
-    if format_lengths is None:
-        return None
-    return format_lengths.get(lng, format_lengths["standard"])
-
-
 def word_count_enforcer_node(state: PipelineState) -> PipelineState:
     """Final word-count gate — runs once after all pipeline passes are complete.
 
-    Counts words in the post. If within target range: returns unchanged.
-    If over: asks Haiku to trim while preserving voice and meaning.
-    If under: asks Haiku to expand using only material already in the post.
+    Works to state["length_target"], the one target computed for this post
+    (utils.formatters.resolve_length_target). Counts words in code. Within the
+    target: unchanged. Over the maximum: asks Haiku to trim. Under the minimum:
+    asks Haiku to expand using only material already in the post, but only when
+    the target allows it (may_expand). A first post, or a post written from thin
+    sources, is never expanded: a short post stays short.
 
     The result may not add or change facts: every specific must already be in
     the input post, the retrieved chunks or the profile. If it does, the call is
@@ -88,26 +68,22 @@ def word_count_enforcer_node(state: PipelineState) -> PipelineState:
     if not post.strip():
         return state
 
-    format_type = state.get("format", "linkedin post")
-    length = state.get("length", "standard")
-    target = _get_target_range(format_type, length)
-
-    if target is None:
-        logger.info(
-            "word_count_enforcer: format=%r is tweet-based — skipping word count enforcement",
-            format_type,
-        )
+    target = state.get("length_target")
+    if not target:
+        logger.info("word_count_enforcer: no word target for format=%r — skipping", state.get("format"))
         return state
 
-    min_words, max_words = target
+    min_words, max_words = target["min_words"], target["max_words"]
+    target_text = f"{min_words}–{max_words} words" if min_words else f"at most {max_words} words"
     word_count = _count_words(post)
-    logger.info(
-        "word_count_enforcer: before=%d words, target=%d–%d, format=%r, length=%r",
-        word_count, min_words, max_words, format_type, length,
-    )
+    logger.info("word_count_enforcer: before=%d words, target=%s (%s)", word_count, target_text, target["basis"])
 
     if min_words <= word_count <= max_words:
         logger.info("word_count_enforcer: %d words is within range — no adjustment needed", word_count)
+        return state
+    if word_count < min_words and not target["may_expand"]:
+        logger.info("word_count_enforcer: %d words is under %d, but a %s post is never expanded",
+                    word_count, min_words, target["basis"])
         return state
 
     user_id = state["user_id"]
@@ -125,6 +101,7 @@ def word_count_enforcer_node(state: PipelineState) -> PipelineState:
                 messages=[{"role": "user", "content": template.format(
                     min_words=min_words,
                     max_words=max_words,
+                    target_text=target_text,
                     current_count=word_count,
                     post=post,
                     specifics_retry=retry_note(violations, no_specifics=bool(state.get("no_specifics"))),
@@ -132,7 +109,7 @@ def word_count_enforcer_node(state: PipelineState) -> PipelineState:
                 user_id=user_id,
                 event_type=event_type,
             )
-            return strip_word_count_lines(msg.content[0].text.strip())
+            return msg.content[0].text.strip()
 
         sources = guard_sources(state, post)
         adjusted = adjust([], "word_count_enforcer")

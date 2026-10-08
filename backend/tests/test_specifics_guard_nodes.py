@@ -102,13 +102,16 @@ def test_humanizer_keeps_its_input_when_the_retry_still_adds_facts(claude):
     assert [v["text"] for v in entry["retry"]] == ["60%", "first month"]
 
 
-def test_humanizer_strips_a_printed_word_count_without_retrying(claude):
+def test_humanizer_retries_a_number_copied_from_a_writing_sample(claude):
     from agents.humanizer_agent import humanizer_node
 
-    claude.queue(CLEAN_REWRITE + "\n\nWord count: 295")
-    state = humanizer_node(_state())
-    assert len(claude.calls) == 1
+    profile = {"name": "Mara", "writing_samples": ["Our Thursday afternoon volume runs 34% above baseline."]}
+    claude.queue(FABRICATED, CLEAN_REWRITE)  # FABRICATED repeats the sample's "Thursday" and "34%"
+    state = humanizer_node(_state(profile=profile))
+
+    assert len(claude.calls) == 2
     assert state["current_draft"] == CLEAN_REWRITE
+    assert {v["text"] for v in state["specifics_guard"][0]["first_attempt"]} >= {"34%", "Thursday"}
 
 
 def test_humanizer_skips_draft_quality(claude):
@@ -180,36 +183,17 @@ def test_audit_prompts_forbid_adding_or_removing_figures(claude):
     assert "Add none and remove none." in _prompt(claude.calls[2])
 
 
-# --- finalize ------------------------------------------------------------------------
-
-@pytest.mark.parametrize("text", [
-    "The post.\n\nWord count: 295",
-    "The post.\nword count 310 words",
-    "  WORD COUNT: 12\nThe post.",
-])
-def test_finalize_strips_word_count_lines(text):
-    from pipeline.graph import finalize_node
-
-    state = finalize_node({"current_draft": text})
-    assert "word count" not in state["final_post"].lower()
-    assert "The post." in state["final_post"]
-
-
-def test_finalize_keeps_prose_that_mentions_word_count():
-    from pipeline.graph import finalize_node
-
-    text = "Nobody cares about word count. They care whether it is true."
-    assert finalize_node({"current_draft": text})["final_post"] == text
-
-
 # --- word count enforcer ---------------------------------------------------------
 
 SHORT_POST = DRAFT  # well under 250 words for a standard LinkedIn post -> expand
 LONG_POST = " ".join([DRAFT] * 30)  # over 350 words -> trim
 
 
-def _enforcer_state(post):
-    return _state(format="linkedin post", length="standard", current_draft=post, iterations=1)
+def _enforcer_state(post, **target_overrides):
+    from utils.formatters import resolve_length_target
+
+    return _state(format="linkedin post", length="standard", current_draft=post, iterations=1,
+                  length_target=resolve_length_target("linkedin post", "standard", **target_overrides))
 
 
 def test_enforcer_expand_prompt_uses_only_existing_material(claude):
@@ -266,12 +250,3 @@ def test_enforcer_guards_trimming_too(claude):
     state = word_count_enforcer_node(_enforcer_state(LONG_POST))
     assert state["current_draft"] == LONG_POST
     assert state["specifics_guard"][0]["first_attempt"] == [{"text": "nine days", "kind": "duration"}]
-
-
-def test_enforcer_strips_a_printed_word_count(claude):
-    from agents.word_count_enforcer_agent import word_count_enforcer_node
-
-    claude.queue(DRAFT + " Nobody noticed.\n\nWord count: 262")
-    state = word_count_enforcer_node(_enforcer_state(SHORT_POST))
-    assert len(claude.calls) == 1
-    assert state["current_draft"] == DRAFT + " Nobody noticed."

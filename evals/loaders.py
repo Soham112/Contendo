@@ -39,13 +39,18 @@ TONES = {"casual", "technical", "storytelling"}
 LENGTHS = {"concise", "standard", "long-form"}
 ARCHETYPES = {
     "incident_report", "contrarian_take", "personal_story", "teach_me_something",
-    "list_that_isnt", "prediction_bet", "before_after",
+    "list_that_isnt", "prediction_bet", "before_after", "general",
 }
 DIFFICULTIES = {"rich", "sparse", "off_topic"}
 GOLDEN_FIELDS = (
     "id", "persona", "topic", "context", "format", "tone", "length",
     "expected_source_titles", "difficulty",
 )
+# Optional: the perspective the pipeline should decide for this golden
+# (generation_traces.node_outputs.perspective). Targeted goldens set it.
+# `note`: a free-text comment explaining the golden (JSONL has no comments).
+OPTIONAL_GOLDEN_FIELDS = ("expected_perspective", "note")
+PERSPECTIVES = {"experience", "learned", "opinion", "mixed"}
 
 
 class FixtureError(ValueError):
@@ -190,7 +195,7 @@ def load_goldens(
         missing = [f for f in GOLDEN_FIELDS if f not in g]
         if missing:
             raise FixtureError(f"{where}: missing {', '.join(missing)}")
-        extra = sorted(set(g) - set(GOLDEN_FIELDS))
+        extra = sorted(set(g) - set(GOLDEN_FIELDS) - set(OPTIONAL_GOLDEN_FIELDS))
         if extra:
             raise FixtureError(f"{where}: unknown fields {', '.join(extra)}")
         if g["id"] in seen:
@@ -201,6 +206,8 @@ def load_goldens(
         for field, allowed in (("format", FORMATS), ("tone", TONES), ("length", LENGTHS), ("difficulty", DIFFICULTIES)):
             if g[field] not in allowed:
                 raise FixtureError(f"{where}: {field} {g[field]!r} not in {sorted(allowed)}")
+        if g.get("expected_perspective", "learned") not in PERSPECTIVES:
+            raise FixtureError(f"{where}: expected_perspective {g['expected_perspective']!r} not in {sorted(PERSPECTIVES)}")
         titles = g["expected_source_titles"]
         if not isinstance(titles, list):
             raise FixtureError(f"{where}: expected_source_titles must be a list")

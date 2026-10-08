@@ -12,6 +12,7 @@ app is wired to fakes from the start:
 No test can reach production data or spend API credits.
 """
 
+import json
 import os
 import socket
 import sys
@@ -111,6 +112,18 @@ def client():
 
     with TestClient(app) as c:
         yield c
+
+
+# Replies for the structured calls (see tests/fakes/claude.py): queue these as-is.
+ARCHETYPE_GENERAL = '{"archetype": "general"}'
+_ALL_STRONG = {area: {"verdict": "strong", "fix": None} for area in ("topic", "hook", "substance", "structure", "voice")}
+CRITIC_ALL_STRONG = json.dumps({**_ALL_STRONG, "overall": "postable"})
+
+
+def score_json(per_dimension: int = 16) -> str:
+    """A valid scorer reply whose total is 5 * per_dimension."""
+    dims = ("natural_voice", "sentence_variety", "precision", "no_llm_fingerprints", "value_delivery")
+    return json.dumps({"dimension_scores": {d: per_dimension for d in dims}, "flagged_sentences": [], "feedback": []})
 
 
 def make_token(user_id: str, *, expires_in: int = 3600, secret: str = TEST_JWT_SECRET) -> str:

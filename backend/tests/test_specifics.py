@@ -112,7 +112,7 @@ def test_each_unsupported_specific_is_reported_once():
 
 # --- grounding sources -----------------------------------------------------------
 
-def test_grounding_texts_include_draft_chunks_profile_topic_and_context():
+def test_grounding_texts_include_draft_chunks_profile_topic_and_context_but_not_writing_samples():
     state = {
         "retrieval_bundle": {"chunks": [{"text": "chunk with 38 percent"}]},
         "retrieved_chunks": ["[source_type: note] flat chunk 61 percent"],
@@ -121,8 +121,10 @@ def test_grounding_texts_include_draft_chunks_profile_topic_and_context():
         "context": "we cut churn 40%",
     }
     sources = grounding_texts(state, "draft says 12 clinics")
-    output = "12 clinics, 38%, 61%, seven years, four weeks, 2024, and 40%."
+    output = "12 clinics, 38%, 61%, seven years, 2024, and 40%."
     assert unsupported_specifics(output, sources) == []
+    # A writing sample is a style example, not a source: its "4 weeks" is not supported.
+    assert [s.text for s in unsupported_specifics("It took four weeks.", sources)] == ["four weeks"]
     assert [s.text for s in unsupported_specifics("and 99%", sources)] == ["99%"]
 
 
@@ -144,3 +146,38 @@ def test_ds01_compound_word_number_matches_its_digit_form():
 ])
 def test_founder03_thread_and_list_numbering_is_not_a_specific(text):
     assert extract_specifics(text) == []
+
+
+# --- writing samples are not a source ------------------------------------------------
+
+SAMPLE_PROFILE = {"bio": "Seven years in data", "writing_samples": ["Last quarter we cut churn by 37% at Oakline."]}
+
+
+def test_profile_facts_drops_only_the_writing_samples():
+    from utils.specifics import profile_facts
+
+    assert profile_facts(SAMPLE_PROFILE) == {"bio": "Seven years in data"}
+    assert profile_facts(None) == {} and profile_facts({}) == {}
+    assert "writing_samples" in SAMPLE_PROFILE  # the caller's profile is not modified
+
+
+@pytest.mark.parametrize("no_specifics", [False, True])
+def test_guard_sources_never_include_writing_samples(no_specifics):
+    from utils.specifics import find_violations, guard_sources
+
+    state = {"profile": SAMPLE_PROFILE, "topic": "Churn", "context": "", "no_specifics": no_specifics,
+             "retrieval_bundle": {"chunks": [{"text": "Churn fell after the redesign."}]}}
+    sources = guard_sources(state, "Churn fell.")
+
+    assert [v.text for v in find_violations("We cut churn by 37% last quarter.", sources)] == ["37%", "last quarter"]
+    assert find_violations("Seven years in, churn still surprises me.", sources) == []  # the bio still counts
+
+
+def test_writing_samples_passed_as_extra_sources_are_the_callers_choice():
+    """extra is taken as given, so callers pass profile_facts(profile), not the profile."""
+    from utils.specifics import find_violations, guard_sources, profile_facts
+
+    leaky = guard_sources({}, extra=[SAMPLE_PROFILE])
+    safe = guard_sources({}, extra=[profile_facts(SAMPLE_PROFILE)])
+    assert find_violations("Churn fell 37%.", leaky) == []
+    assert [v.text for v in find_violations("Churn fell 37%.", safe)] == ["37%"]

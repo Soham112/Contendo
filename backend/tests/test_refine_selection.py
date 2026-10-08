@@ -122,6 +122,23 @@ def test_specifics_from_the_instruction_are_allowed(post_refine, claude):
     assert len(claude.calls) == 1
 
 
+@pytest.mark.parametrize("with_trace", [True, False])
+def test_specifics_from_a_writing_sample_are_not_allowed(post_refine, claude, fake_db, with_trace):
+    from memory.profile_store import save_profile
+
+    sample = "Last quarter we cut churn by 37% at Oakline."
+    save_profile({"name": "Alice", "writing_samples": [sample]}, user_id=A)
+    trace_id = _seed_trace(fake_db) if with_trace else None
+    if with_trace:  # the trace's profile snapshot carries the sample too
+        fake_db.tables["generation_traces"][-1]["profile_snapshot"]["writing_samples"] = [sample]
+    claude.queue("It was 37% slower at first.", "It crawled at first.")
+
+    body = post_refine(trace_id=trace_id).json()
+
+    assert len(claude.calls) == 2  # the sample's number triggered the guard's retry
+    assert body["rewritten_text"] == "It crawled at first."
+
+
 def test_post_id_finds_the_newest_linked_trace(post_refine, claude, fake_db):
     _seed_trace(fake_db, post_id=7, created_at="2026-09-01T00:00:00Z")
     fake_db.tables["generation_traces"][-1]["retrieved_context"] = "OLDER TRACE CONTEXT"

@@ -14,7 +14,7 @@ from typing import Any
 from llm.client import SONNET, complete
 from memory.profile_store import load_profile, profile_to_context_string
 from memory.trace_store import append_trace_guard_entry, get_trace_sources
-from utils.specifics import GuardSources, find_violations, guard_entry, guard_sources, retry_note
+from utils.specifics import GuardSources, find_violations, guard_entry, guard_sources, profile_facts, retry_note
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +90,7 @@ def load_refine_sources(
     """Sources for refining a post: its generation trace when the user has one
     (found by trace_id, else by post_id), otherwise the post and profile only.
     The post text, the instruction and the current profile always count."""
-    always = [full_post, instruction, profile]
+    always = [full_post, instruction, profile_facts(profile)]  # writing samples are style, not a source
     trace = get_trace_sources(user_id=user_id, trace_id=trace_id, post_id=post_id)
     if trace is None:
         return RefineSources("post_and_profile", _NO_SOURCES_BLOCK,

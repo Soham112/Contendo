@@ -133,7 +133,10 @@ python report.py <run_id>                         # writes and prints results/<r
 - `goldens/goldens.jsonl`: one golden per line, with fields `id`, `persona`,
   `difficulty` (`rich`, `sparse` or `off_topic`), `topic`, `context`, `format`,
   `tone`, `length`, and `expected_source_titles` (each must match a source title
-  exactly).
+  exactly). Optional: `expected_perspective` (`experience`, `learned`, `opinion`
+  or `mixed`), the perspective the pipeline should decide for that golden; it is
+  stored in the trace as `node_outputs.perspective`. Optional: `note`, a comment
+  explaining the golden.
 
 After editing, run the tests. They validate every fixture and golden:
 

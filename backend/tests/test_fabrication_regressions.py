@@ -220,13 +220,21 @@ def test_critic_allows_experience_only_from_self_chunks(claude):
     assert "Ask for first-person experience only where a self-authored chunk describes it" in prompt
 
 
-def test_writing_rules_that_push_for_numbers_are_qualified():
-    from memory.profile_store import profile_to_context_string
+def test_writing_rules_get_one_overriding_style_rule():
+    """One rule after the user's writing rules, whatever their wording, instead
+    of a qualifier added only to rules that match a pattern."""
+    from memory.profile_store import _STYLE_ONLY_RULE, profile_to_context_string, profile_voice_context
 
-    rendered = profile_to_context_string(PROFILE)
-    qualifier = "(Only numbers and situations stated in the knowledge base, the profile or the request."
-    assert rendered.count(qualifier) == 2  # "real numbers, real situations" and "a specific number"
-    assert "Short paragraphs — max 3 sentences.\n" in rendered + "\n"
+    for render in (profile_to_context_string, profile_voice_context):
+        rendered = render(PROFILE)
+        assert rendered.count(_STYLE_ONLY_RULE) == 1
+        for rule in PROFILE["writing_rules"]:
+            assert f"  - {rule}\n" in rendered  # each rule is shown exactly as the user wrote it
+        assert rendered.index(PROFILE["writing_rules"][-1]) < rendered.index(_STYLE_ONLY_RULE)
+
+    unusual = {"writing_rules": ["Always open with a war story from the trenches"]}
+    assert _STYLE_ONLY_RULE in profile_voice_context(unusual)  # no pattern to miss
+    assert _STYLE_ONLY_RULE not in profile_voice_context({"writing_rules": []})
 
 
 # --- Humanizer: facts first, quotes stripped, fabrications reverted ----------------
@@ -275,14 +283,14 @@ def test_draft_node_retries_an_invented_number(claude):
 
     invented = "Agents loop in 40% of runs. Infinite feedback loops are a documented failure mode."
     clean = "Infinite feedback loops are a documented failure mode. Define the exit before the agent."
-    claude.queue("teach_me_something", invented, clean)
+    claude.queue('{"archetype": "teach_me_something"}', invented, clean)
     state = draft_node(_draft_state())
 
     assert "Write the post again without them" in _prompt(claude.calls[2])
     assert "- 40%" in _prompt(claude.calls[2])
     assert state["current_draft"] == clean
     assert state["specifics_guard"][0]["node"] == "draft"
-    assert state["draft_frame_block"].startswith("EXPERT OUTSIDER PERSPECTIVE")
+    assert state["draft_frame_block"].startswith("EXTERNAL SOURCE: IN THE AUTHOR'S FIELD:")
 
 
 def test_draft_node_removes_the_sentence_when_the_retry_still_invents(claude):
@@ -290,7 +298,7 @@ def test_draft_node_removes_the_sentence_when_the_retry_still_invents(claude):
 
     invented = ("Infinite feedback loops are a documented failure mode. "
                 "Agents loop in 40% of runs. Define the exit first.")
-    claude.queue("teach_me_something", invented, invented)
+    claude.queue('{"archetype": "teach_me_something"}', invented, invented)
     state = draft_node(_draft_state())
 
     assert state["current_draft"] == "Infinite feedback loops are a documented failure mode. Define the exit first."
@@ -343,7 +351,8 @@ def test_critic_checks_the_topic_first_and_never_steers_to_the_profile(claude):
     assert "Additional context: Keep it about the walks" in prompt
     assert prompt.index("1. TOPIC") < prompt.index("2. HOOK")
     assert "Never suggest connecting the post to the author's opinions, expertise, projects or work" in prompt
-    assert '{"topic": {"verdict"' in prompt
+    assert "Return ONLY valid JSON" not in prompt  # the answer is a forced tool call, not parsed text
+    assert claude.calls[0]["tool_choice"] == {"type": "tool", "name": "record_critique"}
 
 
 def test_humanizer_fixes_topic_drift_first():
@@ -361,7 +370,7 @@ def test_drafter_prompt_keeps_the_post_on_the_topic_as_given(claude):
     # Hiking replay: the drafter framed the trails as "a retrieval problem" for an ML engineer.
     from agents.draft_agent import draft_node
 
-    claude.queue("teach_me_something", "The Lake District rewards the honest route, not the ambitious one.")
+    claude.queue('{"archetype": "teach_me_something"}', "The Lake District rewards the honest route, not the ambitious one.")
     draft_node(_draft_state(topic=HIKING_TOPIC, no_specifics=True, retrieval_bundle={"chunks": []},
                             retrieved_chunks=[]))
     prompt = _prompt(claude.calls[1])

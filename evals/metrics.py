@@ -35,10 +35,13 @@ UNSUPPORTED_SPECIFICS_STEPS = [
 
 
 def profile_text(profile: dict[str, Any]) -> str:
-    """The profile exactly as the pipeline formats it for its prompts."""
+    """The profile as a source of facts: formatted as the pipeline formats it,
+    without the writing samples. Samples are style examples, so a specific that
+    appears only in one counts as unsupported (same rule as the pipeline's guard)."""
     from memory.profile_store import profile_to_context_string  # backend import: env.py loaded first
+    from utils.specifics import profile_facts
 
-    return "Author profile:\n" + profile_to_context_string(profile)
+    return "Author profile:\n" + profile_to_context_string(profile_facts(profile))
 
 
 def build_input(golden: dict[str, Any]) -> str:

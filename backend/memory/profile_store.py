@@ -1,5 +1,4 @@
 import logging
-import re
 from typing import Any
 
 from db.supabase_client import supabase
@@ -96,27 +95,28 @@ def save_writing_sample(user_id: str, sample: str, max_samples: int = 10) -> Non
     logger.info(f"save_writing_sample: added sample for user_id={user_id}, total={len(samples)}")
 
 
-# Writing rules that ask for "real numbers, real situations" push every prompt
-# that reads the profile towards invented specifics when the sources have none.
-_SPECIFICS_RULE_RE = re.compile(
-    r"real (?:numbers|situations|examples|moments)|specific numbers?|concrete examples|use numbers", re.I)
-_SPECIFICS_RULE_QUALIFIER = (
-    " (Only numbers and situations stated in the knowledge base, the profile or the request. "
-    "Never invent them; without them, make the point through reasoning.)"
+# Appended once after the user's writing rules, wherever they are shown. A rule
+# such as "concrete examples over abstract claims" would otherwise push the model
+# to invent an example when the sources have none.
+_STYLE_ONLY_RULE = (
+    "These rules are about style only. Where one asks for examples, numbers, real moments or "
+    "specifics, it means the ones the sources give. Never invent one to satisfy a rule."
 )
 
 
-def _soften_specifics_rule(rule: str) -> str:
-    return rule + _SPECIFICS_RULE_QUALIFIER if _SPECIFICS_RULE_RE.search(rule) else rule
+# Shown above the writing samples wherever they appear. The specifics guard
+# enforces it: utils.specifics.profile_facts leaves the samples out of its sources.
+WRITING_SAMPLES_RULE = (
+    "These are examples of the author's style. Do not reuse any facts, numbers, names or events from them."
+)
 
 
-def profile_to_context_string(profile: dict[str, Any]) -> str:
+def _voice_lines(profile: dict[str, Any]) -> list[str]:
+    """How the author sounds and who they write for. Nothing here is content."""
     lines = [
         f"Name: {profile.get('name', 'Unknown')}",
         f"Role: {profile.get('role', 'Unknown')}",
     ]
-    if profile.get("bio"):
-        lines += ["", f"Bio: {profile['bio']}"]
     if profile.get("target_audience"):
         lines += ["", f"Target audience: {profile['target_audience']}"]
     voice = profile.get("voice_descriptors", [])
@@ -124,19 +124,40 @@ def profile_to_context_string(profile: dict[str, Any]) -> str:
         lines += ["", "Voice: " + ", ".join(voice)]
     rules = profile.get("writing_rules", [])
     if rules:
-        lines += ["", "Writing rules:", *[f"  - {_soften_specifics_rule(rule)}" for rule in rules]]
-    topics = profile.get("topics_of_expertise", [])
-    if topics:
-        lines += ["", "Topics of expertise: " + ", ".join(topics)]
+        lines += ["", "Writing rules:", *[f"  - {rule}" for rule in rules], f"  {_STYLE_ONLY_RULE}"]
     avoid = profile.get("words_to_avoid", [])
     if avoid:
         lines += ["", "Words to avoid: " + ", ".join(avoid)]
+    return lines
+
+
+def _sample_lines(profile: dict[str, Any]) -> list[str]:
+    samples = [s for s in profile.get("writing_samples", []) if s]
+    if not samples:
+        return []
+    lines = ["", "Writing samples:", f"  {WRITING_SAMPLES_RULE}"]
+    for i, sample in enumerate(samples, 1):
+        lines += [f"  Sample {i}:", f"  {sample[:500]}"]
+    return lines
+
+
+def profile_voice_context(profile: dict[str, Any]) -> str:
+    """The profile as a voice reference, for prompts that write or judge a post
+    (draft, critic, humanizer). Leaves out the bio, topics of expertise and
+    opinions: those are content, and a post's content comes from its sources."""
+    return "\n".join([*_voice_lines(profile), *_sample_lines(profile)])
+
+
+def profile_to_context_string(profile: dict[str, Any]) -> str:
+    """The whole profile, for prompts that need to know who the author is
+    (idea suggestions, selection refine)."""
+    lines = _voice_lines(profile)
+    if profile.get("bio"):
+        lines += ["", f"Bio: {profile['bio']}"]
+    topics = profile.get("topics_of_expertise", [])
+    if topics:
+        lines += ["", "Topics of expertise: " + ", ".join(topics)]
     opinions = profile.get("opinions", [])
     if opinions:
         lines += ["", "Strong opinions:", *[f"  - {op}" for op in opinions if op]]
-    samples = [s for s in profile.get("writing_samples", []) if s]
-    if samples:
-        lines += ["", "Writing samples (for voice reference):"]
-        for i, sample in enumerate(samples, 1):
-            lines += [f"  Sample {i}:", f"  {sample[:500]}"]
-    return "\n".join(lines)
+    return "\n".join([*lines, *_sample_lines(profile)])

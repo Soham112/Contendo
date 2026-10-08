@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _GENERIC_500 = "Something went wrong. Please try again."
+_SCORE_FAILED = "Couldn't score this post. Try again."
 
 # Request size bounds for /refine-selection: far above any real post or
 # instruction, low enough that one request can't carry an arbitrarily large prompt.
@@ -65,8 +66,10 @@ class ScoreRequest(BaseModel):
 
 
 class ScoreResponse(BaseModel):
-    score: int
+    # None when the scorer returned no valid result; message then says so.
+    score: int | None
     score_feedback: list[str]
+    message: str = ""
 
 
 class RefineSelectionRequest(BaseModel):
@@ -223,6 +226,8 @@ async def score(
         _raise_anthropic_error(e)
     except Exception:
         _raise_internal_error("POST /score")
+    if s is None:
+        return ScoreResponse(score=None, score_feedback=[], message=_SCORE_FAILED)
     return ScoreResponse(score=s, score_feedback=score_feedback)
 
 

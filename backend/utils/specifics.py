@@ -231,22 +231,30 @@ def _strings(value: Any) -> Iterable[str]:
             yield from _strings(v)
 
 
+def profile_facts(profile: dict[str, Any] | None) -> dict[str, Any]:
+    """The parts of a profile that count as a source of facts: everything except
+    the writing samples. Samples are examples of the author's style (old posts
+    on other subjects), so a number or name copied from one is not supported."""
+    return {key: value for key, value in (profile or {}).items() if key != "writing_samples"}
+
+
 def grounding_texts(state: dict[str, Any], input_draft: str) -> list[str]:
     """Everything a rewrite may draw facts from: its input draft, the retrieved
-    chunks, the profile, and the request's own topic and context.
+    chunks, the profile (without its writing samples), and the request's own
+    topic and context.
 
     In no-specifics mode (state["no_specifics"]) only the topic, the context and
     the profile count: not the chunks, and not the input draft, so a fact the
     drafter took from the chunks is flagged rather than carried forward.
     """
     if state.get("no_specifics"):
-        return [state.get("topic") or "", state.get("context") or "", *_strings(state.get("profile") or {})]
+        return [state.get("topic") or "", state.get("context") or "", *_strings(profile_facts(state.get("profile")))]
     chunks = [c.get("text") or c.get("content") or "" for c in (state.get("retrieval_bundle") or {}).get("chunks", [])]
     return [
         input_draft,
         *chunks,
         *(state.get("retrieved_chunks") or []),
-        *_strings(state.get("profile") or {}),
+        *_strings(profile_facts(state.get("profile"))),
         state.get("topic") or "",
         state.get("context") or "",
     ]
@@ -325,13 +333,14 @@ def guard_sources(state: dict[str, Any], input_draft: str | None = None,
 
     Normal mode: the input draft (rewrite nodes only), the chunks, the profile,
     the topic and the context. No-specifics mode: the topic, context and profile
-    (as grounding_texts). Claims and events are judged by fact_check_node.
+    (as grounding_texts). The profile never includes its writing samples
+    (profile_facts). Claims and events are judged by fact_check_node.
 
     extra: further sources that count in both modes (strings, or dicts/lists of
     them), e.g. the author's own instruction and post in a selection refine.
     """
     topic, context = state.get("topic") or "", state.get("context") or ""
-    profile = state.get("profile") or {}
+    profile = profile_facts(state.get("profile"))
     extra_facts = [s for item in extra for s in _strings(item)]
     if state.get("no_specifics"):
         return GuardSources(facts=[topic, context, *_strings(profile), *extra_facts])

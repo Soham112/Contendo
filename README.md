@@ -353,6 +353,7 @@ Note: profile files are gitignored — your personal details never get committed
     │   ├── retrieval_agent.py        # Hybrid retrieval node (pgvector + BM25 + entity links) in the LangGraph pipeline
     │   ├── draft_agent.py            # Generates initial draft via Claude + confidence-based grounding calibration
     │   ├── critic_agent.py           # Diagnoses the draft (hook/substance/structure/voice) into a critic brief
+    │   ├── archetype_agent.py        # Chooses the post's structure from the archetypes the sources allow
     │   ├── humanizer_agent.py        # Rewrites draft to remove AI patterns
     │   ├── refine_agent.py           # Selection refine (/refine-selection), guarded against invented specifics
     │   ├── scorer_agent.py           # Scores draft 0–100, robust JSON parse with fallback
@@ -385,7 +386,7 @@ Note: profile files are gitignored — your personal details never get committed
     │   └── obsidian_tool.py          # Obsidian vault reader — read_vault(), get_vault_stats(), clean_obsidian_markdown()
     ├── utils/
     │   ├── chunker.py                # 500-word chunks with 50-word overlap
-    │   ├── formatters.py             # Format + tone instruction strings per output type
+    │   ├── formatters.py             # The one length table, archetype registry, format and tone text
     │   └── file_extractor.py         # PDF (PyMuPDF), DOCX (python-docx), TXT text extraction
     └── data/
         └── feedback.jsonl            # Append-only feedback log on DATA_DIR volume
