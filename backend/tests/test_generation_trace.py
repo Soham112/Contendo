@@ -110,8 +110,9 @@ def test_polished_records_a_score_per_iteration(claude, fake_db, seeded_kb, monk
     # 2 loops of humanizer + audit (step 1 CLEAN, step 3), then the enforcer.
     claude.queue(
         "personal_story", "Draft text.", "{}",
-        "Humanized 1.", "CLEAN", "Audited 1.",
-        "Humanized 2.", "CLEAN", "Audited 2.",
+        # Number-free text: a "2" the input lacks would trip the specifics guard.
+        "Humanized once.", "CLEAN", "Audited once.",
+        "Humanized twice.", "CLEAN", "Audited twice.",
         "Final text.",
     )
     _run(quality="polished")
@@ -124,7 +125,7 @@ def test_polished_records_a_score_per_iteration(claude, fake_db, seeded_kb, monk
     assert trace["score"] == 90
     assert trace["iterations"] == 2
     humanized = [d for d in trace["node_outputs"]["draft_history"] if d["node"] == "humanizer"]
-    assert [(d["iteration"], d["text"]) for d in humanized] == [(1, "Humanized 1."), (2, "Humanized 2.")]
+    assert [(d["iteration"], d["text"]) for d in humanized] == [(1, "Humanized once."), (2, "Humanized twice.")]
 
 
 def test_llm_calls_are_recorded_in_order(claude, fake_db, seeded_kb):
@@ -216,28 +217,28 @@ def _strip(chunks, extra=()):
     return [{k: v for k, v in c.items() if k not in drop} for c in chunks]
 
 
-def test_hybrid_results_and_order_match_the_pre_trace_merge():
+def test_hybrid_returns_each_chunk_once_with_a_real_similarity():
     from memory.consolidation_store import upsert_consolidation_chunk
-    from memory.vector_store import _query_bm25, query_similar, query_similar_hybrid, upsert_chunks
+    from memory.vector_store import query_similar, query_similar_hybrid, upsert_chunks
 
     upsert_chunks(
         ["pgvector retrieval basics", "retrieval with bm25 ranking",
          "pgvector index tuning", "a note about cooking"],
         source_title="Notes", source_id="notes", user_id=USER,
     )
-    # Consolidation chunk: its row id differs from source_id_chunk_index.
+    # Consolidation chunk: its row id differs from source_id_chunk_index, and
+    # both searches find it.
     upsert_consolidation_chunk(USER, "ent1", "pgvector", "pgvector retrieval summary")
 
     query = "pgvector retrieval"
-    vector = _strip(query_similar(query, user_id=USER))
-    bm25 = [dict(r) for r in _query_bm25(query, user_id=USER)]
-    expected = _rrf_merge_before(copy.deepcopy(vector), copy.deepcopy(bm25))
-
     actual = query_similar_hybrid(query, user_id=USER)
+    keys = [c.get("chunk_id") or c.get("id") for c in actual]
+    assert len(keys) == len(set(keys))
+    assert sum(1 for c in actual if c["source_title"].startswith("[Consolidated")) == 1
 
-    # Same chunks, same order, same values; only the new trace fields and a
-    # BM25 score on shared chunks are added.
-    assert _strip(actual, extra={"bm25_score"}) == _strip(expected, extra={"bm25_score"})
+    cosine = {h["chunk_id"]: h["similarity"] for h in query_similar(query, user_id=USER, n_results=50)}
+    for c in actual:
+        assert c["similarity"] == pytest.approx(cosine[c.get("chunk_id") or c.get("id")], abs=1e-3)
     assert [c["rrf_rank"] for c in actual] == list(range(1, len(actual) + 1))
 
 
@@ -338,3 +339,100 @@ def test_log_post_without_trace_id_does_not_touch_traces(client, fake_db, auth_h
     assert resp.json()["saved"] is True
     assert _trace(fake_db, "trace-1")["post_id"] is None
     assert ("generation_traces", "update") not in fake_db.log
+
+
+def test_specifics_guard_retries_are_recorded_in_the_trace(claude, fake_db, seeded_kb):
+    claude.queue(
+        "personal_story", "Draft text.", "{}",
+        "Draft text, now 34% better.",   # humanizer adds a figure
+        "Draft text, rewritten.",        # humanizer retry is clean
+        "CLEAN", "Audited text.", "Final text.",
+    )
+    _run()
+
+    trace = _only_trace(fake_db)
+    assert trace["node_outputs"]["specifics_guard"] == [{
+        "node": "humanizer", "iteration": 1,
+        "first_attempt": [{"text": "34%", "kind": "percent"}],
+        "retry": [], "outcome": "accepted_after_retry",
+    }]
+    assert [c["event_type"] for c in trace["llm_calls"]][3:5] == ["humanize", "humanize_retry"]
+
+
+def test_trace_has_empty_specifics_guard_when_nothing_was_added(claude, fake_db, seeded_kb):
+    claude.queue(*STANDARD_RUN)
+    _run()
+    assert _only_trace(fake_db)["node_outputs"]["specifics_guard"] == []
+
+
+def test_enforcer_retry_is_recorded_with_its_own_event_type(claude, fake_db, seeded_kb):
+    claude.queue(
+        "personal_story", "Draft text.", "{}", "Humanized text.", "CLEAN", "Audited text.",
+        "Audited text, plus 34% more words.",   # enforcer expansion adds a figure
+        "Audited text, plus a few more words.",  # retry is clean
+    )
+    _run()
+
+    trace = _only_trace(fake_db)
+    assert [c["event_type"] for c in trace["llm_calls"]][-2:] == ["word_count_enforcer", "word_count_enforcer_retry"]
+    assert trace["node_outputs"]["specifics_guard"][0]["node"] == "word_count_enforcer"
+    assert trace["node_outputs"]["final_post"] == "Audited text, plus a few more words."
+
+
+# --- Log-only fact check (normal mode; enforcement off by default) ---------------
+
+def test_normal_mode_fact_check_is_deferred_and_never_changes_the_post(claude, fake_db, seeded_kb):
+    claude.queue(*STANDARD_RUN)
+    result = _run()
+    calls_in_pipeline = len(claude.calls)
+
+    trace = _only_trace(fake_db)
+    assert trace["node_outputs"]["fact_check"] == {"mode": "log_only", "flagged": [], "rewrites": [], "outcome": "pending"}
+    assert callable(result["fact_check_job"])
+
+    # The job: one Haiku call, flags written to the trace, post untouched.
+    claude.queue('[{"i": 1, "type": "statistic", "why": "not in sources"}]')
+    result["fact_check_job"]()
+    assert len(claude.calls) == calls_in_pipeline + 1
+    assert claude.calls[-1]["model"] == "claude-haiku-4-5-20251001"
+    fc = _only_trace(fake_db)["node_outputs"]["fact_check"]
+    assert fc["mode"] == "log_only" and fc["outcome"] == "logged"
+    assert fc["flagged"][0]["type"] == "statistic"
+    assert _only_trace(fake_db)["node_outputs"]["final_post"] == result["post"]
+
+
+def test_no_specifics_mode_enforces_in_the_pipeline_and_returns_no_job(claude, fake_db, seeded_kb, no_specifics_on):
+    claude.queue(*STANDARD_RUN, "[]")  # the enforced fact check runs inside the pipeline
+    result = _run(no_specifics=True)
+    assert result["fact_check_job"] is None
+    assert _only_trace(fake_db)["node_outputs"]["fact_check"]["mode"] == "enforce"
+
+
+def test_log_only_job_writes_only_to_the_callers_trace_and_records_errors(claude, fake_db):
+    from agents.fact_check_agent import log_fact_check
+
+    fake_db.tables.setdefault("generation_traces", []).extend([
+        {"id": "t-a", "user_id": "user-a", "node_outputs": {"final_post": "A."}},
+        {"id": "t-b", "user_id": "user-b", "node_outputs": {"final_post": "B."}},
+    ])
+    claude.queue("not json")
+    log_fact_check({"user_id": "user-a", "final_post": "I shipped it.", "topic": "x"}, "t-a")
+    log_fact_check({"user_id": "user-a", "final_post": "I shipped it.", "topic": "x"}, "t-b")  # not theirs
+
+    rows = {r["id"]: r for r in fake_db.tables["generation_traces"]}
+    assert rows["t-a"]["node_outputs"]["fact_check"]["outcome"] == "error"
+    assert rows["t-a"]["node_outputs"]["final_post"] == "A."
+    assert "fact_check" not in rows["t-b"]["node_outputs"]
+
+
+def test_generate_endpoint_runs_the_log_only_fact_check_after_responding(client, claude, fake_db, seeded_kb, auth_headers):
+    claude.queue(*STANDARD_RUN, "[]")
+    resp = client.post(
+        "/generate",
+        json={"topic": "pgvector retrieval", "format": "linkedin post", "tone": "casual"},
+        headers=auth_headers(USER),
+    )
+    assert resp.status_code == 200
+    assert "fact_check_job" not in resp.json()
+    fc = _only_trace(fake_db)["node_outputs"]["fact_check"]
+    assert fc == {"mode": "log_only", "flagged": [], "rewrites": [], "outcome": "logged"}

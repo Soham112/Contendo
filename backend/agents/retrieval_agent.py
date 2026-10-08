@@ -1,8 +1,11 @@
 import logging
 
+from config import retrieval as cfg
 from pipeline.state import PipelineState
 from memory.vector_store import (
-    RELEVANCE_THRESHOLD,
+    _chunk_key,
+    _fill_real_similarity,
+    embed_texts,
     get_adjacent_chunks,
     get_chunks_by_ids,
     query_similar,
@@ -10,46 +13,9 @@ from memory.vector_store import (
 )
 from memory.hierarchy_store import get_source_node, get_topic_node
 from memory.retrieval_stats_store import increment_retrieval
+from utils.frames import chunk_field, chunk_frame, chunk_tags, infer_seniority_level  # noqa: F401  (re-exported)
 
 logger = logging.getLogger(__name__)
-
-
-def infer_seniority_level(profile: dict) -> str:
-    """Infer the user's career seniority as 'junior', 'mid', or 'senior'.
-
-    Checks `years_of_experience` field first. Falls back to role title keyword
-    matching. Defaults to 'mid' when nothing matches.
-    """
-    years = profile.get("years_of_experience")
-    if years is not None:
-        try:
-            y = int(years)
-            if y <= 3:
-                return "junior"
-            elif y <= 10:
-                return "mid"
-            else:
-                return "senior"
-        except (TypeError, ValueError):
-            pass
-
-    role = (profile.get("role") or "").lower()
-
-    senior_keywords = [
-        "senior", "lead", "principal", "director", "vp", "head of",
-        "staff", "distinguished", "fellow", "cto", "ceo", "founder",
-    ]
-    junior_keywords = [
-        "junior", "intern", "associate", "student", "graduate", "entry", "jr",
-    ]
-    for kw in senior_keywords:
-        if kw in role:
-            return "senior"
-    for kw in junior_keywords:
-        if kw in role:
-            return "junior"
-
-    return "mid"
 
 
 def resolve_attribution_frames(
@@ -64,77 +30,18 @@ def resolve_attribution_frames(
     all other chunks in its tag cluster with a PERSONAL frame, leading to
     first-person hallucinations about article/video content.
 
-    Frame resolution per chunk (strict priority):
-    1. memory_context field (Phase 1 — most reliable signal):
-         "work"             → PERSONAL_WORK
-         "personal_project" → PERSONAL_PROJECT
-         "learning"         → LEARNING (never PERSONAL, even if source_type=personal_note)
-         "observation"      → OBSERVATION
-    2. source_type fallback (for legacy chunks where memory_context is None):
-         "personal_note"    → PERSONAL
-         others             → EXPERT_OUTSIDER if tags overlap with profile expertise,
-                              else LEARNING calibrated by seniority
+    Frame resolution per chunk: utils.frames.chunk_frame (memory_context first,
+    then source_type, then tag overlap with the profile's expertise).
 
     Output: structured labeled block for direct prompt injection.
     """
     if not chunks:
         return "No relevant knowledge base entries found. Draw on general expertise."
 
-    seniority = infer_seniority_level(profile)
-    topics_of_expertise = [t.lower().strip() for t in profile.get("topics_of_expertise", [])]
+    chunk_tag_sets: list[set[str]] = [chunk_tags(chunk) for chunk in chunks]
+    chunk_frames: list[str] = [chunk_frame(chunk, profile) for chunk in chunks]
 
-    def _get_field(chunk: dict, flat_key: str) -> str:
-        """Read a field from a flat chunk dict or its nested 'metadata' sub-dict."""
-        val = chunk.get(flat_key)
-        if val is not None:
-            return str(val)
-        return str(chunk.get("metadata", {}).get(flat_key) or "")
-
-    # ── Step 1: Per-chunk frame assignment ──────────────────────────────────
-    def _chunk_frame(chunk: dict, tags: set[str]) -> str:
-        # Consolidation chunks get their own frame — they span all contexts and
-        # should be surfaced as background context, not attributed to one frame.
-        node_type = _get_field(chunk, "node_type") or chunk.get("metadata", {}).get("node_id", "")
-        if node_type == "consolidation" or _get_field(chunk, "source_type") == "consolidation":
-            return "CONSOLIDATION"
-
-        memory_context = chunk.get("memory_context") or chunk.get("metadata", {}).get("memory_context")
-
-        # Primary signal: memory_context (set at ingest time — most reliable)
-        if memory_context == "work":
-            return "PERSONAL_WORK"
-        if memory_context == "personal_project":
-            return "PERSONAL_PROJECT"
-        if memory_context == "observation":
-            return "OBSERVATION"
-        if memory_context == "learning":
-            # Explicitly marked as external knowledge — never PERSONAL
-            in_expertise = any(
-                any(exp in tag or tag in exp for exp in topics_of_expertise)
-                for tag in tags
-            ) if topics_of_expertise and tags else False
-            return "EXPERT_OUTSIDER" if in_expertise else f"LEARNING_{seniority.upper()}"
-
-        # Fallback: legacy chunks without memory_context — use source_type heuristic
-        source_type = _get_field(chunk, "source_type")
-        if source_type == "personal_note":
-            return "PERSONAL"
-
-        in_expertise = any(
-            any(exp in tag or tag in exp for exp in topics_of_expertise)
-            for tag in tags
-        ) if topics_of_expertise and tags else False
-        return "EXPERT_OUTSIDER" if in_expertise else f"LEARNING_{seniority.upper()}"
-
-    chunk_tags: list[set[str]] = []
-    chunk_frames: list[str] = []
-    for chunk in chunks:
-        raw_tags = _get_field(chunk, "tags")
-        tags = {t.strip().lower() for t in raw_tags.split(",") if t.strip()} if raw_tags else set()
-        chunk_tags.append(tags)
-        chunk_frames.append(_chunk_frame(chunk, tags))
-
-    # ── Step 2: Build labeled output block grouped by frame ─────────────────
+    # ── Build labeled output block grouped by frame ─────────────────
     frame_order = [
         "CONSOLIDATION",
         "PERSONAL_WORK",
@@ -201,9 +108,9 @@ def resolve_attribution_frames(
         lines.append(frame_headers[frame])
         for chunk_idx in frame_to_chunk_indices[frame]:
             chunk = chunks[chunk_idx]
-            source_type = _get_field(chunk, "source_type") or "article"
-            tag_list = ", ".join(sorted(chunk_tags[chunk_idx])) if chunk_tags[chunk_idx] else "none"
-            text = _get_field(chunk, "text") or _get_field(chunk, "content")
+            source_type = chunk_field(chunk, "source_type") or "article"
+            tag_list = ", ".join(sorted(chunk_tag_sets[chunk_idx])) if chunk_tag_sets[chunk_idx] else "none"
+            text = chunk_field(chunk, "text") or chunk_field(chunk, "content")
             lines.append(f"[source: {source_type} | tags: {tag_list}]")
             lines.append(text)
             lines.append("")
@@ -211,25 +118,81 @@ def resolve_attribution_frames(
     return "\n".join(lines).strip()
 
 
+def _top_scores(results: list[dict]) -> tuple[float, float]:
+    """(top-1 real cosine, top-1 normalized BM25) over raw retrieval results."""
+    top_cosine = max((float(r.get("similarity") or 0.0) for r in results), default=0.0)
+    top_bm25 = max((float(r.get("bm25_norm") or 0.0) for r in results), default=0.0)
+    return top_cosine, top_bm25
+
+
+def _is_relevant(chunk: dict) -> bool:
+    """Use a chunk when its own cosine or its own normalized BM25 is strong enough."""
+    return (
+        float(chunk.get("similarity") or 0.0) >= cfg.RELEVANCE_THRESHOLD
+        or float(chunk.get("bm25_norm") or 0.0) >= cfg.STRONG_BM25
+    )
+
+
+def _has_coverage(top_cosine: float, top_bm25: float) -> bool:
+    return top_cosine >= cfg.COVERAGE_MIN_COSINE or top_bm25 >= cfg.COVERAGE_MIN_BM25
+
+
 def _compute_retrieval_confidence(results: list[dict]) -> str:
-    """Classify retrieval coverage based on unfiltered raw retrieval results.
+    """Classify coverage from the best real cosine and the best normalized BM25 score.
 
-    vector_store currently returns `similarity` (higher is better), not `distance`.
-    Threshold mapping from cosine distance to similarity:
-    - distance < 0.55  <=>  similarity > 0.45  (strong match)
-    - distance < 0.70  <=>  similarity > 0.30  (any match)
+    high:   top-1 cosine >= HIGH_CONFIDENCE_COSINE
+    medium: the coverage gate passes (top-1 cosine or top-1 BM25 strong enough)
+    low:    neither (the coverage gate blocks drafting)
     """
-    if not results:
-        return "low"
-
-    high_quality = [r for r in results if float(r.get("similarity", 0.0)) > 0.45]
-    any_quality = [r for r in results if float(r.get("similarity", 0.0)) > 0.30]
-
-    if len(high_quality) >= 3:
+    top_cosine, top_bm25 = _top_scores(results)
+    if top_cosine >= cfg.HIGH_CONFIDENCE_COSINE:
         return "high"
-    if len(high_quality) >= 1 or len(any_quality) >= 3:
+    if _has_coverage(top_cosine, top_bm25):
         return "medium"
     return "low"
+
+
+def coverage_gate(results: list[dict], bypass: bool = False, first_post: bool = False) -> dict:
+    """Decide whether the knowledge base covers the topic well enough to draft.
+
+    decision: "pass"; "low_coverage"; "bypassed" (low coverage, but the request
+    asked for a no-specifics post); or "skipped_first_post" (low coverage, but
+    a user's first post is written from their profile and onboarding answers,
+    not the knowledge base). Includes the scores, thresholds, and the closest
+    sources found, for the response and the generation trace.
+    """
+    top_cosine, top_bm25 = _top_scores(results)
+    covered = _has_coverage(top_cosine, top_bm25)
+    if covered:
+        decision = "pass"
+    elif bypass:
+        decision = "bypassed"
+    elif first_post:
+        decision = "skipped_first_post"
+    else:
+        decision = "low_coverage"
+    closest = sorted(results, key=lambda r: float(r.get("similarity") or 0.0), reverse=True)
+    closest_sources, seen = [], set()
+    for r in closest:
+        title = r.get("source_title") or ""
+        if title in seen:
+            continue
+        seen.add(title)
+        closest_sources.append({
+            "title": title,
+            "preview": (r.get("text") or r.get("content") or "")[:200],
+            "similarity": round(float(r.get("similarity") or 0.0), 3),
+        })
+        if len(closest_sources) == cfg.CLOSEST_SOURCES:
+            break
+    return {
+        "decision": decision,
+        "top_cosine": round(top_cosine, 4),
+        "top_bm25_norm": round(top_bm25, 4),
+        "min_cosine": cfg.COVERAGE_MIN_COSINE,
+        "min_bm25_norm": cfg.COVERAGE_MIN_BM25,
+        "closest_sources": closest_sources,
+    }
 
 
 def _build_retrieval_bundle(chunks: list[dict], user_id: str) -> dict:
@@ -413,7 +376,10 @@ def _enrich_with_entity_chunks(
     """Add entity-linked chunks not already in existing_chunks (up to max_additional).
 
     Total retrieval budget after enrichment: len(existing_chunks) + max_additional (≤ 12).
-    Entity-linked chunks are tagged with entity_linked=True for traceability.
+    Entity-linked chunks are tagged with entity_linked=True, given their real
+    cosine similarity to the query, and the closest ones are kept. They are
+    never counted by retrieval confidence or the coverage gate, which only use
+    chunks that matched the query directly.
     Returns existing_chunks unchanged on any failure.
     """
     try:
@@ -421,10 +387,7 @@ def _enrich_with_entity_chunks(
         if not entity_ids:
             return existing_chunks
 
-        existing_ids = {
-            c.get("id") or f"{c.get('source_id', '')}_{c.get('chunk_index', 0)}"
-            for c in existing_chunks
-        }
+        existing_ids = {_chunk_key(c) for c in existing_chunks}
 
         from memory.entity_store import get_chunk_ids_for_entity
         candidate_ids: list[str] = []
@@ -441,6 +404,8 @@ def _enrich_with_entity_chunks(
         additional = get_chunks_by_ids(candidate_ids[: max_additional * 2], user_id)
         for chunk in additional:
             chunk["entity_linked"] = True
+        _fill_real_similarity(additional, embed_texts([query_topic])[0], user_id)
+        additional.sort(key=lambda c: c.get("similarity", 0.0), reverse=True)
 
         added = additional[:max_additional]
         logger.info(
@@ -475,10 +440,7 @@ def retrieval_node(state: PipelineState) -> PipelineState:
     try:
         logger.info(f"Hybrid retrieval used for user {user_id}, topic: {topic[:50]}")
         raw_results = query_similar_hybrid(query, user_id=user_id, n_results=8)
-        chunks = [
-            r for r in raw_results
-            if float(r.get("similarity", 0.0)) >= RELEVANCE_THRESHOLD
-        ]
+        chunks = [r for r in raw_results if _is_relevant(r)]
         # Phase 4: enrich with entity-linked chunks not in top-8 (up to 4 additional, total ≤ 12)
         chunks = _enrich_with_entity_chunks(chunks, query_topic=query, user_id=user_id, max_additional=4)
         bundle = _build_retrieval_bundle(chunks, user_id)
@@ -500,10 +462,7 @@ def retrieval_node(state: PipelineState) -> PipelineState:
         print(f"[retrieval_node] hierarchical retrieval failed ({e}), falling back to flat")
         try:
             raw_results = query_similar(query, n_results=8, user_id=user_id)
-            chunks = [
-                r for r in raw_results
-                if float(r.get("similarity", 0.0)) >= RELEVANCE_THRESHOLD
-            ]
+            chunks = [r for r in raw_results if _is_relevant(r)]
             bundle = {"chunks": chunks, "source_contexts": {}, "topic_contexts": []}
         except Exception:
             raw_results = []
@@ -523,8 +482,20 @@ def retrieval_node(state: PipelineState) -> PipelineState:
         retrieved_texts.append(f"[source_type: {source_type}] {chunk['text']}")
 
     state["retrieved_chunks"] = retrieved_texts
+    # Confidence and the gate use raw_results only: chunks that matched the
+    # query directly, never entity-linked additions.
     state["retrieval_confidence"] = _compute_retrieval_confidence(raw_results)
     state["retrieved_chunk_count"] = len(retrieved_texts)
+    state["coverage_gate"] = coverage_gate(
+        raw_results,
+        bypass=bool(state.get("no_specifics")),
+        first_post=bool(state.get("first_post")),
+    )
+    logger.info(
+        "coverage gate: %s (top cosine %.3f, top bm25 %.3f) for user %s",
+        state["coverage_gate"]["decision"], state["coverage_gate"]["top_cosine"],
+        state["coverage_gate"]["top_bm25_norm"], user_id,
+    )
 
     # Debug: print a sample so attribution labels can be verified at runtime.
     if retrieved_texts:

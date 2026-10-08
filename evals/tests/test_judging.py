@@ -132,6 +132,39 @@ def test_report_excludes_skipped_from_means_and_counts_costs():
     assert "**$0.0600**" in text
 
 
+def test_report_can_take_one_metric_from_another_judge_and_lists_fact_check_flags():
+    meta = {"run_id": "r1", "quality": "standard", "project_ref": "ref", "git": {"commit": "abc", "dirty": False}}
+    runs = [
+        {"golden_id": "g1", "status": "ok", "pipeline": {"calls": 7, "cost_usd": 0.05},
+         "fact_check": {"mode": "log_only", "outcome": "logged",
+                        "flagged": [{"type": "event", "why": "no note describes it", "sentence": "We shipped it."}]}},
+        {"golden_id": "g2", "status": "ok", "pipeline": {"calls": 7, "cost_usd": 0.05},
+         "fact_check": {"mode": "log_only", "outcome": "logged", "flagged": []}},
+        {"golden_id": "g3", "status": "gated"},
+    ]
+    scores = [
+        _score("g1", "faithfulness", 0.9, True),
+        _score("g1", "unsupported_specifics", 0.9, True),                        # Haiku: replaced
+        _score("g1", "unsupported_specifics", 0.4, False, judge_model="SONNET"),
+        _score("g1", "faithfulness", 0.1, False, judge_model="SONNET"),          # not requested: ignored
+    ]
+    text = report.build_report(meta, runs, scores, {"g1": {"topic": "T"}}, judge_model="HAIKU",
+                               metric_judges={"unsupported_specifics": "SONNET"})
+    assert "**SONNET** for `unsupported_specifics`" in text
+    assert "| faithfulness | 1 | 0.90 | 100% |" in text
+    assert "| unsupported_specifics | 1 | 0.40 | 0% |" in text
+    assert "1 flag(s) on 1 of 2 drafted posts; 0 check(s) errored." in text
+    assert "| g1 | logged | 1 | event |" in text and "| g2 | logged | 0 | – |" in text
+    assert "- **g1** [event] We shipped it. (why: no note describes it)" in text
+
+
+def test_report_without_fact_check_rows_has_no_fact_check_section():
+    meta = {"run_id": "r1", "quality": "standard", "project_ref": "ref", "git": {}}
+    text = report.build_report(meta, [{"golden_id": "g1", "status": "ok"}], [_score("g1", "faithfulness", 0.9, True)],
+                               {}, judge_model="HAIKU")
+    assert "Background fact-check flags" not in text
+
+
 # --- module names -----------------------------------------------------------
 
 def test_no_evals_module_shadows_a_backend_package():

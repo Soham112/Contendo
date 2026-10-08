@@ -107,15 +107,28 @@ def main(argv: list[str] | None = None) -> int:
                     context=g["context"], quality=args.quality, user_id=user_id,
                 )
                 row["seconds"] = round(time.perf_counter() - start, 1)
+                if result.get("fact_check_job"):  # log-only fact check, outside the timing (as in /generate)
+                    result["fact_check_job"]()
                 row["trace_id"] = result.get("trace_id")
-                if not row["trace_id"]:
+                if result.get("status") == "low_coverage":
+                    row["status"] = "gated"
+                    row["closest_sources"] = [s["title"] for s in result.get("closest_sources", [])]
+                    print(f"  {g['id']}: GATED (low coverage) in {row['seconds']}s")
+                elif not row["trace_id"]:
                     row["status"] = "no_trace"
                     print(f"  {g['id']}: SKIPPED, trace was not saved (trace_id None)")
                 else:
-                    trace = (client.table("generation_traces").select("llm_calls")
+                    trace = (client.table("generation_traces").select("llm_calls,node_outputs")
                              .eq("id", row["trace_id"]).eq("user_id", user_id).execute().data or [{}])[0]
                     row["status"] = "ok"
                     row["pipeline"] = summarize_llm_calls(trace.get("llm_calls") or [])
+                    # Background (log-only) fact check, as written to the trace by fact_check_job.
+                    fc = (trace.get("node_outputs") or {}).get("fact_check") or {}
+                    row["fact_check"] = {
+                        "mode": fc.get("mode"), "outcome": fc.get("outcome"),
+                        "flagged": [{"type": f.get("type"), "why": f.get("why"), "sentence": f.get("sentence")}
+                                    for f in fc.get("flagged") or []],
+                    }
                     row["score"] = result.get("score")
                     row["retrieval_confidence"] = result.get("retrieval_confidence")
                     ok += 1

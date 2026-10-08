@@ -5,6 +5,7 @@ paths:
 
 # Frontend rules
 
+- Follow "Engineering standard: no cheap fixes" in CLAUDE.md before proposing any fix.
 - Read DESIGN.md before any UI change. Editorial Atelier system: Noto Serif headlines, Inter body, the No-Line Rule, surface hierarchy. Never deviate without explicit instruction.
 - All API calls go through `useApi()` in `frontend/lib/api.ts`. Never raw `fetch()`. (`app/settings/page.tsx` and the admin pages still use raw fetch; migrate them when you touch them.)
 - Auth comes from the Supabase client (`@supabase/ssr`). Public routes are listed in `frontend/middleware.ts`.

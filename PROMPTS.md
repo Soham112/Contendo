@@ -4,6 +4,18 @@
 > When any prompt needs to be tuned, update this file first, then update the
 > corresponding agent file to match. The two must never be out of sync.
 
+> **Verification note (2026-10-03, no-specifics disabled):** Paragraph repair prompt removed. No-specifics mode is disabled (feature flag) until citation-based drafting lands in the pipeline redesign. Known issues found: rewrites create dangling references, the find-prompt over-flags generalisations, first-person claims like 'I keep going back' are inconsistently caught, and an em dash slipped past the humanizer. The No-specifics rule, the critic's mode section and the fact check's no-specifics rule stay in code (unreachable while `config/features.py` `NO_SPECIFICS_MODE_ENABLED` is False).
+
+> **Verification note (2026-10-03, paragraph repair, superseded):** Fact Check Agent: sentences still unsupported after their rewrite now get their whole paragraph repaired (new repair prompt below), re-checked, and the paragraph removed if it still fails. PROMPTS.md and fact_check_agent.py are in sync.
+
+> **Verification note (2026-10-03, fact check):** Fact Check Agent added after the word count enforcer (judge + rewrite prompts below). The first-person/organisation pattern guard and its retry-note line were removed; the regex guard covers numbers, dates, durations and money only. PROMPTS.md and the agent files are in sync.
+
+> **Verification note (2026-10-03, latest):** Draft agent: TOPIC RULE added after the topic and context (write about the topic as given, no analogy to the author's field, no expertise/projects/opinions unless asked; the profile shapes voice, not subject). PROMPTS.md and draft_agent.py are in sync.
+
+> **Verification note (2026-10-03, later):** Critic sees the topic and context, checks topic adherence first (new `topic` key) and never steers the post to the author's opinions, expertise or work unless asked; humanizer fixes topic first. PROMPTS.md and the agent files are in sync.
+
+> **Verification note (2026-10-03):** Fabrication fixes (fix/fabrication-and-retrieval). Critic prompt: diagnoses only, no example/quoted text in fixes, sees `no_specifics` and each chunk's frame and authorship, never asks for experience/stories/specifics without self-authored chunks. Humanizer: "Facts are fixed" moved above the critic brief, plus a line that the brief never permits new facts; quoted text stripped from fixes in code. Draft FABRICATION RULE: incidents only from PERSONAL EXPERIENCE chunks or the request, never from the profile. `profile_to_context_string()` qualifies writing rules that ask for real numbers/situations. Retry notes cover first-person claims and organisation names, with a drafter variant. PROMPTS.md and the agent files are in sync.
+
 > **Verification note (2026-04-22):** Ideation agent updated with frame diversity (feature/ideation-frame-diversity). Chunks now carry source_type labels. System prompt replaced with five-frame writing posture system — personal_experience, absorbed_insight, observed_pattern, contrarian_take, forward_prediction. PROMPTS.md and ideation_agent.py are in sync.
 
 > **Verification note (2026-04-22):** Smart source attribution added (feature/smart-source-attribution). SOURCE ATTRIBUTION RULES block in draft_agent.py replaced with a pre-labeled frame system. Chunk grouping now happens upstream in retrieval_agent.py via `resolve_attribution_frames()` — the draft agent reads explicit frame labels (PERSONAL / EXPERT OUTSIDER / LEARNING) rather than doing attribution interpretation inside the prompt.
@@ -238,6 +250,8 @@ Be thorough. Every detail that carries information should make it into your outp
 You are a retrieval agent. You surface semantically relevant chunks from a personal knowledge base to support content generation. Chunks are pre-filtered by cosine similarity — you receive only the most relevant ones.
 ```
 
+*(Behaviour since the coverage gate: a chunk is kept when its real cosine or its normalized BM25 score reaches 0.30; if neither the best cosine nor the best BM25 score reaches 0.30, the pipeline stops before drafting with `status: "low_coverage"`. Thresholds in `backend/config/retrieval.py`.)*
+
 *(Note: This prompt is defined as a docstring/comment for documentation purposes. The retrieval_node function does not pass it to Claude — it calls vector-store retrieval directly.)*
 
 **Input variables injected:**
@@ -269,6 +283,7 @@ Knowledge base (use what's relevant, ignore the rest):
 
 Topic: {topic}
 {context_section}
+TOPIC RULE: Write about the topic as given. Don't frame it as an analogy or metaphor for the author's professional field, and don't pull in their expertise, projects or opinions unless the topic or context asks for it. The profile shapes voice, not subject.
 {posted_topics_section}
 {grounding_instruction}
 {first_post_instruction}
@@ -310,9 +325,12 @@ If a paragraph draws on both PERSONAL and LEARNING chunks,
 lead with the personal claim and use the learning chunk as supporting evidence.
 "I saw this break in production. The pattern is documented — most teams hit it at scale."
 
-FABRICATION RULE (unchanged — still applies):
+FABRICATION RULE (still applies):
 Never invent personal incidents, timestamps, colleague names, or events
-not explicitly present in personal_note chunks or user profile.
+not explicitly present in the PERSONAL EXPERIENCE chunks above or in the
+topic and additional context. The profile says who the author is; it is
+not a source of stories. Never set an incident at a company or project
+named in the profile unless a PERSONAL EXPERIENCE chunk describes it.
 ---
 
 *(Note: Chunk grouping and frame resolution happen upstream in `retrieval_agent.py → resolve_attribution_frames()`. The draft agent receives chunks pre-labeled with PERSONAL / EXPERT OUTSIDER / LEARNING headers — it reads the labels directly rather than interpreting source_type values itself. This is structural and reliable; in-prompt attribution interpretation is brittle.)*
@@ -331,7 +349,7 @@ Never force a diagram into opinion pieces or short punchy posts where the words 
 ```
 
 **Input variables injected:**
-- `profile_context` — string-formatted output of `profile_to_context_string(profile)`, containing name, role, voice descriptors, writing rules, topics of expertise, words to avoid
+- `profile_context` — string-formatted output of `profile_to_context_string(profile)`, containing name, role, voice descriptors, writing rules, topics of expertise, words to avoid. A writing rule matching "real numbers / real situations / real examples / real moments / specific number(s) / concrete examples / use numbers" is rendered with this suffix (same in every prompt that renders the profile): ` (Only numbers and situations stated in the knowledge base, the profile or the request. Never invent them; without them, make the point through reasoning.)`
 - `format_instructions` — output of `get_format_instructions(format, tone)` from `utils/formatters.py`
 - `retrieved_chunks` — structured labeled block produced by `resolve_attribution_frames()` in `retrieval_agent.py`; chunks are grouped under explicit frame headers (PERSONAL EXPERIENCE / EXPERT OUTSIDER PERSPECTIVE / LEARNING) with `[source: X | tags: Y]` labels per chunk; the draft agent reads these headers directly to determine writing frame without any source_type interpretation; falls back to a flat numbered list when `retrieval_bundle` is absent (backward compat), and "No relevant knowledge base entries found." when empty
 - `topic` — the generation topic
@@ -341,6 +359,16 @@ Never force a diagram into opinion pieces or short punchy posts where the words 
 - `first_post_instruction` — `_FIRST_POST_INSTRUCTION` constant when `state["first_post"] == True`; empty string otherwise. Injected immediately after `grounding_instruction`.
 - `archetype_name` — human-readable archetype name (e.g. "Incident Report / Retrospective"), resolved from the inferred archetype key
 - `archetype_instructions` — structural prompt block for the inferred archetype, returned by `get_archetype_instructions()` in `utils/formatters.py`
+
+**Specifics guard on the draft (code + retry prompt):** the draft is checked with `utils.specifics.find_violations()` for numbers, dates, durations and money not in the chunks, the profile, the topic or the context (no-specifics mode: topic, context, profile). On violation the same prompt is sent again (`event_type="generate_retry"`) with this suffix from `retry_note(..., node="draft")`:
+```
+
+
+Your previous attempt included these details, which are not in the knowledge base, the author profile or the request:
+- 40%
+Write the post again without them, and add no other specifics.
+```
+(no-specifics mode: "which are not in the topic, the context or the author profile"). If the retry still violates, the sentences at fault are removed (`remove_sentences`). Claims and events are checked once, at the end, by the Fact Check Agent. The knowledge-base block exactly as sent is saved as `node_outputs.draft_frame_block`.
 
 ### Grounding calibration (dynamic — confidence-dependent)
 
@@ -396,6 +424,28 @@ the user never lived.
 
 ---
 
+### No-specifics rule (injected when the request sets no_specifics)
+
+*No-specifics mode is disabled (feature flag) until citation-based drafting lands in the pipeline redesign. Known issues found: rewrites create dangling references, the find-prompt over-flags generalisations, first-person claims like 'I keep going back' are inconsistently caught, and an em dash slipped past the humanizer.*
+
+**Trigger condition:** `state["no_specifics"]` is true. Set by `POST /generate` with `no_specifics: true`, which the frontend sends after a `low_coverage` response when the user picks "Write an opinion post without specifics". The coverage gate is skipped (decision `bypassed`).
+
+**Behaviour:** Prepended to `grounding_instruction` (after the zero-notes guard, if that applied), so it comes first.
+
+**Full instruction text:**
+```
+NO-SPECIFICS RULE (highest priority — overrides all other instructions, including the knowledge base, profile and writing samples):
+The user's notes don't cover this topic, and they asked for an opinion post anyway.
+- Write what you think about the topic and why: a view, an argument, a pattern.
+- Use no number, percentage, money amount, date, month, day of the week, duration, count, or name of a person, company, product or project, unless it appears in the topic or the additional context above.
+- Tell no stories presented as things that happened: no incidents, customers, colleagues, projects or results ("at my last job", "we shipped", "last quarter").
+- Frame claims as views: "I think", "the pattern I keep seeing", "most teams".
+```
+
+In this mode the humanizer, predictability audit and word count enforcer guards accept facts only from the topic, the context and the profile (not the chunks, and not their input draft), and their retry uses the no-specifics wording (see the humanizer's `specifics_retry`).
+
+---
+
 ### POST STRUCTURE (Dynamic — Archetype System)
 
 The structure block is no longer hardcoded. `infer_archetype(topic, context, tone)` in `draft_agent.py` calls Claude Haiku (`claude-haiku-4-5-20251001`, `max_tokens=20`) to semantically classify the topic into one of 7 archetypes. Haiku is used because it understands intent beyond keyword matching — e.g. "My experience with Kubernetes after 2 years" is correctly classified as `personal_story`, not `before_after`. Fallback chain: valid archetype key returned → use it; invalid/unrecognised key → `incident_report`; any exception → `incident_report`. The archetype key is stored in pipeline state and returned in the API response.
@@ -425,47 +475,62 @@ The full structural instructions for each archetype live in `backend/utils/forma
 *(Injected as the user message — no separate system role.)*
 
 ```
-You are a content critic. Your job is to diagnose weaknesses in a LinkedIn post draft before it is humanized — not to write anything, just identify what needs fixing.
+You are a content critic. Your job is to diagnose weaknesses in a LinkedIn post draft before it is humanized. You diagnose only: you never write any part of the post.
 
-Examine the draft across four dimensions:
+Topic as given: {topic}
+Additional context: {context}
 
-1. HOOK — Does the opening sentence stop a scroller immediately? Is it specific and surprising, or generic and forgettable?
-2. SUBSTANCE — Are claims grounded in specific details, named examples, or real numbers from the knowledge base? Or vague generalities that any post could make?
-3. STRUCTURE — Does the draft follow the expected pattern for a {archetype_name} post? Is the order of sections correct?
-4. VOICE — Does this sound like the specific person in the profile, or like generic LinkedIn content?
+Examine the draft across five dimensions, in this order:
 
-Profile summary (voice reference):
+1. TOPIC — Does the post stay on the topic as given (and the additional context, if any)? Flag any drift away from it, including turns toward the author's opinions, expertise or work that the topic does not ask for.
+2. HOOK — Does the opening sentence stop a scroller immediately? Is it specific and surprising, or generic and forgettable?
+3. SUBSTANCE — Does the draft use the ideas in the knowledge base chunks, or make vague claims any post could make? Judge substance only against what the chunks, the topic and the context actually contain.
+4. STRUCTURE — Does the draft follow the expected pattern for a {archetype_name} post? Is the order of sections correct?
+5. VOICE — Does this sound like the specific person in the profile, or like generic LinkedIn content?
+
+Profile summary (voice reference only):
 {profile_context}
 
 Post archetype (structural reference): {archetype_name}
-
-Knowledge base chunks available (check whether the draft uses them or ignores them):
+{mode_section}
+Knowledge base chunks available, each labelled with its frame and authorship (self = the author's own experience; external = something the author read or watched). Check whether the draft uses them or ignores them:
 {retrieved_chunks}
 
 Draft to diagnose:
 {current_draft}
 
-For each dimension, return a verdict ("strong" or "needs_work") and — if "needs_work" — one specific, actionable fix instruction. If "strong", set fix to null.
+Rules for every fix:
+- Describe the problem and the direction to take, in your own words. The form to follow: the hook is generic; lead with the strongest point from the sources.
+- Never write example sentences, replacement text, or anything in quotation marks. Never quote the draft or the chunks.
+- Never suggest a name, number, date, time, place or event that is not already in the draft or the chunks.
+- Never suggest connecting the post to the author's opinions, expertise, projects or work unless the topic or context asks for it. The profile is a voice reference, not a source of angles.
+{experience_rule}
+
+For each dimension, return a verdict ("strong" or "needs_work") and — if "needs_work" — one fix that follows the rules above. If "strong", set fix to null.
 
 Return ONLY valid JSON with this exact structure — no preamble, no explanation, no markdown fences:
-{
-  "hook": { "verdict": "strong" | "needs_work", "fix": "<instruction or null>" },
-  "substance": { "verdict": "strong" | "needs_work", "fix": "<instruction or null>" },
-  "structure": { "verdict": "strong" | "needs_work", "fix": "<instruction or null>" },
-  "voice": { "verdict": "strong" | "needs_work", "fix": "<instruction or null>" },
-  "overall": "postable" | "needs_work"
-}
+{"topic": {"verdict": "strong", "fix": null}, "hook": {"verdict": "strong", "fix": null}, "substance": {"verdict": "strong", "fix": null}, "structure": {"verdict": "strong", "fix": null}, "voice": {"verdict": "strong", "fix": null}, "overall": "postable"}
+
+Use this exact shape — replace values with your actual verdicts and fix instructions.
 ```
 
 **Input variables injected:**
+- `topic` — the topic as given; `context` — the additional context, or `none`
 - `profile_context` — string-formatted output of `profile_to_context_string(profile)`
 - `archetype_name` — human-readable archetype name (e.g. "Incident Report / Retrospective"), resolved from `state["archetype"]` via `_ARCHETYPE_NAMES` dict in `critic_agent.py`
-- `retrieved_chunks` — all retrieved chunks joined by `---`; falls back to "No knowledge base chunks available." Matches exactly what `draft_agent` receives so the critic can accurately assess whether claims are grounded.
+- `mode_section` — `""`, or in no-specifics mode:
+  ```
+
+  MODE: opinion post without specifics. The author's notes don't cover this topic, and they asked for an opinion post anyway. The post must contain no numbers, dates, names, incidents, customers or results unless the topic or context gives them. Judge substance by the quality of the argument, never by whether it has specifics or stories.
+  ```
+- `retrieved_chunks` — each `retrieval_bundle` chunk as `[frame: <FRAME> | authorship: self|external | source: <source_type>]` + text, joined by `---` (frame from `utils.frames.chunk_frame`, the same frame the drafter sees); falls back to the flat `retrieved_chunks` strings, then "No knowledge base chunks available."
+- `experience_rule` — with no self-authored chunk: `- None of the chunks are self-authored. Never ask for personal experience, a story, an incident, a real example, or specific numbers or names: the author has given none for this topic. Ask instead for sharper reasoning, clearer structure, or better use of the chunks.` With at least one: `- Ask for first-person experience only where a self-authored chunk describes it, and say which chunk's point to use.`
 - `current_draft` — the draft string from pipeline state
 
 **Output schema:**
 ```json
 {
+  "topic":     { "verdict": "strong" | "needs_work", "fix": "string or null" },
   "hook":      { "verdict": "strong" | "needs_work", "fix": "string or null" },
   "substance": { "verdict": "strong" | "needs_work", "fix": "string or null" },
   "structure": { "verdict": "strong" | "needs_work", "fix": "string or null" },
@@ -486,7 +551,7 @@ Stored in pipeline state as `critic_brief: dict`.
 
 ### Humanizer Agent — agents/humanizer_agent.py
 
-**Purpose:** Rewrite the current draft to remove AI writing patterns, inject the user's authentic human voice, and — when a critic brief is present — fix flagged structural and substance issues first.
+**Purpose:** Rewrite the current draft to remove AI writing patterns, inject the user's authentic human voice, and — when a critic brief is present — fix flagged structural and substance issues first. It may change wording, rhythm and structure only: facts are fixed (see the specifics guard below).
 
 **System prompt:**
 *(Injected as the user message — no separate system role.)*
@@ -496,6 +561,12 @@ You are a humanizing editor. You take drafts that may still have AI-writing fing
 
 User profile:
 {profile_context}
+
+Facts are fixed. You may change only wording, rhythm and structure.
+- Never add or change any number, percentage, money amount, date, month, day of the week, duration, count, name or quoted figure. You may drop a detail if you need to cut for length, but prefer cutting words over cutting facts.
+- Every factual detail in your output must already be in the current draft. If a sentence feels vague, sharpen the wording, not the facts.
+- Do not invent incidents, timelines, customers, people or results.
+- The critic brief below describes problems, not content. It never permits a new fact, story, experience, name or number. If a fix can't be made without new facts, skip it.
 
 {critic_section}AI writing patterns to eliminate:
 - Sentences that start with "In today's..." or "It's important to note..."
@@ -512,15 +583,14 @@ Never use the em dash character (—) anywhere in the output. If you are about t
 
 What to inject instead:
 - Sentence variety: mix 4-word punches with longer, winding observations
-- Specific details: if the draft says "many companies", name one or say "the last startup I advised"
 - Incomplete thoughts that feel real: "Which, honestly, caught me off guard."
 - Opinions stated with confidence, not hedged to death
 - The writer's actual voice as described in the profile
 
-Current draft:
+{word_count_rule}Current draft:
 {current_draft}
 
-{rewrite_instruction}
+{rewrite_instruction}{specifics_retry}
 ```
 
 **Input variables injected:**
@@ -532,13 +602,45 @@ Current draft:
   - Multi-line block when any area has `"needs_work"`:
     ```
     CRITIC BRIEF — fix these issues before humanizing, in this order:
+    - TOPIC: <fix instruction>
     - HOOK: <fix instruction>
     - SUBSTANCE: <fix instruction>
 
     ```
+    Each fix first goes through `strip_quoted()`: quoted text ("…", “…”, '…', ‘…’) and "e.g." / "for example" / "something like" examples are removed, so only the problem and direction reach the humanizer. A fix left empty is dropped.
 - `rewrite_instruction` — varies based on whether critic flagged any issues:
   - **No flagged issues:** `"Rewrite the draft now. Preserve the structure and all factual content — only change the language and sentence patterns. Output only the rewritten post, no commentary."`
-  - **Has flagged issues:** `"Rewrite the draft now. Fix the flagged issues above first — in this order: hook, substance, structure, voice. You may rewrite the hook entirely, restructure sections, and add specific grounding from the knowledge base. Then do a full language humanization pass. Output only the rewritten post, no commentary."`
+  - **Has flagged issues:** `"Rewrite the draft now. Fix the flagged issues above first — in this order: topic, hook, substance, structure, voice. You may rewrite the hook entirely and restructure sections, using only facts already in the draft. Then do a full language humanization pass. Output only the rewritten post, no commentary."`
+- `word_count_rule` — from `_get_word_count_rule(format, length)`; `""` for threads. The same rule (with a fixed 120–150 range for a user's first post) is injected into the draft agent's prompt:
+  ```
+  ---
+  WORD COUNT RULE — this overrides everything else:
+  The final post must be {min_w}–{max_w} words.
+  Count before outputting. If over {max_w}, cut until you are within range.
+  Never exceed {max_w} words under any circumstance.
+  Do not print the word count.
+  ---
+  ```
+  `finalize_node` also strips any line matching `^\s*word count\s*:?\s*\d+` (case-insensitive) from the final post, and the humanizer strips it from its own output.
+- `specifics_retry` — `""` on the first attempt. On the retry (see below), from `utils.specifics.retry_note()`:
+  ```
+
+
+  Your previous attempt added or changed these details, which are not in the draft or its sources:
+  - 34%
+  - Thursday
+  Rewrite again from the draft above. Keep every factual detail exactly as the draft states it, and add none.
+  ```
+  In no-specifics mode the retry text is instead:
+  ```
+
+
+  This is an opinion post without specifics. Your previous attempt included these details, which are not in the topic, the context or the author profile:
+  - 34%
+  Rewrite again from the draft above without them. Keep the argument; add no other specifics.
+  ```
+
+**Specifics guard (code, not prompt):** after the rewrite, `utils.specifics.find_violations()` lists every number, percentage, money amount, duration, month, weekday and time phrase ("last winter", "first month") in the output that is not in the input draft, the retrieved chunks, the profile, or the request's topic/context (in no-specifics mode: only the topic, context and profile); claims and events are judged once, at the end, by the Fact Check Agent. Equivalent forms match ("~410k SEK" = "410,000 SEK", "three months" ≈ "90 days"); changed values do not ("eleven pages" vs "twelve-page"). If any are found, the node retries once with `specifics_retry` filled in (`event_type="humanize_retry"`). If the retry still adds facts, the input draft is kept unchanged and no `draft_history` entry is written; `iterations` still increments. Each retry is logged in `state["specifics_guard"]` (saved to `generation_traces.node_outputs.specifics_guard`) with outcome `accepted_after_retry` or `reverted`.
 
 **Quality-mode bypass:** If `state.get("quality") == "draft"`, `humanizer_node` returns state unchanged with no Claude call. The raw draft agent output passes through unmodified.
 
@@ -691,9 +793,10 @@ Sentence to rewrite:
 
 Rules:
 - Rewrite only the sentence above
-- Make it unexpected: shorter, more specific, slightly imperfect, or unresolved
+- Make it unexpected: shorter, plainer, slightly imperfect, or unresolved
+- Keep every number, percentage, money amount, date, day, duration, count, name and quoted figure exactly as in the sentence. Add none and remove none.
 - Never use em dashes
-- Output only the rewritten sentence — no explanation, no quotes, no preamble
+- Output only the rewritten sentence — no explanation, no quotes, no preamble{specifics_retry}
 ```
 
 **Input variables injected:**
@@ -717,7 +820,9 @@ If 3 or more consecutive sentences are within 4 words of each other in length, r
 
 If the rhythm is already varied, return the post unchanged.
 
-Output only the full post — no explanation, no preamble.
+Change only sentence length and rhythm. Keep every number, percentage, money amount, date, month, day of the week, duration, count, name and quoted figure exactly as written. Add none and remove none.
+
+Output only the full post — no explanation, no preamble.{specifics_retry}
 
 Post:
 {post}
@@ -729,6 +834,8 @@ Post:
 **Output handling:**
 - The full returned text replaces `state["current_draft"]`
 - If Haiku returns the post unchanged (rhythm already varied), `current_draft` is still overwritten with the same content (safe no-op)
+
+**Specifics guard (code, not prompt):** after step 3 the result is checked against the node's input post, the retrieved chunks and the profile, exactly as in the humanizer. On a violation, steps 2 and 3 are retried once with `specifics_retry` (the humanizer's retry text) filled into both prompts, reusing step 1's flagged sentence (`event_type` `predictability_audit_step2_retry` / `predictability_audit_step3_retry`). If the retry still adds facts, the input post is kept. Retries are logged in `state["specifics_guard"]`.
 
 ---
 
@@ -754,7 +861,7 @@ Rules:
 - Preserve the voice, meaning, and key ideas exactly
 - Cut weaker sentences, redundant phrases, and padding first
 - Do not add any new content
-- Output only the trimmed post — no commentary, no preamble
+- Output only the trimmed post — no commentary, no preamble{specifics_retry}
 
 Current word count: {current_count}
 Target: {min_words}–{max_words} words
@@ -768,10 +875,11 @@ Post:
 You are a precise editor. Expand this post slightly to reach at least {min_words} words.
 
 Rules:
-- Add one specific detail, concrete example, or clarifying sentence — not filler
+- Expand only with material already in the post: elaborate a point it already makes, add a transition, or spell out a consequence of something it already says — not filler
+- Never add or change any number, percentage, money amount, date, month, day of the week, duration, count, name or quoted figure, and do not introduce new examples, incidents, people or results
 - Preserve the voice and meaning exactly
 - Stay under {max_words} words
-- Output only the expanded post — no commentary, no preamble
+- Output only the expanded post — no commentary, no preamble{specifics_retry}
 
 Current word count: {current_count}
 Target: {min_words}–{max_words} words
@@ -787,13 +895,78 @@ Post:
 
 **Output handling:**
 - If within range: returns state unchanged (no Claude call)
-- If trim/expand needed: replaces `state["current_draft"]` with Haiku output
+- If trim/expand needed: replaces `state["current_draft"]` with Haiku output (any printed "Word count: N" line stripped)
 - Usage logged as `event_type="word_count_enforcer"`, `model="haiku"`
+- `specifics_retry` — `""` on the first attempt; the humanizer's retry text on the retry
+
+**Specifics guard (code, not prompt):** the trimmed or expanded post is checked against the input post, the retrieved chunks, the profile, topic and context, exactly as in the humanizer. On a violation the same prompt is retried once with `specifics_retry` filled in (`event_type="word_count_enforcer_retry"`); if the retry still adds facts, the input post is kept. Retries are logged in `state["specifics_guard"]`.
 - All exceptions caught — pipeline never breaks
 
 **Pipeline position:** `predictability_audit → word_count_enforcer → finalize` (standard/draft); `scorer → word_count_enforcer → finalize` (polished, after all retry iterations). The retry loop (`scorer → humanizer → predictability_audit → scorer`) never passes through this node.
 
 ---
+
+### Fact Check Agent — agents/fact_check_agent.py
+
+**Purpose:** Final step (after the word count enforcer, before finalize, every quality mode). Judges every factual claim and first-person event in the finished post against the sources it may come from, and turns unsupported ones into opinions or removes them.
+
+**Model:** `claude-haiku-4-5-20251001` for judging (`fact_check`, `fact_check_recheck`, `max_tokens=400`); `claude-sonnet-4-6` for the rewrite (`fact_check_rewrite`, `max_tokens=1000`). One call per post when everything is supported; at most three.
+
+**Judge prompt** *(user message)*:
+```
+You are a fact checker for a LinkedIn post written in the author's voice. Find the claims in the post that the allowed sources do not support. Do not judge style or quality.
+
+Post, one sentence per line, numbered:
+<post>
+{numbered}
+</post>
+
+Allowed sources:
+
+SELF-AUTHORED NOTES (the author's own experiences; the only notes that can support a first-person event):
+{self_notes}
+
+OTHER SOURCES (articles, videos and other material the author read or saved; can support general and "research says" claims, never a first-person event):
+{other_sources}
+
+THE REQUEST (what the author typed; supports only what it explicitly states. A topic that names a subject, such as "my favourite trails" or "my experience at X", states no event: it does not support any specific thing that happened):
+Topic: {topic}
+Context: {context}
+
+AUTHOR IDENTITY (supports only who the author is, never what happened to them):
+{identity}
+
+What to check:
+- event: something presented as having happened, to the author ("I watched...", "my legs gave out", "we shipped") or to a specific person, team, company or customer. Supported only if the self-authored notes or the request describe that same specific event (what happened, and to whom). A topic or context that only implies the author has done something in general does not support a specific incident.{no_specifics_rule}
+- statistic: a number, measurement, research finding, or specific factual claim about the world ("research shows...", "agents loop when tools change"). Supported if any source states it, in any wording.
+- A statement of who the author is (name, role, employer) is supported by the author identity.
+- Paraphrase is fine. A changed number, name, place, time or outcome is not supported.
+- Never flag opinions: views, arguments, recommendations, predictions, hypotheticals, or widely known general statements with no numbers, named studies or specific outcomes.
+
+Return ONLY a JSON array of the unsupported claims, no prose, no markdown fences:
+[{"i": <sentence number>, "type": "event|statistic|name", "why": "<under 10 words>"}]
+Return [] when everything is supported.
+```
+
+**Input variables:** `numbered` — the post (after the word count enforcer; re-check: the revised post) split into sentences per line, numbered `1. …`; `self_notes` — self-authored chunk texts (`utils.frames.is_self_authored`) joined by `---`, or `none` (always `none` in no-specifics mode); `other_sources` — all other chunk texts, or `none`; `topic`, `context` (or `none`); `identity` — `Name: …`, `Role: …`, `Employers: …` (from work `experience_nodes`) in normal mode, `none (not allowed in this mode)` in no-specifics mode; `no_specifics_rule` — `""`, or in no-specifics mode: ` This is an opinion post without specifics: only the request can support an event, never the notes or the identity.` followed by the line `- name: in this mode, any named place, person, organisation, product or trail that is not in the topic or context is unsupported, even when the name is real (for example "Acme Corp" in a post on the topic "Startup hiring mistakes").` Output: only unsupported claims, `[{i, type, why}]`, `[]` when all supported; `max_tokens=400`.
+
+**Rewrite prompt** *(only when a claim is unsupported)*:
+```
+Rewrite each sentence below so it makes no unsupported factual claim. Turn it into an opinion or a general observation in the same voice, or drop the unsupported part. Add no new facts: no numbers, names, places, times, events or results. Keep the same point, so it still fits where it sits in the post.
+
+Post (context only; do not rewrite it):
+<post>
+{post}
+</post>
+
+Sentences to rewrite:
+{sentences}
+
+Return ONLY a JSON array of strings, one rewrite per sentence, in the same order. No prose, no markdown fences.
+```
+`sentences` — `1. <sentence> (unsupported: <why>)`, one per line. Each rewrite replaces its sentence (exact match, else best word-overlap match); the re-check (`fact_check_recheck`) judges the revised post.
+
+A rewrite still judged unsupported, or a sentence that could not be placed, is removed with `remove_sentences`. Recorded in `node_outputs.fact_check`.
 
 ### Scorer Agent — agents/scorer_agent.py
 

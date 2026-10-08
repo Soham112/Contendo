@@ -3,6 +3,8 @@ import logging
 from llm.client import HAIKU, complete
 from pipeline.state import PipelineState
 from pipeline.trace import record_draft
+from utils.post_cleanup import strip_word_count_lines
+from utils.specifics import find_violations, guard_entry, guard_sources, retry_note
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +28,7 @@ Rules:
 - Preserve the voice, meaning, and key ideas exactly
 - Cut weaker sentences, redundant phrases, and padding first
 - Do not add any new content
-- Output only the trimmed post — no commentary, no preamble
+- Output only the trimmed post — no commentary, no preamble{specifics_retry}
 
 Current word count: {current_count}
 Target: {min_words}–{max_words} words
@@ -37,10 +39,11 @@ Post:
 _EXPAND_PROMPT = """You are a precise editor. Expand this post slightly to reach at least {min_words} words.
 
 Rules:
-- Add one specific detail, concrete example, or clarifying sentence — not filler
+- Expand only with material already in the post: elaborate a point it already makes, add a transition, or spell out a consequence of something it already says — not filler
+- Never add or change any number, percentage, money amount, date, month, day of the week, duration, count, name or quoted figure, and do not introduce new examples, incidents, people or results
 - Preserve the voice and meaning exactly
 - Stay under {max_words} words
-- Output only the expanded post — no commentary, no preamble
+- Output only the expanded post — no commentary, no preamble{specifics_retry}
 
 Current word count: {current_count}
 Target: {min_words}–{max_words} words
@@ -68,7 +71,12 @@ def word_count_enforcer_node(state: PipelineState) -> PipelineState:
 
     Counts words in the post. If within target range: returns unchanged.
     If over: asks Haiku to trim while preserving voice and meaning.
-    If under: asks Haiku to expand with one specific detail, not filler.
+    If under: asks Haiku to expand using only material already in the post.
+
+    The result may not add or change facts: every specific must already be in
+    the input post, the retrieved chunks or the profile. If it does, the call is
+    retried once with the violations listed; if the retry still adds facts, the
+    input post is kept. Retries are logged in state["specifics_guard"].
 
     Skipped for draft quality mode.
     All exceptions are caught — the pipeline never breaks.
@@ -106,31 +114,39 @@ def word_count_enforcer_node(state: PipelineState) -> PipelineState:
 
     try:
         if word_count > max_words:
-            prompt_text = _TRIM_PROMPT.format(
-                min_words=min_words,
-                max_words=max_words,
-                current_count=word_count,
-                post=post,
-            )
-            action = "trim"
+            template, action = _TRIM_PROMPT, "trim"
         else:
-            prompt_text = _EXPAND_PROMPT.format(
-                min_words=min_words,
-                max_words=max_words,
-                current_count=word_count,
-                post=post,
+            template, action = _EXPAND_PROMPT, "expand"
+
+        def adjust(violations, event_type: str) -> str:
+            msg = complete(
+                model=HAIKU,
+                max_tokens=2000,
+                messages=[{"role": "user", "content": template.format(
+                    min_words=min_words,
+                    max_words=max_words,
+                    current_count=word_count,
+                    post=post,
+                    specifics_retry=retry_note(violations, no_specifics=bool(state.get("no_specifics"))),
+                )}],
+                user_id=user_id,
+                event_type=event_type,
             )
-            action = "expand"
+            return strip_word_count_lines(msg.content[0].text.strip())
 
-        msg = complete(
-            model=HAIKU,
-            max_tokens=2000,
-            messages=[{"role": "user", "content": prompt_text}],
-            user_id=user_id,
-            event_type="word_count_enforcer",
-        )
+        sources = guard_sources(state, post)
+        adjusted = adjust([], "word_count_enforcer")
+        first = find_violations(adjusted, sources)
+        if first:
+            adjusted = adjust(first, "word_count_enforcer_retry")
+            second = find_violations(adjusted, sources)
+            state["specifics_guard"] = [*state.get("specifics_guard", []),
+                                        guard_entry("word_count_enforcer", state.get("iterations", 0), first, second)]
+            if second:
+                logger.warning("word_count_enforcer: retry still added %s; keeping the input post",
+                               [v.text for v in second])
+                return state
 
-        adjusted = msg.content[0].text.strip()
         new_count = _count_words(adjusted)
         logger.info(
             "word_count_enforcer: action=%s, after=%d words (was %d)",

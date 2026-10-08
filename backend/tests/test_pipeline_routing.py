@@ -40,6 +40,7 @@ def run_graph(monkeypatch):
         monkeypatch.setattr(graph, "predictability_audit_node", stub("predictability_audit"))
         monkeypatch.setattr(graph, "scorer_node", stub("scorer", score))
         monkeypatch.setattr(graph, "word_count_enforcer_node", stub("word_count_enforcer"))
+        monkeypatch.setattr(graph, "fact_check_node", stub("fact_checker"))
 
         compiled = graph.build_graph()
 
@@ -58,7 +59,7 @@ def test_non_polished_runs_each_node_once_and_never_scores(run_graph, quality):
 
     assert visited == [
         "load_profile", "retrieval", "draft", "critic", "humanizer",
-        "predictability_audit", "word_count_enforcer",
+        "predictability_audit", "word_count_enforcer", "fact_checker",
     ]
     assert result["final_post"] == "draft text"
 
@@ -68,7 +69,7 @@ def test_polished_stops_after_first_score_when_it_passes(run_graph):
 
     assert visited.count("humanizer") == 1
     assert visited.count("scorer") == 1
-    assert visited[-1] == "word_count_enforcer"
+    assert visited[-2:] == ["word_count_enforcer", "fact_checker"]
 
 
 def test_polished_retries_until_score_passes(run_graph):
@@ -93,3 +94,10 @@ def test_word_count_enforcer_runs_after_scoring_not_inside_the_loop(run_graph):
 
     last_scorer = max(i for i, n in enumerate(visited) if n == "scorer")
     assert visited.index("word_count_enforcer") > last_scorer
+
+
+def test_fact_check_runs_last_after_the_enforcer_in_every_quality(run_graph):
+    for quality in ("draft", "standard", "polished"):
+        visited, _ = run_graph(scores=[90])(quality)
+        assert visited[-1] == "fact_checker", quality
+        assert visited[-2] == "word_count_enforcer", quality

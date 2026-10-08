@@ -3,6 +3,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useApi } from "@/lib/api";
+import type { ClosestSource } from "@/lib/api";
+import { LowCoverageNotice, OpinionPostLabel } from "@/components/LowCoverageNotice";
 import { useTracking } from "@/lib/useTracking";
 
 const SS_POST = "contentOS_last_post";
@@ -74,12 +76,15 @@ const LENGTH_META: Record<Format, Record<Length, string>> = {
 };
 
 interface GenerateResult {
+  status?: "ok" | "low_coverage";
   post: string;
   score: number;
   score_feedback: string[];
   iterations: number;
   scored: boolean;
   trace_id?: string | null;
+  closest_sources?: ClosestSource[];
+  no_specifics_enabled?: boolean;
 }
 
 interface Suggestion {
@@ -708,6 +713,11 @@ export default function CreatePost() {
   const [result, setResult] = useState<GenerateResult | null>(null);
   const [editedPost, setEditedPost] = useState("");
   const [error, setError] = useState("");
+  // Set when /generate returns low_coverage: the closest sources it found.
+  const [lowCoverage, setLowCoverage] = useState<ClosestSource[] | null>(null);
+  const [noSpecificsEnabled, setNoSpecificsEnabled] = useState(false);
+  // True when the current post was generated in no-specifics mode.
+  const [opinionMode, setOpinionMode] = useState(false);
   const [copiedLinkedIn, setCopiedLinkedIn] = useState(false);
   const [copiedMedium, setCopiedMedium] = useState(false);
 
@@ -1086,7 +1096,7 @@ export default function CreatePost() {
     tone?: Tone;
     length?: Length;
     context?: string;
-  }) => {
+  }, opts?: { noSpecifics?: boolean }) => {
     const t = overrides?.topic ?? topic;
     const f = overrides?.format ?? format;
     const tn = overrides?.tone ?? tone;
@@ -1101,6 +1111,8 @@ export default function CreatePost() {
     setError("");
     setLoading(true);
     setResult(null);
+    setLowCoverage(null);
+    setOpinionMode(false);
     setVisuals([]);
     setVisualsVisible(false);
     setAnalysisOpen(false);
@@ -1114,7 +1126,10 @@ export default function CreatePost() {
     if (overrides?.context !== undefined) setContext(overrides.context);
 
     try {
-      const res = await api.generatePost({ topic: t, format: f, tone: tn, length: len, context: ctx });
+      const res = await api.generatePost({
+        topic: t, format: f, tone: tn, length: len, context: ctx,
+        no_specifics: opts?.noSpecifics ?? false,
+      });
 
       if (!res.ok) {
         const err = await res.json();
@@ -1122,6 +1137,13 @@ export default function CreatePost() {
       }
 
       const data: GenerateResult = await res.json();
+      if (data.status === "low_coverage") {
+        setLowCoverage(data.closest_sources ?? []);
+        setNoSpecificsEnabled(data.no_specifics_enabled ?? false);
+        logEvent({ event_type: "feature_start", page_url: "/create", button_name: "low_coverage_notice" });
+        return; // nothing was drafted, so nothing to autosave
+      }
+      setOpinionMode(opts?.noSpecifics ?? false);
       pendingTraceIdRef.current = data.trace_id ?? null;
       // Store raw post (with placeholders) for /generate-visuals, strip for display/editing
       rawPostRef.current = data.post;
@@ -1962,22 +1984,24 @@ export default function CreatePost() {
                     className={splitActive ? "h-full overflow-y-auto px-7 py-7" : "px-8 py-10 md:px-20 md:py-12"}
                     style={{ cursor: "text" }}
                   >
+                    {/* Own slot before the editor wrapper: present or not, the wrapper keeps its index */}
+                    {opinionMode && <OpinionPostLabel />}
                     <div style={{ position: "relative" }}>
+                      {/* In-flow label, not an overlay: drawn on top of the editor it covered the post's first words */}
                       {!editorHinted && (
                         <div
+                          aria-hidden="true"
                           style={{
-                            position: "absolute",
-                            top: 0,
-                            left: 0,
                             pointerEvents: "none",
-                            color: "rgba(119,124,123,0.38)",
-                            fontSize: "15.5px",
-                            lineHeight: "1.9",
-                            fontFamily: "inherit",
+                            color: "rgba(119,124,123,0.6)",
+                            fontSize: "0.75rem",
+                            letterSpacing: "0.05rem",
+                            textTransform: "uppercase",
+                            marginBottom: 8,
                             userSelect: "none",
                           }}
                         >
-                          Click to edit…
+                          Click to edit
                         </div>
                       )}
                       {/* Single editor div — React reuses this DOM node on every layout switch */}
@@ -2543,6 +2567,25 @@ export default function CreatePost() {
                   </div>
 
                   {error && <p className="text-sm text-error">{error}</p>}
+
+                  {lowCoverage && (
+                    <LowCoverageNotice
+                      sources={lowCoverage}
+                      busy={loading}
+                      opinionEnabled={noSpecificsEnabled}
+                      onAddSource={() =>
+                        logEvent({ event_type: "button_click", page_url: "/create", button_name: "low_coverage_add_source" })
+                      }
+                      onWriteOpinion={() => {
+                        logEvent({ event_type: "button_click", page_url: "/create", button_name: "low_coverage_write_opinion" });
+                        generate(undefined, { noSpecifics: true });
+                      }}
+                      onWriteWithDetails={(details) => {
+                        logEvent({ event_type: "button_click", page_url: "/create", button_name: "low_coverage_write_with_details" });
+                        generate({ context: details }, { noSpecifics: true });
+                      }}
+                    />
+                  )}
 
                   {/* Generate button */}
                   <div className="flex justify-center pt-2">

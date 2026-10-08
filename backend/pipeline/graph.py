@@ -2,9 +2,11 @@ import logging
 
 from langgraph.graph import StateGraph, END
 
+from config import features
 from llm.client import trace_calls
 from pipeline.state import PipelineState
 from pipeline.trace import build_trace_row
+from utils.post_cleanup import strip_word_count_lines
 from memory.profile_store import load_profile
 from memory.feedback_store import get_all_topics_posted
 from memory.trace_store import save_generation_trace
@@ -14,6 +16,7 @@ from agents.critic_agent import critic_node
 from agents.humanizer_agent import humanizer_node
 from agents.predictability_audit_agent import predictability_audit_node
 from agents.word_count_enforcer_agent import word_count_enforcer_node
+from agents.fact_check_agent import fact_check_node, log_fact_check
 from agents.scorer_agent import scorer_node
 
 logger = logging.getLogger(__name__)
@@ -33,8 +36,26 @@ def load_profile_node(state: PipelineState) -> PipelineState:
     return state
 
 
+LOW_COVERAGE_SUGGESTION = (
+    "Your memory doesn't cover this topic yet. Add a source about it, "
+    "or write an opinion post without specifics."
+)
+
+
+def route_after_retrieval(state: PipelineState) -> str:
+    """Stop before drafting when the knowledge base doesn't cover the topic."""
+    if (state.get("coverage_gate") or {}).get("decision") == "low_coverage":
+        return "low_coverage"
+    return "draft"
+
+
+def low_coverage_node(state: PipelineState) -> PipelineState:
+    state["final_post"] = ""
+    return state
+
+
 def finalize_node(state: PipelineState) -> PipelineState:
-    state["final_post"] = state["current_draft"]
+    state["final_post"] = strip_word_count_lines(state["current_draft"])
     return state
 
 
@@ -70,12 +91,19 @@ def build_graph() -> StateGraph:
     graph.add_node("humanizer", humanizer_node)
     graph.add_node("predictability_audit", predictability_audit_node)
     graph.add_node("word_count_enforcer", word_count_enforcer_node)
+    graph.add_node("fact_checker", fact_check_node)
     graph.add_node("scorer", scorer_node)
     graph.add_node("finalize", finalize_node)
+    graph.add_node("low_coverage", low_coverage_node)
 
     graph.set_entry_point("load_profile")
     graph.add_edge("load_profile", "retrieval")
-    graph.add_edge("retrieval", "draft")
+    graph.add_conditional_edges(
+        "retrieval",
+        route_after_retrieval,
+        {"draft": "draft", "low_coverage": "low_coverage"},
+    )
+    graph.add_edge("low_coverage", END)
     graph.add_edge("draft", "critic")
     graph.add_edge("critic", "humanizer")
     graph.add_edge("humanizer", "predictability_audit")
@@ -95,7 +123,8 @@ def build_graph() -> StateGraph:
             "word_count_enforcer": "word_count_enforcer",
         },
     )
-    graph.add_edge("word_count_enforcer", "finalize")
+    graph.add_edge("word_count_enforcer", "fact_checker")
+    graph.add_edge("fact_checker", "finalize")
     graph.add_edge("finalize", END)
 
     return graph.compile()
@@ -113,7 +142,14 @@ def run_pipeline(
     context: str = "",
     quality: str = "standard",
     user_id: str = "default",
+    no_specifics: bool = False,
 ) -> dict:
+    """Run the pipeline. Returns status "ok" with the post, or status
+    "low_coverage" (empty post, closest_sources, suggestion) when the coverage
+    gate stops it before drafting. no_specifics=True skips the gate; it raises
+    ValueError while config.features.NO_SPECIFICS_MODE_ENABLED is off."""
+    if no_specifics and not features.NO_SPECIFICS_MODE_ENABLED:
+        raise ValueError("no-specifics mode is disabled (config.features.NO_SPECIFICS_MODE_ENABLED)")
     initial_state: PipelineState = {
         "topic": topic,
         "format": format,
@@ -127,6 +163,8 @@ def run_pipeline(
         "critic_brief": {},
         "draft_history": [],
         "score_history": [],
+        "specifics_guard": [],
+        "no_specifics": no_specifics,
     }
 
     with trace_calls() as calls:
@@ -139,7 +177,30 @@ def run_pipeline(
     except Exception:
         logger.exception("generation trace write failed for user %s", user_id)
 
+    # Log-only fact check (normal mode, see fact_check_agent.enforced): the caller
+    # runs this after responding (/generate: BackgroundTasks; evals: after timing).
+    fact_check_job = None
+    if trace_id and (result.get("fact_check") or {}).get("mode") == "log_only":
+        fact_check_job = lambda: log_fact_check(result, trace_id)  # noqa: E731
+
+    gate = result.get("coverage_gate") or {}
+    if gate.get("decision") == "low_coverage":
+        return {
+            "status": "low_coverage",
+            "post": "",
+            "score": 0,
+            "score_feedback": [],
+            "iterations": 0,
+            "archetype": "",
+            "scored": False,
+            "retrieval_confidence": result.get("retrieval_confidence", "low"),
+            "closest_sources": gate.get("closest_sources", []),
+            "suggestion": LOW_COVERAGE_SUGGESTION,
+            "trace_id": trace_id,
+        }
+
     return {
+        "status": "ok",
         "post": result.get("final_post", result.get("current_draft", "")),
         "score": result.get("score", 0),
         "score_feedback": result.get("score_feedback", []),
@@ -148,4 +209,5 @@ def run_pipeline(
         "scored": quality == "polished",
         "retrieval_confidence": result.get("retrieval_confidence", "medium"),
         "trace_id": trace_id,
+        "fact_check_job": fact_check_job,
     }

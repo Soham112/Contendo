@@ -20,7 +20,10 @@ RPC required:
   See migrations/002_add_memory_context.sql for the updated RPC definition.
 """
 
+import json
 import logging
+import math
+import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Optional
@@ -28,12 +31,12 @@ from typing import Optional
 from rank_bm25 import BM25Okapi
 from sentence_transformers import SentenceTransformer
 
+from config.retrieval import RELEVANCE_THRESHOLD  # noqa: F401  (re-exported for callers)
 from db.supabase_client import supabase
 
 logger = logging.getLogger(__name__)
 
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-RELEVANCE_THRESHOLD = 0.3
 
 # ---------------------------------------------------------------------------
 # BM25 in-memory cache
@@ -133,12 +136,14 @@ def query_similar(
     query: str,
     user_id: str = "default",
     n_results: int = 8,
+    embedding: Optional[list[float]] = None,
 ) -> list[dict]:
-    """Embed query locally and call match_embeddings RPC.
+    """Embed query locally (unless `embedding` is given) and call match_embeddings RPC.
 
     Returns list of dicts with keys: content, metadata (dict), similarity.
     """
-    embedding = embed_texts([query])[0]
+    if embedding is None:
+        embedding = embed_texts([query])[0]
 
     response = supabase.rpc("match_embeddings", {
         "query_embedding": embedding,
@@ -151,9 +156,8 @@ def query_similar(
         content = row.get("content", "")
         results.append({
             # Flat fields — retrieval_agent accesses these directly
-            # Row id for generation traces. Deliberately not "id": _rrf_merge and
-            # entity enrichment key vector hits by source_id_chunk_index, which
-            # differs from the row id for consolidation chunks.
+            # Row id. Fusion keys every hit by row id (see _chunk_key), which
+            # differs from source_id_chunk_index for consolidation chunks.
             "chunk_id": row.get("id", ""),
             "text": content,
             "content": content,
@@ -213,9 +217,43 @@ def query_similar_batch(
 # BM25 helpers
 # ---------------------------------------------------------------------------
 
+# English function words, plus a few generic words ("first", "lessons") that
+# matched unrelated chunks in evals. Chunks must not rank on these.
+_STOP_WORDS = frozenset("""
+a about above after again against all also am an and any are as at be because been before being
+below between both but by can could did do does doing done down during each either else even every
+few first for from further get gets got had has have having he her here hers herself him himself
+his how however i if in into is it its itself just last least less lesson lessons let like made make many
+may me might more most much must my myself never next no nor not now of off often on once one only
+or other others our ours ourselves out over own per really same say says she should since so some
+still such than that the their theirs them themselves then there these they this those though
+through to too under until up upon us very was way we well were what when where whether which
+while who whom whose why will with within without would yet you your yours yourself yourselves
+""".split())
+
+_TOKEN_RE = re.compile(r"[a-z0-9]+(?:['’][a-z]+)?")
+
+
+def _fold(token: str) -> str:
+    """Possessive and plural folding: "team's" -> "team", "trails" -> "trail", "stories" -> "story"."""
+    token = re.sub(r"['’]s?$", "", token)
+    if len(token) > 4 and token.endswith("ies"):
+        return token[:-3] + "y"
+    if len(token) > 4 and token.endswith(("sses", "shes", "ches", "xes", "zes")):
+        return token[:-2]
+    if len(token) > 3 and token.endswith("s") and not token.endswith(("ss", "us", "is")):
+        return token[:-1]
+    return token
+
+
 def _tokenize(text: str) -> list[str]:
-    """Lowercase whitespace tokenizer for BM25."""
-    return text.lower().split()
+    """BM25 tokens: lowercase, punctuation stripped, stop words dropped, plurals folded."""
+    tokens = []
+    for raw in _TOKEN_RE.findall(text.lower()):
+        token = _fold(raw)
+        if len(token) > 1 and raw not in _STOP_WORDS and token not in _STOP_WORDS:
+            tokens.append(token)
+    return tokens
 
 
 def _fetch_corpus_for_bm25(user_id: str) -> list[dict]:
@@ -283,20 +321,33 @@ def _get_or_build_bm25(user_id: str) -> tuple:
     return bm25, corpus
 
 
+def _bm25_upper_bound(bm25: BM25Okapi, tokens: list[str]) -> float:
+    """Most a single chunk could score for these tokens: sum of idf * (k1 + 1).
+
+    Tokens missing from the corpus count with the idf of an unseen term, so a
+    query whose distinctive words the user never wrote about ("marathon")
+    normalises low even if a chunk matches its generic words.
+    """
+    unseen_idf = math.log((bm25.corpus_size + 0.5) / 0.5)
+    return sum(bm25.idf.get(t, unseen_idf) for t in tokens) * (bm25.k1 + 1)
+
+
 def _query_bm25(query: str, user_id: str, n_results: int = 8) -> list[dict]:
     """Score query against full user corpus with BM25; return top-N results.
 
     Uses the module-level cache — cold path fetches from Supabase once,
     warm path scores in milliseconds.
 
-    BM25-surfaced results carry similarity=0.35 (above RELEVANCE_THRESHOLD)
-    so downstream filtering does not discard them.
+    Each result carries bm25_score and bm25_norm (score / _bm25_upper_bound, 0-1).
+    No similarity is set here: query_similar_hybrid fills in the real cosine.
     """
     bm25, corpus = _get_or_build_bm25(user_id)
-    if not bm25:
+    tokens = _tokenize(query)
+    if not bm25 or not tokens:
         return []
 
-    scores = bm25.get_scores(_tokenize(query))
+    scores = bm25.get_scores(tokens)
+    bound = _bm25_upper_bound(bm25, tokens)
     top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:n_results]
 
     results = []
@@ -305,11 +356,56 @@ def _query_bm25(query: str, user_id: str, n_results: int = 8) -> list[dict]:
             break
         result = dict(corpus[idx])
         result["bm25_score"] = float(scores[idx])
-        # Proxy similarity: above RELEVANCE_THRESHOLD so the chunk isn't filtered
-        # out, but below the "high confidence" bar (>0.45) to signal BM25 origin.
-        result["similarity"] = 0.35
+        result["bm25_norm"] = round(float(scores[idx]) / bound, 4) if bound > 0 else 0.0
         results.append(result)
     return results
+
+
+def _parse_embedding(value) -> Optional[list[float]]:
+    """pgvector comes back from PostgREST as a string "[0.1,...]"; tests store lists."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return json.loads(value)
+    return list(value)
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    norm = math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
+    return dot / norm if norm else 0.0
+
+
+def _fill_real_similarity(results: list[dict], query_embedding: list[float], user_id: str) -> None:
+    """Give hits that only BM25 found their real cosine similarity to the query."""
+    missing = [r for r in results if "similarity" not in r]
+    if not missing:
+        return
+    ids = [_chunk_key(r) for r in missing]
+    rows = (
+        supabase.table("embeddings")
+        .select("id,embedding")
+        .eq("user_id", user_id)
+        .in_("id", ids)
+        .execute()
+    ).data or []
+    vectors = {row["id"]: _parse_embedding(row.get("embedding")) for row in rows}
+    for r in missing:
+        vec = vectors.get(_chunk_key(r))
+        r["similarity"] = round(_cosine(query_embedding, vec), 4) if vec else 0.0
+
+
+def _chunk_key(result: dict) -> str:
+    """The row id. Vector hits carry it as chunk_id, BM25 and entity hits as id.
+
+    Only legacy dicts without either fall back to source_id_chunk_index (the
+    row id of a regular chunk, but not of a consolidation chunk).
+    """
+    return (
+        result.get("chunk_id")
+        or result.get("id")
+        or f"{result.get('source_id')}_{result.get('chunk_index')}"
+    )
 
 
 def _rrf_merge(
@@ -328,21 +424,22 @@ def _rrf_merge(
     which matters for _compute_retrieval_confidence downstream. Its BM25 score
     is copied onto it. Every returned chunk gets rrf_score and rrf_rank (1-based).
     """
-    combined: dict = {}  # chunk_id → {"score": float, "result": dict}
+    combined: dict = {}  # row id → {"score": float, "result": dict}
 
     for rank, result in enumerate(vector_results):
-        cid = result.get("id") or f"{result.get('source_id')}_{result.get('chunk_index')}"
+        cid = _chunk_key(result)
         entry = combined.setdefault(cid, {"score": 0.0, "result": result})
         entry["score"] += 1.0 / (k + rank + 1)
         entry["result"] = result  # vector result has real similarity — keep it
 
     for rank, result in enumerate(bm25_results):
-        cid = result.get("id") or f"{result.get('source_id')}_{result.get('chunk_index')}"
+        cid = _chunk_key(result)
         if cid in combined:
             combined[cid]["score"] += 1.0 / (k + rank + 1)
-            # Already have the vector version — don't overwrite with BM25 proxy
-            if "bm25_score" in result:
-                combined[cid]["result"]["bm25_score"] = result["bm25_score"]
+            # Keep the vector version (it has the similarity); copy the BM25 scores onto it
+            for field in ("bm25_score", "bm25_norm"):
+                if field in result:
+                    combined[cid]["result"][field] = result[field]
         else:
             combined[cid] = {"score": 1.0 / (k + rank + 1), "result": result}
 
@@ -381,9 +478,10 @@ def query_similar_hybrid(
     """
     vector_results: list[dict] = []
     bm25_results: list[dict] = []
+    query_embedding = embed_texts([query])[0]
 
     with ThreadPoolExecutor(max_workers=2) as executor:
-        f_vector = executor.submit(query_similar, query, user_id, n_results)
+        f_vector = executor.submit(query_similar, query, user_id, n_results, query_embedding)
         f_bm25   = executor.submit(_query_bm25,   query, user_id, n_results)
         try:
             vector_results = f_vector.result(timeout=10)
@@ -397,11 +495,19 @@ def query_similar_hybrid(
     if not vector_results and not bm25_results:
         return []
     if not bm25_results:
-        return vector_results
-    if not vector_results:
-        return bm25_results
+        merged = vector_results
+    elif not vector_results:
+        merged = bm25_results
+    else:
+        merged = _rrf_merge(vector_results, bm25_results, k=60, n_results=n_results)
 
-    return _rrf_merge(vector_results, bm25_results, k=60, n_results=n_results)
+    try:
+        _fill_real_similarity(merged, query_embedding, user_id)
+    except Exception as exc:  # never fail retrieval over this; unknown similarity counts as 0
+        logger.warning("could not compute similarity for BM25-only hits: %s", exc)
+        for r in merged:
+            r.setdefault("similarity", 0.0)
+    return merged
 
 
 def query_similar_hybrid_batch(
@@ -508,7 +614,7 @@ def get_chunks_by_ids(chunk_ids: list[str], user_id: str = "default") -> list[di
 
     Returns same format as query_similar() so the retrieval pipeline can treat
     entity-linked chunks identically to vector/BM25 results.
-    Chunks are given similarity=0.35 (above RELEVANCE_THRESHOLD, same as BM25 proxy).
+    No similarity is set: the caller fills in the real cosine (_fill_real_similarity).
     """
     if not chunk_ids:
         return []
@@ -539,7 +645,6 @@ def get_chunks_by_ids(chunk_ids: list[str], user_id: str = "default") -> list[di
             "node_type":     row.get("node_type", "chunk"),
             "memory_context": row.get("memory_context"),
             "ingested_at":   row.get("ingested_at", ""),
-            "similarity":    0.35,  # entity-linked proxy — above threshold, below high-confidence bar
             "metadata": {
                 "source_id":      row.get("source_id", ""),
                 "source_title":   row.get("source_title", ""),

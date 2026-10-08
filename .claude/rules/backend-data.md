@@ -8,6 +8,7 @@ paths:
 
 # Data, routing, and auth rules
 
+- Follow "Engineering standard: no cheap fixes" in CLAUDE.md before proposing any fix.
 - Use the helpers in `backend/memory/` for database access; don't query Supabase directly from routers.
 - Every Supabase query filters by `user_id`, or checks ownership first (see `_post_owned_by` in `feedback_store.py` for the pattern). The service-role key bypasses RLS, so a missing filter leaks data across users.
 - Embeddings live in the `embeddings` table and are always scoped by `user_id`. After writing chunks, call `invalidate_bm25_cache(user_id)`.

@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Any
 
 from db.supabase_client import supabase
@@ -95,6 +96,20 @@ def save_writing_sample(user_id: str, sample: str, max_samples: int = 10) -> Non
     logger.info(f"save_writing_sample: added sample for user_id={user_id}, total={len(samples)}")
 
 
+# Writing rules that ask for "real numbers, real situations" push every prompt
+# that reads the profile towards invented specifics when the sources have none.
+_SPECIFICS_RULE_RE = re.compile(
+    r"real (?:numbers|situations|examples|moments)|specific numbers?|concrete examples|use numbers", re.I)
+_SPECIFICS_RULE_QUALIFIER = (
+    " (Only numbers and situations stated in the knowledge base, the profile or the request. "
+    "Never invent them; without them, make the point through reasoning.)"
+)
+
+
+def _soften_specifics_rule(rule: str) -> str:
+    return rule + _SPECIFICS_RULE_QUALIFIER if _SPECIFICS_RULE_RE.search(rule) else rule
+
+
 def profile_to_context_string(profile: dict[str, Any]) -> str:
     lines = [
         f"Name: {profile.get('name', 'Unknown')}",
@@ -109,7 +124,7 @@ def profile_to_context_string(profile: dict[str, Any]) -> str:
         lines += ["", "Voice: " + ", ".join(voice)]
     rules = profile.get("writing_rules", [])
     if rules:
-        lines += ["", "Writing rules:", *[f"  - {rule}" for rule in rules]]
+        lines += ["", "Writing rules:", *[f"  - {_soften_specifics_rule(rule)}" for rule in rules]]
     topics = profile.get("topics_of_expertise", [])
     if topics:
         lines += ["", "Topics of expertise: " + ", ".join(topics)]

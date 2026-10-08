@@ -1,7 +1,7 @@
 import logging
 
 from anthropic import APIStatusError, InternalServerError
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
@@ -9,6 +9,7 @@ from agents.humanizer_agent import refine_draft
 from agents.scorer_agent import score_text
 from agents.visual_agent import generate_visuals, generate_svg_for_diagram
 from auth.supabase_jwt import get_user_id_dep
+from config import features
 from pipeline.graph import run_pipeline
 
 logger = logging.getLogger(__name__)
@@ -25,9 +26,20 @@ class GenerateRequest(BaseModel):
     length: str = "standard"
     context: str = ""
     quality: str = "standard"
+    # Skip the coverage gate and write an opinion post without specifics.
+    no_specifics: bool = False
+
+
+class ClosestSource(BaseModel):
+    title: str
+    preview: str
+    similarity: float
 
 
 class GenerateResponse(BaseModel):
+    # "ok", or "low_coverage": the knowledge base doesn't cover the topic, so
+    # nothing was drafted (post is ""); see closest_sources and suggestion.
+    status: str = "ok"
     post: str
     score: int
     score_feedback: list[str]
@@ -36,6 +48,10 @@ class GenerateResponse(BaseModel):
     scored: bool = False
     retrieval_confidence: str = "medium"
     trace_id: str | None = None  # generation_traces.id; None if the trace write failed
+    closest_sources: list[ClosestSource] = []
+    suggestion: str = ""
+    # Whether the low-coverage notice may offer an opinion post without specifics.
+    no_specifics_enabled: bool = False
 
 
 class ScoreRequest(BaseModel):
@@ -112,10 +128,17 @@ def _feedback_to_instructions(feedback_items: list[str]) -> str:
 @router.post("/generate", response_model=GenerateResponse)
 async def generate(
     req: GenerateRequest,
+    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_user_id_dep),
 ) -> GenerateResponse:
     if not req.topic.strip():
         raise HTTPException(status_code=400, detail="topic is required")
+    if req.no_specifics and not features.NO_SPECIFICS_MODE_ENABLED:
+        raise HTTPException(
+            status_code=400,
+            detail="Opinion posts without specifics are turned off for now. "
+                   "Add a source about this topic, then generate again.",
+        )
 
     try:
         result = await run_in_threadpool(
@@ -127,13 +150,21 @@ async def generate(
             context=req.context,
             quality=req.quality,
             user_id=user_id,
+            no_specifics=req.no_specifics,
         )
     except (InternalServerError, APIStatusError) as e:
         _raise_anthropic_error(e)
     except Exception:
         _raise_internal_error("POST /generate")
 
+    # Log-only fact check: runs after the response is sent, adds no latency.
+    if result.get("fact_check_job"):
+        background_tasks.add_task(result["fact_check_job"])
+
     return GenerateResponse(
+        status=result.get("status", "ok"),
+        closest_sources=result.get("closest_sources", []),
+        suggestion=result.get("suggestion", ""),
         post=result["post"],
         score=result["score"],
         score_feedback=result["score_feedback"],
@@ -142,6 +173,7 @@ async def generate(
         scored=result.get("scored", False),
         retrieval_confidence=result.get("retrieval_confidence", "medium"),
         trace_id=result.get("trace_id"),
+        no_specifics_enabled=features.NO_SPECIFICS_MODE_ENABLED,
     )
 
 

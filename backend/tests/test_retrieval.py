@@ -3,25 +3,30 @@
 import pytest
 
 
-def _hits(*similarities):
-    return [{"id": f"c{i}", "similarity": s} for i, s in enumerate(similarities)]
+def _hits(*similarities, bm25=()):
+    hits = [{"id": f"c{i}", "similarity": s} for i, s in enumerate(similarities)]
+    hits += [{"id": f"b{i}", "similarity": 0.0, "bm25_norm": b} for i, b in enumerate(bm25)]
+    return hits
 
 
 # --- Confidence --------------------------------------------------------------
+# From top-1 real cosine and top-1 normalized BM25 (config/retrieval.py):
+# high: cosine >= 0.45; medium: cosine >= 0.30 or BM25 >= 0.30; else low.
 
-@pytest.mark.parametrize("similarities, expected", [
-    ((), "low"),
-    ((0.1, 0.2), "low"),
-    ((0.31, 0.32), "low"),               # only 2 above 0.30
-    ((0.31, 0.32, 0.33), "medium"),      # 3 above 0.30
-    ((0.5,), "medium"),                  # 1 above 0.45
-    ((0.5, 0.6, 0.7), "high"),           # 3 above 0.45
-    ((0.46, 0.46, 0.45), "medium"),      # 0.45 itself is not "above"
+@pytest.mark.parametrize("similarities, bm25, expected", [
+    ((), (), "low"),
+    ((0.1, 0.2), (), "low"),
+    ((0.29, 0.29, 0.29), (0.29,), "low"),   # many near-misses still don't count
+    ((0.30,), (), "medium"),
+    ((0.1,), (0.30,), "medium"),            # a strong keyword match alone
+    ((0.44,), (0.9,), "medium"),            # BM25 never makes it "high"
+    ((0.45,), (), "high"),
+    ((0.1, 0.7), (), "high"),               # only the best hit matters
 ])
-def test_retrieval_confidence_thresholds(similarities, expected):
+def test_retrieval_confidence_thresholds(similarities, bm25, expected):
     from agents.retrieval_agent import _compute_retrieval_confidence
 
-    assert _compute_retrieval_confidence(_hits(*similarities)) == expected
+    assert _compute_retrieval_confidence(_hits(*similarities, bm25=bm25)) == expected
 
 
 # --- RRF fusion ----------------------------------------------------------------
@@ -54,16 +59,12 @@ def test_rrf_respects_result_limit():
     assert len(_rrf_merge(vector, bm25, n_results=8)) == 8
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "known issue: BM25-only hits get a fixed similarity of 0.35, so unrelated "
-    "keyword matches count toward 'medium' confidence (fix/retrieval-confidence)"
-))
 def test_keyword_only_matches_do_not_inflate_confidence():
     from agents.retrieval_agent import _compute_retrieval_confidence
     from memory.vector_store import _rrf_merge
 
-    vector = [{"id": f"v{i}", "similarity": 0.05} for i in range(3)]   # semantically unrelated
-    bm25 = [{"id": f"b{i}", "similarity": 0.35} for i in range(3)]     # keyword-only proxies
+    vector = [{"id": f"v{i}", "similarity": 0.05} for i in range(3)]          # semantically unrelated
+    bm25 = [{"id": f"b{i}", "bm25_score": 1.2, "bm25_norm": 0.07} for i in range(3)]  # weak keyword hits
 
     assert _compute_retrieval_confidence(_rrf_merge(vector, bm25)) == "low"
 

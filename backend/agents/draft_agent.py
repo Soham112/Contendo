@@ -1,9 +1,14 @@
+import logging
+
 from llm.client import HAIKU, SONNET, complete
 from pipeline.state import PipelineState
 from pipeline.trace import record_draft
 from utils.formatters import get_format_instructions, get_archetype_instructions
 from memory.profile_store import profile_to_context_string
 from agents.retrieval_agent import resolve_attribution_frames
+from utils.specifics import find_violations, guard_entry, guard_sources, remove_sentences, retry_note
+
+logger = logging.getLogger(__name__)
 
 _ARCHETYPE_HUMAN_NAMES = {
     "incident_report": "Incident Report / Retrospective",
@@ -49,6 +54,7 @@ def _get_word_count_rule(format_type: str, length: str) -> str:
         f"The final post must be {min_w}–{max_w} words.\n"
         f"Count before outputting. If over {max_w}, cut until you are within range.\n"
         f"Never exceed {max_w} words under any circumstance.\n"
+        f"Do not print the word count.\n"
         f"---"
     )
 
@@ -90,6 +96,14 @@ Rules for this post:
 - Stopping with something real is always better than padding to a
     word count with filler
 """.strip()
+
+
+_NO_SPECIFICS_RULE = """NO-SPECIFICS RULE (highest priority — overrides all other instructions, including the knowledge base, profile and writing samples):
+The user's notes don't cover this topic, and they asked for an opinion post anyway.
+- Write what you think about the topic and why: a view, an argument, a pattern.
+- Use no number, percentage, money amount, date, month, day of the week, duration, count, or name of a person, company, product or project, unless it appears in the topic or the additional context above.
+- Tell no stories presented as things that happened: no incidents, customers, colleagues, projects or results ("at my last job", "we shipped", "last quarter").
+- Frame claims as views: "I think", "the pattern I keep seeing", "most teams"."""
 
 
 _FIRST_POST_INSTRUCTION = """FIRST POST RULE (overrides word-count and visual placeholder rules):
@@ -171,6 +185,7 @@ Knowledge base (use what's relevant, ignore the rest):
 
 Topic: {topic}
 {context_section}
+TOPIC RULE: Write about the topic as given. Don't frame it as an analogy or metaphor for the author's professional field, and don't pull in their expertise, projects or opinions unless the topic or context asks for it. The profile shapes voice, not subject.
 {posted_topics_section}
 {grounding_instruction}
 {first_post_instruction}
@@ -212,9 +227,12 @@ If a paragraph draws on both PERSONAL and LEARNING chunks,
 lead with the personal claim and use the learning chunk as supporting evidence.
 "I saw this break in production. The pattern is documented — most teams hit it at scale."
 
-FABRICATION RULE (unchanged — still applies):
+FABRICATION RULE (still applies):
 Never invent personal incidents, timestamps, colleague names, or events
-not explicitly present in personal_note chunks or user profile.
+not explicitly present in the PERSONAL EXPERIENCE chunks above or in the
+topic and additional context. The profile says who the author is; it is
+not a source of stories. Never set an incident at a company or project
+named in the profile unless a PERSONAL EXPERIENCE chunk describes it.
 ---
 
 ---
@@ -286,6 +304,7 @@ def draft_node(state: PipelineState) -> PipelineState:
             "The final post must be 120–150 words.\n"
             "Count before outputting. If over 150, cut until you are within range.\n"
             "Never exceed 150 words under any circumstance.\n"
+            "Do not print the word count.\n"
             "---"
         )
     else:
@@ -315,6 +334,11 @@ def draft_node(state: PipelineState) -> PipelineState:
             _ZERO_NOTES_GUARD + ("\n\n" + grounding_instruction if grounding_instruction else "")
         )
 
+    if state.get("no_specifics"):
+        grounding_instruction = (
+            _NO_SPECIFICS_RULE + ("\n\n" + grounding_instruction if grounding_instruction else "")
+        )
+
     first_post_instruction = _FIRST_POST_INSTRUCTION if is_first_post else ""
 
     prompt = SYSTEM_PROMPT.format(
@@ -331,20 +355,40 @@ def draft_node(state: PipelineState) -> PipelineState:
         archetype_instructions=archetype_instructions,
     )
 
-    message = complete(
-        model=SONNET,
-        max_tokens=2000,
-        messages=[{"role": "user", "content": prompt}],
-        user_id=state.get("user_id", "default"),
-        event_type="generate",
-        usage_metadata={
-            "topic": state.get("topic", ""),
-            "format": state.get("format", ""),
-            "archetype": state.get("archetype", ""),
-        },
-    )
+    state["draft_frame_block"] = chunks_text
 
-    state["current_draft"] = message.content[0].text.strip()
+    def write(violations, event_type: str) -> str:
+        message = complete(
+            model=SONNET,
+            max_tokens=2000,
+            messages=[{"role": "user", "content": prompt + retry_note(
+                violations, no_specifics=bool(state.get("no_specifics")), node="draft")}],
+            user_id=state.get("user_id", "default"),
+            event_type=event_type,
+            usage_metadata={
+                "topic": state.get("topic", ""),
+                "format": state.get("format", ""),
+                "archetype": state.get("archetype", ""),
+            },
+        )
+        return message.content[0].text.strip()
+
+    # Specifics guard: the draft may use only facts from the chunks, the profile,
+    # the topic and the context, and first-person incidents only from
+    # self-authored chunks. Retry once; then drop the sentences still at fault.
+    sources = guard_sources(state)
+    draft = write([], "generate")
+    first = find_violations(draft, sources)
+    if first:
+        draft = write(first, "generate_retry")
+        second = find_violations(draft, sources)
+        state["specifics_guard"] = [*state.get("specifics_guard", []),
+                                    guard_entry("draft", 0, first, second, fallback="sentences_removed")]
+        if second:
+            logger.warning("draft: retry still had %s; removing those sentences", [v.text for v in second])
+            draft = remove_sentences(draft, second)
+
+    state["current_draft"] = draft
     record_draft(state, "draft")
 
     return state
