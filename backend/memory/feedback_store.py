@@ -28,7 +28,8 @@ def log_post(
     authenticity_score: int,
     svg_diagrams: str | None = None,
     archetype: str = "",
-    user_id: str = "default",
+    *,
+    user_id: str,
 ) -> int:
     result = supabase.table("posts").insert({
         "topic": topic,
@@ -43,7 +44,7 @@ def log_post(
     return result.data[0]["id"] if result.data else 0
 
 
-def get_recent_posts(user_id: str = "default", limit: int = 20) -> list[dict[str, Any]]:
+def get_recent_posts(user_id: str, limit: int = 20) -> list[dict[str, Any]]:
     result = (
         supabase.table("posts")
         .select("*")
@@ -55,7 +56,7 @@ def get_recent_posts(user_id: str = "default", limit: int = 20) -> list[dict[str
     return result.data or []
 
 
-def get_all_topics_posted(user_id: str = "default") -> list[str]:
+def get_all_topics_posted(user_id: str) -> list[str]:
     result = (
         supabase.table("posts")
         .select("topic")
@@ -71,7 +72,7 @@ _UNSET = object()
 
 def update_post(
     post_id: int,
-    user_id: str = "default",
+    user_id: str,
     content=_UNSET,
     authenticity_score=_UNSET,
     svg_diagrams=_UNSET,
@@ -96,7 +97,7 @@ def update_post(
     return len(result.data) > 0
 
 
-def delete_post(post_id: int, user_id: str = "default") -> bool:
+def delete_post(post_id: int, user_id: str) -> bool:
     result = (
         supabase.table("posts")
         .delete()
@@ -111,7 +112,8 @@ def mark_published(
     post_id: int,
     platform: str,
     published_content: str | None = None,
-    user_id: str = "default",
+    *,
+    user_id: str,
 ) -> bool:
     ownership = (
         supabase.table("posts")
@@ -157,7 +159,8 @@ def add_version(
     authenticity_score: int | None,
     version_type: str,
     svg_diagrams: str | None = None,
-    user_id: str = "default",
+    *,
+    user_id: str,
 ) -> int:
     """Insert a new version row for post_id. version_number is auto-incremented per post."""
     if not _post_owned_by(post_id, user_id):
@@ -182,7 +185,7 @@ def add_version(
     return result.data[0]["id"] if result.data else 0
 
 
-def get_versions(post_id: int, user_id: str = "default") -> list[dict[str, Any]]:
+def get_versions(post_id: int, user_id: str) -> list[dict[str, Any]]:
     """Return all versions for a post ordered by version_number ascending."""
     if not _post_owned_by(post_id, user_id):
         return []
@@ -196,7 +199,7 @@ def get_versions(post_id: int, user_id: str = "default") -> list[dict[str, Any]]
     return result.data or []
 
 
-def get_best_version(post_id: int, user_id: str = "default") -> dict[str, Any] | None:
+def get_best_version(post_id: int, user_id: str) -> dict[str, Any] | None:
     """Return the version with the highest authenticity_score; latest version breaks ties."""
     if not _post_owned_by(post_id, user_id):
         return None
@@ -212,7 +215,7 @@ def get_best_version(post_id: int, user_id: str = "default") -> dict[str, Any] |
     return result.data[0] if result.data else None
 
 
-def restore_version(post_id: int, version_id: int, user_id: str = "default") -> bool:
+def restore_version(post_id: int, version_id: int, user_id: str) -> bool:
     """Restore a post's content to match a specific version."""
     version = (
         supabase.table("post_versions")
@@ -239,7 +242,7 @@ def restore_version(post_id: int, version_id: int, user_id: str = "default") -> 
     return len(result.data) > 0
 
 
-def update_latest_version_svg(post_id: int, svg_diagrams: str | None, user_id: str = "default") -> bool:
+def update_latest_version_svg(post_id: int, svg_diagrams: str | None, user_id: str) -> bool:
     """Update svg_diagrams on the most recent version row without creating a new version."""
     if not _post_owned_by(post_id, user_id):
         return False
@@ -268,7 +271,7 @@ def update_latest_version_svg(post_id: int, svg_diagrams: str | None, user_id: s
 # Retrieval stats
 # ---------------------------------------------------------------------------
 
-def increment_retrieval(user_id: str = "default", source_title: str = "") -> None:
+def increment_retrieval(user_id: str, source_title: str = "") -> None:
     try:
         existing = (
             supabase.table("source_retrieval_stats")
@@ -295,7 +298,7 @@ def increment_retrieval(user_id: str = "default", source_title: str = "") -> Non
         pass  # non-critical stat tracking
 
 
-def get_retrieval_counts(user_id: str = "default") -> dict[str, int]:
+def get_retrieval_counts(user_id: str) -> dict[str, int]:
     result = (
         supabase.table("source_retrieval_stats")
         .select("source_title,retrieval_count")

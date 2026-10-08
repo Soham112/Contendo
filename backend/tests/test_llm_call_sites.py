@@ -90,7 +90,7 @@ def test_scorer_node_passes_state_user_id(claude, usage_calls):
 
 def _refine_draft():
     from agents.humanizer_agent import refine_draft
-    refine_draft("draft", "fix it", profile={}, user_id=USER)
+    refine_draft("draft", "fix it", user_id=USER)
 
 
 def _refine_selection():

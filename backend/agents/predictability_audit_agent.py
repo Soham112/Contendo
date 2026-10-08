@@ -144,7 +144,7 @@ def predictability_audit_node(state: PipelineState) -> PipelineState:
     if state.get("quality") == "draft":
         return state
 
-    user_id = state.get("user_id", "default")
+    user_id = state["user_id"]
     post = state.get("current_draft", "")
 
     if not post.strip():

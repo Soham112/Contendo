@@ -5,21 +5,17 @@ GET  /admin/analytics-data — aggregated analytics for admin dashboard (admin-o
 """
 import asyncio
 import logging
-import os
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
-from auth.supabase_jwt import get_user_id_dep
+from auth.supabase_jwt import get_user_id_dep, require_admin
 from db.supabase_client import supabase
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-_ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "")
-
 
 # ── Pydantic models ──────────────────────────────────────────────────────────
 
@@ -31,11 +27,6 @@ class LogEventRequest(BaseModel):
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
-
-def _check_admin(x_admin_secret: str | None) -> None:
-    if not _ADMIN_SECRET or x_admin_secret != _ADMIN_SECRET:
-        raise HTTPException(status_code=403, detail="Forbidden")
-
 
 async def _insert_event(user_id: str, payload: LogEventRequest) -> None:
     """Fire-and-forget Supabase insert — all exceptions are swallowed."""
@@ -66,11 +57,9 @@ async def log_event(
 @router.get("/admin/analytics-data")
 async def get_analytics_data(
     days: int = Query(default=30, ge=1, le=365),
-    x_admin_secret: str | None = Header(None),
+    _admin_id: str = Depends(require_admin),
 ) -> dict:
     """Return aggregated analytics from the user_events table. Admin-only."""
-    _check_admin(x_admin_secret)
-
     now = datetime.now(timezone.utc)
     since = (now - timedelta(days=days)).isoformat()
     start_date = (now - timedelta(days=days)).date().isoformat()

@@ -4,10 +4,11 @@ import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import supabase from "@/lib/supabase";
+import { safeRedirectPath } from "@/lib/safe-redirect";
 
 export default function SignUpPage() {
   const searchParams = useSearchParams();
-  const redirectTo = searchParams.get("redirect_url") ?? "/create";
+  const redirectTo = safeRedirectPath(searchParams.get("redirect_url"));
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -19,7 +20,8 @@ export default function SignUpPage() {
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: window.location.origin + "/auth/callback",
+        redirectTo:
+          window.location.origin + "/auth/callback?next=" + encodeURIComponent(redirectTo),
       },
     });
   }
@@ -35,7 +37,7 @@ export default function SignUpPage() {
         emailRedirectTo:
           window.location.origin +
           "/auth/callback?next=" +
-          encodeURIComponent(redirectTo.startsWith("/") ? redirectTo : "/create"),
+          encodeURIComponent(redirectTo),
       },
     });
     if (error) {

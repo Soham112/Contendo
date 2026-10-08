@@ -33,8 +33,9 @@ frontend/tsconfig.tsbuildinfo
 backend/data/*.db
 backend/data/*.sqlite
 
-# Personal profile — gitignored, use profile.template.json as starting point
+# Personal profiles: real user data, never committed. Use profile.template.json as a starting point.
 backend/data/profile.json
+backend/data/profiles/
 
 # OS files
 .DS_Store

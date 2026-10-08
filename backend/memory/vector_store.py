@@ -71,7 +71,7 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
 # Public API
 # ---------------------------------------------------------------------------
 
-def init_chroma(user_id: str = "default"):
+def init_chroma(user_id: str):
     """No-op — retained for interface compatibility. ChromaDB removed."""
     return None
 
@@ -83,7 +83,8 @@ def upsert_chunks(
     source_id: str | None = None,
     source_title: str = "",
     ingested_at: str = "",
-    user_id: str = "default",
+    *,
+    user_id: str,
     content_hash: str = "",
     memory_context: str | None = None,
 ) -> int:
@@ -134,7 +135,7 @@ def upsert_chunks(
 
 def query_similar(
     query: str,
-    user_id: str = "default",
+    user_id: str,
     n_results: int = 8,
     embedding: Optional[list[float]] = None,
 ) -> list[dict]:
@@ -192,7 +193,7 @@ def query_similar(
 
 def query_similar_batch(
     queries: list[str],
-    user_id: str = "default",
+    user_id: str,
     n_results: int = 8,
 ) -> list[list[dict]]:
     """Embed all queries in one batch forward pass, then query each via RPC.
@@ -463,7 +464,7 @@ def invalidate_bm25_cache(user_id: str) -> None:
 
 def query_similar_hybrid(
     query: str,
-    user_id: str = "default",
+    user_id: str,
     n_results: int = 8,
 ) -> list[dict]:
     """Hybrid search: pgvector cosine similarity + BM25 full-corpus ranking.
@@ -512,14 +513,14 @@ def query_similar_hybrid(
 
 def query_similar_hybrid_batch(
     queries: list[str],
-    user_id: str = "default",
+    user_id: str,
     n_results: int = 5,
 ) -> list[list[dict]]:
     """Delegates to query_similar_batch (pgvector handles ANN natively)."""
     return query_similar_batch(queries, user_id=user_id, n_results=n_results)
 
 
-def query_by_hash(content_hash: str, user_id: str = "default") -> dict | None:
+def query_by_hash(content_hash: str, user_id: str) -> dict | None:
     """Check if content with this hash already exists.
 
     Returns {"chunk_count": int, "tags": list[str]} if found, None otherwise.
@@ -541,7 +542,7 @@ def query_by_hash(content_hash: str, user_id: str = "default") -> dict | None:
     return {"chunk_count": len(rows), "tags": tags}
 
 
-def get_all_sources(user_id: str = "default") -> list[dict]:
+def get_all_sources(user_id: str) -> list[dict]:
     """Return all sources for the user, grouped by source_id, sorted newest first."""
     response = (
         supabase.table("embeddings")
@@ -588,7 +589,7 @@ def get_all_sources(user_id: str = "default") -> list[dict]:
     return sources
 
 
-def delete_source(source_title: str, user_id: str = "default") -> dict:
+def delete_source(source_title: str, user_id: str) -> dict:
     """Delete all chunks with matching source_title for this user.
 
     Returns {"deleted": True, "chunks_removed": int}.
@@ -609,7 +610,7 @@ def delete_source(source_title: str, user_id: str = "default") -> dict:
     return {"deleted": True, "chunks_removed": count}
 
 
-def get_chunks_by_ids(chunk_ids: list[str], user_id: str = "default") -> list[dict]:
+def get_chunks_by_ids(chunk_ids: list[str], user_id: str) -> list[dict]:
     """Fetch full chunk dicts for a list of chunk_ids (entity-linked retrieval).
 
     Returns same format as query_similar() so the retrieval pipeline can treat
@@ -659,7 +660,7 @@ def get_chunks_by_ids(chunk_ids: list[str], user_id: str = "default") -> list[di
     return results
 
 
-def get_chunks_for_source(source_id: str, user_id: str = "default") -> list[dict]:
+def get_chunks_for_source(source_id: str, user_id: str) -> list[dict]:
     """Return all chunks for a source_id, sorted by chunk_index ascending.
 
     Each dict: {"text": str, "chunk_index": int, "source_id": str}
@@ -688,7 +689,7 @@ def get_chunks_for_source(source_id: str, user_id: str = "default") -> list[dict
 def get_adjacent_chunks(
     source_id: str,
     chunk_index: int,
-    user_id: str = "default",
+    user_id: str,
     window: int = 1,
 ) -> list[str]:
     """Return texts of chunks adjacent to chunk_index within the same source.
@@ -719,7 +720,7 @@ def get_adjacent_chunks(
     return [text for _, text in adjacent]
 
 
-def get_stats(user_id: str = "default") -> dict:
+def get_stats(user_id: str) -> dict:
     """Return total chunk count and unique tags for the user.
 
     Returns {"total_chunks": int, "tags": list[str]}.
@@ -748,9 +749,9 @@ def get_stats(user_id: str = "default") -> dict:
 # Legacy aliases — kept so any remaining callers don't break at import time
 # ---------------------------------------------------------------------------
 
-def get_total_chunks(user_id: str = "default") -> int:
+def get_total_chunks(user_id: str) -> int:
     return get_stats(user_id)["total_chunks"]
 
 
-def get_all_tags(user_id: str = "default") -> list[str]:
+def get_all_tags(user_id: str) -> list[str]:
     return get_stats(user_id)["tags"]

@@ -110,7 +110,7 @@ def word_count_enforcer_node(state: PipelineState) -> PipelineState:
         logger.info("word_count_enforcer: %d words is within range — no adjustment needed", word_count)
         return state
 
-    user_id = state.get("user_id", "default")
+    user_id = state["user_id"]
 
     try:
         if word_count > max_words:

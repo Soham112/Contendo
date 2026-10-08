@@ -7,6 +7,7 @@ paths:
 # Agent and pipeline rules
 
 - Follow "Engineering standard: no cheap fixes" in CLAUDE.md before proposing any fix.
+- Follow "Files and code organisation" in CLAUDE.md before creating a file or helper.
 - PROMPTS.md holds every agent prompt verbatim. When a prompt changes, update PROMPTS.md and the agent file together; they must never diverge. Show me prompt diffs before applying them.
 - Pipeline order (`backend/pipeline/graph.py`): load_profile → retrieval → draft → critic → humanizer → predictability_audit → (polished only: scorer, loops to humanizer while score < 75 and iterations < 3) → word_count_enforcer → fact_checker (enforced in no-specifics mode; log-only in normal mode, see `config/fact_check.py`) → finalize.
 - Pipeline state fields are declared in `backend/pipeline/state.py`. Add new fields there; don't remove existing ones without checking every reader.

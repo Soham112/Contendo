@@ -41,7 +41,7 @@ def upsert_source_node(
     }, on_conflict="source_id").execute()
 
 
-def get_source_node(source_id: str, user_id: str = "default") -> dict[str, Any] | None:
+def get_source_node(source_id: str, user_id: str) -> dict[str, Any] | None:
     result = (
         supabase.table("source_nodes")
         .select("*")
@@ -56,7 +56,7 @@ def get_source_node(source_id: str, user_id: str = "default") -> dict[str, Any] 
     return row
 
 
-def source_node_exists(source_id: str, user_id: str = "default") -> bool:
+def source_node_exists(source_id: str, user_id: str) -> bool:
     result = (
         supabase.table("source_nodes")
         .select("source_id")
@@ -67,7 +67,7 @@ def source_node_exists(source_id: str, user_id: str = "default") -> bool:
     return bool(result.data)
 
 
-def get_sources_for_user(user_id: str = "default") -> list[dict[str, Any]]:
+def get_sources_for_user(user_id: str) -> list[dict[str, Any]]:
     result = (
         supabase.table("source_nodes")
         .select("*")
@@ -105,7 +105,7 @@ def upsert_topic_node(
     }, on_conflict="topic_id").execute()
 
 
-def get_topic_node(topic_id: str, user_id: str = "default") -> dict[str, Any] | None:
+def get_topic_node(topic_id: str, user_id: str) -> dict[str, Any] | None:
     result = (
         supabase.table("topic_nodes")
         .select("*")
@@ -125,7 +125,7 @@ def get_topic_node(topic_id: str, user_id: str = "default") -> dict[str, Any] | 
     return row
 
 
-def get_topics_for_user(user_id: str = "default") -> list[dict[str, Any]]:
+def get_topics_for_user(user_id: str) -> list[dict[str, Any]]:
     result = (
         supabase.table("topic_nodes")
         .select("*")
@@ -145,7 +145,7 @@ def get_topics_for_user(user_id: str = "default") -> list[dict[str, Any]]:
     return results
 
 
-def find_matching_topic(tags: list[str], user_id: str = "default") -> dict[str, Any] | None:
+def find_matching_topic(tags: list[str], user_id: str) -> dict[str, Any] | None:
     """Return the first topic node that shares 2+ tags with the given tag list.
 
     Pure Python scan — topic counts are small (< 50 typically).
@@ -162,7 +162,7 @@ def find_matching_topic(tags: list[str], user_id: str = "default") -> dict[str, 
     return None
 
 
-def add_source_to_topic(topic_id: str, source_id: str, user_id: str = "default") -> None:
+def add_source_to_topic(topic_id: str, source_id: str, user_id: str) -> None:
     """Idempotently append source_id to a topic's child_source_ids."""
     topic = get_topic_node(topic_id, user_id)
     if not topic:

@@ -1,29 +1,28 @@
 """Admin router — usage analytics endpoint.
 
-All routes require the x-admin-secret header to match the ADMIN_SECRET env var.
+Admin routes use Depends(require_admin): the caller's Supabase user ID must be
+in the ADMIN_USER_IDS env var. GET /admin/me tells any signed-in user whether
+they are an admin, so the frontend can hide admin links.
 """
-import os
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends
 
+from auth.supabase_jwt import get_user_id_dep, is_admin, require_admin
 from db.supabase_client import supabase
 
 router = APIRouter(prefix="/admin")
 
-_ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "")
 
-
-def _check_admin(x_admin_secret: str | None) -> None:
-    if not _ADMIN_SECRET or x_admin_secret != _ADMIN_SECRET:
-        raise HTTPException(status_code=403, detail="Forbidden")
+@router.get("/me")
+async def get_admin_status(user_id: str = Depends(get_user_id_dep)) -> dict:
+    """Whether the signed-in user is an admin. Cosmetic: the admin routes enforce it."""
+    return {"is_admin": is_admin(user_id)}
 
 
 @router.get("/usage")
-async def get_usage(x_admin_secret: str | None = Header(None)) -> dict:
+async def get_usage(_admin_id: str = Depends(require_admin)) -> dict:
     """Return aggregated usage stats from the usage_events table."""
-    _check_admin(x_admin_secret)
-
     now = datetime.now(timezone.utc)
     today_str = now.date().isoformat()
     week_since = (now - timedelta(days=7)).isoformat()

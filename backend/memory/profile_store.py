@@ -36,7 +36,7 @@ DEFAULT_PROFILE: dict[str, Any] = {
 }
 
 
-def load_profile(user_id: str = "default") -> dict[str, Any]:
+def load_profile(user_id: str) -> dict[str, Any]:
     logger.info(f"load_profile: fetching from Supabase for user_id={user_id}")
     result = (
         supabase.table("profiles")
@@ -59,7 +59,7 @@ def load_profile(user_id: str = "default") -> dict[str, Any]:
     return data
 
 
-def save_profile(profile: dict[str, Any], user_id: str = "default") -> None:
+def save_profile(profile: dict[str, Any], user_id: str) -> None:
     logger.info(f"save_profile: upserting to Supabase for user_id={user_id}")
     supabase.table("profiles").upsert({"id": user_id, "data": profile}).execute()
     logger.info(f"save_profile: successfully saved profile for user_id={user_id}")

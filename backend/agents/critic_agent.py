@@ -153,7 +153,7 @@ def critic_node(state: PipelineState) -> PipelineState:
             model=HAIKU,
             max_tokens=600,
             messages=[{"role": "user", "content": prompt}],
-            user_id=state.get("user_id", "default"),
+            user_id=state["user_id"],
             event_type="critic",
         )
 

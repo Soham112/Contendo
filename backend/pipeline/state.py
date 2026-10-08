@@ -10,7 +10,7 @@ class PipelineState(TypedDict, total=False):
     length: str  # "concise" | "standard" | "long-form" — defaults to "standard" at runtime
     context: Optional[str]
     quality: str  # "draft" | "standard" | "polished" — defaults to "standard" at runtime
-    user_id: str  # ChromaDB collection namespace — defaults to "default"; replaced with real user ID when auth is added
+    user_id: str  # authenticated user; every store call is scoped by it
 
     # Loaded profile
     profile: dict[str, Any]

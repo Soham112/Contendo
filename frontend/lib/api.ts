@@ -405,5 +405,10 @@ export function useApi() {
       }
       return res;
     },
+
+    // ── Admin (the backend checks the caller against ADMIN_USER_IDS) ───────
+    getAdminStatus: () => apiFetch("/admin/me"),
+    getAdminUsage: () => apiFetch("/admin/usage"),
+    getAdminAnalytics: (days: number) => apiFetch(`/admin/analytics-data?days=${days}`),
   };
 }

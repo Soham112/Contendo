@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useApi } from "@/lib/api";
+import DiagramView from "@/components/DiagramView";
+import { svgToPngDataURL } from "@/lib/svg";
 
 const SS_POST = "contentOS_last_post";
 const SS_SCORE = "contentOS_last_score";
@@ -47,43 +49,13 @@ interface Post {
   published_content: string | null;
 }
 
-function svgToDataURL(svgCode: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(svgCode, "image/svg+xml");
-    const svgEl = doc.querySelector("svg");
-    const viewBox = svgEl?.getAttribute("viewBox") ?? "0 0 680 400";
-    const parts = viewBox.split(/[\s,]+/);
-    const vbW = parseFloat(parts[2]) || 680;
-    const vbH = parseFloat(parts[3]) || 400;
-
-    const canvas = document.createElement("canvas");
-    canvas.width = vbW * 2;
-    canvas.height = vbH * 2;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) { reject(new Error("No canvas context")); return; }
-
-    const img = new Image();
-    const blob = new Blob([svgCode], { type: "image/svg+xml" });
-    const url = URL.createObjectURL(blob);
-
-    img.onload = () => {
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL("image/png"));
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Image load failed")); };
-    img.src = url;
-  });
-}
-
 function HistoryDiagramCard({ diagram }: { diagram: Diagram }) {
   const [pngState, setPngState] = useState<"idle" | "opened" | "blocked">("idle");
   const [fallbackDataURL, setFallbackDataURL] = useState<string | null>(null);
 
   const handleOpen = async () => {
     try {
-      const dataURL = await svgToDataURL(diagram.svg_code);
+      const dataURL = await svgToPngDataURL(diagram.svg_code);
       const win = window.open();
       if (win) {
         win.document.write(
@@ -115,7 +87,7 @@ function HistoryDiagramCard({ diagram }: { diagram: Diagram }) {
           </span>
         </p>
       </div>
-      <div className="p-3 overflow-x-auto" dangerouslySetInnerHTML={{ __html: diagram.svg_code }} />
+      <DiagramView className="p-3 overflow-x-auto" svg={diagram.svg_code} description={diagram.description} />
       <div className="px-4 py-2.5 border-t border-surface-container-high space-y-2">
         <div className="flex items-center gap-3">
           <button

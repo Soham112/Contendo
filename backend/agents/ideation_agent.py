@@ -150,7 +150,7 @@ Return nothing outside the JSON array."""
 
 
 
-def generate_suggestions(count: int = 8, topic: str | None = None, user_id: str = "default") -> list[dict] | dict:
+def generate_suggestions(count: int = 8, topic: str | None = None, *, user_id: str) -> list[dict] | dict:
     count = min(max(count, 1), 15)
 
     profile = load_profile(user_id=user_id)

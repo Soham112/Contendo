@@ -2,11 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import supabase from "@/lib/supabase";
-
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-const ADMIN_SECRET = process.env.NEXT_PUBLIC_ADMIN_SECRET ?? "";
-const ADMIN_EMAIL = "soham112000@gmail.com";
+import { useApi } from "@/lib/api";
+import { useIsAdmin } from "@/lib/useIsAdmin";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -196,27 +193,21 @@ function TopUsersTable({ users }: { users: TopUser[] }) {
 
 export default function AdminPage() {
   const router = useRouter();
-  const [authorized, setAuthorized] = useState<boolean | null>(null);
+  const api = useApi();
+  // Decides what to show; GET /admin/usage enforces access itself.
+  const authorized = useIsAdmin();
   const [data, setData] = useState<UsageData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Auth guard: only soham112000@gmail.com
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user?.email === ADMIN_EMAIL) {
-        setAuthorized(true);
-      } else {
-        router.replace("/");
-      }
-    });
-  }, [router]);
+    if (authorized === false) router.replace("/");
+  }, [authorized, router]);
 
   // Fetch usage data once authorized
   useEffect(() => {
     if (!authorized) return;
-    fetch(`${API}/admin/usage`, {
-      headers: { "x-admin-secret": ADMIN_SECRET },
-    })
+    api
+      .getAdminUsage()
       .then(async (r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json() as Promise<UsageData>;
@@ -225,7 +216,7 @@ export default function AdminPage() {
       .catch((e) => setError(String(e)));
   }, [authorized]);
 
-  if (authorized === null) {
+  if (!authorized) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <span className="text-sm text-secondary opacity-60">Checking access…</span>

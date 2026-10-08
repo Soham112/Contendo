@@ -38,7 +38,9 @@ OPTIONAL_FILE_KEYS = ("LOG_LEVEL", "SUPABASE_JWT_SECRET")
 # Every environment variable the backend reads (tests/test_guard.py checks this
 # list against the backend source). Each one is set explicitly by bootstrap().
 BACKEND_ENV_KEYS = (
-    "ADMIN_SECRET",
+    "ADMIN_USER_IDS",
+    "ALLOW_DEV_AUTH",
+    "ALLOW_LOCAL_PATH_INGEST",
     "ANTHROPIC_API_KEY",
     "DATA_DIR",
     "ENVIRONMENT",
@@ -162,7 +164,9 @@ def build_backend_env(values: Mapping[str, str], data_dir: str) -> dict[str, str
         "ANTHROPIC_API_KEY": values["ANTHROPIC_API_KEY"],
         "SUPABASE_JWT_SECRET": values.get("SUPABASE_JWT_SECRET") or "evals-dummy-jwt-secret-not-used-by-the-pipeline",
         "ENVIRONMENT": "eval",
-        "ADMIN_SECRET": "evals-dummy-admin-secret",
+        "ADMIN_USER_IDS": "",
+        "ALLOW_DEV_AUTH": "",
+        "ALLOW_LOCAL_PATH_INGEST": "",
         "DATA_DIR": data_dir,
         "LOG_LEVEL": values.get("LOG_LEVEL") or "WARNING",
         "FRONTEND_ORIGIN": "",

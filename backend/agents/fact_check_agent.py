@@ -213,7 +213,7 @@ def fact_check_node(state: PipelineState) -> PipelineState:
     Otherwise mark it pending: run_pipeline hands back log_fact_check to run after
     the response."""
     post = state.get("current_draft", "")
-    user_id = state.get("user_id", "default")
+    user_id = state["user_id"]
     if not enforced(state):
         state["fact_check"] = {"mode": "log_only", "flagged": [], "rewrites": [], "outcome": "pending"}
         return state
@@ -286,7 +286,7 @@ def log_fact_check(state: PipelineState, trace_id: str) -> None:
     responded (FastAPI BackgroundTasks). Never raises."""
     from memory.trace_store import update_trace_fact_check
 
-    user_id = state.get("user_id", "default")
+    user_id = state["user_id"]
     post = state.get("final_post") or state.get("current_draft", "")
     record: dict[str, Any] = {"mode": "log_only", "flagged": [], "rewrites": [], "outcome": "logged"}
     try:

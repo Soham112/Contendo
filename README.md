@@ -229,7 +229,7 @@ The system writes in YOUR voice — but it needs to know who you are first.
 
 **Production (Vercel + Railway):** Sign up at the app URL. New users are automatically redirected to `/first-post` — a guided first-draft flow that captures profile signals and generates a first post. After that, they can move into the main workspace. `/onboarding` remains as a backward-compatible route that immediately redirects to `/first-post`.
 
-**Local dev:** The same first-post flow works locally. Profiles are read/written through Supabase (`profiles` table). In non-production with no token, backend auth falls back to `user_id="default"` for convenience.
+**Local dev:** The same first-post flow works locally. Profiles are read/written through Supabase (`profiles` table). The backend requires a valid Supabase token by default; set `ALLOW_DEV_AUTH=1` in `backend/.env` to let tokenless local requests act as `user_id="default"`.
 
 The more specific you are, the better the output. Generic profile → generic posts. Specific profile → posts that sound like you wrote them.
 
@@ -333,7 +333,7 @@ Note: profile files are gitignored — your personal details never get committed
     │   ├── profile.py                # /profile, /extract-resume, /save-experience-nodes
     │   ├── feedback.py               # /feedback (appends to feedback.jsonl on DATA_DIR)
     │   ├── analytics.py              # /log-event, /admin/analytics-data
-    │   └── admin.py                  # GET /admin/usage (x-admin-secret)
+    │   └── admin.py                  # GET /admin/usage, /admin/me (ADMIN_USER_IDS)
     ├── requirements.txt              # All Python dependencies pinned
     ├── requirements-dev.txt          # Test dependencies (pytest)
     ├── .env.example                  # Required env var keys with no values
@@ -430,10 +430,10 @@ Copy `backend/.env.example` to `backend/.env` and fill in the Anthropic and Supa
 | `SUPABASE_URL` | Your Supabase project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service-role key (bypasses RLS; the backend filters every query by `user_id`) |
 | `SUPABASE_JWT_SECRET` | Supabase JWT secret, used to verify user tokens |
-| `ADMIN_SECRET` | Shared secret for admin endpoints (`x-admin-secret` header) |
+| `ADMIN_USER_IDS` | Comma-separated Supabase user IDs allowed to call the admin endpoints. Empty: nobody is an admin |
 | `SUPADATA_API_KEY` | Supadata key for YouTube transcript fetch |
 | `DATA_DIR` | `/data` |
-| `ENVIRONMENT` | `production` |
+| `ENVIRONMENT` | `production` (the server refuses to start if `ALLOW_DEV_AUTH=1` is also set) |
 | `FRONTEND_ORIGIN` | `https://your-app.vercel.app` (exact Vercel URL) |
 
 Before deploying code that needs a new table or column, run the matching file from `backend/migrations/` in the Supabase SQL editor (see **Database migrations** above).
@@ -503,7 +503,7 @@ Obsidian vault ingestion reads directly from the local filesystem. It **cannot w
 
 
  The Obsidian tab offers two ingestion modes:
- 1. **Local path:** Read directly from your filesystem. Returns `400` on production (`ENVIRONMENT=production`) since remote servers can't access local files. Frontend shows a notice recommending zip upload on non-localhost deployments.
+ 1. **Local path:** Read directly from your filesystem. Off by default: returns `403` unless the backend runs with `ALLOW_LOCAL_PATH_INGEST=1` (local development only), since remote servers can't access local files. Frontend shows a notice recommending zip upload on non-localhost deployments.
  2. **Upload zip:** Upload a `.zip` of your Obsidian vault. Works on both localhost and production. The `/obsidian/preview-zip` and `/obsidian/ingest-zip` endpoints have no environment guard and are production-ready.
 ---
 

@@ -10,8 +10,6 @@ import pytest
 # Routes that intentionally don't use a user token.
 PUBLIC_ROUTES = {
     ("GET", "/health"): "health check for Railway",
-    ("GET", "/admin/usage"): "admin-only, protected by x-admin-secret",
-    ("GET", "/admin/analytics-data"): "admin-only, protected by x-admin-secret",
 }
 
 # Known gaps: routes that should have auth but don't yet. Each one is tracked as

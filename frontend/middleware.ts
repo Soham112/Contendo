@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 const PUBLIC_PATHS = [
   "/",
   "/welcome",
+  "/about",
   "/sign-in",
   "/sign-up",
   "/onboarding",
@@ -56,7 +57,8 @@ export async function middleware(request: NextRequest) {
   // All other protected routes → require sign-in
   if (!isPublicRoute(pathname) && !user) {
     const signInUrl = new URL("/sign-in", request.url);
-    signInUrl.searchParams.set("redirect_url", request.url);
+    // A path only, never an absolute URL: the sign-in flow validates it again.
+    signInUrl.searchParams.set("redirect_url", pathname + request.nextUrl.search);
     return NextResponse.redirect(signInUrl);
   }
 

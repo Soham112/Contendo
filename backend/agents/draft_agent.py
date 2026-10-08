@@ -281,7 +281,7 @@ def draft_node(state: PipelineState) -> PipelineState:
         topic=state.get("topic", ""),
         context=state.get("context", ""),
         tone=state.get("tone", ""),
-        user_id=state.get("user_id", "default"),
+        user_id=state["user_id"],
     )
     state["archetype"] = archetype
     archetype_name = _ARCHETYPE_HUMAN_NAMES.get(archetype, archetype)
@@ -363,7 +363,7 @@ def draft_node(state: PipelineState) -> PipelineState:
             max_tokens=2000,
             messages=[{"role": "user", "content": prompt + retry_note(
                 violations, no_specifics=bool(state.get("no_specifics")), node="draft")}],
-            user_id=state.get("user_id", "default"),
+            user_id=state["user_id"],
             event_type=event_type,
             usage_metadata={
                 "topic": state.get("topic", ""),

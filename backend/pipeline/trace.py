@@ -49,7 +49,7 @@ def build_trace_row(state: PipelineState, llm_calls: list[dict]) -> dict[str, An
     chunks = (state.get("retrieval_bundle") or {}).get("chunks", [])
     profile = state.get("profile") or {}
     return {
-        "user_id": state.get("user_id", "default"),
+        "user_id": state["user_id"],
         "topic": state.get("topic", ""),
         "context": state.get("context", ""),
         "format": state.get("format", ""),
