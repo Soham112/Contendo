@@ -1,4 +1,5 @@
-"""Shared Claude client. Every backend Claude call goes through complete().
+"""Shared Claude client. Every backend Claude call goes through complete();
+calls that need a typed answer use complete_structured(), which wraps it.
 
 complete() calls client.messages.create() with the caller's kwargs unchanged
 (tests patch Messages.create, see tests/fakes/claude.py), then logs usage.
@@ -8,11 +9,12 @@ import os
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any, Iterator
+from typing import Any, Iterator, TypeVar
 
 import anthropic
 from anthropic.types import Message
 from dotenv import load_dotenv
+from pydantic import BaseModel, ValidationError
 
 from memory.usage_store import schedule_usage_event
 
@@ -110,3 +112,70 @@ def complete(
         })
 
     return message
+
+
+class StructuredOutputError(RuntimeError):
+    """A structured call did not return a valid answer. Callers decide what an
+    explicit failure looks like for them; they must not substitute a made-up one."""
+
+
+_Schema = TypeVar("_Schema", bound=BaseModel)
+
+
+def complete_structured(
+    *,
+    schema: type[_Schema],
+    tool_name: str,
+    tool_description: str,
+    model: str,
+    messages: list[dict],
+    max_tokens: int,
+    user_id: str,
+    event_type: str,
+    system: Any = None,
+    usage_metadata: dict[str, Any] | None = None,
+) -> _Schema:
+    """Call Claude and return its answer as a validated `schema` instance.
+
+    The answer is requested as a forced tool call whose input must match the
+    schema's JSON schema, so there is no free-text JSON to parse. A reply with
+    no such tool call (for example cut off by max_tokens) or one that fails
+    validation is retried once with the same request; both attempts are logged.
+    If the second also fails, raises StructuredOutputError naming both
+    failures. API errors propagate, as in complete() (the SDK retries those).
+    """
+    failures: list[str] = []
+    for attempt in (1, 2):
+        message = complete(
+            model=model,
+            messages=messages,
+            max_tokens=max_tokens,
+            user_id=user_id,
+            event_type=event_type,
+            system=system,
+            usage_metadata=usage_metadata,
+            tools=[{
+                "name": tool_name,
+                "description": tool_description,
+                "input_schema": schema.model_json_schema(),
+            }],
+            tool_choice={"type": "tool", "name": tool_name},
+        )
+        tool_input = next(
+            (block.input for block in message.content
+             if getattr(block, "type", "") == "tool_use" and getattr(block, "name", "") == tool_name),
+            None,
+        )
+        if tool_input is None:
+            failure = f"no {tool_name} tool call in the reply (stop_reason={message.stop_reason})"
+        else:
+            try:
+                return schema.model_validate(tool_input)
+            except ValidationError as exc:
+                failure = f"reply does not match the schema: {exc}"
+        failures.append(failure)
+        logger.warning("llm.complete_structured: %s attempt %d of 2 failed: %s", event_type, attempt, failure)
+    raise StructuredOutputError(
+        f"{event_type}: no valid structured answer after 2 attempts. "
+        f"First: {failures[0]} Second: {failures[1]}"
+    )

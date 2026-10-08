@@ -8,13 +8,15 @@ import copy
 
 import pytest
 
+from tests.conftest import ARCHETYPE_GENERAL, CRITIC_ALL_STRONG
+
 USER = "user-trace"
 
 # Claude responses for one quality="standard" run, in call order.
 STANDARD_RUN = [
-    "personal_story",   # draft: archetype (Haiku)
+    ARCHETYPE_GENERAL,   # draft: archetype (Haiku)
     "Draft text.",      # draft: generate
-    "{}",               # critic
+    CRITIC_ALL_STRONG,               # critic
     "Humanized text.",  # humanizer
     "CLEAN",            # predictability audit step 1 → skips step 2
     "Audited text.",    # predictability audit step 3
@@ -23,8 +25,14 @@ STANDARD_RUN = [
 
 
 @pytest.fixture
-def seeded_kb():
+def seeded_kb(fake_db):
     from memory.vector_store import upsert_chunks
+
+    # One earlier post, so these runs are not the user's first post (a first
+    # post has its own short length target and is never expanded).
+    fake_db.tables.setdefault("posts", []).append(
+        {"id": 1, "user_id": USER, "topic": "An earlier post", "created_at": "2026-09-01T00:00:00+00:00"}
+    )
 
     # Enough unrelated chunks that BM25's IDF for "pgvector" is positive, so
     # both searches return hits and RRF runs.
@@ -94,7 +102,7 @@ def test_draft_history_has_one_entry_per_rewriting_node_that_ran(claude, fake_db
 
 
 def test_draft_quality_records_only_the_draft(claude, fake_db, seeded_kb):
-    claude.queue("personal_story", "Draft text.")
+    claude.queue(ARCHETYPE_GENERAL, "Draft text.")
     _run(quality="draft")
 
     trace = _only_trace(fake_db)
@@ -109,7 +117,7 @@ def test_polished_records_a_score_per_iteration(claude, fake_db, seeded_kb, monk
     monkeypatch.setattr(scorer_agent, "score_text", lambda draft, user_id: next(scores))
     # 2 loops of humanizer + audit (step 1 CLEAN, step 3), then the enforcer.
     claude.queue(
-        "personal_story", "Draft text.", "{}",
+        ARCHETYPE_GENERAL, "Draft text.", CRITIC_ALL_STRONG,
         # Number-free text: a "2" the input lacks would trip the specifics guard.
         "Humanized once.", "CLEAN", "Audited once.",
         "Humanized twice.", "CLEAN", "Audited twice.",
@@ -343,7 +351,7 @@ def test_log_post_without_trace_id_does_not_touch_traces(client, fake_db, auth_h
 
 def test_specifics_guard_retries_are_recorded_in_the_trace(claude, fake_db, seeded_kb):
     claude.queue(
-        "personal_story", "Draft text.", "{}",
+        ARCHETYPE_GENERAL, "Draft text.", CRITIC_ALL_STRONG,
         "Draft text, now 34% better.",   # humanizer adds a figure
         "Draft text, rewritten.",        # humanizer retry is clean
         "CLEAN", "Audited text.", "Final text.",
@@ -367,7 +375,7 @@ def test_trace_has_empty_specifics_guard_when_nothing_was_added(claude, fake_db,
 
 def test_enforcer_retry_is_recorded_with_its_own_event_type(claude, fake_db, seeded_kb):
     claude.queue(
-        "personal_story", "Draft text.", "{}", "Humanized text.", "CLEAN", "Audited text.",
+        ARCHETYPE_GENERAL, "Draft text.", CRITIC_ALL_STRONG, "Humanized text.", "CLEAN", "Audited text.",
         "Audited text, plus 34% more words.",   # enforcer expansion adds a figure
         "Audited text, plus a few more words.",  # retry is clean
     )

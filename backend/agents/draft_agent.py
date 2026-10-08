@@ -1,100 +1,49 @@
 import logging
 
-from llm.client import HAIKU, SONNET, complete
+from agents.archetype_agent import choose_archetype
+from llm.client import SONNET, complete
+from memory.profile_store import profile_voice_context
 from pipeline.state import PipelineState
 from pipeline.trace import record_draft
-from utils.formatters import get_format_instructions, get_archetype_instructions
-from memory.profile_store import profile_to_context_string
-from agents.retrieval_agent import resolve_attribution_frames
+from utils.formatters import get_archetype, get_format_instructions, word_count_rule
+from utils.frames import NO_CHUNKS_BLOCK, PERSPECTIVES, format_chunks_by_frame, frame_rules
 from utils.specifics import find_violations, guard_entry, guard_sources, remove_sentences, retry_note
 
 logger = logging.getLogger(__name__)
 
-_ARCHETYPE_HUMAN_NAMES = {
-    "incident_report": "Incident Report / Retrospective",
-    "contrarian_take": "Contrarian Take",
-    "personal_story": "Personal Story",
-    "teach_me_something": "Teach Me Something",
-    "list_that_isnt": "List That Isn't",
-    "prediction_bet": "Prediction / Bet",
-    "before_after": "Before & After",
-}
 
+def _get_grounding_instruction(confidence: str) -> str:
+    """Prompt calibration for retrieval confidence; "" when it is high.
 
-_WORD_COUNT_MAP = {
-    "linkedin post": {
-        "concise":   (100, 180),
-        "standard":  (250, 350),
-        "long-form": (450, 600),
-    },
-    "medium article": {
-        "concise":   (350, 500),
-        "standard":  (700, 900),
-        "long-form": (1200, 1800),
-    },
-    # thread is tweet-count based, not word-count — no enforcement
-}
-
-
-def _get_word_count_rule(format_type: str, length: str) -> str:
-    """Return a hard word-count rule string for the given format/length combo.
-
-    Returns an empty string for thread (tweet-based) or unknown formats
-    so the prompt is unchanged.
+    Says how to write with thin material. Length is not set here: see
+    utils.formatters.word_count_rule.
     """
-    fmt = format_type.lower().strip()
-    lng = length.lower().strip()
-    format_lengths = _WORD_COUNT_MAP.get(fmt)
-    if format_lengths is None:
+    if confidence == "high":
         return ""
-    min_w, max_w = format_lengths.get(lng, format_lengths["standard"])
-    return (
-        f"\n---\n"
-        f"WORD COUNT RULE — this overrides everything else:\n"
-        f"The final post must be {min_w}–{max_w} words.\n"
-        f"Count before outputting. If over {max_w}, cut until you are within range.\n"
-        f"Never exceed {max_w} words under any circumstance.\n"
-        f"Do not print the word count.\n"
-        f"---"
-    )
 
-
-def _get_grounding_instruction(confidence: str, chunk_count: int) -> str:
-        """Return prompt calibration text based on retrieval confidence.
-
-        High confidence returns an empty string so baseline behavior remains unchanged.
-        """
-        _ = chunk_count  # kept for future calibration tuning by retrieved chunk count
-
-        if confidence == "high":
-                return ""
-
-        if confidence == "medium":
-                return """
+    if confidence == "medium":
+        return """
 GROUNDING CALIBRATION:
 You have moderate knowledge base coverage on this topic.
 Use what is available. Do not invent specifics not present in the chunks.
-If you lack a concrete example, write from an observational frame:
-"I've seen this pattern" or "this tends to happen when..." rather than
-fabricating a named incident or specific timestamp.
-Target length: aim for the shorter end of the format's range.
+If you lack an example, make the point through reasoning rather than
+supplying a named incident, a number or a date.
 A tighter post with real grounding beats a longer post with filler.
 """.strip()
 
-        return """
+    return """
 GROUNDING CALIBRATION:
 The knowledge base has limited content on this specific topic.
 Write a focused, honest post based only on what is actually in the chunks.
 Rules for this post:
 - If you only have one real idea from the chunks, write that one idea
-    well and stop. 60 to 100 words is a complete post. Do not stretch.
+    well and stop. Do not stretch.
 - Write from an analytical or observational perspective, not fabricated
     personal experience
 - No invented numbers, timestamps, colleague names, or specific incidents
 - Do not tell the reader that your knowledge is limited — just write
     what you know
-- Stopping with something real is always better than padding to a
-    word count with filler
+- Stopping with something real is always better than padding with filler
 """.strip()
 
 
@@ -106,74 +55,28 @@ The user's notes don't cover this topic, and they asked for an opinion post anyw
 - Frame claims as views: "I think", "the pattern I keep seeing", "most teams"."""
 
 
-_FIRST_POST_INSTRUCTION = """FIRST POST RULE (overrides word-count and visual placeholder rules):
+_FIRST_POST_INSTRUCTION = """FIRST POST RULE (overrides visual placeholder rules):
 This is the user's very first generated post. Keep it short and punchy — a quick win.
-- Target length: 120–150 words. Do not exceed 150 words under any circumstance.
-- Count your words before outputting. Cut ruthlessly if over 150.
 - Do NOT include any [DIAGRAM: ...] or [IMAGE: ...] placeholders. None. Ever. In a first post.
 - No multi-section structure. One tight idea, one strong finish.
 - The goal is to prove the system works, not to show off every feature."""
 
-_ZERO_NOTES_GUARD = """ZERO PERSONAL NOTES RULE (highest priority — overrides all other instructions):
-This user has no ingested notes yet. You have ZERO first-person source material.
+_NO_NOTES_RULE = """NO NOTES RULE (highest priority — overrides all other instructions):
+No notes relevant to this topic were found. Your only material is the topic and
+the additional context above.
 Do NOT write any personal stories, specific incidents, named colleagues,
-specific numbers (AUC scores, percentages, timeframes), or events presented
-as things that happened to this person.
-Write entirely from an observational or analytical perspective:
+specific numbers (scores, percentages, timeframes), or events presented
+as things that happened to this person, unless the topic or context states them.
+Write from an observational or analytical perspective:
 - "Most teams underestimate feature engineering" not "At my last job we saw..."
-- "The pattern I keep seeing is..." not "When we hit 0.71 AUC..."
+- "The pattern is..." not "When we hit 0.71 AUC..."
 - "The instinct is usually to change the model. It's rarely the right call."
 A post that shares a sharp observation is better than one that invents a story
-the user never lived."""
+the author never lived."""
 
+SYSTEM_PROMPT = """You are a ghostwriter. You write a post from the sources below, in the voice of the author described below. The sources decide what the post says. The author profile decides only how it sounds.
 
-def infer_archetype(topic: str, context: str, tone: str, *, user_id: str) -> str:
-    """Use Claude Haiku to infer the best archetype. Falls back to incident_report on failure."""
-    prompt = f"""You are a content strategist. Given a post topic, tone, and \
-optional context, choose the single best archetype for how this post should \
-be written.
-
-Topic: {topic}
-Tone: {tone}
-Context: {context or "none"}
-
-Choose exactly one archetype from this list:
-- incident_report: technical failures, production stories, build retrospectives, mistakes made
-- contrarian_take: disagreeing with consensus, unpopular opinions, overrated tools or practices
-- personal_story: career moments, personal pivots, human experiences, emotional journeys
-- teach_me_something: explaining a concept, analogy-driven education, how something works
-- list_that_isnt: observations or lessons that work as a subverted list format
-- prediction_bet: forward-looking takes, what is coming, industry bets
-- before_after: transformation stories, switching tools, decisions that changed everything
-
-Think about what this topic is REALLY about, not just the keywords. \
-"My experience with Kubernetes after 2 years" is personal_story not before_after. \
-"The thing about LLMs nobody talks about" is contrarian_take not incident_report.
-
-Return ONLY the archetype key, nothing else. No explanation."""
-
-    try:
-        message = complete(
-            model=HAIKU,
-            max_tokens=20,
-            messages=[{"role": "user", "content": prompt}],
-            user_id=user_id,
-            event_type="archetype",
-        )
-        result = message.content[0].text.strip().lower()
-        valid = {
-            "incident_report", "contrarian_take", "personal_story",
-            "teach_me_something", "list_that_isnt", "prediction_bet", "before_after"
-        }
-        return result if result in valid else "incident_report"
-    except Exception:
-        return "incident_report"
-
-SYSTEM_PROMPT = """You are a ghostwriter. You write content that sounds exactly like the person described in the user profile below, not like an AI assistant, not generically "professional", but like this specific person.
-
-You have access to their knowledge base: real chunks of content they've read, watched, or written. Use this knowledge to make the draft specific and grounded. Reference real ideas from the chunks; don't write generic claims.
-
-User profile:
+Author voice (voice, audience and style only; never a source of content, stories or facts):
 {profile_context}
 
 Format and tone instructions:
@@ -185,8 +88,9 @@ Knowledge base (use what's relevant, ignore the rest):
 
 Topic: {topic}
 {context_section}
-TOPIC RULE: Write about the topic as given. Don't frame it as an analogy or metaphor for the author's professional field, and don't pull in their expertise, projects or opinions unless the topic or context asks for it. The profile shapes voice, not subject.
+TOPIC RULE: Write about the topic as given. Don't frame it as an analogy or metaphor for the author's professional field, and don't pull in their work, projects or opinions unless the topic or context asks for it.
 {posted_topics_section}
+{perspective_rule}
 {grounding_instruction}
 {first_post_instruction}
 Write the draft now. Do not add any preamble or explanation; output only the post content itself.
@@ -194,45 +98,17 @@ Write the draft now. Do not add any preamble or explanation; output only the pos
 ---
 POST STRUCTURE: write this post as a {archetype_name}:
 {archetype_instructions}
+The structure is a shape, not a checklist: leave out any section the sources cannot fill.
 ---
 
 ---
-SOURCE ATTRIBUTION RULES (mandatory — read chunk labels above before writing):
-
-Chunks are pre-grouped into three frames. Use the frame label to determine
-how to write each claim.
-
-PERSONAL frame:
-The user directly experienced or built this. Write in first person.
-"I ran into this exact problem", "we switched to X because", "I built this and found..."
-Never fabricate specific incidents not in the chunk. The chunk is the evidence.
-
-EXPERT OUTSIDER frame:
-The user knows adjacent territory deeply but this specific topic is newer to them.
-Write with authority and honest curiosity combined.
-"Coming from X background, what surprised me about Y is...",
-"The mental model shift from X to Y took longer than expected",
-"This is what people with X background consistently miss about Y"
-Never use passive or student-like framing. They are an expert, just not in this exact thing yet.
-
-LEARNING frame — calibrated by seniority:
-Junior (0-3 years): "Been going deep on X lately. Here is what actually matters."
-Mid (4-10 years): "X is worth understanding properly. Most explanations miss this."
-Senior (10+ years): "X keeps coming up. Here is what I keep seeing people get wrong."
-All three are confident. None of them are passive. Never write "I came across an article about X."
-
-CROSS-FRAME RULE:
-Never mix frames within a single sentence.
-If a paragraph draws on both PERSONAL and LEARNING chunks,
-lead with the personal claim and use the learning chunk as supporting evidence.
-"I saw this break in production. The pattern is documented — most teams hit it at scale."
-
-FABRICATION RULE (still applies):
-Never invent personal incidents, timestamps, colleague names, or events
-not explicitly present in the PERSONAL EXPERIENCE chunks above or in the
-topic and additional context. The profile says who the author is; it is
-not a source of stories. Never set an incident at a company or project
-named in the profile unless a PERSONAL EXPERIENCE chunk describes it.
+SOURCE RULES (mandatory):
+{source_rules}
+FABRICATION RULE:
+Never invent incidents, dates, names, numbers, results or events. A first-person
+event may come only from an OWN EXPERIENCE chunk above, or from what the author
+states in the topic or the additional context. The author profile is not a
+source of stories: never set an incident at a company, project or role it names.
 ---
 
 ---
@@ -247,114 +123,95 @@ For personal or story posts: include one [IMAGE: description] only if a real pho
 Never force a diagram into opinion pieces or short punchy posts where the words are the point.
 ---"""
 
+_CROSS_SOURCE_RULE = """CROSS-SOURCE RULE:
+Each chunk above is a separate source. Never link facts from different sources as
+cause and effect, sequence or result unless one source states that link. Facts
+from separate notes stay separate.
+Never put an own-experience claim and an external-source claim in the same sentence.
+When a paragraph uses both, state the author's own point first, then bring in the
+source as support and say where it came from.
+"""
+
+
+def _source_rules(chunks: list[dict], profile: dict) -> str:
+    """The per-frame writing rules for the frames present in these chunks."""
+    rules = frame_rules(chunks, profile)
+    if not rules:
+        return ""
+    return (
+        "Each group of chunks in the knowledge base has a label. Write from each group by its rule.\n\n"
+        f"{rules}\n\n{_CROSS_SOURCE_RULE}"
+    )
+
 
 def _format_retrieval_context(state: PipelineState) -> str:
-    """Return the text block to inject as the knowledge base section.
-
-    Priority:
-    1. If retrieval_bundle has chunk dicts (with source_type + tags metadata),
-       call resolve_attribution_frames() to produce a pre-labeled frame block
-       the draft agent reads directly — no interpretive guesswork in the prompt.
-    2. Fall back to formatting state["retrieved_chunks"] as a flat numbered list
-       (backward compat for pre-migration state or when bundle is absent).
-    """
-    bundle = state.get("retrieval_bundle") or {}
-    bundle_chunks = bundle.get("chunks", [])
-    profile = state.get("profile") or {}
-
+    """The knowledge base block: the bundle's chunks grouped by frame, or the
+    flat chunk list when there is no bundle (flat retrieval fallback)."""
+    bundle_chunks = (state.get("retrieval_bundle") or {}).get("chunks", [])
     if bundle_chunks:
-        experience_nodes = state.get("experience_nodes") or []
-        return resolve_attribution_frames(bundle_chunks, profile, experience_nodes=experience_nodes)
-
-    # Flat fallback — preserves pre-hierarchy behavior
+        return format_chunks_by_frame(bundle_chunks, state.get("profile") or {})
     flat_chunks = state.get("retrieved_chunks", [])
     if flat_chunks:
-        return "\n\n---\n\n".join(
-            f"[Chunk {i + 1}]\n{chunk}" for i, chunk in enumerate(flat_chunks)
-        )
-    return "No relevant knowledge base entries found. Draw on general expertise."
+        return "\n\n---\n\n".join(f"[Chunk {i + 1}]\n{chunk}" for i, chunk in enumerate(flat_chunks))
+    return NO_CHUNKS_BLOCK
 
 
-def draft_node(state: PipelineState) -> PipelineState:
-    # Infer archetype from topic/context/tone with one Haiku call (falls back to incident_report)
-    archetype = infer_archetype(
-        topic=state.get("topic", ""),
-        context=state.get("context", ""),
-        tone=state.get("tone", ""),
-        user_id=state["user_id"],
-    )
-    state["archetype"] = archetype
-    archetype_name = _ARCHETYPE_HUMAN_NAMES.get(archetype, archetype)
-    archetype_instructions = get_archetype_instructions(archetype)
+def _prepend(rule: str, rest: str) -> str:
+    return rule + ("\n\n" + rest if rest else "")
 
+
+def _build_prompt(state: PipelineState, chunks_text: str) -> str:
     profile = state["profile"]
-    profile_context = profile_to_context_string(profile)
-    is_first_post = state.get("first_post", False)
-    effective_length = "concise" if is_first_post else state.get("length", "standard")
+    is_first_post = bool(state.get("first_post"))
+    archetype = get_archetype(state.get("archetype", ""))
+    bundle_chunks = (state.get("retrieval_bundle") or {}).get("chunks", [])
 
-    format_instructions = get_format_instructions(
-        state["format"],
-        effective_length,
-        state["tone"],
-    )
-    if is_first_post:
-        word_count_rule = (
-            "\n---\n"
-            "WORD COUNT RULE — this overrides everything else:\n"
-            "The final post must be 120–150 words.\n"
-            "Count before outputting. If over 150, cut until you are within range.\n"
-            "Never exceed 150 words under any circumstance.\n"
-            "Do not print the word count.\n"
-            "---"
-        )
-    else:
-        word_count_rule = _get_word_count_rule(state["format"], effective_length)
-
-    chunks_text = _format_retrieval_context(state)
-
-    context = state.get("context", "").strip()
-    context_section = f"Additional context: {context}" if context else ""
-
+    context = (state.get("context") or "").strip()
     posted_topics = state.get("posted_topics", [])
+    posted_topics_section = ""
     if posted_topics:
         listed = "\n".join(f"- {t}" for t in posted_topics)
         posted_topics_section = (
             f"Topics you have already written about — do not repeat these angles, find a fresh perspective:\n{listed}\n"
         )
-    else:
-        posted_topics_section = ""
 
-    grounding_instruction = _get_grounding_instruction(
-        state.get("retrieval_confidence", "medium"),
-        state.get("retrieved_chunk_count", 0),
-    )
-
-    if "No relevant knowledge base entries found" in chunks_text:
-        grounding_instruction = (
-            _ZERO_NOTES_GUARD + ("\n\n" + grounding_instruction if grounding_instruction else "")
-        )
-
+    grounding_instruction = _get_grounding_instruction(state.get("retrieval_confidence", "medium"))
+    # has_chunks is set by retrieval_node; fall back to what this state holds.
+    has_chunks = state.get("has_chunks", bool(bundle_chunks or state.get("retrieved_chunks")))
+    if not has_chunks:
+        grounding_instruction = _prepend(_NO_NOTES_RULE, grounding_instruction)
     if state.get("no_specifics"):
-        grounding_instruction = (
-            _NO_SPECIFICS_RULE + ("\n\n" + grounding_instruction if grounding_instruction else "")
-        )
+        grounding_instruction = _prepend(_NO_SPECIFICS_RULE, grounding_instruction)
 
-    first_post_instruction = _FIRST_POST_INSTRUCTION if is_first_post else ""
-
-    prompt = SYSTEM_PROMPT.format(
-        profile_context=profile_context,
-        format_instructions=format_instructions,
-        word_count_rule=word_count_rule,
+    return SYSTEM_PROMPT.format(
+        profile_context=profile_voice_context(profile),
+        format_instructions=get_format_instructions(
+            state["format"],
+            "concise" if is_first_post else state.get("length", "standard"),
+            state["tone"],
+        ),
+        word_count_rule=word_count_rule(state.get("length_target")),
         retrieved_chunks=chunks_text,
         topic=state["topic"],
-        context_section=context_section,
+        context_section=f"Additional context: {context}" if context else "",
         posted_topics_section=posted_topics_section,
+        perspective_rule=PERSPECTIVES.get(state.get("perspective", ""), ""),
         grounding_instruction=grounding_instruction,
-        first_post_instruction=first_post_instruction,
-        archetype_name=archetype_name,
-        archetype_instructions=archetype_instructions,
+        first_post_instruction=_FIRST_POST_INSTRUCTION if is_first_post else "",
+        archetype_name=archetype.name,
+        archetype_instructions=archetype.structure,
+        source_rules=_source_rules(bundle_chunks, profile),
     )
 
+
+def draft_node(state: PipelineState) -> PipelineState:
+    # One Haiku call picks the archetype from the types the sources allow.
+    decision = choose_archetype(state)
+    state["archetype"] = decision["archetype"]
+    state["archetype_decision"] = decision
+
+    chunks_text = _format_retrieval_context(state)
+    prompt = _build_prompt(state, chunks_text)
     state["draft_frame_block"] = chunks_text
 
     def write(violations, event_type: str) -> str:

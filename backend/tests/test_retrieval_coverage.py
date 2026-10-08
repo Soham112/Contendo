@@ -2,6 +2,8 @@
 
 import pytest
 
+from tests.conftest import ARCHETYPE_GENERAL, CRITIC_ALL_STRONG
+
 USER = "user-coverage"
 
 
@@ -182,7 +184,7 @@ def test_low_coverage_stops_before_drafting(claude, fake_db, pgvector_kb):
 
 
 def test_no_specifics_bypasses_the_gate(claude, fake_db, pgvector_kb, no_specifics_on):
-    claude.queue("personal_story", "Draft text.", "{}", "Humanized text.", "CLEAN", "Audited text.", "Final text.")
+    claude.queue(ARCHETYPE_GENERAL, "Draft text.", CRITIC_ALL_STRONG, "Humanized text.", "CLEAN", "Audited text.", "Final text.")
     result = _run(no_specifics=True)
 
     assert result["status"] == "ok"
@@ -192,7 +194,7 @@ def test_no_specifics_bypasses_the_gate(claude, fake_db, pgvector_kb, no_specifi
 
 
 def test_covered_topic_passes_the_gate(claude, fake_db, pgvector_kb):
-    claude.queue("personal_story", "Draft text.", "{}", "Humanized text.", "CLEAN", "Audited text.", "Final text.")
+    claude.queue(ARCHETYPE_GENERAL, "Draft text.", CRITIC_ALL_STRONG, "Humanized text.", "CLEAN", "Audited text.", "Final text.")
     result = _run(topic="pgvector retrieval")
 
     assert result["status"] == "ok"
@@ -235,7 +237,7 @@ def test_run_pipeline_refuses_no_specifics_while_the_mode_is_disabled(claude, fa
 
 def test_generate_accepts_no_specifics_when_the_mode_is_enabled(client, claude, fake_db, pgvector_kb, auth_headers,
                                                                 no_specifics_on):
-    claude.queue("personal_story", "Draft text.", "{}", "Humanized text.", "CLEAN", "Audited text.", "Final text.", "[]")
+    claude.queue(ARCHETYPE_GENERAL, "Draft text.", CRITIC_ALL_STRONG, "Humanized text.", "CLEAN", "Audited text.", "Final text.", "[]")
     response = client.post(
         "/generate",
         json={"topic": "Kubernetes GPU autoscaling", "format": "linkedin post", "tone": "casual",
@@ -256,7 +258,7 @@ def test_coverage_gate_skips_a_users_first_post():
 
 def test_first_post_with_an_empty_knowledge_base_is_still_drafted(claude, fake_db):
     # A new user: no sources and no saved posts. Onboarding must still produce a post.
-    claude.queue("personal_story", "Draft text.", "{}", "Humanized text.", "CLEAN", "Audited text.", "Final text.")
+    claude.queue(ARCHETYPE_GENERAL, "Draft text.", CRITIC_ALL_STRONG, "Humanized text.", "CLEAN", "Audited text.", "Final text.")
     result = _run(user_id="brand-new-user", topic="Why I moved from analytics to ML")
 
     assert result["status"] == "ok"
@@ -317,7 +319,7 @@ def test_entity_linked_chunks_do_not_count_toward_confidence_or_the_gate(entity_
 
 # --- no-specifics mode -------------------------------------------------------------
 
-STANDARD = ["personal_story", "Draft text.", "{}", "Humanized text.", "CLEAN", "Audited text.", "Final text."]
+STANDARD = [ARCHETYPE_GENERAL, "Draft text.", CRITIC_ALL_STRONG, "Humanized text.", "CLEAN", "Audited text.", "Final text."]
 
 
 def _generate_prompt(claude):

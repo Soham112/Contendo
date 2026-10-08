@@ -23,6 +23,7 @@ class PipelineState(TypedDict, total=False):
     retrieved_chunks: list[str]       # flat list of "[source_type: X] text" strings — always set for backward compat
     retrieval_bundle: dict            # structured hierarchical bundle {chunks, source_contexts, topic_contexts}
     retrieved_context: str            # pre-formatted text block for draft prompt injection; "" triggers flat fallback
+    has_chunks: bool                  # set by retrieval_node: whether any relevant chunk was found
     # Coverage gate set by retrieval_node: {decision: "pass" | "low_coverage" |
     # "bypassed", top_cosine, top_bm25_norm, min_cosine, min_bm25_norm,
     # closest_sources: [{title, preview, similarity}]}. "low_coverage" ends the
@@ -41,14 +42,26 @@ class PipelineState(TypedDict, total=False):
     # True when this is the user's very first generated post (no prior history)
     first_post: bool
 
+    # Set once by plan_node (after retrieval); every later node reads these.
+    # length_target: {min_words, max_words, may_expand, basis} from
+    # utils.formatters.resolve_length_target, or None for threads. basis is
+    # "length_setting" | "first_post" | "thin_sources".
+    length_target: Optional[dict[str, Any]]
+    # perspective: "experience" | "learned" | "opinion" | "mixed", from the
+    # chunks' authorship (utils.frames.decide_perspective).
+    perspective: str
+    # How the archetype was chosen (agents.archetype_agent.choose_archetype):
+    # {archetype, chosen, allowed, event_note, event_quote, downgraded_from, reason}.
+    archetype_decision: dict[str, Any]
+
     # Generation state
     # The knowledge-base block exactly as the drafter saw it (frame headers and
     # chunks). Persisted in generation_traces.node_outputs.
     draft_frame_block: str
     current_draft: str
     iterations: int
-    archetype: str  # inferred post archetype key, e.g. "incident_report"
-    critic_brief: dict  # structured diagnosis from critic_node; {} if skipped (draft mode) or on error
+    archetype: str  # post archetype key from utils.formatters.ARCHETYPES, e.g. "general"
+    critic_brief: dict  # diagnosis from critic_node; {} if skipped (draft mode); {"error": ...} if the critic failed
     # One {node, iteration, text} entry each time a node rewrites current_draft
     # (draft, humanizer, predictability_audit, word_count_enforcer). Skipped and
     # no-op runs add nothing. Persisted in generation_traces.
@@ -67,6 +80,7 @@ class PipelineState(TypedDict, total=False):
 
     # Scoring
     score: int
+    score_error: bool  # the last scorer run returned no valid score
     score_feedback: list[str]
     score_history: list[dict[str, Any]]  # one {iteration, score, score_feedback} per scorer run
 

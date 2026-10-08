@@ -9,13 +9,19 @@ fails the test loudly, so a new, unexpected Claude call can't slip through.
         claude.respond_with(lambda kw: "...")   # or compute from the request
         ...
         assert claude.calls[0]["model"] == "claude-sonnet-4-6"
+
+Structured calls (llm.client.complete_structured) force a tool call. For those,
+a queued response that is a JSON object is returned as that tool's input; any
+other text is returned as plain text, which is how a test makes a structured
+call fail ("the model did not call the tool").
 """
 
 from __future__ import annotations
 
+import json
 from typing import Callable
 
-from anthropic.types import Message, TextBlock, Usage
+from anthropic.types import Message, TextBlock, ToolUseBlock, Usage
 
 
 class UnexpectedClaudeCall(AssertionError):
@@ -54,13 +60,24 @@ class FakeClaude:
     def create(self, **kwargs) -> Message:
         self.calls.append(kwargs)
         text = self._next_text(kwargs)
+        block, stop_reason = TextBlock(type="text", text=text), "end_turn"
+        forced_tool = (kwargs.get("tool_choice") or {}).get("name")
+        if forced_tool:
+            try:
+                tool_input = json.loads(text)
+            except ValueError:
+                tool_input = None
+            if isinstance(tool_input, dict):
+                block = ToolUseBlock(type="tool_use", id=f"toolu_fake_{len(self.calls)}",
+                                     name=forced_tool, input=tool_input)
+                stop_reason = "tool_use"
         return Message(
             id=f"msg_fake_{len(self.calls)}",
             type="message",
             role="assistant",
             model=kwargs.get("model", "fake"),
-            content=[TextBlock(type="text", text=text)],
-            stop_reason="end_turn",
+            content=[block],
+            stop_reason=stop_reason,
             stop_sequence=None,
             usage=Usage(input_tokens=10, output_tokens=10),
         )

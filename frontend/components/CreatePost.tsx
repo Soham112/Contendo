@@ -5,7 +5,7 @@ import { useToast } from "@/components/ui/ToastProvider";
 import { useApi } from "@/lib/api";
 import DiagramView from "@/components/DiagramView";
 import { svgToPngDataURL } from "@/lib/svg";
-import type { ClosestSource } from "@/lib/api";
+import type { ClosestSource, ScoreResponse } from "@/lib/api";
 import { LowCoverageNotice, OpinionPostLabel } from "@/components/LowCoverageNotice";
 import { useTracking } from "@/lib/useTracking";
 
@@ -1041,20 +1041,26 @@ export default function CreatePost() {
     try {
       const res = await api.scorePost(editedPost);
       if (!res.ok) throw new Error("Scoring failed");
-      const data: { score: number; score_feedback: string[] } = await res.json();
+      const data: ScoreResponse = await res.json();
+      if (data.score === null) {
+        // No score came back: leave the post unscored so the user can try again.
+        showToast(data.message || "Couldn't score this post. Try again.", "error");
+        return;
+      }
+      const score = data.score;
       setResult((prev) =>
-        prev ? { ...prev, score: data.score, score_feedback: data.score_feedback, scored: true } : prev
+        prev ? { ...prev, score, score_feedback: data.score_feedback, scored: true } : prev
       );
       try {
-        sessionStorage.setItem(SS_SCORE, String(data.score));
+        sessionStorage.setItem(SS_SCORE, String(score));
         sessionStorage.setItem(SS_FEEDBACK, JSON.stringify(data.score_feedback));
         sessionStorage.setItem(SS_SCORED, "true");
       } catch {
         // ignore
       }
-      await patchHistory({ authenticity_score: data.score });
+      await patchHistory({ authenticity_score: score });
     } catch {
-      // scoring failure is non-critical — user can try again
+      showToast("Couldn't score this post. Try again.", "error");
     } finally {
       setScoreLoading(false);
     }

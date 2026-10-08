@@ -64,6 +64,9 @@ def build_trace_row(state: PipelineState, llm_calls: list[dict]) -> dict[str, An
         "profile_snapshot": state.get("profile", {}),
         "node_outputs": {
             "no_specifics": bool(state.get("no_specifics")),
+            "length_target": state.get("length_target"),
+            "perspective": state.get("perspective", ""),
+            "archetype_decision": state.get("archetype_decision", {}),
             "draft_frame_block": state.get("draft_frame_block", ""),
             "draft_history": state.get("draft_history", []),
             "critic_brief": state.get("critic_brief", {}),

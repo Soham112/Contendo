@@ -18,106 +18,6 @@ from utils.frames import chunk_field, chunk_frame, chunk_tags, infer_seniority_l
 logger = logging.getLogger(__name__)
 
 
-def resolve_attribution_frames(
-    chunks: list[dict],
-    profile: dict,
-    experience_nodes: list[dict] | None = None,
-) -> str:
-    """Assign an explicit writing frame to each retrieved chunk individually.
-
-    Phase 1 fix: frame is assigned per-chunk, not per-cluster. The old
-    cluster-level assignment caused a single personal_note to contaminate
-    all other chunks in its tag cluster with a PERSONAL frame, leading to
-    first-person hallucinations about article/video content.
-
-    Frame resolution per chunk: utils.frames.chunk_frame (memory_context first,
-    then source_type, then tag overlap with the profile's expertise).
-
-    Output: structured labeled block for direct prompt injection.
-    """
-    if not chunks:
-        return "No relevant knowledge base entries found. Draw on general expertise."
-
-    chunk_tag_sets: list[set[str]] = [chunk_tags(chunk) for chunk in chunks]
-    chunk_frames: list[str] = [chunk_frame(chunk, profile) for chunk in chunks]
-
-    # ── Build labeled output block grouped by frame ─────────────────
-    frame_order = [
-        "CONSOLIDATION",
-        "PERSONAL_WORK",
-        "PERSONAL_PROJECT",
-        "PERSONAL",
-        "OBSERVATION",
-        "EXPERT_OUTSIDER",
-        "LEARNING_SENIOR",
-        "LEARNING_MID",
-        "LEARNING_JUNIOR",
-    ]
-    # Build experience context strings for richer attribution headers
-    _work_ctx = ""
-    _project_ctx = ""
-    if experience_nodes:
-        work_nodes = [n for n in experience_nodes if n.get("node_type") == "work"]
-        project_nodes = [n for n in experience_nodes if n.get("node_type") == "personal_project"]
-        if work_nodes:
-            _work_ctx = " [" + "; ".join(
-                n["context_label"] for n in work_nodes[:3] if n.get("context_label")
-            ) + "]"
-        if project_nodes:
-            _project_ctx = " [" + "; ".join(
-                n["context_label"] for n in project_nodes[:3] if n.get("context_label")
-            ) + "]"
-
-    frame_headers = {
-        "CONSOLIDATION": (
-            "CONSOLIDATED MEMORY — synthesised summary of everything known about this topic. "
-            "Use as background context. Do not quote directly — absorb and write from it:"
-        ),
-        "PERSONAL_WORK": (
-            f"PERSONAL EXPERIENCE — WORK CONTEXT{_work_ctx} — write in first person, "
-            "this is something you built or did professionally:"
-        ),
-        "PERSONAL_PROJECT": (
-            f"PERSONAL EXPERIENCE — PERSONAL PROJECT{_project_ctx} — write in first person, "
-            "this is your own side project or experiment:"
-        ),
-        "PERSONAL": (
-            "PERSONAL EXPERIENCE — write these claims in first person:"
-        ),
-        "OBSERVATION": (
-            "OBSERVATION — patterns you've noticed in the world, "
-            "write with 'I've noticed' or 'I keep seeing', not as personal lived experience:"
-        ),
-        "EXPERT_OUTSIDER": (
-            "EXPERT OUTSIDER PERSPECTIVE — you know adjacent territory deeply,\n"
-            "this is newer to you, write with authority but honest curiosity:"
-        ),
-        "LEARNING_SENIOR": "LEARNING — confident framing at senior level, not passive:",
-        "LEARNING_MID":    "LEARNING — confident framing at mid level, not passive:",
-        "LEARNING_JUNIOR": "LEARNING — confident framing at junior level, not passive:",
-    }
-
-    frame_to_chunk_indices: dict[str, list[int]] = {}
-    for idx, frame in enumerate(chunk_frames):
-        frame_to_chunk_indices.setdefault(frame, []).append(idx)
-
-    lines: list[str] = []
-    for frame in frame_order:
-        if frame not in frame_to_chunk_indices:
-            continue
-        lines.append(frame_headers[frame])
-        for chunk_idx in frame_to_chunk_indices[frame]:
-            chunk = chunks[chunk_idx]
-            source_type = chunk_field(chunk, "source_type") or "article"
-            tag_list = ", ".join(sorted(chunk_tag_sets[chunk_idx])) if chunk_tag_sets[chunk_idx] else "none"
-            text = chunk_field(chunk, "text") or chunk_field(chunk, "content")
-            lines.append(f"[source: {source_type} | tags: {tag_list}]")
-            lines.append(text)
-            lines.append("")
-
-    return "\n".join(lines).strip()
-
-
 def _top_scores(results: list[dict]) -> tuple[float, float]:
     """(top-1 real cosine, top-1 normalized BM25) over raw retrieval results."""
     top_cosine = max((float(r.get("similarity") or 0.0) for r in results), default=0.0)
@@ -426,7 +326,7 @@ def retrieval_node(state: PipelineState) -> PipelineState:
     query = f"{topic}. {context}" if context else topic
     state["retrieval_query"] = query
 
-    # Load experience nodes once — used for attribution headers in resolve_attribution_frames
+    # Load experience nodes once: the fact checker reads the entity names from state
     experience_nodes: list[dict] = []
     try:
         from memory.experience_store import get_experience_nodes
@@ -482,6 +382,7 @@ def retrieval_node(state: PipelineState) -> PipelineState:
         retrieved_texts.append(f"[source_type: {source_type}] {chunk['text']}")
 
     state["retrieved_chunks"] = retrieved_texts
+    state["has_chunks"] = bool(bundle["chunks"])
     # Confidence and the gate use raw_results only: chunks that matched the
     # query directly, never entity-linked additions.
     state["retrieval_confidence"] = _compute_retrieval_confidence(raw_results)

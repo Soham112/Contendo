@@ -6,6 +6,8 @@ import pathlib
 
 import pytest
 
+from tests.conftest import score_json
+
 USER = "user-x"
 
 
@@ -32,7 +34,7 @@ def _assert_user(usage_calls, user_id=USER):
 def test_draft_node_logs_archetype_and_generate_with_metadata(claude, usage_calls):
     from agents.draft_agent import draft_node
 
-    claude.queue("contrarian_take", "the draft")
+    claude.queue('{"archetype": "contrarian_take"}', "the draft")
     state = {"user_id": USER, "profile": {}, "format": "linkedin post", "tone": "casual", "topic": "t"}
     draft_node(state)
 
@@ -68,10 +70,12 @@ def test_predictability_audit_keeps_step_event_types_and_labels(claude, usage_ca
 
 def test_word_count_enforcer_logs(claude, usage_calls):
     from agents.word_count_enforcer_agent import word_count_enforcer_node
+    from utils.formatters import resolve_length_target
 
     claude.queue("expanded post")
     state = {"user_id": USER, "current_draft": "too short", "format": "linkedin post",
-             "length": "standard", "quality": "standard"}
+             "length": "standard", "quality": "standard",
+             "length_target": resolve_length_target("linkedin post", "standard")}
     word_count_enforcer_node(state)
     assert _events(usage_calls) == [("word_count_enforcer", "haiku")]
     _assert_user(usage_calls)
@@ -80,7 +84,7 @@ def test_word_count_enforcer_logs(claude, usage_calls):
 def test_scorer_node_passes_state_user_id(claude, usage_calls):
     from agents.scorer_agent import scorer_node
 
-    claude.queue('{"total_score": 80}')
+    claude.queue(score_json())
     scorer_node({"user_id": USER, "current_draft": "d", "quality": "polished"})
     assert _events(usage_calls) == [("score", "sonnet")]
     _assert_user(usage_calls)
@@ -151,7 +155,8 @@ def _visuals():
     (_visuals, ("visual_svg", "sonnet")),
 ], ids=lambda v: v.__name__.strip("_") if callable(v) else None)
 def test_call_site_logs_usage(claude, usage_calls, call, expected):
-    claude.queue("<svg></svg>")  # valid for the SVG sites; plain text for the rest
+    # Valid for the SVG sites and plain text for the rest; the scorer needs its structured reply.
+    claude.queue(score_json() if call is _score_text else "<svg></svg>")
     call()
     assert _events(usage_calls) == [expected]
     _assert_user(usage_calls)
@@ -205,7 +210,7 @@ def test_extract_resume_logs_with_authenticated_user(client, claude, usage_calls
     _assert_user(usage_calls, "user-r")
 
 
-_SCORE_JSON = '{"total_score": 70}'
+_SCORE_JSON = score_json()
 
 
 @pytest.mark.parametrize("path,body,reply,expected", [
@@ -225,10 +230,10 @@ def test_router_passes_authenticated_user_id(client, claude, usage_calls, auth_h
 # --- Guards -------------------------------------------------------------------
 
 def _threaded_functions():
-    from agents import draft_agent, ingestion_agent, refine_agent, scorer_agent, vision_agent, visual_agent
+    from agents import ingestion_agent, refine_agent, scorer_agent, vision_agent, visual_agent
 
     return [
-        draft_agent.infer_archetype, refine_agent.refine_selection, scorer_agent.score_text,
+        refine_agent.refine_selection, scorer_agent.score_text,
         ingestion_agent._extract_tags, ingestion_agent._generate_source_summary,
         ingestion_agent._classify_memory_context, ingestion_agent._extract_entities_for_chunk,
         vision_agent.extract_from_image, visual_agent.generate_svg_for_diagram, visual_agent.generate_visuals,

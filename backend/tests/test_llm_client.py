@@ -5,6 +5,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
+from tests.conftest import CRITIC_ALL_STRONG
+
 
 @pytest.fixture
 def usage_calls(monkeypatch):
@@ -196,7 +198,7 @@ def test_critic_node_goes_through_complete(claude, usage_calls):
     from agents.critic_agent import critic_node
     from llm.client import HAIKU, trace_calls
 
-    claude.queue("not json, parse falls back")
+    claude.queue(CRITIC_ALL_STRONG)
     state = {"user_id": "user-c", "quality": "standard", "current_draft": "draft", "archetype": "contrarian_take"}
 
     with trace_calls() as calls:
@@ -204,7 +206,9 @@ def test_critic_node_goes_through_complete(claude, usage_calls):
 
     assert claude.calls[0]["model"] == HAIKU
     assert claude.calls[0]["max_tokens"] == 600
-    assert set(claude.calls[0]) == {"model", "max_tokens", "messages"}
+    assert set(claude.calls[0]) == {"model", "max_tokens", "messages", "tools", "tool_choice"}
+    assert claude.calls[0]["tool_choice"] == {"type": "tool", "name": "record_critique"}
+    assert state["critic_brief"]["overall"] == "postable"
     assert usage_calls[0]["event_type"] == "critic"
     assert usage_calls[0]["model"] == "haiku"
     assert usage_calls[0]["user_id"] == "user-c"

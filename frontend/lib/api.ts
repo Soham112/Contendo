@@ -86,8 +86,10 @@ export interface RefineSelectionResponse {
 }
 
 export interface ScoreResponse {
-  score: number;
+  /** null when the scorer returned no valid result; message then says so. */
+  score: number | null;
   score_feedback: string[];
+  message?: string;
 }
 
 export interface LogPostRequest {
