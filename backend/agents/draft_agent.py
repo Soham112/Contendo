@@ -123,6 +123,9 @@ For personal or story posts: include one [IMAGE: description] only if a real pho
 Never force a diagram into opinion pieces or short punchy posts where the words are the point.
 ---"""
 
+# STOPGAP: prompt-only relationship checks cannot prove source attribution.
+# Proper fix: citation-based drafting plus semantic verification of attribution
+# and relationships at every output boundary (planned in feat/single-writer).
 _CROSS_SOURCE_RULE = """CROSS-SOURCE RULE:
 Each chunk above is a separate source. Never link facts from different sources as
 cause and effect, sequence or result unless one source states that link. Facts

@@ -282,7 +282,7 @@ def fact_check_node(state: PipelineState) -> PipelineState:
                                        "rewrite": "", "recheck": "", "outcome": "removed"})
             still_bad.append(Specific(claim["type"], claim["sentence"], claim["sentence"].lower()))
 
-        # Known issue (no-specifics mode is disabled for it): removing one sentence
+        # STOPGAP: removing one sentence
         # can orphan the next ("Not because…"). The fix is citation-based drafting.
         if still_bad:
             revised = remove_sentences(revised, still_bad)

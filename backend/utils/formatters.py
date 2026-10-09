@@ -14,18 +14,30 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from utils.text_spans import protected_spans
+
 
 def normalise_post_punctuation(text: str) -> str:
-    """Replace em dashes with a sentence break before capitals, otherwise a comma.
+    """Normalise prose only; leave code, URLs, destinations and quoted literals.
 
-    Consume adjacent horizontal whitespace but preserve paragraph boundaries.
-    Other dash characters and all other text stay unchanged.
+    Numeric/date range separators become en dashes; other prose em dashes keep
+    the comma/period rule. Protected spans are copied exactly, never reformatted.
     """
-    return re.sub(
-        r"[ \t]*—[ \t]*",
-        lambda match: ". " if text[match.end():match.end() + 1].isupper() else ", ",
-        text,
-    )
+    def prose(start: int, end: int) -> str:
+        part = text[start:end]
+        def replacement(match: re.Match) -> str:
+            before, after = part[:match.start()], part[match.end():]
+            if before and after and before[-1].isdigit() and after[0].isdigit():
+                return "–"
+            return ". " if after[:1].isupper() else ", "
+        return re.sub(r"[ \t]*—[ \t]*", replacement, part)
+
+    pieces, cursor = [], 0
+    for start, end in protected_spans(text):
+        pieces.extend((prose(cursor, start), text[start:end]))
+        cursor = end
+    pieces.append(prose(cursor, len(text)))
+    return "".join(pieces)
 
 
 # ── Length ────────────────────────────────────────────────────────────────────

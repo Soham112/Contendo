@@ -81,7 +81,7 @@ export interface RefineSelectionResponse {
   message: string;
   /** The model's note when the instruction asked for something no source has. */
   note: string;
-  sources_used: "trace" | "post_and_profile";
+  sources_used: "trace";
   sources_message: string;
 }
 
@@ -255,7 +255,9 @@ export function useApi() {
       if (!res.ok) {
         const detail = (await res.json().catch(() => null))?.detail;
         throw new Error(
-          typeof detail === "string" ? detail : "Couldn't refine that selection. Please try again."
+          typeof detail === "string" ? detail
+            : typeof detail?.message === "string" ? detail.message
+            : "Couldn't refine that selection. Please try again."
         );
       }
       return res.json();

@@ -42,8 +42,10 @@ def _prompt(claude, call=0) -> str:
 
 
 @pytest.fixture
-def post_refine(client, auth_headers):
+def post_refine(client, auth_headers, fake_db):
     def _post(user_id=A, **overrides):
+        if "trace_id" not in overrides and "post_id" not in overrides:
+            overrides["trace_id"] = _seed_trace(fake_db, user_id=user_id)
         return client.post("/refine-selection", headers=auth_headers(user_id), json=_body(**overrides))
     return _post
 
@@ -122,8 +124,8 @@ def test_specifics_from_the_instruction_are_allowed(post_refine, claude):
     assert len(claude.calls) == 1
 
 
-@pytest.mark.parametrize("with_trace", [True, False])
-def test_specifics_from_a_writing_sample_are_not_allowed(post_refine, claude, fake_db, with_trace):
+def test_specifics_from_a_writing_sample_are_not_allowed(post_refine, claude, fake_db):
+    with_trace = True
     from memory.profile_store import save_profile
 
     sample = "Last quarter we cut churn by 37% at Oakline."
@@ -168,12 +170,9 @@ def test_another_users_trace_is_never_used(post_refine, claude, fake_db, by):
 
     resp = post_refine(A, **({"trace_id": trace_id} if by == "trace_id" else {"post_id": 7}))
 
-    body = resp.json()
-    assert body["sources_used"] == "post_and_profile"
-    assert TRACE_CHUNK not in _prompt(claude)
-    # B's chunk does not make "900 ms" acceptable for A: the guard retried.
-    assert len(claude.calls) == 2
-    assert body["rewritten_text"] == "It crawled at first."
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["reason"] == "trace_not_found"
+    assert claude.calls == []
 
 
 def test_no_specifics_trace_keeps_its_chunks_out(post_refine, claude, fake_db):
@@ -305,30 +304,11 @@ def test_failing_to_record_the_guard_result_does_not_fail_the_request(post_refin
 
 # --- No trace: post and profile only ---------------------------------------------------
 
-def test_without_a_trace_it_uses_the_post_and_profile_and_says_so(post_refine, claude):
-    from memory.profile_store import save_profile
-
-    save_profile({"name": "Alice", "bio": "I have shipped 14 ranking models"}, user_id=A)
-    claude.queue("Model 14 of 14 was slow at first.")
-
-    resp = post_refine()
-
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["status"] == "ok"
-    assert body["sources_used"] == "post_and_profile"
-    assert "post text and your profile only" in body["sources_message"]
-    assert "No saved sources for this post" in _prompt(claude)
-
-
-def test_without_a_trace_an_invented_number_still_reverts(post_refine, claude):
-    claude.queue("It took 47 seconds per query at first.", "It ran 38% slower at first.")
-
-    body = post_refine().json()
-
-    assert body["status"] == "reverted"
-    assert body["rewritten_text"] == SELECTION
-    assert body["sources_used"] == "post_and_profile"
+def test_without_a_trace_requires_regeneration(post_refine, claude):
+    resp = post_refine(trace_id=None)
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["reason"] == "no_identifier"
+    assert claude.calls == []
 
 
 # --- The model's note --------------------------------------------------------------

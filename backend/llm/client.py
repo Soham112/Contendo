@@ -79,7 +79,11 @@ def complete(
     create_kwargs.update(kwargs)
 
     start = time.perf_counter()
-    message = client.messages.create(**create_kwargs)
+    try:
+        message = client.messages.create(**create_kwargs)
+    except ValidationError as exc:
+        # SDK validation can also fail before a caller validates its tool input.
+        raise StructuredOutputError(_validation_summary(exc, Message)) from None
     latency_ms = (time.perf_counter() - start) * 1000
 
     try:
@@ -121,6 +125,40 @@ class StructuredOutputError(RuntimeError):
 
 class TruncatedStructuredOutputError(StructuredOutputError):
     """Both structured attempts exhausted their output budget."""
+
+
+# Bounds each diagnostic (and the combined final error), keeping logs/traces
+# useful without allowing a malformed response to flood them with field errors.
+MAX_STRUCTURED_ERROR_CHARS = 512
+
+
+def _validation_summary(exc: ValidationError, schema: type[BaseModel]) -> str:
+    """Only schema-owned field paths and error types; never values/messages/ctx.
+
+    Dynamic dictionary keys are user data, so paths not declared in the schema
+    use a constant placeholder rather than echoing their contents.
+    """
+    fields: set[str] = set()
+    def collect(value: Any) -> None:
+        if isinstance(value, dict):
+            fields.update(value.get("properties", {}))
+            for child in value.values():
+                collect(child)
+        elif isinstance(value, list):
+            for child in value:
+                collect(child)
+    collect(schema.model_json_schema())
+    errors = exc.errors(include_input=False, include_context=False, include_url=False)
+    pieces = []
+    for error in errors:
+        path = ".".join(
+            str(part) if isinstance(part, int) or part in fields else "<key>"
+            for part in error["loc"]
+        ) or "<root>"
+        pieces.append(f"{path}: {error['type']}")
+        if len("; ".join(pieces)) >= MAX_STRUCTURED_ERROR_CHARS:
+            break
+    return ("validation_error: " + "; ".join(pieces))[:MAX_STRUCTURED_ERROR_CHARS]
 
 
 _Schema = TypeVar("_Schema", bound=BaseModel)
@@ -180,11 +218,11 @@ def complete_structured(
             try:
                 return schema.model_validate(tool_input)
             except ValidationError as exc:
-                failure = f"reply does not match the schema: {exc}"
+                failure = f"reply does not match the schema: {_validation_summary(exc, schema)}"[:MAX_STRUCTURED_ERROR_CHARS]
         failures.append(failure)
         logger.warning("llm.complete_structured: %s attempt %d of 2 failed: %s", event_type, attempt, failure)
     error = TruncatedStructuredOutputError if truncations == 2 else StructuredOutputError
     raise error(
         f"{event_type}: no valid structured answer after 2 attempts. "
-        f"First: {failures[0]} Second: {failures[1]}"
+        f"First: {failures[0]} Second: {failures[1]}"[:MAX_STRUCTURED_ERROR_CHARS]
     )

@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from llm.client import HAIKU, TruncatedStructuredOutputError, complete_structured
 from pipeline.state import PipelineState
 from utils.formatters import ARCHETYPES, GENERAL_ARCHETYPE, STORY_ARCHETYPES
+from utils.sentences import note_quote_spans
 from utils.frames import chunk_field, chunk_tags, is_self_authored
 
 logger = logging.getLogger(__name__)
@@ -59,25 +60,33 @@ class ArchetypeChoice(BaseModel):
     )
 
 
-# A quote has to be a sentence, not a word that would match anywhere.
-_MIN_QUOTE_WORDS = 4
-
-
 def _normalise(text: str) -> str:
-    """Lower-case and collapse whitespace: the only differences a verbatim quote may have."""
+    """Lower-case and collapse whitespace: deliberate quote tolerances."""
     return re.sub(r"\s+", " ", text or "").strip().lower()
 
 
-def quote_is_in_note(quote: str | None, note: dict) -> bool:
-    """Whether quote appears word for word (whitespace and case aside) in the note's text.
+def event_quote_failure(quote: str | None, note: dict) -> str | None:
+    """Verify a sentence/line/item end, starting at its beginning or a prose colon.
 
-    This proves the sentence is really in the note the model cited. Whether the
-    sentence describes an event is the model's judgement; the code cannot check it.
+    Literal/time colons are not starts; this checks syntax, never topic fit.
     """
     wanted = _normalise(quote or "")
-    if len(wanted.split()) < _MIN_QUOTE_WORDS:
-        return False
-    return wanted in _normalise(chunk_field(note, "text") or chunk_field(note, "content"))
+    text = chunk_field(note, "text") or chunk_field(note, "content")
+    if not wanted:
+        return "event_quote_missing"
+    if wanted in {_normalise(sentence) for sentence in note_quote_spans(text)}:
+        return None
+    normalised = _normalise(text)
+    if wanted not in normalised:
+        return "event_quote_not_in_note"
+    # This regex matches a literal copied span, not meaning or model intent.
+    if not re.search(r"(?<!\w)" + re.escape(wanted) + r"(?!\w)", normalised):
+        return "event_quote_partial_word"
+    return "event_quote_not_sentence"
+
+
+def quote_is_in_note(quote: str | None, note: dict) -> bool:
+    return event_quote_failure(quote, note) is None
 
 
 def allowed_archetypes(perspective: str, self_authored_count: int) -> list[str]:
@@ -170,6 +179,7 @@ def choose_archetype(state: PipelineState) -> dict[str, Any]:
     cited = {"event_note": choice.event_note, "event_quote": choice.event_quote}
     if not (choice.event_note and 1 <= choice.event_note <= len(own)):
         return {**fall_back("story type without an own note that describes the event", chosen), **cited}
-    if not quote_is_in_note(choice.event_quote, own[choice.event_note - 1]):
-        return {**fall_back("story type whose event quote is not in the cited own note", chosen), **cited}
+    failure = event_quote_failure(choice.event_quote, own[choice.event_note - 1])
+    if failure:
+        return {**fall_back(failure, chosen), **cited}
     return {**decision, "archetype": chosen, "chosen": chosen, **cited}

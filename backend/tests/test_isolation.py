@@ -85,18 +85,21 @@ def _seed_chunks(user_id, title, chunks):
     upsert_chunks(chunks, source_type="article", source_title=title, user_id=user_id)
 
 
-def _refine_prompt(client, claude, headers) -> str:
+def _refine_prompt(client, claude, headers, fake_db, user_id) -> str:
     """Call /refine-selection and return the prompt it sent."""
+    from tests.test_refine_selection import _seed_trace
+    trace_id = _seed_trace(fake_db, user_id=user_id)
+    fake_db.tables["generation_traces"][-1]["profile_snapshot"] = None
     claude.queue("a tighter ending")
     resp = client.post("/refine-selection", headers=headers, json={
         "selected_text": "the ending", "instruction": "tighten the ending",
-        "full_post": "The opening. Then the ending",
+        "full_post": "The opening. Then the ending", "trace_id": trace_id,
     })
     assert resp.status_code == 200
     return claude.calls[0]["messages"][0]["content"]
 
 
-def test_refine_uses_the_requesting_users_profile(api, claude):
+def test_refine_uses_the_requesting_users_profile(api, claude, fake_db):
     from memory.profile_store import save_profile
 
     client, a, b = api
@@ -104,26 +107,26 @@ def test_refine_uses_the_requesting_users_profile(api, claude):
     save_profile({"name": "Bob Beta", "role": "Welder", "words_to_avoid": ["betaword"]}, user_id=B)
     save_profile({"name": "Shared Default", "role": "Nobody", "words_to_avoid": ["defaultword"]}, user_id="default")
 
-    prompt_a = _refine_prompt(client, claude, a)
+    prompt_a = _refine_prompt(client, claude, a, fake_db, A)
     assert "Alice Alpha" in prompt_a and "alphaword" in prompt_a
     assert "Bob Beta" not in prompt_a and "betaword" not in prompt_a
     assert "Shared Default" not in prompt_a and "defaultword" not in prompt_a
 
     claude.reset()
-    prompt_b = _refine_prompt(client, claude, b)
+    prompt_b = _refine_prompt(client, claude, b, fake_db, B)
     assert "Bob Beta" in prompt_b and "betaword" in prompt_b
     assert "Alice Alpha" not in prompt_b
     assert "Shared Default" not in prompt_b
 
 
-def test_refine_for_a_user_without_a_profile_does_not_borrow_one(api, claude):
+def test_refine_for_a_user_without_a_profile_does_not_borrow_one(api, claude, fake_db):
     from memory.profile_store import save_profile
 
     client, a, _ = api
     save_profile({"name": "Shared Default", "role": "Nobody"}, user_id="default")
     save_profile({"name": "Bob Beta", "role": "Welder"}, user_id=B)
 
-    prompt = _refine_prompt(client, claude, a)
+    prompt = _refine_prompt(client, claude, a, fake_db, A)
     assert "Shared Default" not in prompt and "Bob Beta" not in prompt
 
 
