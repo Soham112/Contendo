@@ -76,7 +76,6 @@ def test_story_archetype_is_kept_when_the_quote_is_in_the_cited_own_note(claude)
 @pytest.mark.parametrize("quote", [
     "we rebuilt the ranker in march and latency fell.",        # case
     "We rebuilt the ranker\n   in March and  latency fell.",    # whitespace
-    "rebuilt the ranker in March",                              # part of the sentence
 ])
 def test_quote_check_ignores_only_case_and_whitespace(claude, quote):
     assert _choose(claude, make_state([OWN]), _story(quote=quote))["archetype"] == "before_after"
@@ -86,12 +85,12 @@ def test_quote_check_ignores_only_case_and_whitespace(claude, quote):
     (json.dumps({"archetype": "before_after"}), "without an own note"),
     (_story(note=2), "without an own note"),                   # only one own note exists
     (_story(note=0), "without an own note"),
-    (_story(quote=None), "event quote is not in the cited own note"),
-    (_story(quote=""), "event quote is not in the cited own note"),
-    (_story(quote="We rebuilt the ranker in April and latency fell."), "event quote is not in the cited own note"),
-    (_story(quote="We rebuilt the ranker in March, and latency fell."), "event quote is not in the cited own note"),
-    (_story(quote=ARTICLE["text"]), "event quote is not in the cited own note"),  # a real sentence, wrong source
-    (_story(quote="the ranker"), "event quote is not in the cited own note"),     # a fragment, not a sentence
+    (_story(quote=None), "event_quote_missing"),
+    (_story(quote=""), "event_quote_missing"),
+    (_story(quote="We rebuilt the ranker in April and latency fell."), "event_quote_not_in_note"),
+    (_story(quote="We rebuilt the ranker in March, and latency fell."), "event_quote_not_in_note"),
+    (_story(quote=ARTICLE["text"]), "event_quote_not_in_note"),  # a real sentence, wrong source
+    (_story(quote="the ranker"), "event_quote_not_sentence"),     # a fragment, not a sentence
 ])
 def test_story_archetype_is_downgraded_when_the_event_is_not_verified(claude, caplog, reply, reason):
     with caplog.at_level("WARNING", logger="agents.archetype_agent"):
@@ -130,7 +129,7 @@ def test_founder_06_template_cited_for_the_burnout_story_is_downgraded(claude):
 
     assert decision["archetype"] == "general"
     assert decision["downgraded_from"] == "before_after"
-    assert decision["reason"] == "story type whose event quote is not in the cited own note"
+    assert decision["reason"] == "event_quote_not_in_note"
     assert decision["event_note"] == 1
     prompt = last_prompt(claude)
     assert "[1]\nThe monthly investor update I send" in prompt and "burned out" not in prompt

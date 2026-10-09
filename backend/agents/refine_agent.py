@@ -12,9 +12,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from llm.client import SONNET, complete
-from memory.profile_store import load_profile, profile_to_context_string
+from memory.profile_store import load_profile, profile_voice_context
 from memory.trace_store import append_trace_guard_entry, get_trace_sources
 from utils.formatters import normalise_post_punctuation
+from utils.frames import format_chunks_by_frame
 from utils.specifics import GuardSources, find_violations, guard_entry, guard_sources, profile_facts, retry_note
 
 logger = logging.getLogger(__name__)
@@ -23,15 +24,25 @@ REVERTED_MESSAGE = (
     "Couldn't refine without adding details that aren't in your sources. "
     "Try adding them to your instruction."
 )
-NO_TRACE_MESSAGE = (
-    "This post has no saved sources, so the rewrite was checked against the post "
-    "text and your profile only."
+MISSING_SOURCES_MESSAGE = (
+    "This post has no saved source tracking. Regenerate it to refine with sources."
 )
+
+
+class MissingRefineSources(RuntimeError):
+    """A selection cannot be edited without its original structured sources."""
+
+    def __init__(self, reason: str):
+        self.reason = reason
+        super().__init__(MISSING_SOURCES_MESSAGE)
+        logger.warning("refine_selection: refine_sources_missing reason=%s", reason)
+
+
 _NO_SOURCES_BLOCK = "(No saved sources for this post. Use only the post and the instruction.)"
 
 REFINE_SELECTION_PROMPT = """You are editing one selected section of a post. You may change its wording, structure and emphasis. You may not change what it claims.
 
-Author profile. Match this person's voice exactly:
+Author voice (voice and style only; never a source of content or angles):
 {profile_context}
 
 Words this person never uses: {words_to_avoid}
@@ -73,7 +84,7 @@ _NOTE_RE = re.compile(r"<note>(.*?)(?:</note>|\Z)", re.DOTALL | re.IGNORECASE)
 @dataclass(frozen=True)
 class RefineSources:
     """What a selection rewrite may draw on, and where that came from."""
-    origin: str            # "trace" | "post_and_profile"
+    origin: str            # "trace"; missing tracking raises MissingRefineSources
     prompt_block: str      # the sources as shown to the model
     guard: GuardSources    # what the specifics guard accepts
     trace_id: str | None = None  # the trace the sources came from, if any
@@ -88,26 +99,31 @@ def load_refine_sources(
     trace_id: str | None = None,
     post_id: int | None = None,
 ) -> RefineSources:
-    """Sources for refining a post: its generation trace when the user has one
-    (found by trace_id, else by post_id), otherwise the post and profile only.
-    The post text, the instruction and the current profile always count."""
+    """Sources from the user's trace; unavailable tracking fails explicitly.
+    The post, instruction and non-sample profile facts also support the guard."""
+    if not trace_id and post_id is None:
+        raise MissingRefineSources("no_identifier")
     always = [full_post, instruction, profile_facts(profile)]  # writing samples are style, not a source
     trace = get_trace_sources(user_id=user_id, trace_id=trace_id, post_id=post_id)
     if trace is None:
-        return RefineSources("post_and_profile", _NO_SOURCES_BLOCK,
-                             guard_sources({"profile": profile}, extra=always))
+        raise MissingRefineSources("trace_not_found")
+    chunks = trace.get("retrieved")
+    if (not isinstance(chunks, list) or not chunks
+            or any(not isinstance(chunk, dict) or not isinstance(chunk.get("text"), str)
+                   or not chunk["text"].strip() for chunk in chunks)):
+        raise MissingRefineSources("structured_chunks_missing")
 
     no_specifics = bool((trace.get("node_outputs") or {}).get("no_specifics"))
     state = {
         "topic": trace.get("topic") or "",
         "context": trace.get("context") or "",
         "profile": trace.get("profile_snapshot") or {},
-        "retrieval_bundle": {"chunks": trace.get("retrieved") or []},
+        "retrieval_bundle": {"chunks": chunks},
         "no_specifics": no_specifics,
     }
     # An opinion post without specifics was written without its chunks; refining
     # it must not bring them in either.
-    shown = "" if no_specifics else (trace.get("retrieved_context") or "").strip()
+    shown = "" if no_specifics else format_chunks_by_frame(chunks, state["profile"])
     return RefineSources("trace", shown or _NO_SOURCES_BLOCK, guard_sources(state, extra=always),
                          trace_id=str(trace["id"]))
 
@@ -156,7 +172,7 @@ def refine_selection(
 
     def rewrite(violations, event_type: str) -> tuple[str, str]:
         prompt = REFINE_SELECTION_PROMPT.format(
-            profile_context=profile_to_context_string(profile),
+            profile_context=profile_voice_context(profile),
             words_to_avoid=", ".join(profile.get("words_to_avoid", [])),
             full_post=full_post,
             sources_block=sources.prompt_block,
@@ -179,7 +195,7 @@ def refine_selection(
         "message": "",
         "note": "",
         "sources_used": sources.origin,
-        "sources_message": "" if sources.origin == "trace" else NO_TRACE_MESSAGE,
+        "sources_message": "",
     }
 
     rewritten, note = rewrite([], "refine_selection")

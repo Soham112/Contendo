@@ -212,3 +212,65 @@ def test_fact_check_retries_invalid_claim_index_or_missing_flags(claude, first_r
     claude.queue(first_reply, '{"flagged": []}')
     assert _judge("A supported view.", {"topic": "views"}, "user-a", "fact_check") == []
     assert len(claude.calls) == 2
+
+
+@pytest.mark.parametrize("caller", ["structured", "critic", "archetype"])
+def test_validation_errors_never_leak_input_into_logs_or_trace_errors(claude, caplog, caller):
+    from pydantic import BaseModel
+    from llm.client import HAIKU, StructuredOutputError, complete_structured
+    from agents.critic_agent import critic_node
+    from agents.archetype_agent import choose_archetype
+    from tests.generation_fixtures import OWN
+    sentinel = "PRIVATE_SENTINEL_VALUE"
+    if caller == "critic":
+        reply = json.dumps({"topic": {"verdict": sentinel}})
+    elif caller == "archetype":
+        reply = json.dumps({"archetype": {"private": sentinel}})
+    else:
+        reply = json.dumps({"value": sentinel})
+    claude.queue(reply, reply)
+    with caplog.at_level("WARNING"):
+        if caller == "critic":
+            recorded = critic_node(make_state([OWN]))["critic_brief"]["error"]
+        elif caller == "archetype":
+            recorded = choose_archetype(make_state([OWN]))["reason"]
+        else:
+            class Answer(BaseModel):
+                value: int
+            with pytest.raises(StructuredOutputError) as exc:
+                complete_structured(schema=Answer, tool_name="answer", tool_description="d", model=HAIKU,
+                    messages=[{"role": "user", "content": "q"}], max_tokens=50, user_id=USER, event_type="test")
+            recorded = str(exc.value)
+    assert sentinel not in recorded
+    assert sentinel not in caplog.text
+    assert len(claude.calls) == 2
+
+
+def test_sdk_validation_failure_is_sanitized_before_critic_records_error(claude, caplog):
+    from anthropic.types import Message
+    from agents.critic_agent import critic_node
+    def invalid_sdk_response(kwargs):
+        return Message.model_validate({"id": "PRIVATE_SDK_SENTINEL"})
+    claude.respond_with(invalid_sdk_response)
+    with caplog.at_level("WARNING"):
+        error = critic_node(make_state([ARTICLE]))["critic_brief"]["error"]
+    assert "PRIVATE_SDK_SENTINEL" not in error
+    assert "PRIVATE_SDK_SENTINEL" not in caplog.text
+    assert len(claude.calls) == 1
+
+
+def test_structured_diagnostics_bound_size_and_hide_dynamic_dictionary_keys(claude, caplog):
+    from pydantic import BaseModel
+    from llm.client import HAIKU, MAX_STRUCTURED_ERROR_CHARS, StructuredOutputError, complete_structured
+    class Answer(BaseModel):
+        values: dict[str, int]
+    reply = json.dumps({"values": {f"PRIVATE_KEY_SENTINEL_{i}": "PRIVATE_VALUE_SENTINEL" for i in range(200)}})
+    claude.queue(reply, reply)
+    with caplog.at_level("WARNING"), pytest.raises(StructuredOutputError) as exc:
+        complete_structured(schema=Answer, tool_name="answer", tool_description="d", model=HAIKU,
+            messages=[{"role": "user", "content": "q"}], max_tokens=50, user_id=USER, event_type="test")
+    error = str(exc.value)
+    assert "PRIVATE_KEY_SENTINEL" not in error + caplog.text
+    assert "PRIVATE_VALUE_SENTINEL" not in error + caplog.text
+    assert len(error) <= MAX_STRUCTURED_ERROR_CHARS
+    assert "values.<key>" in error

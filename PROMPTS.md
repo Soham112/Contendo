@@ -859,7 +859,7 @@ What to inject instead:
 ```
 You are editing one selected section of a post. You may change its wording, structure and emphasis. You may not change what it claims.
 
-Author profile. Match this person's voice exactly:
+Author voice (voice and style only; never a source of content or angles):
 {profile_context}
 
 Words this person never uses: {words_to_avoid}

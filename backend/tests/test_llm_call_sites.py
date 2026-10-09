@@ -94,7 +94,10 @@ def test_scorer_node_passes_state_user_id(claude, usage_calls):
 
 def _refine_selection():
     from agents.refine_agent import refine_selection
-    refine_selection("sel", "shorter", "full post", user_id=USER)
+    from db.supabase_client import supabase
+    from tests.test_refine_selection import _seed_trace
+    trace_id = _seed_trace(supabase, user_id=USER)
+    refine_selection("sel", "shorter", "full post", user_id=USER, trace_id=trace_id)
 
 
 def _score_text():
@@ -219,7 +222,10 @@ _SCORE_JSON = score_json()
      "a rewritten selection", [("refine_selection", "sonnet")]),
     ("/suggest-memory-context", {"content": "some text"}, _SCORE_JSON, [("memory_context_classify", "haiku")]),
 ])
-def test_router_passes_authenticated_user_id(client, claude, usage_calls, auth_headers, path, body, reply, expected):
+def test_router_passes_authenticated_user_id(client, claude, usage_calls, auth_headers, fake_db, path, body, reply, expected):
+    if path == "/refine-selection":
+        from tests.test_refine_selection import _seed_trace
+        body = {**body, "trace_id": _seed_trace(fake_db, user_id="user-r")}
     claude.respond_with(lambda kw: reply)
     resp = client.post(path, json=body, headers=auth_headers("user-r"))
     assert resp.status_code == 200

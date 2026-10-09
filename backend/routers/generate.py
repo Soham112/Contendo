@@ -6,7 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from agents.refine_agent import refine_selection
+from agents.refine_agent import MISSING_SOURCES_MESSAGE, MissingRefineSources, refine_selection
 from agents.scorer_agent import score_text
 from agents.visual_agent import generate_visuals, generate_svg_for_diagram
 from auth.supabase_jwt import get_user_id_dep
@@ -90,7 +90,7 @@ class RefineSelectionResponse(BaseModel):
     message: str = ""
     # The model's own note when the instruction asked for something no source has.
     note: str = ""
-    sources_used: str = "trace"  # "trace" | "post_and_profile"
+    sources_used: str = "trace"  # missing tracking returns HTTP 409
     sources_message: str = ""
 
 
@@ -206,10 +206,17 @@ async def refine_selection_endpoint(
             trace_id=str(req.trace_id) if req.trace_id else None,
             post_id=req.post_id,
         )
+    except MissingRefineSources as exc:
+        raise HTTPException(status_code=409, detail={
+            "code": "refine_sources_missing", "reason": exc.reason,
+            "message": MISSING_SOURCES_MESSAGE,
+        }) from None
     except (InternalServerError, APIStatusError) as e:
         _raise_anthropic_error(e)
-    except Exception:
-        _raise_internal_error("POST /refine-selection")
+    except Exception as exc:
+        # Exception messages/tracebacks may contain query values or user content.
+        logger.error("POST /refine-selection failed category=%s", type(exc).__name__)
+        raise HTTPException(status_code=500, detail=_GENERIC_500) from None
     return RefineSelectionResponse(**result)
 
 

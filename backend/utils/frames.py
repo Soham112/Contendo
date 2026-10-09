@@ -229,6 +229,9 @@ def frame_rules(chunks: list[dict], profile: dict) -> str:
 
 # ── Perspective ───────────────────────────────────────────────────────────────
 
+# STOPGAP: reaction/generalisation restrictions are prompt-only.
+# Proper fix: citation-based drafting plus semantic verification of attribution
+# and relationships at every output boundary (planned in feat/single-writer).
 # Added to every perspective.
 _NO_GENERALISING = (
     "\nDon't make claims about what most people, most founders or most teams do unless a source says so; "
