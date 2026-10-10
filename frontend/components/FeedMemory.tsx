@@ -621,6 +621,9 @@ export default function FeedMemory() {
       }
 
       const data = await res.json();
+      if (!data.duplicate && !(data.chunks_stored > 0)) {
+        throw new Error("No chunks were stored. Check that the source contains readable text and try again.");
+      }
       setResult(data);
       logEvent({
         event_type: data.duplicate ? "feature_abandon" : "feature_complete",
@@ -628,7 +631,12 @@ export default function FeedMemory() {
         button_name: "ingest_submit",
         metadata: { source_type: activeTab, chunks_stored: data.chunks_stored ?? 0, duplicate: !!data.duplicate },
       });
-      showToast(`Ingested successfully! Added ${data.chunks_added ?? 0} chunks.`, "success");
+      showToast(
+        data.duplicate
+          ? `This source is already in memory (${data.chunks_stored} chunks).`
+          : `Ingested successfully! Added ${data.chunks_stored} chunks.`,
+        "success",
+      );
       setContent("");
       setUrlInput("");
       setImageFile(null);
