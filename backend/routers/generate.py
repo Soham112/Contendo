@@ -43,6 +43,19 @@ class ClosestSource(BaseModel):
     similarity: float
 
 
+class ReviewIssue(BaseModel):
+    type: str
+    sentence_text: str
+
+
+class ReviewSummary(BaseModel):
+    # clean | fixed | issues_remain | not_reviewed (pipeline.redraft.outcome_node).
+    outcome: str
+    # The acting issues still on the returned post. Record-only issue types
+    # (changed_detail, ai_rhythm) are in the generation trace, never here.
+    issues: list[ReviewIssue] = []
+
+
 class GenerateResponse(BaseModel):
     # "ok", or "low_coverage": the knowledge base doesn't cover the topic, so
     # nothing was drafted (post is ""); see closest_sources and suggestion.
@@ -62,6 +75,9 @@ class GenerateResponse(BaseModel):
     suggestion: str = ""
     # Whether the low-coverage notice may offer an opinion post without specifics.
     no_specifics_enabled: bool = False
+    # Single-writer pipeline B only: what its review of the post concluded.
+    # None when no review ran (pipeline A or C, or B with quality="draft").
+    review: ReviewSummary | None = None
 
 
 class ScoreRequest(BaseModel):
@@ -175,6 +191,7 @@ async def generate(
         retrieval_confidence=result.get("retrieval_confidence", "medium"),
         trace_id=result.get("trace_id"),
         no_specifics_enabled=features.NO_SPECIFICS_MODE_ENABLED,
+        review=result.get("review"),
     )
 
 

@@ -1,6 +1,8 @@
-"""Length through run_pipeline: variants B and C trim an over-length post, never
-lengthen one, and return no post when the draft was cut off; the draft's output
-budget fits every length target; pipeline A is recorded only."""
+"""Length through run_pipeline: the single-writer variants trim an over-length
+post, never lengthen one, and return no post when the draft was cut off; the
+draft's output budget fits every length target; pipeline A is recorded only.
+The runs here have no review (variant C, and B at quality="draft"); what
+standard B does about length is in test_pipeline_b.py."""
 
 import json
 
@@ -8,15 +10,15 @@ import pytest
 
 from tests.conftest import ARCHETYPE_GENERAL, CRITIC_ALL_STRONG
 from tests.generation_fixtures import OWN, make_state
-from tests.length_fixtures import FIRST_POST_USER, KB_USER, _clean, _cut_off, _lines, _outputs, _post, _run
+from tests.length_fixtures import DRAFT_ONLY, FIRST_POST_USER, KB_USER, _clean, _cut_off, _lines, _outputs, _post, _run
 from tests.test_generation_trace import STANDARD_RUN, seeded_kb  # noqa: F401  (shared fixture)
 from utils.formatters import FIRST_POST_RANGE, WORD_RANGES, count_words, resolve_length_target
 
 
-# --- Through run_pipeline, variants B and C --------------------------------------
+# --- Through run_pipeline, draft only (C, and B at quality="draft") ---------------
 
-@pytest.mark.parametrize("variant", ["B", "C"])
-def test_a_first_post_made_over_length_by_normalisation_is_trimmed(claude, fake_db, variant):
+@pytest.mark.parametrize("variant,quality", DRAFT_ONLY)
+def test_a_first_post_made_over_length_by_normalisation_is_trimmed(claude, fake_db, variant, quality):
     # Ten 10-word lines: 100 words, the first-post maximum. One holds "alpha—beta",
     # which is one word until the em dash is normalised: then the post is 101.
     lines = _lines(10)
@@ -25,7 +27,7 @@ def test_a_first_post_made_over_length_by_normalisation_is_trimmed(claude, fake_
     assert count_words(_clean(marked)) == FIRST_POST_RANGE[1]      # 100 before normalisation
     claude.queue(ARCHETYPE_GENERAL, marked, json.dumps({"ranking": [2]}))
 
-    result = _run(variant, user_id=FIRST_POST_USER, topic="Forecast intervals",
+    result = _run(variant, quality=quality, user_id=FIRST_POST_USER, topic="Forecast intervals",
                   context="Core opinion/take: intervals beat point forecasts")
 
     outputs = _outputs(fake_db)
@@ -38,11 +40,11 @@ def test_a_first_post_made_over_length_by_normalisation_is_trimmed(claude, fake_
     assert [c["event_type"] for c in fake_db.tables["generation_traces"][0]["llm_calls"]] == ["archetype", "generate", "trim"]
 
 
-@pytest.mark.parametrize("variant", ["B", "C"])
-def test_an_over_length_post_is_trimmed_and_the_returned_post_is_the_validated_one(claude, fake_db, seeded_kb, variant):
+@pytest.mark.parametrize("variant,quality", DRAFT_ONLY)
+def test_an_over_length_post_is_trimmed_and_the_returned_post_is_the_validated_one(claude, fake_db, seeded_kb, variant, quality):
     claude.queue(ARCHETYPE_GENERAL, _post(36), json.dumps({"ranking": [10]}))   # 360 words against 250-350
 
-    result = _run(variant)
+    result = _run(variant, quality=quality)
 
     outputs = _outputs(fake_db)
     assert outputs["trim_result"]["outcome"] == "trimmed"
@@ -55,11 +57,11 @@ def test_an_over_length_post_is_trimmed_and_the_returned_post_is_the_validated_o
     assert len(outputs["citations"]) == 35
 
 
-@pytest.mark.parametrize("variant", ["B", "C"])
-def test_a_failed_trim_returns_the_post_with_the_failure_recorded(claude, fake_db, seeded_kb, variant):
+@pytest.mark.parametrize("variant,quality", DRAFT_ONLY)
+def test_a_failed_trim_returns_the_post_with_the_failure_recorded(claude, fake_db, seeded_kb, variant, quality):
     claude.queue(ARCHETYPE_GENERAL, _post(36), json.dumps({"ranking": [99]}))
 
-    result = _run(variant)
+    result = _run(variant, quality=quality)
 
     outputs = _outputs(fake_db)
     assert outputs["trim_result"]["outcome"] == "trim_failed"
@@ -69,11 +71,11 @@ def test_a_failed_trim_returns_the_post_with_the_failure_recorded(claude, fake_d
     assert result["post"] == outputs["final_post"]
 
 
-@pytest.mark.parametrize("variant", ["B", "C"])
-def test_an_under_length_post_is_recorded_and_costs_no_extra_call(claude, fake_db, seeded_kb, variant):
+@pytest.mark.parametrize("variant,quality", DRAFT_ONLY)
+def test_an_under_length_post_is_recorded_and_costs_no_extra_call(claude, fake_db, seeded_kb, variant, quality):
     claude.queue(ARCHETYPE_GENERAL, _post(5))          # 50 words against 250-350
 
-    result = _run(variant)
+    result = _run(variant, quality=quality)
 
     outputs = _outputs(fake_db)
     assert len(claude.calls) == 2                      # structure and draft: nothing lengthens a post
@@ -83,11 +85,11 @@ def test_an_under_length_post_is_recorded_and_costs_no_extra_call(claude, fake_d
     assert result["post"] == outputs["final_post"] and count_words(result["post"]) == 50
 
 
-@pytest.mark.parametrize("variant", ["B", "C"])
-def test_a_post_within_its_target_is_not_trimmed(claude, fake_db, seeded_kb, variant):
+@pytest.mark.parametrize("variant,quality", DRAFT_ONLY)
+def test_a_post_within_its_target_is_not_trimmed(claude, fake_db, seeded_kb, variant, quality):
     claude.queue(ARCHETYPE_GENERAL, _post(30))         # 300 words
 
-    _run(variant)
+    _run(variant, quality=quality)
 
     assert len(claude.calls) == 2
     assert _outputs(fake_db)["final_validation"]["length"] == "ok"

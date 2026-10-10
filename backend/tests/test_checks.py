@@ -9,7 +9,7 @@ import pytest
 from tests.conftest import ARCHETYPE_GENERAL
 from tests.checks_fixtures import PRICING, SURVEY
 from tests.generation_fixtures import ARTICLE, OWN, PROFILE, make_state
-from tests.length_fixtures import _outputs, _run
+from tests.length_fixtures import DRAFT_ONLY, _outputs, _run
 from tests.test_generation_trace import STANDARD_RUN, seeded_kb  # noqa: F401  (shared fixture)
 
 STORY_KEY = "before_after"
@@ -361,12 +361,12 @@ def test_a_word_to_avoid_in_a_heading_is_reported_without_a_span():
 
 # --- Through run_pipeline --------------------------------------------------------
 
-@pytest.mark.parametrize("variant", ["B", "C"])
-def test_checks_are_recorded_and_add_no_call_and_change_no_post(claude, fake_db, seeded_kb, variant):
+@pytest.mark.parametrize("variant,quality", DRAFT_ONLY)
+def test_checks_are_recorded_and_add_no_call_and_change_no_post(claude, fake_db, seeded_kb, variant, quality):
     marked = "\n\n".join([*_lines(28), "Latency fell 37 percent on a Tuesday. [[S1]]", "No marker on this line."])
     claude.queue(ARCHETYPE_GENERAL, marked)
 
-    result = _run(variant)
+    result = _run(variant, quality=quality)
 
     outputs = _outputs(fake_db)
     assert len(claude.calls) == 2                                  # structure and draft: the checks call no model
@@ -377,11 +377,11 @@ def test_checks_are_recorded_and_add_no_call_and_change_no_post(claude, fake_db,
     assert result["status"] == "ok"
 
 
-@pytest.mark.parametrize("variant", ["B", "C"])
-def test_checks_run_again_on_the_trimmed_post(claude, fake_db, seeded_kb, variant):
+@pytest.mark.parametrize("variant,quality", DRAFT_ONLY)
+def test_checks_run_again_on_the_trimmed_post(claude, fake_db, seeded_kb, variant, quality):
     claude.queue(ARCHETYPE_GENERAL, _post(36), json.dumps({"ranking": [10]}))      # 360 words, trimmed to 350
 
-    _run(variant)
+    _run(variant, quality=quality)
 
     outputs = _outputs(fake_db)
     assert len(claude.calls) == 3                                  # structure, draft, trim

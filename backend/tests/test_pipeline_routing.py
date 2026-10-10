@@ -10,10 +10,14 @@ A_NODE_ORDER = [
     "load_profile", "retrieval", "draft", "critic", "humanizer",
     "predictability_audit", "word_count_enforcer", "fact_checker",
 ]
-# B and C are the same for now (see _wire_cited_draft in pipeline/graph.py):
-# structure → cited draft → strip → finalise, then trim → finalise only when the
-# post is over its maximum. Checks, review and redraft for B are added later.
+# Variant C, and variant B with quality="draft" (pipeline/single_writer.py):
+# structure → cited draft → strip → finalise → checks, then trim → finalise →
+# checks again only when the post is over its maximum.
 SINGLE_WRITER_NODE_ORDER = ["load_profile", "retrieval", "structure", "cited_draft", "strip", "finalise", "checks"]
+# Variant B: the first draft is reviewed. With nothing to act on, it ends there.
+# What the review leads to is tested with the real nodes in test_pipeline_b.py.
+REVIEWED_NODE_ORDER = [*SINGLE_WRITER_NODE_ORDER, "review"]
+NO_ISSUES = {"issues": [], "counts": {}}
 
 
 @pytest.fixture
@@ -21,6 +25,7 @@ def stub_nodes(monkeypatch):
     """Replace every agent node with a stub. stub_nodes(scores) returns the list
     the stubs append their names to, in the order they run."""
     import pipeline.graph as graph
+    import pipeline.single_writer as single_writer
 
     def install(scores, finalise_length="ok"):
         visited: list[str] = []
@@ -52,16 +57,22 @@ def stub_nodes(monkeypatch):
         monkeypatch.setattr(graph, "scorer_node", stub("scorer", score))
         monkeypatch.setattr(graph, "word_count_enforcer_node", stub("word_count_enforcer"))
         monkeypatch.setattr(graph, "fact_check_node", stub("fact_checker"))
-        monkeypatch.setattr(graph, "structure_node", stub("structure"))
-        monkeypatch.setattr(graph, "cited_draft_node", stub("cited_draft", draft))
-        monkeypatch.setattr(graph, "strip_draft_node", stub("strip"))
-        monkeypatch.setattr(graph, "finalise_draft_node", stub("finalise", lambda s: s.update(
+        monkeypatch.setattr(single_writer, "structure_node", stub("structure"))
+        monkeypatch.setattr(single_writer, "cited_draft_node", stub("cited_draft", draft))
+        monkeypatch.setattr(single_writer, "strip_draft_node", stub("strip"))
+        monkeypatch.setattr(single_writer, "finalise_draft_node", stub("finalise", lambda s: s.update(
             final_post=s["current_draft"], final_validation={"length": finalise_length})))
-        monkeypatch.setattr(graph, "checks_node", stub("checks"))
-        monkeypatch.setattr(graph, "recheck_node", stub("recheck"))
-        monkeypatch.setattr(graph, "trim_node", stub("trim"))
-        monkeypatch.setattr(graph, "finalise_trimmed_node", stub("finalise_trimmed"))
-        monkeypatch.setattr(graph, "truncated_node", stub("truncated", lambda s: s.update(final_post="")))
+        monkeypatch.setattr(single_writer, "checks_node", stub("checks", lambda s: s.update(
+            checks_before_trim=NO_ISSUES, checks_final=NO_ISSUES)))
+        monkeypatch.setattr(single_writer, "recheck_node", stub("recheck"))
+        monkeypatch.setattr(single_writer, "trim_node", stub("trim"))
+        monkeypatch.setattr(single_writer, "finalise_trimmed_node", stub("finalise_trimmed"))
+        monkeypatch.setattr(single_writer, "truncated_node", stub("truncated", lambda s: s.update(final_post="")))
+        # decide_node and outcome_node are not stubbed: they are code, and decide what runs.
+        monkeypatch.setattr(single_writer, "review_node", stub("review", lambda s: s.update(
+            review_first={"outcome": "clean", "issues": [], "unreviewed": [], "sentences": []})))
+        monkeypatch.setattr(single_writer, "redraft_node", stub("redraft"))
+        monkeypatch.setattr(single_writer, "review_redraft_node", stub("review_redraft"))
         return visited
 
     return install
@@ -215,28 +226,61 @@ def test_variant_a_runs_the_rewrite_chain(run_graph):
     assert result["final_post"] == "draft text"
 
 
-@pytest.mark.parametrize("variant", ["B", "C"])
-@pytest.mark.parametrize("quality", ["draft", "standard", "polished"])
-def test_single_writer_variants_run_one_draft_and_no_rewriting_node(run_graph, variant, quality):
+# Variant C at every quality, and variant B at quality="draft": one draft, no review.
+DRAFT_ONLY = [("C", "draft"), ("C", "standard"), ("C", "polished"), ("B", "draft")]
+
+
+@pytest.mark.parametrize("variant,quality", DRAFT_ONLY)
+def test_draft_only_runs_one_draft_and_no_review_or_rewriting_node(run_graph, variant, quality):
     visited, result = run_graph(scores=[], variant=variant)(quality)
 
     assert visited == SINGLE_WRITER_NODE_ORDER
     assert result["final_post"] == "draft text"
+    assert "review" not in result and "review_first" not in result
 
 
-@pytest.mark.parametrize("variant", ["B", "C"])
-def test_an_over_length_post_goes_through_trim_and_is_finalised_again(run_graph, variant):
-    visited, _ = run_graph(scores=[], variant=variant, finalise_length="over_length")("standard")
+@pytest.mark.parametrize("quality", ["standard", "polished"])
+def test_variant_b_reviews_the_draft_and_stops_when_nothing_acts(run_graph, quality):
+    visited, result = run_graph(scores=[], variant="B")(quality)
+
+    assert visited == REVIEWED_NODE_ORDER                       # no redraft, no second review, no scorer
+    assert result["review"]["outcome"] == "clean"
+    assert [t["step"] for t in result["step_timings"]] == [
+        "structure", "draft", "strip", "finalise", "checks", "review_draft", "decide", "outcome"]
+
+
+@pytest.mark.parametrize("variant,quality", DRAFT_ONLY)
+def test_an_over_length_post_goes_through_trim_and_is_finalised_again(run_graph, variant, quality):
+    visited, _ = run_graph(scores=[], variant=variant, finalise_length="over_length")(quality)
 
     assert visited == [*SINGLE_WRITER_NODE_ORDER, "trim", "finalise_trimmed", "recheck"]
 
 
-@pytest.mark.parametrize("variant", ["B", "C"])
+@pytest.mark.parametrize("variant,quality", DRAFT_ONLY)
 @pytest.mark.parametrize("length", ["ok", "under_length", "no_target"])
-def test_a_post_that_is_not_over_length_is_never_trimmed(run_graph, variant, length):
-    visited, _ = run_graph(scores=[], variant=variant, finalise_length=length)("standard")
+def test_a_post_that_is_not_over_length_is_never_trimmed(run_graph, variant, quality, length):
+    visited, _ = run_graph(scores=[], variant=variant, finalise_length=length)(quality)
 
     assert visited == SINGLE_WRITER_NODE_ORDER
+
+
+def test_no_edge_leads_back_to_the_redraft():
+    """Never a third draft: nothing after the redraft can reach a drafting node."""
+    import pipeline.graph as graph
+
+    edges = graph.build_graph("B").get_graph().edges
+    after: dict[str, set[str]] = {}
+    for edge in edges:
+        after.setdefault(edge.source, set()).add(edge.target)
+    reached, frontier = set(), {"redraft"}
+    while frontier:
+        node = frontier.pop()
+        for target in after.get(node, ()):
+            if target not in reached:
+                reached.add(target)
+                frontier.add(target)
+    assert not {"draft", "redraft"} & reached
+    assert {"review_redraft", "trim", "outcome"} <= reached
 
 
 @pytest.mark.parametrize("variant", ["B", "C"])
@@ -259,7 +303,7 @@ def test_run_pipeline_uses_the_configured_variant(stubbed_pipelines, fake_db, mo
     _run_pipeline()
 
     assert _recorded_variant(fake_db) == "B"
-    assert stubbed_pipelines == SINGLE_WRITER_NODE_ORDER
+    assert stubbed_pipelines == REVIEWED_NODE_ORDER
 
 
 def test_an_explicit_variant_overrides_the_configured_one(stubbed_pipelines, fake_db, monkeypatch):

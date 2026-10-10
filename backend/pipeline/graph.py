@@ -7,23 +7,19 @@ from config import features
 from llm.client import trace_calls
 from pipeline.state import PipelineState
 from pipeline.trace import build_trace_row
-from pipeline.checks import checks_node, recheck_node
-from pipeline.finalise import (
-    finalise_draft_node, finalise_trimmed_node, route_after_cited_draft, route_to_trim,
-    strip_draft_node, truncated_node, validation_record,
-)
+from pipeline.finalise import validation_record
+from pipeline.redraft import review_summary
+from pipeline.single_writer import wire_draft_only, wire_reviewed
 from utils.formatters import normalise_post_punctuation, resolve_length_target
 from utils.frames import decide_perspective
 from memory.profile_store import load_profile
 from memory.feedback_store import get_all_topics_posted
 from memory.trace_store import save_generation_trace
 from agents.retrieval_agent import retrieval_node
-from agents.archetype_agent import structure_node
-from agents.draft_agent import cited_draft_node, draft_node
+from agents.draft_agent import draft_node
 from agents.critic_agent import critic_node
 from agents.humanizer_agent import humanizer_node
 from agents.predictability_audit_agent import predictability_audit_node
-from agents.trim_agent import trim_node
 from agents.word_count_enforcer_agent import word_count_enforcer_node
 from agents.fact_check_agent import fact_check_node, log_fact_check
 from agents.scorer_agent import scorer_node
@@ -163,50 +159,13 @@ def _wire_rewrite_chain(graph: StateGraph) -> None:
     graph.add_edge("finalize", END)
 
 
-def _wire_cited_draft(graph: StateGraph) -> None:
-    """Variants B and C, after plan: structure (the archetype, structure only;
-    "archetype" is a state key, so the node cannot have that name) → draft (with
-    citation markers) → strip (EVENT line removed) → finalise (punctuation
-    normalised, markers removed, validated) → checks (deterministic, recorded
-    only) → trim (only when over the maximum) → finalise again → checks again,
-    on the text that is returned → end. A draft cut off at its output limit goes
-    straight to "truncated" and returns no post.
-
-    STOPGAP: B and C are still the same pipeline and `quality` is ignored. The
-    checks run and are recorded (checks_before_trim, checks_final), but nothing
-    acts on an issue: no redraft, and a failed trim is in the trace only.
-    Proper fix: the structured review, at most one redraft driven by the issues,
-    and the quality rules, for B only; C stays record-only (step 6 of the
-    feat/single-writer plan).
-    """
-    graph.add_node("structure", structure_node)
-    graph.add_node("draft", cited_draft_node)
-    graph.add_node("truncated", truncated_node)
-    graph.add_node("strip", strip_draft_node)
-    graph.add_node("finalise", finalise_draft_node)
-    graph.add_node("checks", checks_node)
-    graph.add_node("trim", trim_node)
-    graph.add_node("finalise_trimmed", finalise_trimmed_node)
-    graph.add_node("recheck", recheck_node)
-
-    graph.add_edge("plan", "structure")
-    graph.add_edge("structure", "draft")
-    graph.add_conditional_edges("draft", route_after_cited_draft, {"truncated": "truncated", "strip": "strip"})
-    graph.add_edge("truncated", END)
-    graph.add_edge("strip", "finalise")
-    graph.add_edge("finalise", "checks")
-    graph.add_conditional_edges("checks", route_to_trim, {"trim": "trim", "end": END})
-    graph.add_edge("trim", "finalise_trimmed")
-    graph.add_edge("finalise_trimmed", "recheck")
-    graph.add_edge("recheck", END)
-
-
 # What runs after plan, per variant (config.features.PIPELINE_VARIANTS).
-# Everything up to and including plan is shared.
+# Everything up to and including plan is shared. B and C are wired in
+# pipeline/single_writer.py.
 _AFTER_PLAN: dict[str, Callable[[StateGraph], None]] = {
     "A": _wire_rewrite_chain,
-    "B": _wire_cited_draft,
-    "C": _wire_cited_draft,
+    "B": wire_reviewed,
+    "C": wire_draft_only,
 }
 
 
@@ -255,6 +214,17 @@ def run_pipeline(
     gate stops it before drafting, or status "draft_truncated" (empty post,
     message) when a single-writer draft was cut off at its output limit. no_specifics=True skips the gate; it raises
     ValueError while config.features.NO_SPECIFICS_MODE_ENABLED is off.
+
+    Under variant B an "ok" result carries review: {outcome, issues: [{type,
+    sentence_text}]}, the acting issues on the returned post
+    (pipeline.redraft); it is None when no review ran (A, C, and B with
+    quality="draft"). Only variant A scores a post.
+
+    STOPGAP: nothing reads `review` or the "draft_truncated" status yet: the
+    Create page shows the post as if neither existed, and selection refine
+    still rewrites a single-writer post with pipeline A's own writer and
+    checks. Proper fix: the frontend ReviewNotice and the refine alignment,
+    step 9 of docs/plans/single-writer.md.
 
     variant: which pipeline to run (config.features.PIPELINE_VARIANTS). None
     uses the configured one (PIPELINE_VARIANT, default A); evals pass it to
@@ -333,8 +303,9 @@ def run_pipeline(
         "score_feedback": result.get("score_feedback", []),
         "iterations": result.get("iterations", 1),
         "archetype": result.get("archetype", ""),
-        "scored": quality == "polished" and not result.get("score_error"),
+        "scored": variant == "A" and quality == "polished" and not result.get("score_error"),
         "retrieval_confidence": result.get("retrieval_confidence", "medium"),
         "trace_id": trace_id,
         "fact_check_job": fact_check_job,
+        "review": review_summary(result),
     }

@@ -109,9 +109,32 @@ class PipelineState(TypedDict, total=False):
     # The deterministic checks (pipeline.checks), each {issues: [{type, span,
     # text, sources, detail}], counts: {type: n}}. checks_before_trim is on the
     # finalised draft; checks_final is on the post that is returned (the same
-    # result when no trim ran). Recorded only.
+    # result when no trim ran). After a redraft (variant B) both are the
+    # redraft's; the first draft's checks are then in review["first"]["checks"].
     checks_before_trim: dict[str, Any]
     checks_final: dict[str, Any]
+
+    # Variant B only (absent under A and C, and under B with quality="draft").
+    # review_first, review_second: the structured review of the first draft and
+    #   of the redraft (agents.review_agent.review_post): {outcome, issues,
+    #   invalid, unreviewed, records, sentences, reused, reviewed, groups, model,
+    #   input_tokens, output_tokens, error?}. The second sends only the
+    #   sentences the redraft changed; reused / reviewed count both kinds.
+    # review: what was done about the issues (pipeline.redraft):
+    #   {first: {checks, acting, recorded},
+    #    redraft: {entries: [{type, instruction, material}], downgraded_from?,
+    #              input_tokens, output_tokens}        only when a redraft ran
+    #    redraft_truncated: {max_tokens, output_tokens} only when the redraft
+    #              was cut off; the first draft is then the returned post
+    #    second: {checks, acting, recorded}            only when a redraft ran
+    #    remaining: acting issues on the returned post,
+    #    unreviewed: sentences of the returned post with no valid review record,
+    #    outcome: clean | fixed | issues_remain | not_reviewed}
+    # step_timings: [{step, seconds}], one per graph step that ran, in order.
+    review_first: dict[str, Any]
+    review_second: dict[str, Any]
+    review: dict[str, Any]
+    step_timings: list[dict[str, Any]]
 
     # The validation record of the returned post (pipeline.finalise), all
     # variants: {words, target, length: ok | over_length | under_length |

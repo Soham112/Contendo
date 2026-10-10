@@ -5,6 +5,8 @@ prompt asks for observations about each sentence and never for a verdict, and
 it never shows the post's citations.
 """
 
+from typing import Sequence
+
 from pipeline.state import PipelineState
 from utils.citations import Span
 from utils.formatters import get_archetype
@@ -87,7 +89,7 @@ true when the sentence leaves the topic as given (and the additional context): i
 
 After the entries, ai_rhythm: a list, left empty when there is nothing to report, for your assigned sentences only. One entry for each place where the wording or the rhythm reads as machine-written and not as a person's: an opener that announces a subject without saying anything about it; a transition that connects nothing; inflated or motivational framing; a run of sentences of nearly the same length and shape; a list of three that is there for the rhythm; a closing line that restates the point as a slogan; a question asked only so the next sentence can answer it. Give the number of the sentence where it shows most, and one short sentence describing the pattern; never propose wording. Plain short sentences, a repetition that carries meaning, a transition that does connect two ideas, and wording that is in a source are not this.
 
-Your assignment: sentences {first} to {last}. Record exactly one entry for each of them ({count} in all) and none for any other sentence. The other sentences are there so you can read yours in context."""
+Your assignment: sentences {assignment}. Record exactly one entry for each of them ({count} in all) and none for any other sentence. The other sentences are there so you can read yours in context."""
 
 _EVENT_CITED = 'The event the writer says this post tells: source {source}, the sentence "{quote}"\n'
 _EVENT_NONE = "The writer found no event of the author's own that fits the topic, and wrote a general post.\n"
@@ -95,7 +97,16 @@ _NO_CONTEXT = "none"
 _UNKNOWN_AUTHOR = "not given"
 
 
-def build_review_prompt(state: PipelineState, sentences: list[tuple[int, Span]], group: range) -> str:
+def _assignment(group: Sequence[int]) -> str:
+    """The assigned sentence numbers: "3 to 6" for a run of consecutive
+    numbers, "2, 5, 9" otherwise (a second review, which skips the sentences
+    the redraft left unchanged)."""
+    if list(group) == list(range(group[0], group[-1] + 1)):
+        return f"{group[0]} to {group[-1]}"
+    return ", ".join(str(number) for number in group)
+
+
+def build_review_prompt(state: PipelineState, sentences: list[tuple[int, Span]], group: Sequence[int]) -> str:
     """The prompt for one group's call. Everything before the last paragraph is
     the same for every group of a post."""
     profile = state.get("profile") or {}
@@ -118,5 +129,5 @@ def build_review_prompt(state: PipelineState, sentences: list[tuple[int, Span]],
         sources_rule=SOURCES_ARE_DATA_RULE,
         sources_block=build_sources_block(chunks, profile).text,
         numbered="\n".join(f"{n}. {s.text}" for n, (_, s) in enumerate(sentences, 1)),
-        first=group[0], last=group[-1], count=len(group),
+        assignment=_assignment(group), count=len(group),
     )

@@ -378,7 +378,7 @@ def test_multi_sentence_spans_are_counted_and_trigger_nothing(claude, fake_db, s
 
     one_each = "\n\n".join(_lines(30))                                        # 30 spans of one sentence each, 300 words
     claude.queue(ARCHETYPE_GENERAL, one_each)
-    _run("B")
+    _run("B", quality="draft")
     assert _outputs(fake_db)["multi_sentence_spans"] == 0
 
     fake_db.tables["generation_traces"].clear()

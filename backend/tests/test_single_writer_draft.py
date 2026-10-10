@@ -313,8 +313,7 @@ def _run(variant, **overrides):
     return run_pipeline(**kwargs)
 
 
-@pytest.mark.parametrize("variant", ["B", "C"])
-@pytest.mark.parametrize("quality", ["draft", "standard", "polished"])
+@pytest.mark.parametrize("variant,quality", [("C", "draft"), ("C", "standard"), ("C", "polished"), ("B", "draft")])
 def test_a_run_is_two_calls_and_returns_the_post_without_markers(claude, fake_db, seeded_kb, variant, quality):
     marked = "pgvector makes retrieval fast. [[S1]]\n\nThat is most of the argument. [[V]]"
     claude.queue(ARCHETYPE_GENERAL, marked)
@@ -333,11 +332,11 @@ def test_the_trace_records_what_the_drafter_cited(claude, fake_db, seeded_kb):
     marked = "pgvector makes retrieval fast. [[S1]]\n\nThat is most of the argument. [[V]] Loose end. [S1]"
     claude.queue(ARCHETYPE_GENERAL, marked)
 
-    result = _run("B")
+    result = _run("C")
 
     [trace] = fake_db.tables["generation_traces"]
     outputs = trace["node_outputs"]
-    assert outputs["variant"] == "B"
+    assert outputs["variant"] == "C"
     assert outputs["draft_history"] == [{"node": "draft", "iteration": 0, "text": marked}]
     assert outputs["final_post"] == result["post"]
     assert "[[" not in outputs["final_post"]

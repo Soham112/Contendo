@@ -27,9 +27,15 @@ Code checks the merged answer before using it:
   from the record and reported (invalid_detail, invalid_unsupported_part); the
   rest of the record still counts.
 
+A second review (of variant B's redraft) does not send the sentences the
+redraft left alone: a sentence with the same text and the same citation as a
+sentence of the first draft takes that sentence's record, and only the new or
+changed sentences are sent, grouped the same way.
+
 The prompt is built in agents/review_prompt.py; this file holds the call, the
-merge and the validation. review_post() is not wired into the pipeline yet
-(feat/single-writer step 6b).
+merge and the two graph nodes of variant B (review_node, review_redraft_node);
+the validation is in pipeline/review_validation.py. What an issue leads to is
+decided in pipeline/redraft.py.
 """
 
 import contextvars
@@ -46,12 +52,12 @@ from llm.client import (
     complete_structured, trace_calls,
 )
 from agents.review_prompt import build_review_prompt
-from pipeline.review_rules import REQUEST, derive_issues
+from pipeline.review_rules import derive_issues
+from pipeline.review_validation import coverage_error, validate_records
 from pipeline.state import PipelineState
 from utils.citations import Span
 from utils.frames import chunk_field
-from utils.sentences import is_verbatim_span, split_spans
-from utils.wording import same_wording
+from utils.sentences import split_spans
 
 logger = logging.getLogger(__name__)
 
@@ -149,51 +155,40 @@ def group_max_tokens(sentence_count: int) -> int:
                _REVIEW_BASE_TOKENS + math.ceil(sentence_count * _TOKENS_PER_RECORD))
 
 
-def _coverage_error(numbers: list[int], sentence_count: int) -> str | None:
-    """Why the merged records do not cover the post's sentences exactly once, or None."""
-    missing = [n for n in range(1, sentence_count + 1) if n not in numbers]
-    repeated = sorted({n for n in numbers if numbers.count(n) > 1})
-    unknown = sorted({n for n in numbers if not 1 <= n <= sentence_count})
-    if not (missing or repeated or unknown):
-        return None
-    return f"sentence_coverage: missing {missing}, repeated {repeated}, unknown {unknown}"
+def _same_sentence_key(text: str, basis: str, sources) -> tuple:
+    """What makes a sentence of the redraft the same as one of the first draft:
+    its text, whitespace aside, and its citation."""
+    return " ".join(text.split()), basis, tuple(sources)
 
 
-def _invalid_reason(record: SentenceRecord, source_texts: dict[str, str], request_text: str) -> str | None:
-    """Why a whole record cannot be used, or None."""
-    link_ids = [*record.link.sources, *record.link.stated_by] if record.link else []
-    unknown = sorted({sid for sid in [*record.supported_by, *link_ids] if sid != REQUEST and sid not in source_texts})
-    if unknown:
-        return f"unknown_source: {unknown}"
-    if REQUEST in link_ids:
-        return "request_is_not_a_link_source"
-    evidence = (record.evidence or "").strip()
-    if not evidence:
-        return None
-    if not record.supported_by:
-        return "evidence_without_source"
-    places = [request_text if sid == REQUEST else source_texts[sid] for sid in record.supported_by]
-    if not any(is_verbatim_span(evidence, text) for text in places):
-        return "evidence_not_in_source"
-    return None
+def _reusable(previous: dict[str, Any], sentences: list[tuple[int, Span]]) -> dict[int, dict]:
+    """sentence number in this post -> {record, rhythm} taken from the previous
+    review, for each sentence that review already described. A sentence that
+    occurs more than once is matched in order: the second occurrence here takes
+    the second occurrence there, and one with no counterpart left is sent for
+    review. A sentence the previous review left without a valid record
+    (previous["unreviewed"]) is never reused: it is sent again."""
+    unreviewed = set(previous["unreviewed"])
+    records = {record["sentence"]: record for record in previous["records"]}
+    rhythm: dict[int, list[str]] = {}
+    for issue in previous["issues"]:
+        if issue["type"] == "ai_rhythm":
+            rhythm.setdefault(issue["sentence"] + 1, []).append(issue["detail"]["why"])
+    earlier: dict[tuple, list[int]] = {}
+    for number, sentence in enumerate(previous["sentences"], 1):
+        if number - 1 in unreviewed:
+            continue
+        earlier.setdefault(_same_sentence_key(sentence["text"], sentence["basis"], sentence["sources"]), []).append(number)
+    reuse = {}
+    for number, (_, sentence) in enumerate(sentences, 1):
+        left = earlier.get(_same_sentence_key(sentence.text, sentence.basis, sentence.sources))
+        if left:
+            was = left.pop(0)
+            reuse[number] = {"record": {**records[was], "sentence": number}, "rhythm": rhythm.get(was, [])}
+    return reuse
 
 
-def _detail_problem(record: SentenceRecord, sentence: str, source_texts: dict[str, str], request_text: str) -> str | None:
-    """Why a record's detail_change cannot be used, or None (also when it has none)."""
-    change = record.detail_change
-    if change is None:
-        return None
-    places = [request_text if sid == REQUEST else source_texts[sid] for sid in record.supported_by]
-    if not any(is_verbatim_span(change.source_words, text) for text in places):
-        return "source_words_not_in_a_supporting_source"
-    if not is_verbatim_span(change.post_words, sentence):
-        return "post_words_not_in_the_sentence"
-    if same_wording(change.source_words, change.post_words):
-        return "same_wording"
-    return None
-
-
-def _review_group(state: PipelineState, sentences: list[tuple[int, Span]], group: range) -> Review:
+def _review_group(state: PipelineState, sentences: list[tuple[int, Span]], group: list[int]) -> Review:
     return complete_structured(
         schema=Review,
         tool_name="record_review",
@@ -214,37 +209,10 @@ def _failure(exc: BaseException) -> str:
     return f"api_error: {type(exc).__name__}"
 
 
-def review_post(state: PipelineState) -> dict[str, Any]:
-    """Review the post in state. Changes nothing.
-
-    Returns {outcome, issues, invalid, records, groups, model, input_tokens,
-    output_tokens} and, when the review did not happen, error:
-      outcome "clean"         the review ran and the rules derived no issue
-      outcome "issues"        at least one issue
-      outcome "not_reviewed"  a group's call failed or its answer could not be
-                              used (truncated, not a valid tool call), or the
-                              merged records do not cover every sentence exactly
-                              once. Never treated as clean.
-    records   the model's observations, one per sentence, merged from the groups
-    groups    how many parallel calls made the review
-    issues    derived in code (pipeline.review_rules.derive_issues) from the
-              valid records, plus the ai_rhythm notes: {type, sentence, span,
-              text, sources, evidence, detail}; sentence is 0-based
-    invalid   what failed validation, each with a reason: whole records (nothing
-              is derived from them), a record's detail_change or unsupported_part
-              on its own (invalid_detail, invalid_unsupported_part: only that
-              field is dropped), and rhythm notes.
-    """
-    sentences = post_sentences(state.get("citations") or [])
-    source_index = state.get("source_index") or {}
-    chunks = (state.get("retrieval_bundle") or {}).get("chunks", [])
-    source_texts = {sid: chunk_field(chunks[entry["position"]], "text") or chunk_field(chunks[entry["position"]], "content")
-                    for sid, entry in source_index.items() if entry["position"] < len(chunks)}
-    request_text = "\n".join([state.get("topic") or "", state.get("context") or ""])
-    groups = review_groups(len(sentences))
-    result: dict[str, Any] = {"outcome": "not_reviewed", "issues": [], "invalid": [], "records": [],
-                              "groups": len(groups), "model": REVIEW_MODEL, "input_tokens": 0, "output_tokens": 0}
-
+def _run_groups(state: PipelineState, sentences: list[tuple[int, Span]],
+                groups: list[list[int]]) -> tuple[list[Review | None], list[str], list[dict]]:
+    """One call per group, concurrently: (each group's answer or None, why any
+    failed, the calls made). An error that is not the model's or the API's is raised."""
     reviews: list[Review | None] = []
     errors: list[str] = []
     with trace_calls() as calls:
@@ -262,56 +230,103 @@ def review_post(state: PipelineState) -> dict[str, Any]:
                     errors.append(f"group {number} of {len(groups)}: {_failure(exc)}")
                 else:
                     raise exc
+    return reviews, errors, calls
+
+
+def review_post(state: PipelineState, previous: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Review the post in state. Changes nothing.
+
+    previous: an earlier review_post result for an earlier draft of this post.
+    A sentence it holds a valid record for, and that is unchanged here (same
+    text after whitespace normalisation, same citation), takes that record and
+    is not sent again.
+
+    Returns {outcome, issues, invalid, unreviewed, records, sentences, reused,
+    reviewed, groups, model, input_tokens, output_tokens} and, when the review
+    did not happen, error:
+      outcome     "clean" (the rules derived no issue), "issues", or
+                  "not_reviewed": a group's call failed or its answer could not
+                  be used, or the records do not cover every sentence sent
+                  exactly once. Never treated as clean.
+      issues      derived in code (pipeline.review_rules.derive_issues) from the
+                  valid records, plus the ai_rhythm notes: {type, sentence, span,
+                  text, sources, evidence, detail}; sentence is 0-based
+      invalid     what failed validation, each with a reason
+                  (pipeline.review_validation), and rhythm notes for a sentence
+                  outside the group that gave them
+      unreviewed  0-based sentences with no valid record: every sentence when
+                  the review did not happen, else those whose whole record was invalid
+      records     the model's observations, one per sentence, merged from the
+                  groups and from the reused records
+      sentences   the sentences as numbered, [{text, basis, sources}]
+      reused, reviewed   sentences that took a previous record, and sentences sent
+      groups      how many parallel calls made the review
+    """
+    sentences = post_sentences(state.get("citations") or [])
+    source_index = state.get("source_index") or {}
+    chunks = (state.get("retrieval_bundle") or {}).get("chunks", [])
+    source_texts = {sid: chunk_field(chunks[entry["position"]], "text") or chunk_field(chunks[entry["position"]], "content")
+                    for sid, entry in source_index.items() if entry["position"] < len(chunks)}
+    request_text = "\n".join([state.get("topic") or "", state.get("context") or ""])
+    reuse = _reusable(previous, sentences) if previous else {}
+    to_review = [number for number in range(1, len(sentences) + 1) if number not in reuse]
+    groups = [[to_review[position - 1] for position in group] for group in review_groups(len(to_review))]
+    result: dict[str, Any] = {
+        "outcome": "not_reviewed", "issues": [], "invalid": [], "unreviewed": list(range(len(sentences))),
+        "records": [],
+        "sentences": [{"text": s.text, "basis": s.basis, "sources": list(s.sources)} for _, s in sentences],
+        "reused": len(reuse), "reviewed": len(to_review),
+        "groups": len(groups), "model": REVIEW_MODEL, "input_tokens": 0, "output_tokens": 0}
+
+    reviews, errors, calls = _run_groups(state, sentences, groups)
     result["input_tokens"] = sum(c["input_tokens"] for c in calls)
     result["output_tokens"] = sum(c["output_tokens"] for c in calls)
-    if errors:
-        result["error"] = "; ".join(errors)
-        logger.warning("review: not reviewed (%s)", result["error"])
+    merged = [] if errors else [record for review in reviews for record in review.sentences]
+    error = "; ".join(errors) or coverage_error([record.sentence for record in merged], to_review)
+    if not errors:
+        merged += [SentenceRecord(**kept["record"]) for kept in reuse.values()]
+        result["records"] = [r.model_dump(exclude_defaults=True) for r in sorted(merged, key=lambda r: r.sentence)]
+    if error:
+        result["error"] = error
+        logger.warning("review: not reviewed (%s)", error)
         return result
 
-    merged = [record for review in reviews for record in review.sentences]
-    result["records"] = [record.model_dump(exclude_defaults=True) for record in merged]
-    coverage = _coverage_error([record.sentence for record in merged], len(sentences))
-    if coverage:
-        result["error"] = coverage
-        logger.warning("review: not reviewed (%s)", coverage)
-        return result
+    usable, positions, result["invalid"] = validate_records(merged, sentences, source_texts, request_text)
+    result["unreviewed"] = [position for position in range(len(sentences)) if position not in positions]
+    for issue in derive_issues(usable, [sentences[position] for position in positions], source_index):
+        result["issues"].append({**issue, "sentence": positions[issue["sentence"]]})
 
-    def invalid(record_sentence: int, reason: str, what: Any) -> None:
-        text = sentences[record_sentence - 1][1].text if 1 <= record_sentence <= len(sentences) else ""
-        result["invalid"].append({"sentence": record_sentence - 1, "text": text, "reason": reason, "record": what})
-
-    usable_records, placed = [], []
-    for record in sorted(merged, key=lambda r: r.sentence):
-        sentence = sentences[record.sentence - 1]
-        reason = _invalid_reason(record, source_texts, request_text)
-        if reason:
-            invalid(record.sentence, reason, record.model_dump(exclude_defaults=True))
-            continue
-        usable = record.model_dump()
-        problem = _detail_problem(record, sentence[1].text, source_texts, request_text)
-        if problem:
-            invalid(record.sentence, f"invalid_detail: {problem}", usable.pop("detail_change"))
-            usable["detail_change"] = None
-        if record.unsupported_part and not is_verbatim_span(record.unsupported_part, sentence[1].text):
-            invalid(record.sentence, "invalid_unsupported_part: not_in_the_sentence", record.unsupported_part)
-            usable["unsupported_part"] = None
-        usable_records.append(usable)
-        placed.append((record.sentence - 1, sentence))
-    for issue in derive_issues(usable_records, [sentence for _, sentence in placed], source_index):
-        result["issues"].append({**issue, "sentence": placed[issue["sentence"]][0]})
-
+    notes = [(number, why) for number, kept in reuse.items() for why in kept["rhythm"]]
     for group, review in zip(groups, reviews):
         for note in review.ai_rhythm:
-            if note.sentence not in group:
-                invalid(note.sentence, "rhythm_sentence_outside_the_group", note.model_dump())
-                continue
-            span_position, sentence = sentences[note.sentence - 1]
-            result["issues"].append({"type": "ai_rhythm", "sentence": note.sentence - 1, "span": span_position,
-                                     "text": sentence.text, "sources": [], "evidence": None, "detail": {"why": note.why}})
+            if note.sentence in group:
+                notes.append((note.sentence, note.why))
+            else:
+                text = sentences[note.sentence - 1][1].text if 1 <= note.sentence <= len(sentences) else ""
+                result["invalid"].append({"sentence": note.sentence - 1, "text": text,
+                                          "reason": "rhythm_sentence_outside_the_group", "record": note.model_dump()})
+    for number, why in notes:
+        span_position, sentence = sentences[number - 1]
+        result["issues"].append({"type": "ai_rhythm", "sentence": number - 1, "span": span_position,
+                                 "text": sentence.text, "sources": [], "evidence": None, "detail": {"why": why}})
     result["issues"].sort(key=lambda issue: issue["sentence"])
     result["outcome"] = "issues" if result["issues"] else "clean"
     if result["invalid"]:
         logger.warning("review: %d item(s) failed validation: %s",
                        len(result["invalid"]), [i["reason"] for i in result["invalid"]])
     return result
+
+
+# ── Graph nodes (variant B) ───────────────────────────────────────────────────
+
+def review_node(state: PipelineState) -> PipelineState:
+    """Review the first draft: state["review_first"]."""
+    state["review_first"] = review_post(state)
+    return state
+
+
+def review_redraft_node(state: PipelineState) -> PipelineState:
+    """Review the redraft, sending only the sentences it changed or added:
+    state["review_second"]."""
+    state["review_second"] = review_post(state, previous=state["review_first"])
+    return state

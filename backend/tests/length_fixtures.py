@@ -7,6 +7,9 @@ from tests.test_generation_trace import USER as KB_USER
 
 FIRST_POST_USER = "user-first-post"   # no posts and no notes: every run is a first post (70-100 words)
 TRIM = "claude-haiku-4-5-20251001"
+# Runs with one draft, no review and no redraft: variant C, and variant B at
+# quality="draft". Standard variant B is tested in test_pipeline_b.py.
+DRAFT_ONLY = [("C", "standard"), ("B", "draft")]
 
 
 def _lines(count: int, words_each: int = 10, marker: str = "[[V]]") -> list[str]:
