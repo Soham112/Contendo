@@ -20,8 +20,13 @@ def usage_calls(monkeypatch):
     return calls
 
 
+# Usage is logged with the exact model id; the tests below name the two models
+# every call outside the single-writer pipeline uses.
+_NAMES = {"claude-sonnet-4-6": "sonnet", "claude-haiku-4-5-20251001": "haiku"}
+
+
 def _events(usage_calls):
-    return [(c["event_type"], c["model"]) for c in usage_calls]
+    return [(c["event_type"], _NAMES[c["model"]]) for c in usage_calls]
 
 
 def _assert_user(usage_calls, user_id=USER):

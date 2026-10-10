@@ -183,13 +183,14 @@ def settle(state: PipelineState, text: str, spans) -> None:
 
 
 def truncated_node(state: PipelineState) -> PipelineState:
-    """A draft that hit its output limit is not a post: return none."""
+    """A draft that hit its output limit, or that the model declined to write,
+    is not a post: return none."""
     state["final_post"] = ""
     return state
 
 
 def route_after_cited_draft(state: PipelineState) -> str:
-    return "truncated" if state.get("draft_truncated") else "strip"
+    return "truncated" if state.get("draft_truncated") or state.get("draft_refused") else "strip"
 
 
 def route_to_trim(state: PipelineState) -> str:

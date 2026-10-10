@@ -115,6 +115,30 @@ python report.py <run_id>                         # writes and prints results/<r
   `run.py`/`judge.py` refuse to start when the account is out of credits). Re-run after fixing
   it: finished results stay cached and errored ones are retried.
 
+## Ablation (pipeline variants)
+
+Variants are `A`, `B`, `C` and `B-Opus` (`backend/config/features.py`; models per role in `backend/llm/models.py`).
+The judge model and its settings are the same for every variant.
+
+```bash
+python run.py --quality standard --variant A --only pm-05 ...     # one run per variant
+python judge.py <run_id> --judge-model SONNET --metric unsupported_specifics
+python judge.py <run_id>                                          # full run only: the Haiku metrics
+python instrument.py <run_id>                                     # review of the final posts (calls Claude for A and C)
+python report.py --variants <run A> <run B> <run C> <run B-Opus> --name smoke
+python blind.py audit smoke     # audit.md: mark 10 judge findings correct / wrong
+python blind.py make smoke      # read.md: rank four posts per golden, blind
+python blind.py score smoke     # then re-run report.py --variants to add both to ablation.md
+python review_regression.py     # the review development set on REVIEW_MODEL; not part of the decision
+```
+
+- Everything lands in `results/ablations/<name>/`: `ablation.md`, `ablation.json` (the runs), `audit.md`,
+  `audit-key.json`, `read.md`, `key.json`, and after `score`, `audit.json` and `blind.json`.
+- `instrument.py` is record-only and uses the reviewer B was fixed against, so it is biased in B's favour.
+- Below 8 of 10 audited findings correct, `ablation.md` labels `unsupported_specifics` unreliable.
+- `PIPELINE_VARIANT` may be set in `evals/.env` as the default for `run.py`; an unknown value stops every script.
+- Costs everywhere come from `backend/llm/pricing.py`.
+
 ## Known retrieval gaps
 
 - **pm-04** ("How to say no to sales without becoming the villain"): the knowledge base

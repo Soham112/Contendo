@@ -28,10 +28,12 @@ def cache_key(row: dict[str, Any]) -> tuple:
     return (row["golden_id"], row["trace_id"], row["metric"], row["judge_model"])
 
 
-def judge_cost(calls: list[dict[str, Any]], constant_by_model: dict[str, str]) -> dict[str, Any]:
+def judge_cost(calls: list[dict[str, Any]]) -> dict[str, Any]:
+    from llm.pricing import call_cost
+
     tokens_in = sum(c["input_tokens"] for c in calls)
     tokens_out = sum(c["output_tokens"] for c in calls)
-    cost = sum(config.call_cost(constant_by_model[c["model"]], c["input_tokens"], c["output_tokens"]) for c in calls)
+    cost = sum(call_cost(c["model"], c["input_tokens"], c["output_tokens"]) for c in calls)
     return {"judge_calls": len(calls), "input_tokens": tokens_in, "output_tokens": tokens_out, "cost_usd": round(cost, 6)}
 
 
@@ -65,13 +67,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"refusing to judge: {exc}", file=sys.stderr)
         return 2
 
-    from llm import client as llm_client
     from llm.client import trace_calls
 
     import metrics
     from judge_model import ContendoJudge, is_fatal_api_error
 
-    constant_by_model = {llm_client.SONNET: "SONNET", llm_client.HAIKU: "HAIKU"}
     scores_path = run_dir / config.SCORES_FILES[args.judge_model]
     print(f"Judge: {args.judge_model} -> {scores_path.name}")
     done = {cache_key(r) for r in read_jsonl(scores_path) if r["status"] in ("ok", "skipped")}
@@ -138,7 +138,7 @@ def main(argv: list[str] | None = None) -> int:
                 write({**row, "status": status, "score": metric.score if status == "ok" else None,
                        "success": metric.success if status == "ok" else None,
                        "reason": metric.reason if status == "ok" else error,
-                       "schema_paths": dict(judge.stats), **judge_cost(calls, constant_by_model)})
+                       "schema_paths": dict(judge.stats), **judge_cost(calls)})
                 if status == "error" and fatal:
                     print(f"Stopping: {error}\nFix this (e.g. add credits), then re-run; finished results are cached.",
                           file=sys.stderr)

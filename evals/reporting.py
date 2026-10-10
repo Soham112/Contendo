@@ -174,7 +174,7 @@ def build_report(meta: dict[str, Any], runs: list[dict[str, Any]], scores: list[
         f"| **total** | {pipe_calls + judge_calls} | **${pipe_cost + judge_cost_usd:.4f}** | ${(pipe_cost + judge_cost_usd) / n_ok:.4f} |",
         "",
         "Pipeline cost is from each trace's `llm_calls`; judge cost from the judge's own `complete()` calls. "
-        "Prices: Sonnet $3/$15, Haiku $1/$5 per million input/output tokens.",
+        "Prices: `backend/llm/pricing.py`, by exact model id.",
         "",
         f"Judge structured output: {schema['tool']} via tool call, {schema['text_fallback']} needed the text fallback.",
         "",

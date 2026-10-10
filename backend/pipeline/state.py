@@ -11,9 +11,12 @@ class PipelineState(TypedDict, total=False):
     context: Optional[str]
     quality: str  # "draft" | "standard" | "polished" — defaults to "standard" at runtime
     user_id: str  # authenticated user; every store call is scoped by it
-    # Which pipeline ran: "A" | "B" | "C" (config.features.PIPELINE_VARIANTS),
+    # Which pipeline ran: "A" | "B" | "C" | "B-Opus" (config.features.PIPELINE_VARIANTS),
     # set by run_pipeline. Persisted in generation_traces.node_outputs.
     variant: str
+    # The model each single-writer role uses in this run, {draft, review, small}
+    # (llm.models.role_models). Absent under A, whose agents use fixed models.
+    models: dict[str, str]
 
     # Loaded profile
     profile: dict[str, Any]
@@ -102,6 +105,8 @@ class PipelineState(TypedDict, total=False):
     multi_sentence_spans: int
     # draft_truncated: set only when the draft stopped at its output limit,
     #   {max_tokens, output_tokens}; the run then returns no post.
+    # draft_refused: set only when the model declined to write the draft
+    #   (stop_reason "refusal"), {category}; the run then returns no post.
     # trim_result: set only when the post was over its maximum and the trim ran,
     #   {outcome: trimmed | trim_failed, reason, max_words, words_before,
     #    words_after, ranking, deleted, kept_ranked}: the model's ranking of
@@ -110,6 +115,7 @@ class PipelineState(TypedDict, total=False):
     #    the post's sentences, span the position of the span it was in
     #    (agents.trim_agent.trim_node).
     draft_truncated: dict[str, Any]
+    draft_refused: dict[str, Any]
     trim_result: dict[str, Any]
     # The deterministic checks (pipeline.checks), each {issues: [{type, span,
     # text, sources, detail}], counts: {type: n}}. checks_before_trim is on the
@@ -135,6 +141,8 @@ class PipelineState(TypedDict, total=False):
     #    redraft: {entries, downgraded_from?, input_tokens, output_tokens}   full path only
     #    redraft_truncated: {max_tokens, output_tokens}   only when the full
     #              redraft was cut off; the post is then returned as it was
+    #    redraft_refused: {category}   only when the model declined the full
+    #              redraft; the post is then returned as it was
     #    fixes_after_redraft: {code, origin}   full path only, when code fixed
     #              something on the redraft after its review
     #    second: {checks, acting, recorded}            when anything acted

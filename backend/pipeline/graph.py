@@ -5,6 +5,7 @@ from langgraph.graph import StateGraph, END
 
 from config import features
 from llm.client import trace_calls
+from llm.models import role_models
 from pipeline.state import PipelineState
 from pipeline.trace import build_trace_row
 from pipeline.finalise import validation_record
@@ -70,6 +71,11 @@ def plan_node(state: PipelineState) -> PipelineState:
 DRAFT_TRUNCATED_MESSAGE = (
     "The draft was cut off before it was finished, so there is no post to show. "
     "Generate again, or choose a shorter length."
+)
+
+DRAFT_REFUSED_MESSAGE = (
+    "The model declined to write this post, so there is no post to show. "
+    "Try a different topic or wording."
 )
 
 LOW_COVERAGE_SUGGESTION = (
@@ -172,7 +178,7 @@ _AFTER_PLAN: dict[str, Callable[[StateGraph], None]] = {
 def build_graph(variant: str):
     """The compiled pipeline for one variant: the shared nodes up to plan, then
     that variant's steps. Raises PipelineConfigError for an unknown variant."""
-    wire_after_plan = _AFTER_PLAN[features.validate_pipeline_variant(variant)]
+    wire_after_plan = _AFTER_PLAN[features.VARIANT_GRAPH[features.validate_pipeline_variant(variant)]]
     graph = StateGraph(PipelineState)
 
     graph.add_node("load_profile", load_profile_node)
@@ -193,7 +199,8 @@ def build_graph(variant: str):
     return graph.compile()
 
 
-# One compiled graph per variant, built once at import.
+# One compiled graph per variant, built once at import. (B-Opus compiles its
+# own copy of B's graph: the models are in the state, not in the graph.)
 PIPELINES = {variant: build_graph(variant) for variant in features.PIPELINE_VARIANTS}
 
 
@@ -208,11 +215,14 @@ def run_pipeline(
     user_id: str,
     no_specifics: bool = False,
     variant: str | None = None,
+    models: dict[str, str] | None = None,
 ) -> dict:
     """Run the pipeline. Returns status "ok" with the post, status
     "low_coverage" (empty post, closest_sources, suggestion) when the coverage
     gate stops it before drafting, or status "draft_truncated" (empty post,
-    message) when a single-writer draft was cut off at its output limit. no_specifics=True skips the gate; it raises
+    message) when a single-writer draft was cut off at its output limit, or
+    status "draft_refused" (empty post, message) when the draft model declined
+    to write it. no_specifics=True skips the gate; it raises
     ValueError while config.features.NO_SPECIFICS_MODE_ENABLED is off.
 
     Under variant B an "ok" result carries review: {outcome, issues: [{type,
@@ -228,10 +238,20 @@ def run_pipeline(
 
     variant: which pipeline to run (config.features.PIPELINE_VARIANTS). None
     uses the configured one (PIPELINE_VARIANT, default A); evals pass it to
-    compare variants. An unknown variant raises PipelineConfigError."""
+    compare variants. An unknown variant raises PipelineConfigError.
+
+    models: evals only. Role models that replace the variant's own
+    (llm.models.role_models), e.g. {"small": ...} for the small-model check. Not
+    accepted under A, whose agents use fixed models."""
     if no_specifics and not features.NO_SPECIFICS_MODE_ENABLED:
         raise ValueError("no-specifics mode is disabled (config.features.NO_SPECIFICS_MODE_ENABLED)")
     variant = features.pipeline_variant() if variant is None else features.validate_pipeline_variant(variant)
+    if features.VARIANT_GRAPH[variant] == "A":
+        if models:
+            raise ValueError("pipeline A uses fixed models; role models apply to the single-writer variants")
+        single_writer_models = {}
+    else:
+        single_writer_models = {"models": role_models(variant, models)}
     initial_state: PipelineState = {
         "topic": topic,
         "format": format,
@@ -241,6 +261,7 @@ def run_pipeline(
         "quality": quality,
         "user_id": user_id,
         "variant": variant,
+        **single_writer_models,
         "iterations": 0,
         "archetype": "",
         "critic_brief": {},
@@ -282,11 +303,12 @@ def run_pipeline(
             "trace_id": trace_id,
         }
 
-    if result.get("draft_truncated"):
+    if result.get("draft_truncated") or result.get("draft_refused"):
+        refused = bool(result.get("draft_refused"))
         return {
-            "status": "draft_truncated",
+            "status": "draft_refused" if refused else "draft_truncated",
             "post": "",
-            "message": DRAFT_TRUNCATED_MESSAGE,
+            "message": DRAFT_REFUSED_MESSAGE if refused else DRAFT_TRUNCATED_MESSAGE,
             "score": 0,
             "score_feedback": [],
             "iterations": 0,

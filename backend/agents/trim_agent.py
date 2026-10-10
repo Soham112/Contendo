@@ -12,7 +12,10 @@ import logging
 import anthropic
 from pydantic import BaseModel, Field
 
-from llm.client import HAIKU, StructuredOutputError, TruncatedStructuredOutputError, complete_structured
+from llm.client import (
+    RefusedStructuredOutputError, StructuredOutputError, TruncatedStructuredOutputError, complete_structured,
+)
+from llm.models import model_for
 from pipeline.state import PipelineState
 from pipeline.trace import record_draft
 from utils.citations import Span, delete_spans, prose_word_count
@@ -81,8 +84,8 @@ def trim_node(state: PipelineState) -> PipelineState:
     """Bring an over-length post under its maximum by deleting whole sentences.
 
     Each span is cut into its sentences (utils.sentences.split_spans; code and
-    URLs are never split, and a sentence keeps its span's citation). One Haiku
-    call sees the numbered sentences and returns a ranking: sentence numbers,
+    URLs are never split, and a sentence keeps its span's citation). One call
+    to the small model sees the numbered sentences and returns a ranking: sentence numbers,
     most expendable first. The ranking is checked (in range, no repeats, not
     every sentence). Then the sentences are deleted in ranked order, one at a
     time, the post measured after each, stopping as soon as it is within its
@@ -92,7 +95,7 @@ def trim_node(state: PipelineState) -> PipelineState:
       outcome "trim_failed"   with a reason: "still_over" (the whole ranking
                               was deleted and the post is still too long; the
                               shorter post is kept), or the call's answer could
-                              not be used ("truncated", "invalid_output: ...",
+                              not be used ("truncated", "refused", "invalid_output: ...",
                               "api_error: ...", "no_sentences_ranked",
                               "invalid_indices: ...", "repeated_indices: ...",
                               "all_sentences_ranked"), in which case the post
@@ -119,7 +122,7 @@ def trim_node(state: PipelineState) -> PipelineState:
             schema=TrimRanking,
             tool_name="rank_sentences_to_delete",
             tool_description="Record the ranking of sentences the post could lose, most expendable first.",
-            model=HAIKU,
+            model=model_for(state, "small"),
             max_tokens=_TRIM_MAX_TOKENS,
             messages=[{"role": "user", "content": TRIM_SENTENCES_PROMPT.format(
                 words=words_before, max_words=max_words, excess=words_before - max_words, numbered=numbered)}],
@@ -128,6 +131,8 @@ def trim_node(state: PipelineState) -> PipelineState:
         )
     except TruncatedStructuredOutputError:
         result["reason"] = "truncated"
+    except RefusedStructuredOutputError:
+        result["reason"] = "refused"
     except StructuredOutputError as exc:
         result["reason"] = f"invalid_output: {exc}"
     except anthropic.APIError as exc:

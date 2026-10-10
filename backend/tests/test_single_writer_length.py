@@ -150,22 +150,30 @@ def _every_target():
 
 
 def test_the_draft_budget_fits_every_length_target_with_markers():
+    from llm.models import MODELS, spec
     from utils.formatters import DRAFT_TOKEN_MARGIN, MIN_DRAFT_MAX_TOKENS, TOKENS_PER_WORD, draft_max_tokens
 
     assert max(t["max_words"] for t in _every_target()) == 1800      # Medium long-form is in the table
-    for target in _every_target():
-        budget = draft_max_tokens(target)
-        assert budget >= target["max_words"] * TOKENS_PER_WORD * DRAFT_TOKEN_MARGIN, target
-        assert budget >= MIN_DRAFT_MAX_TOKENS
-    assert draft_max_tokens(resolve_length_target("thread", "long-form")) == MIN_DRAFT_MAX_TOKENS
+    for model in MODELS:
+        per_word = TOKENS_PER_WORD[spec(model).tokenizer]
+        for target in _every_target():
+            budget = draft_max_tokens(target, model)
+            assert budget >= target["max_words"] * per_word * DRAFT_TOKEN_MARGIN, (model, target)
+            assert budget >= MIN_DRAFT_MAX_TOKENS
+        assert draft_max_tokens(resolve_length_target("thread", "long-form"), model) == MIN_DRAFT_MAX_TOKENS
     assert DRAFT_TOKEN_MARGIN > 1
 
 
 def test_the_largest_draft_budget_is_within_the_non_streaming_ceiling():
-    from llm.client import MAX_NON_STREAMING_OUTPUT_TOKENS
+    from llm.client import MAX_NON_STREAMING_OUTPUT_TOKENS, THINKING_ALLOWANCE_TOKENS, output_budget
+    from llm.models import MODELS, spec
     from utils.formatters import draft_max_tokens
 
-    assert max(draft_max_tokens(t) for t in _every_target()) <= MAX_NON_STREAMING_OUTPUT_TOKENS
+    for model in MODELS:
+        # The draft and the model's thinking both fit: the ceiling never has to cut the allowance.
+        largest = max(draft_max_tokens(t, model) for t in _every_target())
+        room = THINKING_ALLOWANCE_TOKENS if spec(model).thinks else 0
+        assert output_budget(model, largest) == largest + room <= MAX_NON_STREAMING_OUTPUT_TOKENS, model
 
 
 @pytest.mark.parametrize("fmt,length,expected", [

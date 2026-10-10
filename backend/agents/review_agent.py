@@ -49,9 +49,10 @@ import anthropic
 from pydantic import BaseModel, Field
 
 from llm.client import (
-    MAX_NON_STREAMING_OUTPUT_TOKENS, SONNET, StructuredOutputError, TruncatedStructuredOutputError,
-    complete_structured, trace_calls,
+    MAX_NON_STREAMING_OUTPUT_TOKENS, RefusedStructuredOutputError, StructuredOutputError,
+    TruncatedStructuredOutputError, complete_structured, trace_calls,
 )
+from llm.models import model_for
 from agents.review_prompt import build_review_prompt
 from pipeline.review_rules import derive_issues
 from pipeline.review_validation import coverage_error, validate_records
@@ -61,9 +62,6 @@ from utils.frames import chunk_field
 from utils.sentences import split_spans
 
 logger = logging.getLogger(__name__)
-
-# The review model. Per-role model configuration comes in step 7 of the plan.
-REVIEW_MODEL = SONNET
 
 # Parallel review. A call's time is mostly its output, so a group is sized to
 # finish inside the 10 s target for a full-post review. Measured in the 6a-4
@@ -202,7 +200,7 @@ def _review_group(state: PipelineState, sentences: list[tuple[int, Span]], group
         schema=Review,
         tool_name="record_review",
         tool_description="Record one entry for each assigned sentence of the post, then the ai_rhythm list.",
-        model=REVIEW_MODEL,
+        model=model_for(state, "review"),
         max_tokens=group_max_tokens(len(group)),
         messages=[{"role": "user", "content": build_review_prompt(state, sentences, group)}],
         user_id=state["user_id"],
@@ -213,6 +211,8 @@ def _review_group(state: PipelineState, sentences: list[tuple[int, Span]], group
 def _failure(exc: BaseException) -> str:
     if isinstance(exc, TruncatedStructuredOutputError):
         return "truncated"
+    if isinstance(exc, RefusedStructuredOutputError):
+        return "refused"
     if isinstance(exc, StructuredOutputError):
         return f"invalid_output: {exc}"
     return f"api_error: {type(exc).__name__}"
@@ -292,7 +292,7 @@ def review_post(state: PipelineState, previous: dict[str, Any] | None = None,
         "records": [],
         "sentences": [{"text": s.text, "basis": s.basis, "sources": list(s.sources)} for _, s in sentences],
         "reused": len(reuse), "reviewed": len(to_review),
-        "groups": len(groups), "model": REVIEW_MODEL, "input_tokens": 0, "output_tokens": 0}
+        "groups": len(groups), "model": model_for(state, "review"), "input_tokens": 0, "output_tokens": 0}
 
     if mismatch:
         logger.warning("review: origin has %d entries for %d sentences; matching by text", len(origin), len(sentences))

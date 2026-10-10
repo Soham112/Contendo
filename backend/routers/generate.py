@@ -70,7 +70,8 @@ class GenerateResponse(BaseModel):
     # "ok", or "low_coverage": the knowledge base doesn't cover the topic, so
     # nothing was drafted (post is ""); see closest_sources and suggestion.
     # Or "draft_truncated": the draft was cut off at its output limit, so no
-    # post is returned (post is ""); message says so. Single-writer pipeline only.
+    # post is returned (post is ""); message says so. Or "draft_refused": the
+    # draft model declined to write it; same shape. Single-writer pipeline only.
     status: str = "ok"
     message: str = ""
     post: str

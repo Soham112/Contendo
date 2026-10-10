@@ -83,8 +83,8 @@ def test_api_errors_propagate_and_log_no_usage(claude, usage_calls):
 
 # --- usage logging ------------------------------------------------------------
 
-@pytest.mark.parametrize("model_name,label", [("SONNET", "sonnet"), ("HAIKU", "haiku")])
-def test_usage_logged_with_event_type_label_and_token_counts(claude, usage_calls, model_name, label):
+@pytest.mark.parametrize("model_name,label", [("SONNET", "claude-sonnet-4-6"), ("HAIKU", "claude-haiku-4-5-20251001")])
+def test_usage_logged_with_event_type_model_id_and_token_counts(claude, usage_calls, model_name, label):
     import llm.client as llm_client
 
     claude.queue("ok")
@@ -157,7 +157,9 @@ def test_trace_collects_calls_when_set(claude, usage_calls):
     for c in calls:
         assert c["input_tokens"] == 10 and c["output_tokens"] == 10
         assert c["latency_ms"] >= 0
-    assert set(calls[0]) == {"event_type", "model", "input_tokens", "output_tokens", "latency_ms"}
+    assert set(calls[0]) == {"event_type", "model", "input_tokens", "output_tokens", "thinking_tokens",
+                             "stop_reason", "latency_ms"}
+    assert (calls[0]["thinking_tokens"], calls[0]["stop_reason"]) == (0, "end_turn")
 
 
 def test_trace_does_nothing_when_unset(claude, usage_calls):
@@ -210,6 +212,6 @@ def test_critic_node_goes_through_complete(claude, usage_calls):
     assert claude.calls[0]["tool_choice"] == {"type": "tool", "name": "record_critique"}
     assert state["critic_brief"]["overall"] == "postable"
     assert usage_calls[0]["event_type"] == "critic"
-    assert usage_calls[0]["model"] == "haiku"
+    assert usage_calls[0]["model"] == HAIKU
     assert usage_calls[0]["user_id"] == "user-c"
     assert [c["event_type"] for c in calls] == ["critic"]

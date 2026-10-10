@@ -19,6 +19,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from llm.models import TOKENIZER_CLAUDE_4, TOKENIZER_CLAUDE_4_7, spec
 from utils.text_spans import protected_spans
 
 
@@ -125,10 +126,20 @@ def count_words(text: str) -> int:
     return len(text.split())
 
 
-# Output tokens one word of a marked draft costs. Measured on the pm-01 golden
-# under variant C (2026-10-09): 419 output tokens for a 225-word post, citation
-# markers and EVENT line included, so about 1.9. One sample: hence the margin.
-TOKENS_PER_WORD = 1.9
+# Output tokens one word of a marked draft costs, per tokenizer
+# (llm.models.ModelSpec.tokenizer). Thinking tokens are not part of it: they
+# get their own room (llm.client.output_budget).
+# Claude 4 tokenizer (Sonnet 4.6): measured on the pm-01 golden under variant C
+# (2026-10-09): 419 output tokens for a 225-word post, citation markers and
+# EVENT line included, so about 1.9. One sample: hence the margin.
+TOKENS_PER_WORD_CLAUDE_4 = 1.9
+# Claude 4.7 tokenizer (the 5.5 models). STOPGAP (provisional value), not yet a measurement:
+# the Claude 4 figure times the 1.3 Anthropic's docs give for the same text on
+# the newer tokenizer. The step 7 runs record output tokens (thinking excluded)
+# per word of each marked draft (evals ablation.md, "Draft budget"); replace
+# this with that figure.
+TOKENS_PER_WORD_CLAUDE_4_7 = 2.5
+TOKENS_PER_WORD = {TOKENIZER_CLAUDE_4: TOKENS_PER_WORD_CLAUDE_4, TOKENIZER_CLAUDE_4_7: TOKENS_PER_WORD_CLAUDE_4_7}
 # Room above the target's ceiling, so a draft that runs somewhat long is
 # finished and then trimmed, rather than cut off mid-sentence.
 DRAFT_TOKEN_MARGIN = 1.25
@@ -137,12 +148,15 @@ DRAFT_TOKEN_MARGIN = 1.25
 MIN_DRAFT_MAX_TOKENS = 2000
 
 
-def draft_max_tokens(target: dict[str, Any] | None) -> int:
-    """max_tokens for a single-writer draft call: enough for the target's
-    ceiling with markers, plus the margin. No target (threads) gets the minimum."""
+def draft_max_tokens(target: dict[str, Any] | None, model: str) -> int:
+    """Output tokens a single-writer draft needs from this model: enough for
+    the target's ceiling with markers on the model's tokenizer, plus the margin.
+    No target (threads) gets the minimum. Room for thinking is added by the
+    caller (llm.client.output_budget)."""
     if not target:
         return MIN_DRAFT_MAX_TOKENS
-    return max(MIN_DRAFT_MAX_TOKENS, math.ceil(target["max_words"] * TOKENS_PER_WORD * DRAFT_TOKEN_MARGIN))
+    per_word = TOKENS_PER_WORD[spec(model).tokenizer]
+    return max(MIN_DRAFT_MAX_TOKENS, math.ceil(target["max_words"] * per_word * DRAFT_TOKEN_MARGIN))
 
 
 # ── Archetypes ────────────────────────────────────────────────────────────────

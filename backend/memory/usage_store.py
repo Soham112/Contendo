@@ -11,23 +11,12 @@ from typing import Any
 
 import httpx
 
+from llm.pricing import call_cost
+
 logger = logging.getLogger(__name__)
 
 _SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 _SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
-
-# Cost per token (USD) — Sonnet and Haiku pricing
-_SONNET_INPUT = 0.000003
-_SONNET_OUTPUT = 0.000015
-_HAIKU_INPUT = 0.00000025
-_HAIKU_OUTPUT = 0.00000125
-
-
-def _calculate_cost(input_tokens: int, output_tokens: int, model: str) -> float:
-    if model == "haiku":
-        return (input_tokens * _HAIKU_INPUT) + (output_tokens * _HAIKU_OUTPUT)
-    return (input_tokens * _SONNET_INPUT) + (output_tokens * _SONNET_OUTPUT)
-
 
 async def _insert_event(payload: dict) -> None:
     if not _SUPABASE_URL or not _SUPABASE_SERVICE_ROLE_KEY:
@@ -56,11 +45,16 @@ async def log_usage_event(
     input_tokens: int,
     output_tokens: int,
     metadata: dict[str, Any] | None = None,
-    model: str = "sonnet",
+    *,
+    model: str,
 ) -> None:
-    """Log one Claude API call to Supabase. Never raises — safe for create_task()."""
+    """Log one Claude API call to Supabase. Never raises — safe for create_task().
+
+    model is the exact model id of the call; the cost comes from the one price
+    table (llm.pricing). An id with no price is logged as a warning and the
+    event is not written: a guessed cost would be worse than a missing row."""
     try:
-        cost = _calculate_cost(input_tokens, output_tokens, model)
+        cost = call_cost(model, input_tokens, output_tokens)
         payload = {
             "user_id": user_id,
             "event_type": event_type,

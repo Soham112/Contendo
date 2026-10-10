@@ -172,7 +172,7 @@ def test_usage_is_logged_from_plain_thread_once_loop_is_captured(client, recorde
     from memory.usage_store import schedule_usage_event
 
     t = threading.Thread(target=lambda: schedule_usage_event(
-        user_id="user-b", event_type="ideation", input_tokens=10, output_tokens=5,
+        user_id="user-b", event_type="ideation", input_tokens=10, output_tokens=5, model="claude-sonnet-4-6",
     ))
     t.start()
     t.join()
@@ -185,7 +185,7 @@ def test_schedule_usage_event_without_any_loop_is_a_silent_no_op(recorded_usage)
     from memory.usage_store import schedule_usage_event, set_main_loop
 
     set_main_loop(None)
-    schedule_usage_event(user_id="u", event_type="x", input_tokens=1, output_tokens=1)
+    schedule_usage_event(user_id="u", event_type="x", input_tokens=1, output_tokens=1, model="claude-sonnet-4-6")
     assert recorded_usage == []
 
 

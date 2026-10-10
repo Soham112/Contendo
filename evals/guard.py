@@ -5,6 +5,7 @@ Everything here raises EnvGuardError instead of guessing, so a misconfigured
 run stops before it reads or writes any data.
 """
 
+import importlib.util
 import os
 import re
 import sys
@@ -33,7 +34,10 @@ REQUIRED_FILE_KEYS = (
     "EXPECTED_PROJECT_REF",
 )
 # Keys evals/.env may set to override a safe default.
-OPTIONAL_FILE_KEYS = ("LOG_LEVEL", "SUPABASE_JWT_SECRET")
+OPTIONAL_FILE_KEYS = ("LOG_LEVEL", "SUPABASE_JWT_SECRET", "PIPELINE_VARIANT")
+# Where the backend names its pipeline variants. A plain module (it imports
+# only os), so it can be read before the backend is configured.
+FEATURES_FILE = BACKEND_DIR / "config" / "features.py"
 
 # Every environment variable the backend reads (tests/test_guard.py checks this
 # list against the backend source). Each one is set explicitly by bootstrap().
@@ -46,6 +50,7 @@ BACKEND_ENV_KEYS = (
     "ENVIRONMENT",
     "FRONTEND_ORIGIN",
     "LOG_LEVEL",
+    "PIPELINE_VARIANT",
     "SUPABASE_JWT_SECRET",
     "SUPABASE_SERVICE_ROLE_KEY",
     "SUPABASE_URL",
@@ -156,6 +161,30 @@ def check_env_file_keys(values: Mapping[str, str]) -> None:
         )
 
 
+def pipeline_variants(features_file: Path = FEATURES_FILE) -> tuple[str, ...]:
+    """The backend's own list of pipeline variants (config.features.PIPELINE_VARIANTS).
+
+    The file is executed on its own, under a private name, and never registered
+    in sys.modules: nothing counts as "the backend was imported", and there is
+    no second copy of the list to drift."""
+    module_spec = importlib.util.spec_from_file_location("_evals_guard_backend_features", features_file)
+    if module_spec is None or module_spec.loader is None:
+        raise EnvGuardError(f"cannot read the pipeline variants from {features_file}")
+    module = importlib.util.module_from_spec(module_spec)
+    module_spec.loader.exec_module(module)
+    return tuple(module.PIPELINE_VARIANTS)
+
+
+def check_pipeline_variant(value: str, known: tuple[str, ...]) -> None:
+    """Refuse a PIPELINE_VARIANT the backend does not have. Empty means the
+    backend's default; run.py --variant chooses per run."""
+    if value and value not in known:
+        raise EnvGuardError(
+            f"PIPELINE_VARIANT in evals/.env is {value!r}, which is not a pipeline variant "
+            f"(known: {', '.join(known)})"
+        )
+
+
 def build_backend_env(values: Mapping[str, str], data_dir: str) -> dict[str, str]:
     """Every backend env var, set explicitly. Nothing is left for a .env file to fill."""
     env = {
@@ -169,6 +198,7 @@ def build_backend_env(values: Mapping[str, str], data_dir: str) -> dict[str, str
         "ALLOW_LOCAL_PATH_INGEST": "",
         "DATA_DIR": data_dir,
         "LOG_LEVEL": values.get("LOG_LEVEL") or "WARNING",
+        "PIPELINE_VARIANT": values.get("PIPELINE_VARIANT") or "",
         "FRONTEND_ORIGIN": "",
         "SUPADATA_API_KEY": "",
         "TAVILY_API_KEY": "",
@@ -292,6 +322,7 @@ def bootstrap(
     check_env_file_keys(values)
     check_supabase_url(values["EVAL_SUPABASE_URL"], values["EXPECTED_PROJECT_REF"])
     check_anthropic_key(values["ANTHROPIC_API_KEY"])
+    check_pipeline_variant(values.get("PIPELINE_VARIANT") or "", pipeline_variants())
 
     data_dir = tempfile.mkdtemp(prefix="contendo-evals-data-")
     backend_env = build_backend_env(values, data_dir)

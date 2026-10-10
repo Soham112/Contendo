@@ -1,4 +1,5 @@
-"""Eval settings. No backend imports; models are named by their llm.client constant."""
+"""Eval settings. No backend imports; models are named by their llm.client constant.
+Prices are not here: every cost comes from backend/llm/pricing.py."""
 
 from pathlib import Path
 
@@ -22,14 +23,20 @@ THRESHOLDS = {
 }
 METRIC_ORDER = tuple(THRESHOLDS)
 
-# USD per million tokens (input, output), keyed by llm.client constant name.
-# Anthropic list prices for claude-sonnet-4-6 and claude-haiku-4-5.
-PRICES_PER_MTOK = {
-    "SONNET": (3.00, 15.00),
-    "HAIKU": (1.00, 5.00),
-}
+# ── Ablation (docs/plans/single-writer.md, section 7) ─────────────────────────
+ABLATIONS_DIR = RESULTS_DIR / "ablations"
+INSTRUMENT_FILE = "instrument.jsonl"
+# The two judged decision metrics and the judge each is read from. The judge
+# model and its settings are the same for every variant.
+ABLATION_JUDGES = {"unsupported_specifics": "SONNET", "answer_relevancy": JUDGE_MODEL}
 
-
-def call_cost(model_constant: str, input_tokens: int, output_tokens: int) -> float:
-    price_in, price_out = PRICES_PER_MTOK[model_constant]
-    return (input_tokens * price_in + output_tokens * price_out) / 1_000_000
+# Judge audit: how many unsupported_specifics findings Soham marks, how many of
+# them are the lowest scores (the rest are a seeded random sample), and how many
+# must be marked correct for the metric to count as reliable (plan, section 7).
+AUDIT_FINDINGS = 10
+AUDIT_LOWEST = 5
+AUDIT_MIN_CORRECT = 8
+# Blind read: goldens read, and the labels the posts of one golden get.
+BLIND_GOLDENS = 10
+BLIND_LABELS = ("W", "X", "Y", "Z")
+BLIND_SEED = 20261010

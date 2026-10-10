@@ -94,9 +94,10 @@ def route_after_checks(state: PipelineState) -> str:
 
 
 def route_after_redraft(state: PipelineState) -> str:
-    """A full redraft goes through its own second pass. A cut-off one left the
-    post as the code fixes made it, which is reviewed as that."""
-    return "kept" if "redraft_truncated" in state["review"] else "strip"
+    """A full redraft goes through its own second pass. One that was cut off
+    or declined left the post as the code fixes made it, which is reviewed as that."""
+    review = state["review"]
+    return "kept" if "redraft_truncated" in review or "redraft_refused" in review else "strip"
 
 
 def wire_reviewed(graph: StateGraph) -> None:

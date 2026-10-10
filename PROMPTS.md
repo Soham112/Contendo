@@ -1263,6 +1263,18 @@ Post:
 
 ---
 
+### Models per role and structured calls (single writer) — llm/models.py, llm/client.py
+
+Added in step 7 (2026-10-10). The single-writer calls name a role, not a model: the draft, the targeted fix and the full redraft use `DRAFT_MODEL`; the review uses `REVIEW_MODEL`; the structure choice and the trim use `SMALL_MODEL`. Today these are `claude-sonnet-4-6`, `claude-sonnet-4-6` and `claude-haiku-4-5-20251001`, so every model named in the sections below still holds for variants B and C. Variant B-Opus drafts with `claude-opus-5-5`. Pipeline A's prompts and models are unchanged.
+
+Structured calls (`complete_structured`) force their tool where the model accepts that. Claude Opus 5.5 and Claude Sonnet 5.5 reject a forced tool choice, so for them the request sends `tool_choice: {"type": "auto"}` and this line is appended to the prompt (`TOOL_INSTRUCTION`), verbatim:
+
+```
+Answer by calling the {tool_name} tool, and write nothing outside that call.
+```
+
+No prompt text changes for a model that accepts a forced tool.
+
 ### Review (single writer) — agents/review_agent.py (review_post), prompt in agents/review_prompt.py
 
 **Purpose:** Describe every sentence of a single-writer post against its sources, so that code can decide what is wrong with it. The model reports observations and is never asked for a verdict; the issues are derived in code (`pipeline/review_rules.py`). It is not shown the post's citations. It never writes. Variant B runs it on the first draft (`review_node`) and again after the fixes (`review_fixed_node`) or the full redraft (`review_redraft_node`); what an issue leads to is decided in `pipeline/redraft.py` and `pipeline/fixes.py`.

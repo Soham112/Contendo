@@ -259,7 +259,7 @@ def _is_unchanged(before: Span, after: list[Span]) -> bool:
         " ".join(before.text.split()), before.basis, before.sources)
 
 
-def apply_targeted_fixes(state: PipelineState, answer: str, *, truncated: bool) -> None:
+def apply_targeted_fixes(state: PipelineState, answer: str, *, unusable: str | None) -> None:
     """Validate the model's fixes and splice the valid ones into the post.
 
     A fix is rejected (and recorded in targeted.invalid, its sentence left as
@@ -268,13 +268,14 @@ def apply_targeted_fixes(state: PipelineState, answer: str, *, truncated: bool) 
     empty, has uncited text or has a marker that is not valid. A flagged
     sentence with no fix is recorded as "missing". A replacement that
     is the sentence as it was, marker included, is recorded as unchanged and
-    nothing is done: the sentence keeps its review record. A truncated answer
-    is not read at all. Sentences nobody flagged are never touched.
+    nothing is done: the sentence keeps its review record. An answer that was
+    cut off or declined (unusable: "truncated" or "refused") is not read at
+    all. Sentences nobody flagged are never touched.
     """
     record, targeted = state["review"], state["review"]["targeted"]
     sentences, origin = [sentence for _, sentence in _units(state)], record["fixes"]["origin"]
     flagged = set(targeted["flagged"])
-    fixes, failures = ([], [{"kind": "truncated", "text": ""}]) if truncated else parse_fixes(answer)
+    fixes, failures = ([], [{"kind": unusable, "text": ""}]) if unusable else parse_fixes(answer)
     applied, invalid, unchanged = [], [], []
     targeted.update(applied=applied, invalid=invalid, unchanged=unchanged, format_failures=failures)
 

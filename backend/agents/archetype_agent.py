@@ -20,6 +20,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from llm.client import HAIKU, TruncatedStructuredOutputError, complete_structured
+from llm.models import model_for
 from pipeline.state import PipelineState
 from utils.formatters import ARCHETYPES, GENERAL_ARCHETYPE, STORY_ARCHETYPES
 from utils.sentences import event_quote_failure, quote_is_in_note  # noqa: F401  (quote_is_in_note is re-exported)
@@ -116,13 +117,14 @@ def _offer(state: PipelineState) -> tuple[list[dict], list[dict], list[str], lis
 
 
 def _ask(state: PipelineState, schema, own: list[dict], external: list[dict],
-         allowed: list[str], story_rule: str):
-    """The one Haiku call both choices make; raises what complete_structured raises."""
+         allowed: list[str], story_rule: str, model: str):
+    """The one call both choices make, to the model given (pipeline A: HAIKU;
+    single writer: the run's small model); raises what complete_structured raises."""
     return complete_structured(
         schema=schema,
         tool_name="choose_post_type",
         tool_description="Record the post type chosen for this post.",
-        model=HAIKU,
+        model=model,
         max_tokens=300,
         messages=[{"role": "user", "content": ARCHETYPE_PROMPT.format(
             topic=state.get("topic", ""),
@@ -158,7 +160,7 @@ def choose_archetype(state: PipelineState) -> dict[str, Any]:
 
     try:
         choice = _ask(state, ArchetypeChoice, own, external, allowed,
-                      _STORY_RULE.format(story_keys=", ".join(story_keys)) if story_keys else "")
+                      _STORY_RULE.format(story_keys=", ".join(story_keys)) if story_keys else "", HAIKU)
     except TruncatedStructuredOutputError:
         return fall_back("truncated", None)
     except Exception as exc:
@@ -200,7 +202,8 @@ def choose_structure(state: PipelineState) -> dict[str, Any]:
 
     try:
         choice = _ask(state, StructureChoice, own, external, allowed,
-                      _STRUCTURE_STORY_RULE.format(story_keys=", ".join(story_keys)) if story_keys else "")
+                      _STRUCTURE_STORY_RULE.format(story_keys=", ".join(story_keys)) if story_keys else "",
+                      model_for(state, "small"))
     except TruncatedStructuredOutputError:
         return fall_back("truncated", None)
     except Exception as exc:
@@ -213,7 +216,7 @@ def choose_structure(state: PipelineState) -> dict[str, Any]:
 
 
 def structure_node(state: PipelineState) -> PipelineState:
-    """One Haiku call picks the post's structure from the types the sources
+    """One call to the small model picks the post's structure from the types the sources
     allow. It names no event: for a story type the drafter does that."""
     decision = choose_structure(state)
     state["archetype"] = decision["archetype"]

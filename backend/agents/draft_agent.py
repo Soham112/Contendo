@@ -10,6 +10,11 @@ targeted_fix_node and redraft_node are variant B's two ways of having the
 drafter deal with the problems the checks and the review found, of which a run
 takes at most one (pipeline/fixes.py chooses): replacements for the flagged
 sentences only, or the whole post again.
+
+The three single-writer calls use the run's draft model (llm.models.model_for).
+Their answer is read from the reply's text blocks (a model that thinks puts
+thinking blocks first), their budget leaves room for thinking, and a reply the
+model declined (stop_reason "refusal") is never treated as text to use.
 """
 
 import logging
@@ -17,7 +22,8 @@ import logging
 from agents.archetype_agent import choose_archetype
 from agents.draft_prompt import build_cited_prompt, build_prompt, format_retrieval_context
 from agents.redraft_prompt import build_fix_prompt, build_redraft_prompt
-from llm.client import SONNET, complete
+from llm.client import REFUSAL, SONNET, complete, message_text, output_budget
+from llm.models import model_for
 from pipeline.fixes import apply_targeted_fixes
 from pipeline.redraft import apply_downgrade
 from pipeline.state import PipelineState
@@ -87,56 +93,78 @@ def draft_node(state: PipelineState) -> PipelineState:
 
 # ── Single writer (variants B and C) ──────────────────────────────────────────
 
+def _draft_budget(state: PipelineState, model: str) -> int:
+    """max_tokens for a single-writer drafter call: the draft, and the model's thinking."""
+    return output_budget(model, draft_max_tokens(state.get("length_target"), model))
+
+
+def _refusal(message) -> dict:
+    """What is recorded of a declined reply: the classifier's category when the API gives one."""
+    details = getattr(message, "stop_details", None)
+    category = details.get("category") if isinstance(details, dict) else getattr(details, "category", None)
+    return {"category": category}
+
+
 def cited_draft_node(state: PipelineState) -> PipelineState:
-    """One Sonnet call writes the post with citation markers, inside its output
-    envelope (<post>, and <event> for a story type). The output is stored
-    exactly as written: the envelope and the markers are read and removed by
-    the steps after this one.
+    """One call to the draft model writes the post with citation markers,
+    inside its output envelope (<post>, and <event> for a story type). The
+    output is stored exactly as written: the envelope and the markers are read
+    and removed by the steps after this one.
 
     A draft that stops at its output limit is not a finished post. It is kept
     in draft_history for diagnosis and flagged in state["draft_truncated"]
-    ({max_tokens, output_tokens}); the pipeline then returns no post."""
+    ({max_tokens, output_tokens}); the pipeline then returns no post. A draft
+    the model declined to write sets state["draft_refused"] ({category}) and
+    the pipeline returns no post either."""
     prompt, sources = build_cited_prompt(state)
     state["draft_frame_block"] = sources.text
     state["source_index"] = sources.index
 
-    max_tokens = draft_max_tokens(state.get("length_target"))
+    model = model_for(state, "draft")
+    max_tokens = _draft_budget(state, model)
     message = complete(
-        model=SONNET,
+        model=model,
         max_tokens=max_tokens,
         messages=[{"role": "user", "content": prompt}],
         user_id=state["user_id"],
         event_type="generate",
         usage_metadata=_usage_metadata(state),
     )
-    state["current_draft"] = message.content[0].text.strip()
+    state["current_draft"] = message_text(message).strip()
     record_draft(state, "draft")
-    if message.stop_reason == "max_tokens":
+    if message.stop_reason == REFUSAL:
+        state["draft_refused"] = _refusal(message)
+        logger.warning("draft: the model declined (%s); no post will be returned", state["draft_refused"]["category"])
+    elif message.stop_reason == "max_tokens":
         logger.warning("draft: cut off at max_tokens=%d; no post will be returned", max_tokens)
         state["draft_truncated"] = {"max_tokens": max_tokens, "output_tokens": message.usage.output_tokens}
     return state
 
 
 def targeted_fix_node(state: PipelineState) -> PipelineState:
-    """Variant B's targeted fix: one Sonnet call with the draft prompt, the post
-    as numbered sentences and the problems in state["review"]["targeted"]. Its
-    answer is a list of replacements for the flagged sentences; code validates
-    and splices them (pipeline.fixes.apply_targeted_fixes), so no other
-    sentence can change. An answer cut off at its output limit is not used."""
+    """Variant B's targeted fix: one call to the draft model with the draft
+    prompt, the post as numbered sentences and the problems in
+    state["review"]["targeted"]. Its answer is a list of replacements for the
+    flagged sentences; code validates and splices them
+    (pipeline.fixes.apply_targeted_fixes), so no other sentence can change. An
+    answer cut off at its output limit, or declined, is not used
+    (targeted.format_failures says which)."""
     prompt, _ = build_cited_prompt(state)
     targeted = state["review"]["targeted"]
     sentences = [sentence for _, sentence in split_spans([Span.from_dict(c) for c in state["citations"]])]
+    model = model_for(state, "draft")
     message = complete(
-        model=SONNET,
-        max_tokens=draft_max_tokens(state.get("length_target")),
+        model=model,
+        max_tokens=_draft_budget(state, model),
         messages=[{"role": "user", "content": build_fix_prompt(prompt, sentences, targeted["entries"])}],
         user_id=state["user_id"],
         event_type="targeted_fix",
         usage_metadata=_usage_metadata(state),
     )
-    answer = message.content[0].text.strip()
+    answer = message_text(message).strip()
     targeted.update(answer=answer, input_tokens=message.usage.input_tokens, output_tokens=message.usage.output_tokens)
-    apply_targeted_fixes(state, answer, truncated=message.stop_reason == "max_tokens")
+    unusable = {"max_tokens": "truncated", REFUSAL: "refused"}.get(message.stop_reason)
+    apply_targeted_fixes(state, answer, unusable=unusable)
     if targeted["applied"]:
         record_draft(state, "targeted_fix")
     return state
@@ -144,7 +172,7 @@ def targeted_fix_node(state: PipelineState) -> PipelineState:
 
 def redraft_node(state: PipelineState) -> PipelineState:
     """Variant B's one full redraft, for a problem with the post's structure or
-    length: one Sonnet call with the draft prompt, the post as the code fixes
+    length: one call to the draft model with the draft prompt, the post as the code fixes
     left it (with its markers) and the problems in
     state["review"]["redraft"]["entries"]. The prompt is rebuilt from state, so
     it is the first draft's prompt unless the structure became General since.
@@ -153,15 +181,18 @@ def redraft_node(state: PipelineState) -> PipelineState:
     A redraft cut off at its output limit is not a post, and the post is not
     thrown away for it: the state is left as it was,
     state["review"]["redraft_truncated"] records {max_tokens, output_tokens},
-    and the cut-off text is kept in draft_history for diagnosis only."""
+    and the cut-off text is kept in draft_history for diagnosis only. A redraft
+    the model declined is handled the same way and recorded as
+    state["review"]["redraft_refused"] ({category})."""
     before = (state.get("archetype", ""), state.get("archetype_decision"))
     apply_downgrade(state)
     prompt, _ = build_cited_prompt(state)
     redraft = state["review"]["redraft"]
     previous = with_markers(state["current_draft"], [Span.from_dict(c) for c in state["citations"]])
-    max_tokens = draft_max_tokens(state.get("length_target"))
+    model = model_for(state, "draft")
+    max_tokens = _draft_budget(state, model)
     message = complete(
-        model=SONNET,
+        model=model,
         max_tokens=max_tokens,
         messages=[{"role": "user", "content": build_redraft_prompt(prompt, previous, redraft["entries"])}],
         user_id=state["user_id"],
@@ -170,12 +201,18 @@ def redraft_node(state: PipelineState) -> PipelineState:
     )
     redraft["input_tokens"] = message.usage.input_tokens
     redraft["output_tokens"] = message.usage.output_tokens
-    written = message.content[0].text.strip()
-    if message.stop_reason == "max_tokens":
-        logger.warning("redraft: cut off at max_tokens=%d; the post is returned as it was", max_tokens)
-        state["review"]["redraft_truncated"] = {"max_tokens": max_tokens, "output_tokens": message.usage.output_tokens}
+    written = message_text(message).strip()
+    if message.stop_reason in ("max_tokens", REFUSAL):
+        if message.stop_reason == REFUSAL:
+            kind = "redraft_refused"
+            state["review"][kind] = _refusal(message)
+            logger.warning("redraft: the model declined; the post is returned as it was")
+        else:
+            kind = "redraft_truncated"
+            state["review"][kind] = {"max_tokens": max_tokens, "output_tokens": message.usage.output_tokens}
+            logger.warning("redraft: cut off at max_tokens=%d; the post is returned as it was", max_tokens)
         state["draft_history"] = [*state["draft_history"], {
-            "node": "redraft_truncated", "iteration": state.get("iterations", 0), "text": written}]
+            "node": kind, "iteration": state.get("iterations", 0), "text": written}]
         state["archetype"], state["archetype_decision"] = before
         return state
     state["current_draft"] = written
