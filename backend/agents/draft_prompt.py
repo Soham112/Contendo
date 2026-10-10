@@ -259,6 +259,7 @@ Rules:
 - Every line of prose ends with a marker. A marker covers only the text before it on its own line, never text on another line.
 - A sentence with a number, date, name, event, result or quotation cites the source that states it. If no source and no part of the request states it, leave it out.
 - A sentence that gives a fact together with the author's view of it cites the source of the fact.
+- A feeling, reaction, memory, past belief or motive of the author or of anyone else is a fact about that person. Cite the source that states it. If no source states it, leave it out. Never mark it [[V]].
 - Cite only ids that appear in <sources>, and cite a source only for what that source says.
 - Headings, [DIAGRAM: ...] and [IMAGE: ...] lines, and code blocks take no marker.
 - Never mention the markers or the source ids in the post's own words. They are removed before the author sees the post.

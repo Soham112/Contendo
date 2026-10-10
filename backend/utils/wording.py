@@ -83,3 +83,13 @@ def _readings(text: str) -> set[str]:
 def same_wording(first: str, second: str) -> bool:
     """Whether the two are the same words in a different form (see the module docstring)."""
     return bool(_readings(_base_form(first)) & _readings(_base_form(second)))
+
+
+def same_sentence(first: str, second: str) -> bool:
+    """same_wording(), with the punctuation and spaces at either end of each
+    left aside: whether a quoted run of words is the whole of a sentence."""
+    def inner(text: str) -> str:
+        start = next((i for i, char in enumerate(text) if char.isalnum()), len(text))
+        end = next((i for i in range(len(text), start, -1) if text[i - 1].isalnum()), start)
+        return text[start:end]
+    return same_wording(inner(first or ""), inner(second or ""))

@@ -20,7 +20,8 @@ BODY = "We rebuilt the ranker. [[S1]]\n\nNo marker on this line."
 FACT = dict(content="fact_or_event", stated_as="fact", presented_as="neutral")
 FREE_TEXT = "MODEL PROSE THAT MUST NOT TRAVEL"
 LABELS = {"Text", "Cites", "Specific", "Found in", "Not in <sources>", "The author's own", "Read by the author",
-          "Words", "Maximum", "Not allowed", "Words nothing states", "Stated by", "Source words", "Sources linked"}
+          "Words", "Maximum", "Not allowed", "Words nothing states", "Stated by", "Source words", "Sources linked",
+          "Removed before it", "Sentence before it now"}
 STORY_OUTPUT = "<event>{event}</event>\n<post>\n{post}\n</post>"
 
 
@@ -58,12 +59,15 @@ def test_every_issue_type_either_acts_or_is_record_only():
     from pipeline import checks, review_rules
     from pipeline.redraft import RECORD_ONLY, REDRAFT_RULES
 
+    acting = {kind for kind, rule in REDRAFT_RULES.items() if rule.scope != "repair"}
     assert RECORD_ONLY == ("changed_detail", "ai_rhythm")
-    assert not set(REDRAFT_RULES) & set(RECORD_ONLY)
-    assert set(REDRAFT_RULES) | set(RECORD_ONLY) == set(checks.ISSUE_TYPES) | set(review_rules.ISSUE_TYPES)
-    assert set(checks.ISSUE_TYPES) <= set(REDRAFT_RULES)                 # every deterministic issue acts
-    assert set(REDRAFT_RULES) - set(checks.ISSUE_TYPES) == {
+    assert not acting & set(RECORD_ONLY)
+    assert acting | set(RECORD_ONLY) == set(checks.ISSUE_TYPES) | set(review_rules.ISSUE_TYPES)
+    assert set(checks.ISSUE_TYPES) <= acting                             # every deterministic issue acts
+    assert acting - set(checks.ISSUE_TYPES) == {
         "not_in_sources", "wrong_citation", "wrong_attribution", "cross_source_link", "off_topic"}
+    # The one row that is not an issue: a repair step of the targeted fix.
+    assert set(REDRAFT_RULES) - acting == {"after_deletion"}
     assert "under_length" not in REDRAFT_RULES                           # never an issue, so it never acts
 
 
@@ -107,6 +111,8 @@ def _left(kind: str, at) -> dict:
     ([_left("event_unverified", None)], "full"),
     ([_left("uncited_span", 2), _left("over_length", None)], "full"),    # never both: the redraft takes them all
     ([_left("event_unverified", None), _left("wrong_attribution", 1)], "full"),
+    ([_left("after_deletion", 3)], "targeted"),                         # a repair alone is enough for the call
+    ([_left("after_deletion", 3), _left("over_length", None)], "full"),
 ])
 def test_the_routing_rule(remaining, route):
     from pipeline.fixes import choose_route
@@ -137,6 +143,8 @@ EVERY_ISSUE_A_MODEL_SEES = [
     _issue("wrong_attribution", presented_as="a_source_says", authorship="none"),
     _issue("cross_source_link", sources=["S1", "S2"]),
     _issue("off_topic"),
+    _issue("after_deletion", "Which, in hindsight, was the mistake.", removed="We kept running experiments.", before=None),
+    _issue("after_deletion", removed="It stung. It really did.", before="We cut two steps."),
 ]
 
 
@@ -162,6 +170,9 @@ def test_an_entry_is_the_types_instruction_and_fields_of_the_issue_and_nothing_e
         "S2 (a source the author read)", "no source states it"]
     assert [v for e in entries if e["type"] == "banned_text" for label, v in e["material"] if label == "Not allowed"] == [
         "a word the author avoids: leverage", "an em dash"]
+    assert [e["material"][1:] for e in entries if e["type"] == "after_deletion"] == [
+        [["Removed before it", "We kept running experiments."], ["Sentence before it now", "(none: this sentence now opens the post)"]],
+        [["Removed before it", "It stung. It really did."], ["Sentence before it now", "We cut two steps."]]]
 
 
 def test_a_numbered_entry_names_its_sentence_and_a_code_fixed_type_has_no_entry():

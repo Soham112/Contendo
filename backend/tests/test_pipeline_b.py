@@ -114,14 +114,17 @@ def test_a_post_still_over_length_after_the_code_fixes_takes_the_full_redraft(cl
 
 
 def test_over_length_that_the_code_deletions_fix_needs_no_redraft(claude, fake_db, seeded_kb):
-    answer_pipeline(claude, [_distinct(36)], reviews=[{"changes": {5: UNSUPPORTED}}])     # 360 words; one sentence goes
+    lines = _distinct(36).split("\n\n")                              # 360 words; sentence 5 goes
+    # Sentence 6 follows the deletion, so the targeted fix is asked about it; it comes back as it was.
+    answer_pipeline(claude, ["\n\n".join(lines)], reviews=[{"changes": {5: UNSUPPORTED}}], fixes=fixes_reply({5: lines[5]}))
 
     result = _run("B")
 
     outputs = _outputs(fake_db)
     assert _types(outputs["review"]["first"]["acting"]) == ["over_length", "not_in_sources"]
-    assert outputs["review"]["fixes"]["route"] == "none" and outputs["final_validation"]["words"] == 350
-    assert {"redraft", "targeted_fix", "trim"} & set(_events(fake_db)) == set()
+    assert outputs["review"]["fixes"]["route"] == "targeted" and outputs["final_validation"]["words"] == 350
+    assert outputs["review"]["targeted"]["unchanged"] == [5] and outputs["review_second"]["reviewed"] == 0
+    assert {"redraft", "trim"} & set(_events(fake_db)) == set()
     assert _review(result) == ("fixed", [])
 
 
@@ -307,7 +310,9 @@ def test_the_trace_records_both_passes_the_fixes_and_each_step(claude, fake_db, 
     outputs = _outputs(fake_db)
     record = outputs["review"]
     assert set(record) == {"first", "fixes", "targeted", "second", "removed", "remaining", "unreviewed", "outcome"}
-    assert set(record["fixes"]) == {"code", "origin", "unplaced", "route"}
+    assert set(record["fixes"]) == {"code", "origin", "unplaced", "repairs", "route"}
+    assert set(record["targeted"]) == {"entries", "flagged", "repair_only", "parts", "answer", "applied", "invalid",
+                                       "unchanged", "format_failures", "input_tokens", "output_tokens"}
     [entry] = record["targeted"]["entries"]
     assert (entry["type"], entry["sentence"], entry["material"]) == ("uncited_span", 3, [["Text", "No marker on this line."]])
     assert record["targeted"]["answer"] == FIX_LINE_3

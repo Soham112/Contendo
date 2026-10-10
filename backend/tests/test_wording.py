@@ -24,3 +24,16 @@ def test_forms_fixed_by_the_language_are_the_same_wording(first, second):
 ])
 def test_anything_else_is_a_difference(first, second):
     assert not same_wording(first, second)
+
+
+@pytest.mark.parametrize("part,sentence,same", [
+    ("There's a framework that tries to stop that.", "There's a framework that tries to stop that.", True),
+    ("there's a framework  that tries to stop that", "There's a framework that tries to stop that.", True),
+    ('"There is a framework that tries to stop that"', "There's a framework that tries to stop that.", True),
+    ("a framework that tries to stop that.", "There's a framework that tries to stop that.", False),
+    ("", "A sentence.", False),
+])
+def test_same_sentence_leaves_punctuation_at_the_ends_aside(part, sentence, same):
+    from utils.wording import same_sentence
+
+    assert same_sentence(part, sentence) is same

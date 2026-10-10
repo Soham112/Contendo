@@ -404,6 +404,7 @@ Rules:
 - Every line of prose ends with a marker. A marker covers only the text before it on its own line, never text on another line.
 - A sentence with a number, date, name, event, result or quotation cites the source that states it. If no source and no part of the request states it, leave it out.
 - A sentence that gives a fact together with the author's view of it cites the source of the fact.
+- A feeling, reaction, memory, past belief or motive of the author or of anyone else is a fact about that person. Cite the source that states it. If no source states it, leave it out. Never mark it [[V]].
 - Cite only ids that appear in <sources>, and cite a source only for what that source says.
 - Headings, [DIAGRAM: ...] and [IMAGE: ...] lines, and code blocks take no marker.
 - Never mention the markers or the source ids in the post's own words. They are removed before the author sees the post.
@@ -486,10 +487,10 @@ Write nothing before <event>, nothing between </event> and <post>, and nothing a
 
 **Purpose:** What variant B does when the first draft has an acting issue (any deterministic check issue, or a review issue of type `not_in_sources`, `wrong_citation`, `wrong_attribution`, `cross_source_link` or `off_topic`; `changed_detail` and `ai_rhythm` are recorded and never act). A run makes at most one drafter call after the first draft.
 
-1. **Fixes in code, no model** (`pipeline.fixes.code_fix_node`): a sentence that nothing states (`not_in_sources` with no `unsupported_part`) is deleted, by the code the trim deletes sentences with; a `wrong_citation` gets its marker replaced with the place the review found (`supported_by`: the source ids, or `[[R]]` when only the request states it), its words unchanged. The post is finalised and checked again in code.
+1. **Fixes in code, no model** (`pipeline.fixes.code_fix_node`): a sentence that nothing states (`not_in_sources` with no `unsupported_part`, or with one that is the whole sentence by `utils.wording.same_sentence`) is deleted, by the code the trim deletes sentences with; a `wrong_citation` gets its marker replaced with the place the review found (`supported_by`: the source ids, or `[[R]]` when only the request states it), its words unchanged. The post is finalised and checked again in code.
 2. **The routing rule** (`pipeline.fixes.choose_route`), on the issues that are left:
    - an issue about the whole post (`event_unverified`, or `over_length` still there after the deletions) → the **full redraft**, which gets every remaining issue;
-   - otherwise, a sentence still has an issue → the **targeted fix**;
+   - otherwise, a sentence still has an issue, or follows a sentence code deleted → the **targeted fix**;
    - otherwise → no model call.
 3. The post is reviewed again; only sentences a model wrote are sent.
 
@@ -527,6 +528,8 @@ This replaces the output format given above. Your whole output is the fixes betw
 ```
 
 `{numbered}` is the post's sentences, numbered from 1, each with its marker. The answer is read by `utils.draft_output.parse_fixes()` and applied by `pipeline.fixes.apply_targeted_fixes()`: a fix counts only for a sentence a problem named, given exactly once, whose replacement is made of sentences with valid markers. A fix for another sentence (`not_flagged`), a repeated one (`repeated`), an empty one, one with uncited text or a bad marker, and a flagged sentence with no fix (`missing`) are recorded in `review.targeted.invalid`; that sentence stays as it was and its issue remains. No unflagged sentence can change. A cut-off answer is not used.
+
+**The sentence after a deletion (`after_deletion`).** When code deletes one or more sentences, the sentence that follows each deleted run is added to the targeted fix as a problem of type `after_deletion`: it may lean on words that are gone. Its material is the removed text and the sentence that now comes before it. It is a repair step, not an issue: it never counts against the post, a sentence flagged only for it cannot be deleted (`delete_not_allowed`), and a fix that returns the sentence as it was (same words, whitespace aside, and same marker) is recorded as `unchanged`, changes nothing and needs no second review. A rewritten one is reviewed. Deletions by the trim are not covered: the trim runs after the review.
 
 **Full redraft block (`_REDRAFT`):**
 ```
@@ -580,8 +583,9 @@ Nothing a model wrote about the draft reaches either prompt: no analysis, no `wh
 | `wrong_attribution` | targeted fix | This sentence presents its content as coming from the wrong place. What a source whose kind begins OWN EXPERIENCE states is the author's own, and is told as the author's own. What any other source states is told as what that source says, never as something the author did, saw or felt. Nothing is credited to a source that does not state it. Write the sentence so that it follows this, or leave it out. | Text, Stated by, Source words |
 | `cross_source_link` | targeted fix | This sentence links facts from different sources as cause, sequence or result, and no source states that link. State the facts in separate sentences, each with its own marker and with nothing linking them, or leave the link out. | Text, Sources linked |
 | `off_topic` | targeted fix | This sentence leaves the topic. Leave it out, together with anything that only follows from it. Put nothing in its place that no source states. | Text |
+| `after_deletion` | targeted fix (a repair step, not an issue) | The sentence before this one was removed. If this sentence no longer reads correctly without it, rewrite it so it does, using only what it already says; otherwise return it unchanged. Add no fact, feeling or reason. | Text, Removed before it, Sentence before it now |
 
-Labels: Text (the sentence, marker or event the issue is about), Cites (the ids the text cites), Specific and Found in (`nowhere` when no source and no part of the request states it; `the request` for the topic or context), Not in &lt;sources&gt;, The author's own / Read by the author (ids by authorship), Words / Maximum, Not allowed (an em dash, a word the author avoids with the word, or a placeholder line in a first post), Words nothing states, Stated by (for `wrong_attribution`: the ids and whether that source is the author's own or one the author read, or that no source states it), Source words, Sources linked.
+Labels: Text (the sentence, marker or event the issue is about), Cites (the ids the text cites), Specific and Found in (`nowhere` when no source and no part of the request states it; `the request` for the topic or context), Not in &lt;sources&gt;, The author's own / Read by the author (ids by authorship), Words / Maximum, Not allowed (an em dash, a word the author avoids with the word, or a placeholder line in a first post), Words nothing states, Stated by (for `wrong_attribution`: the ids and whether that source is the author's own or one the author read, or that no source states it), Source words, Sources linked, Removed before it / Sentence before it now (`after_deletion`; `(none: this sentence now opens the post)` when nothing precedes it).
 
 ---
 
