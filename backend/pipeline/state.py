@@ -91,11 +91,17 @@ class PipelineState(TypedDict, total=False):
     event: dict[str, Any]
     citations: list[dict[str, Any]]
     citation_failures: list[dict[str, Any]]
+    # multi_sentence_spans: how many spans of the draft hold more than one
+    #   sentence (the drafter is asked for a marker per sentence). A metric
+    #   only: nothing acts on it.
+    multi_sentence_spans: int
     # draft_truncated: set only when the draft stopped at its output limit,
     #   {max_tokens, output_tokens}; the run then returns no post.
     # trim_result: set only when the post was over its maximum and the trim ran,
     #   {outcome: trimmed | trim_failed, reason, max_words, words_before,
-    #    words_after, deleted: [{index, text}]} (agents.word_count_enforcer_agent.trim_node).
+    #    words_after, deleted: [{index, span, text}]}: index is the sentence's
+    #    position among the post's sentences, span the position of the span it
+    #    was in (agents.word_count_enforcer_agent.trim_node).
     draft_truncated: dict[str, Any]
     trim_result: dict[str, Any]
 

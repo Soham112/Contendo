@@ -28,6 +28,7 @@ from typing import Any
 
 from pipeline.state import PipelineState
 from utils.citations import StrippedPost, leftover_markers, parse_event_header, strip_citations
+from utils.sentences import multi_sentence_span_count
 from utils.formatters import GENERAL_ARCHETYPE, STORY_ARCHETYPES, count_words, normalise_post_punctuation
 from utils.text_spans import protected_spans
 
@@ -121,9 +122,13 @@ def finalise_draft_node(state: PipelineState) -> PipelineState:
 
     Sets the post (current_draft, final_post), its spans (citations), marker
     failures (citation_failures) and the validation record (final_validation).
+    Also counts the spans that hold more than one sentence
+    (multi_sentence_spans): a measure of citation compliance that is recorded
+    and triggers nothing.
     """
     finalised, stripped = finalise_marked(state.get("current_draft", ""), state.get("length_target"))
     state["citations"] = [span.as_dict() for span in stripped.spans]
+    state["multi_sentence_spans"] = multi_sentence_span_count(stripped.spans)
     state["citation_failures"] = [
         {"kind": f.kind, "text": f.text, "start": f.start, "end": f.end} for f in stripped.failures
     ]
