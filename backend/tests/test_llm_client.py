@@ -81,6 +81,34 @@ def test_api_errors_propagate_and_log_no_usage(claude, usage_calls):
     assert usage_calls == []
 
 
+# --- what the SDK sends ---------------------------------------------------------
+
+def test_the_request_body_is_what_the_caller_passed(claude, usage_calls, wire):
+    claude.queue("ok")
+    _complete(system="be brief")
+
+    [request] = wire
+    assert (request["method"], request["path"], request["anthropic-version"]) == ("POST", "/v1/messages", "2023-06-01")
+    assert request["body"] == {"model": "claude-sonnet-4-6", "max_tokens": 100, "system": "be brief",
+                               "messages": [{"role": "user", "content": "hi"}]}
+
+
+def test_extra_body_reaches_the_api_as_top_level_parameters(claude, usage_calls, wire):
+    """anthropic 1.x took the sampling parameters out of the method signature;
+    extra_body is how a caller (the eval judge) still sends temperature."""
+    claude.queue("ok")
+    _complete(extra_body={"temperature": 0})
+
+    assert wire[0]["body"]["temperature"] == 0
+    assert "extra_body" not in wire[0]["body"]
+
+
+def test_the_sdk_refuses_temperature_as_a_keyword(claude, usage_calls, wire):
+    with pytest.raises(TypeError, match="temperature"):
+        _complete(temperature=0)
+    assert wire == []
+
+
 # --- usage logging ------------------------------------------------------------
 
 @pytest.mark.parametrize("model_name,label", [("SONNET", "sonnet"), ("HAIKU", "haiku")])

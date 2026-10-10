@@ -1,3 +1,6 @@
 # Test-only dependencies. Not installed on Railway.
 -r requirements.txt
 pytest==8.3.4
+# The Anthropic SDK's HTTP library from 1.x (it installs with anthropic). Tests
+# import it to build the SDK's requests and responses.
+httpx2>=2.0

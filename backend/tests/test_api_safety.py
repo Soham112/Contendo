@@ -5,6 +5,7 @@ import threading
 import time
 
 import httpx
+import httpx2
 import jwt
 import pytest
 from anthropic import InternalServerError
@@ -324,7 +325,7 @@ def test_overloaded_anthropic_error_keeps_503_message(client, monkeypatch, auth_
     import routers.generate as generate
 
     def overloaded(text, *, user_id):
-        response = httpx.Response(529, request=httpx.Request("POST", "https://api.anthropic.com"))
+        response = httpx2.Response(529, request=httpx2.Request("POST", "https://api.anthropic.com"))
         raise InternalServerError("Overloaded", response=response, body=None)
 
     monkeypatch.setattr(generate, "score_text", overloaded)

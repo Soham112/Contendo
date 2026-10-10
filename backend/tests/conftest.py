@@ -55,7 +55,9 @@ _st_module = types.ModuleType("sentence_transformers")
 _st_module.SentenceTransformer = FakeSentenceTransformer
 sys.modules["sentence_transformers"] = _st_module
 
+import anthropic  # noqa: E402
 import anthropic.resources.messages as _anthropic_messages  # noqa: E402
+import httpx2  # noqa: E402
 import jwt  # noqa: E402
 import pytest  # noqa: E402
 
@@ -102,6 +104,33 @@ def fake_db() -> FakeSupabase:
 def claude() -> FakeClaude:
     """The fake Claude API. Queue responses with claude.queue("...")."""
     return _fake_claude
+
+
+# The SDK's own Messages.create, kept before any test replaces it.
+_SDK_MESSAGES_CREATE = _anthropic_messages.Messages.create
+
+
+@pytest.fixture
+def wire(monkeypatch, claude):
+    """The real Anthropic SDK client on a mock HTTP transport, for tests about
+    what the SDK sends. Returns the list every request is recorded in, as
+    {method, path, anthropic-version, body}. The fake Claude still decides each
+    reply (claude.queue(...)), and nothing reaches the network."""
+    import llm.client as llm_client
+
+    sent: list[dict] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        body = json.loads(request.content)
+        sent.append({"method": request.method, "path": request.url.path,
+                     "anthropic-version": request.headers["anthropic-version"], "body": body})
+        return httpx2.Response(200, json=_fake_claude.create(**body).model_dump(mode="json"))
+
+    monkeypatch.setattr(_anthropic_messages.Messages, "create", _SDK_MESSAGES_CREATE)
+    monkeypatch.setattr(llm_client, "client", anthropic.Anthropic(
+        api_key="test-anthropic-key", max_retries=0,
+        http_client=httpx2.Client(transport=httpx2.MockTransport(handler))))
+    return sent
 
 
 @pytest.fixture

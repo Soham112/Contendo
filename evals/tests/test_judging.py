@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import BaseModel
 
+import eval_config as config
 import guard
 
 deepeval = pytest.importorskip("deepeval")
@@ -179,12 +180,60 @@ def test_tests_never_bootstrap_the_real_env():
     assert "env" not in sys.modules, "a test imported env.py, which reads the real evals/.env"
 
 
+# --- what the judge sends to the API ----------------------------------------
+
+class _Verdict(BaseModel):
+    verdict: str
+
+
+def _sdk_complete(sent):
+    """What llm.client.complete does with a call, on the real SDK client over a
+    mock transport: its own arguments stay here, every other keyword goes to
+    messages.create unchanged. Each request body is appended to `sent`."""
+    import json
+
+    import anthropic
+    import httpx2
+
+    def handler(request):
+        body = json.loads(request.content)
+        sent.append(body)
+        if "tools" in body:
+            content = [{"type": "tool_use", "id": "toolu_1", "name": body["tools"][0]["name"], "input": {"verdict": "yes"}}]
+        else:
+            content = [{"type": "text", "text": "fine"}]
+        return httpx2.Response(200, json={
+            "id": "msg_1", "type": "message", "role": "assistant", "model": body["model"], "content": content,
+            "stop_reason": "end_turn", "stop_sequence": None, "usage": {"input_tokens": 1, "output_tokens": 1}})
+
+    sdk = anthropic.Anthropic(api_key="test-key", max_retries=0,
+                              http_client=httpx2.Client(transport=httpx2.MockTransport(handler)))
+
+    def complete(*, model, messages, max_tokens, user_id, event_type, **kwargs):
+        return sdk.messages.create(model=model, max_tokens=max_tokens, messages=messages, **kwargs)
+    return complete
+
+
+def test_the_judge_sends_temperature_zero_in_the_request_body():
+    sent: list[dict] = []
+    judge = make_judge(_sdk_complete(sent))
+
+    assert judge.generate("Is it fine?") == "fine"
+    assert judge.generate("Is it fine?", schema=_Verdict).verdict == "yes"
+
+    plain, structured = sent
+    assert plain == {"model": "judge-model-id", "max_tokens": config.JUDGE_MAX_TOKENS, "temperature": 0,
+                     "messages": [{"role": "user", "content": "Is it fine?"}]}
+    assert structured["temperature"] == 0
+    assert structured["tool_choice"] == {"type": "tool", "name": "submit_answer"}
+    assert set(structured) == {"model", "max_tokens", "temperature", "messages", "tools", "tool_choice"}
+
+
 # --- fatal errors and judge comparison --------------------------------------
 
 def _api_error(cls, message, status):
-    import anthropic
-    import httpx
-    response = httpx.Response(status, request=httpx.Request("POST", "https://api.anthropic.com/v1/messages"))
+    import httpx2
+    response = httpx2.Response(status, request=httpx2.Request("POST", "https://api.anthropic.com/v1/messages"))
     return cls(message, response=response, body=None)
 
 
