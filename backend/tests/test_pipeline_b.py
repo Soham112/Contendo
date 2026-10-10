@@ -2,13 +2,14 @@
 take (code fixes only, a targeted fix, or the one full redraft), the second
 review, and how the run is reported. The model is the fake; whether the
 review's observations are right is measured on real calls, not here. The fixes
-themselves are in test_fixes.py, and what a model is told in test_redraft.py."""
+themselves are in test_fixes.py, the full-redraft path in test_full_redraft.py, and
+what a model is told in test_redraft.py."""
 
 import json
 
 import pytest
 
-from tests.length_fixtures import KB_USER, _clean, _cut_off, _outputs, _run
+from tests.length_fixtures import KB_USER, _clean, _outputs, _run
 from tests.review_fixtures import answer_pipeline, enveloped, fixes_reply
 from tests.test_checks import _lines, _post
 from tests.test_generation_trace import STANDARD_RUN, seeded_kb  # noqa: F401  (shared fixture)
@@ -113,19 +114,29 @@ def test_a_post_still_over_length_after_the_code_fixes_takes_the_full_redraft(cl
     assert _outputs(fake_db)["final_validation"]["words"] == 350 and _review(result) == ("fixed", [])
 
 
-def test_over_length_that_the_code_deletions_fix_needs_no_redraft(claude, fake_db, seeded_kb):
-    lines = _distinct(36).split("\n\n")                              # 360 words; sentence 5 goes
-    # Sentence 6 follows the deletion, so the targeted fix is asked about it; it comes back as it was.
-    answer_pipeline(claude, ["\n\n".join(lines)], reviews=[{"changes": {5: UNSUPPORTED}}], fixes=fixes_reply({5: lines[5]}))
+def test_over_length_that_the_code_deletions_fix_needs_no_model(claude, fake_db, seeded_kb):
+    answer_pipeline(claude, [_distinct(36)], reviews=[{"changes": {5: UNSUPPORTED}}])     # 360 words; one sentence goes
 
     result = _run("B")
 
     outputs = _outputs(fake_db)
     assert _types(outputs["review"]["first"]["acting"]) == ["over_length", "not_in_sources"]
-    assert outputs["review"]["fixes"]["route"] == "targeted" and outputs["final_validation"]["words"] == 350
-    assert outputs["review"]["targeted"]["unchanged"] == [5] and outputs["review_second"]["reviewed"] == 0
-    assert {"redraft", "trim"} & set(_events(fake_db)) == set()
+    assert outputs["review"]["fixes"]["route"] == "none" and outputs["final_validation"]["words"] == 350
+    # A deletion in the middle of the post asks nothing of a model: its neighbours are left as they are.
+    assert {"redraft", "targeted_fix", "trim"} & set(_events(fake_db)) == set()
     assert _review(result) == ("fixed", [])
+
+
+def test_placeholder_lines_do_not_make_a_post_over_length(claude, fake_db, seeded_kb):
+    diagram = "[DIAGRAM: " + " ".join(["box"] * 40) + "]"
+    answer_pipeline(claude, [f"## A heading of five words\n\n{_post(34)}\n\n{diagram}"])     # 340 words of prose
+
+    result = _run("B")
+
+    outputs = _outputs(fake_db)
+    assert (outputs["final_validation"]["words"], outputs["final_validation"]["length"]) == (340, "ok")
+    assert outputs["review"]["first"]["acting"] == [] and diagram in result["post"]
+    assert {"redraft", "targeted_fix", "trim"} & set(_events(fake_db)) == set()
 
 
 def test_issues_that_remain_are_reported_and_there_is_never_a_second_fix(claude, fake_db, seeded_kb):
@@ -214,73 +225,6 @@ def test_a_sentence_with_no_valid_record_is_sent_again_and_never_reused(claude, 
     assert _review(result) == ("fixed", [])
 
 
-# --- The full redraft -----------------------------------------------------------------
-
-def test_the_full_redraft_is_reviewed_only_where_it_changed(claude, fake_db, seeded_kb):
-    first = _distinct(37)                                             # 370 words: over, whatever code deletes
-    second = _distinct(35).replace("Plainaa", "Plainzz")              # one sentence new, 34 as they were
-    answer_pipeline(claude, [first, second])
-
-    result = _run("B")
-
-    review = _outputs(fake_db)["review_second"]
-    assert (review["reused"], review["reviewed"]) == (34, 1) and _review(result) == ("fixed", [])
-    assert [d["node"] for d in _outputs(fake_db)["draft_history"]] == ["draft", "redraft"]
-
-
-def test_a_failed_trim_leaves_over_length_on_the_returned_post(claude, fake_db, seeded_kb):
-    answer_pipeline(claude, [_post(36), _post(36)], trim=json.dumps({"ranking": [99]}))
-
-    result = _run("B")
-
-    assert _outputs(fake_db)["trim_result"]["outcome"] == "trim_failed"
-    assert _review(result) == ("issues_remain", [("over_length", "")])
-
-
-@pytest.mark.parametrize("ranking,outcome", [([10], "fixed"), ([11], "not_reviewed")])
-def test_a_sentence_the_trim_deleted_does_not_count_against_the_post(claude, fake_db, seeded_kb, ranking, outcome):
-    spec = {"changes": {10: MADE_UP}}                                 # sentence 10 never gets a valid record
-    answer_pipeline(claude, [_distinct(37), _distinct(36)], reviews=[spec, spec], trim=json.dumps({"ranking": ranking}))
-
-    result = _run("B")
-
-    assert _outputs(fake_db)["review_second"]["unreviewed"] == [9]
-    assert result["review"]["outcome"] == outcome
-
-
-def test_a_cut_off_redraft_keeps_the_post_which_is_then_trimmed_and_reported(claude, fake_db, seeded_kb):
-    cut = "<post>\nPlain word"
-    over = f"{_post(36)}\n\nNo marker on this line."                 # 365 words
-    answer_pipeline(claude, [over, _cut_off(cut)], trim=json.dumps({"ranking": [10, 11]}))
-
-    result = _run("B")
-
-    outputs = _outputs(fake_db)
-    assert result["status"] == "ok" and outputs["review"]["redraft_truncated"] == {"max_tokens": 2000, "output_tokens": 2000}
-    assert _events(fake_db)[-2:] == ["redraft", "trim"] and "draft_truncated" not in outputs
-    assert [d["node"] for d in outputs["draft_history"]] == ["draft", "redraft_truncated", "trim"]
-    assert outputs["final_validation"]["words"] == 345 and result["post"] == outputs["final_post"]
-    assert _review(result) == ("issues_remain", [("uncited_span", "No marker on this line.")])
-
-
-def test_a_cut_off_first_draft_still_returns_no_post(claude, fake_db, seeded_kb):
-    answer_pipeline(claude, [_cut_off("<post>\npgvector makes retrieval")])
-
-    result = _run("B")
-
-    assert (result["status"], result["post"]) == ("draft_truncated", "") and "review" not in result
-    assert _events(fake_db) == ["archetype", "generate"]
-
-
-def test_an_under_length_post_triggers_nothing(claude, fake_db, seeded_kb):
-    answer_pipeline(claude, [_post(5)])                 # 50 words against 250-350
-
-    result = _run("B")
-
-    assert _outputs(fake_db)["final_validation"]["length"] == "under_length"
-    assert _events(fake_db) == ["archetype", "generate", "review", "review"] and _review(result) == ("clean", [])
-
-
 # --- The response and the trace -------------------------------------------------------
 
 def test_the_response_lists_acting_issue_types_and_what_was_removed(claude, fake_db, seeded_kb, client, auth_headers,
@@ -310,8 +254,8 @@ def test_the_trace_records_both_passes_the_fixes_and_each_step(claude, fake_db, 
     outputs = _outputs(fake_db)
     record = outputs["review"]
     assert set(record) == {"first", "fixes", "targeted", "second", "removed", "remaining", "unreviewed", "outcome"}
-    assert set(record["fixes"]) == {"code", "origin", "unplaced", "repairs", "route"}
-    assert set(record["targeted"]) == {"entries", "flagged", "repair_only", "parts", "answer", "applied", "invalid",
+    assert set(record["fixes"]) == {"code", "origin", "unplaced", "route"}
+    assert set(record["targeted"]) == {"entries", "flagged", "parts", "answer", "applied", "invalid",
                                        "unchanged", "format_failures", "input_tokens", "output_tokens"}
     [entry] = record["targeted"]["entries"]
     assert (entry["type"], entry["sentence"], entry["material"]) == ("uncited_span", 3, [["Text", "No marker on this line."]])

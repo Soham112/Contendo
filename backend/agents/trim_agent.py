@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from llm.client import HAIKU, StructuredOutputError, TruncatedStructuredOutputError, complete_structured
 from pipeline.state import PipelineState
 from pipeline.trace import record_draft
-from utils.citations import Span, delete_spans
+from utils.citations import Span, delete_spans, prose_word_count
 from utils.formatters import count_words
 from utils.sentences import split_spans
 
@@ -107,7 +107,7 @@ def trim_node(state: PipelineState) -> PipelineState:
     units = split_spans([Span.from_dict(c) for c in state.get("citations") or []])
     sentences = [sentence for _, sentence in units]
     max_words = state["length_target"]["max_words"]
-    words_before = count_words(post)
+    words_before = prose_word_count(post)       # as the length check measured it: prose only
     result = {"outcome": "trim_failed", "reason": None, "max_words": max_words,
               "words_before": words_before, "words_after": words_before,
               "ranking": [], "deleted": [], "kept_ranked": []}
@@ -145,12 +145,12 @@ def trim_node(state: PipelineState) -> PipelineState:
             for position in ranked:
                 gone.add(position)
                 trimmed, kept = delete_spans(post, sentences, gone)
-                if count_words(trimmed) <= max_words:
+                if prose_word_count(trimmed) <= max_words:
                     break
             result["ranking"] = [entry(i) for i in ranked]
             result["deleted"] = [entry(i) for i in ranked if i in gone]
             result["kept_ranked"] = [entry(i) for i in ranked if i not in gone]
-            result["words_after"] = count_words(trimmed)
+            result["words_after"] = prose_word_count(trimmed)
             span_of = [units[i][0] for i in range(len(units)) if i not in gone]
             state["current_draft"] = trimmed
             state["citations"] = [span.as_dict() for span in _rejoin(trimmed, kept, span_of)]

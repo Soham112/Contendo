@@ -355,8 +355,9 @@ def test_code_and_urls_are_never_split_or_numbered(claude):
               "The write-up is at https://example.com/a.b?q=one.two for anyone curious. Worth a read. [[S1]]\n\n"
               + _post(10))
     state = finalise_draft_node(make_state([OWN], archetype="general", current_draft=marked,
-                                           length_target={"min_words": 0, "max_words": 120, "may_expand": False, "basis": "thin_sources"}))
+                                           length_target={"min_words": 0, "max_words": 115, "may_expand": False, "basis": "thin_sources"}))
     words_before = state["final_validation"]["words"]
+    assert words_before == 120                                                 # the prose: the code block's words are not counted
 
     state = _trim(claude, state, json.dumps({"ranking": [2, 4]}))               # "It passed." and "Worth a read."
 

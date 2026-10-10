@@ -9,7 +9,9 @@ its own, for a pipeline whose text must not be touched here (pipeline A, which
 normalises in its own finalize step and is recorded only).
 
 The record:
-    words                 count_words() of the text
+    words                 the post's length: prose_word_count() for variants B and C
+                          (headings, placeholder lines and code blocks are not
+                          counted), count_words() for pipeline A (every token)
     target                {min_words, max_words, basis} or None (threads)
     length                "ok" | "over_length" | "under_length" | "no_target"
     over_by, under_by     words beyond the maximum / short of the minimum (0 when not)
@@ -28,7 +30,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from pipeline.state import PipelineState
-from utils.citations import StrippedPost, leftover_markers, strip_citations
+from utils.citations import StrippedPost, leftover_markers, prose_word_count, strip_citations
 from utils.draft_output import parse_draft_output
 from utils.sentences import multi_sentence_span_count
 from utils.formatters import GENERAL_ARCHETYPE, STORY_ARCHETYPES, count_words, normalise_post_punctuation
@@ -54,9 +56,11 @@ def _prose_em_dashes(text: str) -> int:
     return count + text[cursor:].count(EM_DASH)
 
 
-def validation_record(text: str, target: dict[str, Any] | None) -> dict[str, Any]:
-    """Measure and check text as it stands. Changes nothing."""
-    words = count_words(text)
+def validation_record(text: str, target: dict[str, Any] | None, count=count_words) -> dict[str, Any]:
+    """Measure and check text as it stands. Changes nothing. count is how the
+    post's length is measured: count_words (pipeline A, the default) or
+    utils.citations.prose_word_count (variants B and C)."""
+    words = count(text)
     over_by = under_by = 0
     if target is None:
         length = "no_target"
@@ -77,9 +81,10 @@ def validation_record(text: str, target: dict[str, Any] | None) -> dict[str, Any
 
 
 def finalise(text: str, target: dict[str, Any] | None) -> Finalised:
-    """Normalise text and validate the result."""
+    """Normalise a single-writer post and validate the result. Its length is
+    its prose (prose_word_count)."""
     final = normalise_post_punctuation(text)
-    return Finalised(final, validation_record(final, target))
+    return Finalised(final, validation_record(final, target, prose_word_count))
 
 
 def finalise_marked(marked: str, target: dict[str, Any] | None) -> tuple[Finalised, StrippedPost]:
@@ -90,7 +95,7 @@ def finalise_marked(marked: str, target: dict[str, Any] | None) -> tuple[Finalis
     text, after both.
     """
     stripped = strip_citations(normalise_post_punctuation(marked))
-    return Finalised(stripped.text, validation_record(stripped.text, target)), stripped
+    return Finalised(stripped.text, validation_record(stripped.text, target, prose_word_count)), stripped
 
 
 # ── Single-writer nodes (variants B and C) ────────────────────────────────────

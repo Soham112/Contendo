@@ -21,6 +21,7 @@ import re
 from dataclasses import dataclass
 from typing import Collection, Sequence
 
+from utils.formatters import count_words
 from utils.text_spans import protected_spans
 
 REQUEST = "R"
@@ -236,6 +237,19 @@ def strip_citations(text: str) -> StrippedPost:
 
     failures.sort(key=lambda f: (f.start, f.end))
     return StrippedPost(clean, tuple(spans), tuple(failures))
+
+
+def prose_word_count(text: str) -> int:
+    """How long a post's prose is, in words: the words of its spans.
+
+    What is not a span is not counted: headings, [DIAGRAM: ...] and
+    [IMAGE: ...] lines, and code blocks. That is strip_citations' own
+    definition of what is structure and what is prose, so the text a length
+    rule measures is exactly the text a citation is asked for. Works on a post
+    with or without its markers. Variants B and C measure with this; pipeline A
+    keeps utils.formatters.count_words, which counts every token.
+    """
+    return sum(count_words(span.text) for span in strip_citations(text).spans)
 
 
 def delete_spans(text: str, spans: Sequence[Span], delete: Collection[int]) -> tuple[str, tuple[Span, ...]]:

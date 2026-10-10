@@ -7,9 +7,6 @@ row says how the issue is dealt with:
                     that sentence (pipeline/fixes.py)
   scope "post"      the post's structure or length has to change: the one full
                     redraft
-  scope "repair"    not an issue at all: a step of a fix. after_deletion asks
-                    the targeted fix to look at the sentence that followed a
-                    sentence code deleted. It never counts against the post.
 and holds the fixed instruction a model is given for it and the fields of the
 issue it is shown: never anything a model wrote about the draft. Two fixes
 need no model and are made in code first (pipeline/fixes.py): a sentence
@@ -21,6 +18,8 @@ The record this builds, with pipeline/fixes.py, is state["review"]:
     first      {checks, acting, recorded}: the first draft's issues, split
     fixes      {code, origin, unplaced, route}: the fixes made in code, and
                which path the remaining issues took (see pipeline/fixes.py)
+    fixes_after_redraft  {code, origin}: the same code fixes made again on a
+               full redraft, after its review; only when there were any
     targeted   {entries, flagged, applied, invalid, ...}: only on the targeted path
     redraft    {entries, downgraded_from?, ...}: only on the full-redraft path;
                the entries are exactly what the prompt listed
@@ -62,7 +61,6 @@ Line = tuple[str, str]                      # (label, value) as shown in the red
 RECORD_ONLY = ("changed_detail", "ai_rhythm")
 
 _NOWHERE = "nowhere"
-_OPENS_THE_POST = "(none: this sentence now opens the post)"
 _THE_REQUEST = "the request"
 # What wrong_attribution found, from the source index (never from model prose).
 _ORIGINS = {"external": "a source the author read", "self": "the author's own source", "none": "no source states it"}
@@ -110,10 +108,6 @@ def _origin(issue: dict) -> list[Line]:
     return [("Stated by", f"{_places(issue['sources'])} ({origin})" if issue["sources"] else origin)]
 
 
-def _now_before(issue: dict) -> list[Line]:
-    return [("Sentence before it now", issue["detail"]["before"] or _OPENS_THE_POST)]
-
-
 def _banned(issue: dict) -> list[Line]:
     found = _BANNED[issue["detail"]["kind"]]
     word = issue["detail"].get("word")
@@ -126,7 +120,7 @@ class RedraftRule:
     # fixed in code (pipeline/fixes.py) and never described to a model.
     instruction: str | None
     material: tuple[Callable[[dict], list[Line]], ...]  # the quoted fields of the issue the entry shows
-    scope: Literal["sentence", "post", "repair"] = "sentence"
+    scope: Literal["sentence", "post"] = "sentence"
 
 
 # The one table: every issue type that acts, with what a model is told about it.
@@ -196,13 +190,6 @@ REDRAFT_RULES: dict[str, RedraftRule] = {
         "This sentence leaves the topic. Leave it out, together with anything that only follows from "
         "it. Put nothing in its place that no source states.",
         (_text,)),
-    # Not an issue: the sentence after one that code deleted (pipeline.fixes). The
-    # removed text is shown as data, so the model can see what the sentence leaned on.
-    "after_deletion": RedraftRule(
-        "The sentence before this one was removed. If this sentence no longer reads correctly without "
-        "it, rewrite it so it does, using only what it already says; otherwise return it unchanged. "
-        "Add no fact, feeling or reason.",
-        (_text, _detail("removed", "Removed before it"), _now_before), scope="repair"),
 }
 
 

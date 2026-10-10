@@ -130,11 +130,13 @@ class PipelineState(TypedDict, total=False):
     #   {first: {checks, acting, recorded},
     #    fixes: {code: [{type, issue, sentence, before, after}], origin,
     #            unplaced, route: none | targeted | full}   when anything acted
-    #    targeted: {entries, flagged, parts, answer, applied, invalid,
+    #    targeted: {entries, flagged, parts, answer, applied, unchanged, invalid,
     #               format_failures, input_tokens, output_tokens}   targeted path only
     #    redraft: {entries, downgraded_from?, input_tokens, output_tokens}   full path only
     #    redraft_truncated: {max_tokens, output_tokens}   only when the full
     #              redraft was cut off; the post is then returned as it was
+    #    fixes_after_redraft: {code, origin}   full path only, when code fixed
+    #              something on the redraft after its review
     #    second: {checks, acting, recorded}            when anything acted
     #    removed: [{kind, text, how: deleted | trimmed, by: code | model}],
     #    remaining: acting issues on the returned post,

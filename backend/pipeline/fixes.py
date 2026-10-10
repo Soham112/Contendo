@@ -11,17 +11,17 @@ Order, after the first review found acting issues:
    - wrong_citation: the sentence's marker is replaced with the place the
      review found (its supported_by); its words do not change.
    The post is then finalised and checked again, in code. A deletion can
-   leave the next sentence leaning on words that are gone, so the sentence
-   that follows each run of deleted sentences becomes an after_deletion repair:
-   not an issue, but a sentence the targeted fix is asked to look at.
+   leave the next sentence leaning on words that are gone. Nothing repairs
+   that: asking the drafter to look at such neighbours made posts worse
+   (decided 2026-10-10, docs/plans/single-writer.md section 6), so occasional
+   orphans are accepted and measured in the blind read.
 
 2. The routing rule (choose_route), on the issues that are left:
    - "full"      an issue whose scope is the post: the event could not be
                  verified, or the post is still over its maximum. The one full
                  redraft deals with it and with every other remaining issue.
-   - "targeted"  otherwise, when a sentence still has an issue or follows a
-                 deletion: one drafter call returns replacements for those
-                 sentences only.
+   - "targeted"  otherwise, when a sentence still has an issue: one drafter
+                 call returns replacements for those sentences only.
    - "none"      nothing is left for a model.
    One path at most: a targeted fix and a full redraft never both run, and
    neither runs twice.
@@ -31,8 +31,12 @@ Order, after the first review found acting issues:
    given exactly once, and (for a replacement) made of cited sentences with
    valid markers. Any other fix is rejected and recorded, and its sentence
    stays as it was, so its issue remains. No other sentence can change. A
-   replacement that is the sentence as it was changes nothing ("unchanged"),
-   and a sentence flagged only as a repair cannot be deleted.
+   replacement that is the sentence as it was changes nothing ("unchanged").
+
+4. After a full redraft and its review, the fixes of step 1 are made once
+   more, on the redraft (code_fix_redraft_node): the redraft can bring back a
+   wrong marker or a sentence nothing states. No model is called for this and
+   nothing is drafted again.
 
 Sentences are the post's spans cut by utils.sentences.split_spans, the same
 numbering the review and the trim use. After step 1 the post's spans are its
@@ -46,16 +50,17 @@ state["review"]["fixes"]:
               (0-based), or None for one a model wrote. The second review
               reuses the first review's record for every sentence that has one.
     unplaced  remaining issues about no one sentence, which no targeted fix can reach
-    repairs   the after_deletion repairs, [{type, at, text, detail: {removed, before}}]
     route     "full" | "targeted" | "none"
 state["review"]["targeted"] (targeted path only):
     entries   the problems as the prompt listed them, each with its sentence number
     flagged   the 1-based numbers of the sentences that may be fixed
-    repair_only  those flagged only as a repair: they may be reworded, not deleted
     applied   [{sentence, before, after}]   (after is None for a deletion)
     unchanged the numbers whose fix returned the sentence as it was
     invalid   [{sentence, reason, text}]    rejected fixes
     format_failures, truncated?, input_tokens, output_tokens
+state["review"]["fixes_after_redraft"] (full path, only when code fixed something):
+    code      as fixes.code; sentence is 0-based in the redraft
+    origin    for each sentence of the post now, the sentence of the redraft it is
 state["review"]["removed"]: content taken out because nothing states it,
     [{kind, text, how: deleted | trimmed, by: code | model}]; kind is what the
     review said the sentence mainly was (feeling_or_reaction, motive, ...).
@@ -123,32 +128,13 @@ def _whole_sentence(issue: dict, sentence: Span) -> bool:
     return not part or same_sentence(part, sentence.text)
 
 
-def _repairs(sentences: list[Span], delete: set[int], now_at: dict[int, int]) -> list[dict]:
-    """One after_deletion repair for the sentence that follows each run of
-    deleted sentences, when there is one and it can still be placed."""
-    repairs = []
-    for position in sorted(delete):
-        if position - 1 in delete:
-            continue                                         # not the start of a run
-        end = position
-        while end + 1 in delete:
-            end += 1
-        if now_at.get(end + 1) is None:
-            continue                                         # the run ends the post
-        removed = " ".join(sentences[i].text for i in range(position, end + 1))
-        before = sentences[position - 1].text if position else None
-        repairs.append({"type": "after_deletion", "origin": "fix", "at": now_at[end + 1], "span": None,
-                        "text": sentences[end + 1].text, "sources": [], "evidence": None,
-                        "detail": {"removed": removed, "before": before}})
-    return repairs
-
-
-def code_fix_node(state: PipelineState) -> PipelineState:
-    """Make the fixes that need no model, check the post again, and choose the
-    path for what is left (see the module docstring)."""
-    record = state["review"]
+def _apply_code_fixes(state: PipelineState, review_issues: list[dict]) -> tuple[list[dict], list[dict], list, list]:
+    """Make the code fixes these review issues call for on the post in state,
+    then settle and re-check it. Returns (fixes, removed, origin, units):
+    origin says, for each sentence of the post now, which sentence of the post
+    before it is (None for one the segmenter now cuts differently, which is no
+    longer known to be the same), and units are the post's sentences now."""
     sentences = [sentence for _, sentence in _units(state)]
-    review_issues = [issue for issue in record["first"]["acting"] if issue["origin"] == "review"]
     delete = {issue["sentence"] for issue in review_issues
               if issue["type"] == "not_in_sources" and _whole_sentence(issue, sentences[issue["sentence"]])}
     fixes, removed, edited = [], [], list(sentences)
@@ -166,25 +152,32 @@ def code_fix_node(state: PipelineState) -> PipelineState:
     text, kept = delete_spans(state["current_draft"], edited, delete)
     settle(state, text, kept)
     _recheck(state)
-    # Each sentence of the post now, and the first-draft sentence it is. A kept
-    # sentence the segmenter now cuts differently is no longer known to be one.
     survivors = [position for position in range(len(sentences)) if position not in delete]
     units = _units(state)
     per_span = [sum(1 for position, _ in units if position == i) for i in range(len(kept))]
     origin = [survivors[position] if per_span[position] == 1 else None for position, _ in units]
+    return fixes, removed, origin, units
+
+
+def code_fix_node(state: PipelineState) -> PipelineState:
+    """Make the fixes that need no model, check the post again, and choose the
+    path for what is left (see the module docstring)."""
+    record = state["review"]
+    review_issues = [issue for issue in record["first"]["acting"] if issue["origin"] == "review"]
+    fixes, removed, origin, units = _apply_code_fixes(state, review_issues)
 
     # What is left: the checks' issues on the post as it now stands, and the
     # first review's issues that no code fix dealt with, renumbered.
     now_at = {was: now for now, was in enumerate(origin) if was is not None}
+    deleted = {fix["sentence"] for fix in fixes if fix["type"] == "sentence_deleted"}
     check_issues, _ = split_issues(state["checks_final"], {"issues": []})
     for issue in check_issues:
         issue["at"] = _sentence_of(issue, units)
     left = [{**issue, "at": now_at.get(issue["sentence"])} for issue in review_issues
-            if issue["sentence"] not in delete and issue["type"] != "wrong_citation"]
+            if issue["sentence"] not in deleted and issue["type"] != "wrong_citation"]
     remaining = [*check_issues, *left]
-    repairs = _repairs(sentences, delete, now_at)
-    route = choose_route([*remaining, *repairs])
-    record["fixes"] = {"code": fixes, "origin": origin, "route": route, "repairs": repairs,
+    route = choose_route(remaining)
+    record["fixes"] = {"code": fixes, "origin": origin, "route": route,
                        "unplaced": [issue for issue in remaining if issue["at"] is None and route != "full"]}
     record["removed"] = removed
     if route == "full":
@@ -193,15 +186,35 @@ def code_fix_node(state: PipelineState) -> PipelineState:
         if chosen in STORY_ARCHETYPES and any(issue["type"] == "event_unverified" for issue in remaining):
             record["redraft"]["downgraded_from"] = chosen
     elif route == "targeted":
-        with_issue = {issue["at"] + 1 for issue in remaining if issue["at"] is not None}
-        placed = sorted((issue for issue in [*remaining, *repairs] if issue["at"] is not None),
-                        key=lambda issue: issue["at"])
+        placed = sorted((issue for issue in remaining if issue["at"] is not None), key=lambda issue: issue["at"])
         record["targeted"] = {"entries": issue_entries(placed, numbered=True),
                               "flagged": sorted({issue["at"] + 1 for issue in placed}),
-                              "repair_only": sorted({issue["at"] + 1 for issue in repairs} - with_issue),
                               "parts": {str(issue["at"] + 1): issue["detail"]["unsupported_part"] for issue in placed
                                         if issue["type"] == "not_in_sources"}}
     logger.info("fixes: %d in code, then %s", len(fixes), route)
+    return state
+
+
+def code_fix_redraft_node(state: PipelineState) -> PipelineState:
+    """After a full redraft's review: make the same code fixes on the redraft.
+
+    The redraft is a new draft, so it can cite a sentence to the wrong place
+    again, or state something nothing supports, and the fixes made before it do
+    not carry over. Does nothing when the review found neither; otherwise
+    records review.fixes_after_redraft and adds to review.removed. The review's
+    issues are then derived again from its records, with no call
+    (agents.review_agent.review_refixed_node)."""
+    record, review = state["review"], state["review_second"]
+    issues = [issue for issue in review["issues"] if issue["type"] in ("not_in_sources", "wrong_citation")]
+    sentences = [sentence for _, sentence in _units(state)]
+    fixable = [issue for issue in issues
+               if issue["type"] == "wrong_citation" or _whole_sentence(issue, sentences[issue["sentence"]])]
+    if not fixable:
+        return state
+    fixes, removed, origin, _ = _apply_code_fixes(state, fixable)
+    record["fixes_after_redraft"] = {"code": fixes, "origin": origin}
+    record["removed"] += removed
+    logger.info("fixes after the redraft: %d in code", len(fixes))
     return state
 
 
@@ -210,8 +223,7 @@ def code_fix_node(state: PipelineState) -> PipelineState:
 def choose_route(remaining: list[dict]) -> str:
     """Which single path the issues left after the code fixes take.
 
-    remaining: acting issues and after_deletion repairs, each with "at": the
-    sentence it is about, or None.
+    remaining: acting issues, each with "at": the sentence it is about, or None.
     """
     if any(REDRAFT_RULES[issue["type"]].scope == "post" for issue in remaining):
         return "full"            # event_unverified, or still over the maximum
@@ -252,10 +264,9 @@ def apply_targeted_fixes(state: PipelineState, answer: str, *, truncated: bool) 
 
     A fix is rejected (and recorded in targeted.invalid, its sentence left as
     it was) when its sentence was not flagged ("not_flagged"), when the
-    sentence is given more than once ("repeated"), when its replacement is
-    empty, has uncited text or has a marker that is not valid, or when it
-    deletes a sentence flagged only as a repair ("delete_not_allowed"). A
-    flagged sentence with no fix is recorded as "missing". A replacement that
+    sentence is given more than once ("repeated"), or when its replacement is
+    empty, has uncited text or has a marker that is not valid. A flagged
+    sentence with no fix is recorded as "missing". A replacement that
     is the sentence as it was, marker included, is recorded as unchanged and
     nothing is done: the sentence keeps its review record. A truncated answer
     is not read at all. Sentences nobody flagged are never touched.
@@ -278,10 +289,7 @@ def apply_targeted_fixes(state: PipelineState, answer: str, *, truncated: bool) 
         elif len(given) > 1:
             invalid.append({"sentence": number, "reason": "repeated", "text": shown})
         elif given[0].text is None:
-            if number in targeted["repair_only"]:
-                invalid.append({"sentence": number, "reason": "delete_not_allowed", "text": ""})
-            else:
-                edits[number - 1] = None
+            edits[number - 1] = None
         else:
             replacement = _replacement(given[0].text)
             if isinstance(replacement, str):

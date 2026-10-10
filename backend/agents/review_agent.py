@@ -34,7 +34,7 @@ changed sentences are sent, grouped the same way.
 
 The prompt is built in agents/review_prompt.py; this file holds the call, the
 merge and the graph nodes of variant B (review_node, review_fixed_node,
-review_redraft_node);
+review_redraft_node, review_refixed_node);
 the validation is in pipeline/review_validation.py. What an issue leads to is
 decided in pipeline/redraft.py.
 """
@@ -243,7 +243,7 @@ def _run_groups(state: PipelineState, sentences: list[tuple[int, Span]],
 
 
 def review_post(state: PipelineState, previous: dict[str, Any] | None = None,
-                origin: list[int | None] | None = None) -> dict[str, Any]:
+                origin: list[int | None] | None = None, send_new: bool = True) -> dict[str, Any]:
     """Review the post in state. Changes nothing.
 
     previous: an earlier review_post result for an earlier draft of this post.
@@ -252,7 +252,9 @@ def review_post(state: PipelineState, previous: dict[str, Any] | None = None,
     is not sent again. origin (pipeline.fixes): for each sentence here, the
     sentence of that earlier draft it is, or None; given, it decides the reuse
     and no text is matched. An origin that does not fit the post's sentences is
-    not used, and the result says so (origin_mismatch).
+    not used, and the result says so (origin_mismatch). send_new=False makes
+    no call at all: the issues are derived again from the reused records, and a
+    sentence with none is reported as unreviewed.
 
     Returns {outcome, issues, invalid, unreviewed, records, sentences, reused,
     reviewed, groups, model, input_tokens, output_tokens} and, when the review
@@ -283,7 +285,7 @@ def review_post(state: PipelineState, previous: dict[str, Any] | None = None,
     request_text = "\n".join([state.get("topic") or "", state.get("context") or ""])
     mismatch = origin is not None and len(origin) != len(sentences)
     reuse = _reusable(previous, sentences, None if mismatch else origin) if previous else {}
-    to_review = [number for number in range(1, len(sentences) + 1) if number not in reuse]
+    to_review = [number for number in range(1, len(sentences) + 1) if number not in reuse] if send_new else []
     groups = [[to_review[position - 1] for position in group] for group in review_groups(len(to_review))]
     result: dict[str, Any] = {
         "outcome": "not_reviewed", "issues": [], "invalid": [], "unreviewed": list(range(len(sentences))),
@@ -356,4 +358,19 @@ def review_fixed_node(state: PipelineState) -> PipelineState:
     from which the issues are derived again: state["review_second"]."""
     state["review_second"] = review_post(state, previous=state["review_first"],
                                          origin=state["review"]["fixes"]["origin"])
+    return state
+
+
+def review_refixed_node(state: PipelineState) -> PipelineState:
+    """After code fixed a full redraft (review.fixes_after_redraft): derive the
+    review's issues again for the post as it now stands, from the records the
+    review of the redraft already holds. No call is made. The result replaces
+    state["review_second"] and keeps that review's counts of what was sent."""
+    fixed = state["review"].get("fixes_after_redraft")
+    if fixed is None:
+        return state
+    reviewed = state["review_second"]
+    again = review_post(state, previous=reviewed, origin=fixed["origin"], send_new=False)
+    again.update({key: reviewed[key] for key in ("reused", "reviewed", "groups", "input_tokens", "output_tokens")})
+    state["review_second"] = again
     return state

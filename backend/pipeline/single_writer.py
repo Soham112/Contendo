@@ -11,7 +11,8 @@ chooses one path for what is left (pipeline/fixes.py):
   targeted  → targeted_fix (one drafter call, replacements for the flagged
               sentences only) → review_fixed
   full      → redraft (one drafter call, the whole post) → strip → finalise →
-              checks → review_redraft
+              checks → review_redraft → code_fix_redraft (the code fixes
+              again, on the redraft) → review_refixed (no call)
 then trim (only when over the maximum) → finalise → checks again → outcome.
 No edge joins the targeted and the full path, and none leads back to a
 drafting step, so a run makes at most one of those calls and never a third
@@ -35,14 +36,14 @@ from langgraph.graph import END, StateGraph
 
 from agents.archetype_agent import structure_node
 from agents.draft_agent import cited_draft_node, redraft_node, targeted_fix_node
-from agents.review_agent import review_fixed_node, review_node, review_redraft_node
+from agents.review_agent import review_fixed_node, review_node, review_redraft_node, review_refixed_node
 from agents.trim_agent import trim_node
 from pipeline.checks import checks_node, recheck_node
 from pipeline.finalise import (
     finalise_draft_node, finalise_trimmed_node, route_after_cited_draft, route_to_trim,
     strip_draft_node, truncated_node,
 )
-from pipeline.fixes import code_fix_node, route_after_fix
+from pipeline.fixes import code_fix_node, code_fix_redraft_node, route_after_fix
 from pipeline.redraft import decide_node, outcome_node, route_after_decide
 from pipeline.state import PipelineState
 
@@ -119,6 +120,8 @@ def wire_reviewed(graph: StateGraph) -> None:
     add("finalise_redraft", finalise_draft_node)
     add("checks_redraft", checks_node)
     add("review_redraft", review_redraft_node)
+    add("code_fix_redraft", code_fix_redraft_node)
+    add("review_refixed", review_refixed_node)
     add("trim", trim_node)
     add("finalise_trimmed", finalise_trimmed_node)
     add("recheck", recheck_node)
@@ -141,7 +144,9 @@ def wire_reviewed(graph: StateGraph) -> None:
     graph.add_edge("strip_redraft", "finalise_redraft")
     graph.add_edge("finalise_redraft", "checks_redraft")
     graph.add_edge("checks_redraft", "review_redraft")
-    graph.add_conditional_edges("review_redraft", route_to_trim, {"trim": "trim", "end": "outcome"})
+    graph.add_edge("review_redraft", "code_fix_redraft")
+    graph.add_edge("code_fix_redraft", "review_refixed")
+    graph.add_conditional_edges("review_refixed", route_to_trim, {"trim": "trim", "end": "outcome"})
     graph.add_edge("trim", "finalise_trimmed")
     graph.add_edge("finalise_trimmed", "recheck")
     graph.add_edge("recheck", "outcome")
