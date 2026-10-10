@@ -147,6 +147,8 @@ def test_text_after_the_last_marker_on_a_line_is_uncited():
 
 @pytest.mark.parametrize("text", [
     "[[V]]",
+    "A real span. [[S1]]\n\n[[V]]",
+    "A real span. [[S1]]\n[[V]]\n",
     "A real span. [[S1]] [[V]]",
     "A real span. [[S1]]\n[[S2]]\nAnother. [[V]]",
     "... [[S1]]",

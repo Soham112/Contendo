@@ -13,6 +13,7 @@ A cheap fix makes a failing case pass without addressing why it failed. Don't sh
 - Hard-coding a threshold or special case so one golden passes.
 - Loosening a check until a test goes green without knowing why it failed.
 - Patching symptoms in a later pipeline step (stripping invented facts in the humanizer) when an earlier step (the critic) creates them.
+- No global lists of banned, required or trigger words or phrases (style, topic, intent, quality). They only catch what someone listed and grow without limit as users grow. Judge these semantically (structured model review) or structurally (syntax, ids, offsets). Allowed: closed sets fixed by the language (number words, month and weekday names), single-character product rules, and lists the user writes for themselves (e.g. a profile's words_to_avoid), which are user data.
 
 Before proposing a fix:
 1. Find the root cause: which step, prompt, data or assumption produced the failure? Show the evidence (trace, test, log).

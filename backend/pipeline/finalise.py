@@ -167,6 +167,6 @@ def route_after_cited_draft(state: PipelineState) -> str:
     return "truncated" if state.get("draft_truncated") else "strip"
 
 
-def route_after_finalise(state: PipelineState) -> str:
+def route_to_trim(state: PipelineState) -> str:
     """Trim only a post that is over its maximum. Under-length ends here."""
     return "trim" if (state.get("final_validation") or {}).get("length") == "over_length" else "end"

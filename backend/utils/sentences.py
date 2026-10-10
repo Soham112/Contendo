@@ -10,6 +10,7 @@ from typing import Sequence
 import pysbd
 
 from utils.citations import Span
+from utils.frames import chunk_field
 from utils.text_spans import protected_spans
 
 _LIST_PREFIX = re.compile(r"^[ \t]*(?:[-+*]|\d+[.)])[ \t]+")
@@ -97,3 +98,34 @@ def note_quote_spans(text: str) -> list[str]:
             if after:
                 candidates.append(after)
     return candidates
+
+
+# ── Verbatim event quotes ─────────────────────────────────────────────────────
+
+def _normalise(text: str) -> str:
+    """Lower-case and collapse whitespace: deliberate quote tolerances."""
+    return re.sub(r"\s+", " ", text or "").strip().lower()
+
+
+def event_quote_failure(quote: str | None, note: dict) -> str | None:
+    """Verify a sentence/line/item end, starting at its beginning or a prose colon.
+
+    Literal/time colons are not starts; this checks syntax, never topic fit.
+    """
+    wanted = _normalise(quote or "")
+    text = chunk_field(note, "text") or chunk_field(note, "content")
+    if not wanted:
+        return "event_quote_missing"
+    if wanted in {_normalise(sentence) for sentence in note_quote_spans(text)}:
+        return None
+    normalised = _normalise(text)
+    if wanted not in normalised:
+        return "event_quote_not_in_note"
+    # This regex matches a literal copied span, not meaning or model intent.
+    if not re.search(r"(?<!\w)" + re.escape(wanted) + r"(?!\w)", normalised):
+        return "event_quote_partial_word"
+    return "event_quote_not_sentence"
+
+
+def quote_is_in_note(quote: str | None, note: dict) -> bool:
+    return event_quote_failure(quote, note) is None

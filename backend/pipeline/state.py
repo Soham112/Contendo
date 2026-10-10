@@ -106,6 +106,12 @@ class PipelineState(TypedDict, total=False):
     #    (agents.word_count_enforcer_agent.trim_node).
     draft_truncated: dict[str, Any]
     trim_result: dict[str, Any]
+    # The deterministic checks (pipeline.checks), each {issues: [{type, span,
+    # text, sources, detail}], counts: {type: n}}. checks_before_trim is on the
+    # finalised draft; checks_final is on the post that is returned (the same
+    # result when no trim ran). Recorded only.
+    checks_before_trim: dict[str, Any]
+    checks_final: dict[str, Any]
 
     # The validation record of the returned post (pipeline.finalise), all
     # variants: {words, target, length: ok | over_length | under_length |

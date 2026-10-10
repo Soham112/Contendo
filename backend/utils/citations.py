@@ -53,6 +53,11 @@ _HEADING = re.compile(r"#{1,6}[ \t]")
 _PLACEHOLDER = re.compile(r"\[(?:DIAGRAM|IMAGE):.*\]")
 
 
+def is_placeholder_line(line: str) -> bool:
+    """Whether a line is a [DIAGRAM: ...] or [IMAGE: ...] placeholder."""
+    return bool(_PLACEHOLDER.fullmatch(line.strip()))
+
+
 def source_id(position: int) -> str:
     """The id of the source at this 0-based position in the retrieval bundle: S1, S2, ..."""
     return f"S{position + 1}"
@@ -218,9 +223,11 @@ def strip_citations(text: str) -> StrippedPost:
         spans.append(Span(start + lead, start + lead + len(body), body,
                           token.basis if cited else "uncited", token.sources if cited else ()))
 
+    # split("\n"), not splitlines(): the text after a final line break is a line
+    # too, and a marker alone on it must still be seen.
     line_start, pending = 0, list(boundaries)
-    for line in clean.splitlines(keepends=True) or [""]:
-        line_end = line_start + len(line.rstrip("\r\n"))
+    for line in clean.split("\n"):
+        line_end = line_start + len(line.rstrip("\r"))
         structural = _is_structural(clean[line_start:line_end])
         cursor = line_start
         while pending and pending[0][0] <= line_end:
@@ -230,7 +237,7 @@ def strip_citations(text: str) -> StrippedPost:
             add(cursor, position, token, structural)
             cursor = position
         add(cursor, line_end, None, structural)
-        line_start += len(line)
+        line_start += len(line) + 1
 
     failures.sort(key=lambda f: (f.start, f.end))
     return StrippedPost(clean, tuple(spans), tuple(failures))

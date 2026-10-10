@@ -7,8 +7,9 @@ from config import features
 from llm.client import trace_calls
 from pipeline.state import PipelineState
 from pipeline.trace import build_trace_row
+from pipeline.checks import checks_node, recheck_node
 from pipeline.finalise import (
-    finalise_draft_node, finalise_trimmed_node, route_after_cited_draft, route_after_finalise,
+    finalise_draft_node, finalise_trimmed_node, route_after_cited_draft, route_to_trim,
     strip_draft_node, truncated_node, validation_record,
 )
 from utils.formatters import normalise_post_punctuation, resolve_length_target
@@ -164,32 +165,38 @@ def _wire_cited_draft(graph: StateGraph) -> None:
     """Variants B and C, after plan: structure (the archetype, structure only;
     "archetype" is a state key, so the node cannot have that name) → draft (with
     citation markers) → strip (EVENT line removed) → finalise (punctuation
-    normalised, markers removed, validated) → trim (only when over the maximum)
-    → finalise again → end. A draft cut off at its output limit goes straight
-    to "truncated" and returns no post.
+    normalised, markers removed, validated) → checks (deterministic, recorded
+    only) → trim (only when over the maximum) → finalise again → checks again,
+    on the text that is returned → end. A draft cut off at its output limit goes
+    straight to "truncated" and returns no post.
 
-    STOPGAP: B and C are still the same pipeline, `quality` is ignored, and
-    nothing acts on what is recorded: marker failures, a failed EVENT line,
-    leftover markers and a failed trim are in the trace only.
-    Proper fix: deterministic checks, the structured review, at most one redraft
-    and the quality rules for B (steps 5-6 of the feat/single-writer plan).
+    STOPGAP: B and C are still the same pipeline and `quality` is ignored. The
+    checks run and are recorded (checks_before_trim, checks_final), but nothing
+    acts on an issue: no redraft, and a failed trim is in the trace only.
+    Proper fix: the structured review, at most one redraft driven by the issues,
+    and the quality rules, for B only; C stays record-only (step 6 of the
+    feat/single-writer plan).
     """
     graph.add_node("structure", structure_node)
     graph.add_node("draft", cited_draft_node)
     graph.add_node("truncated", truncated_node)
     graph.add_node("strip", strip_draft_node)
     graph.add_node("finalise", finalise_draft_node)
+    graph.add_node("checks", checks_node)
     graph.add_node("trim", trim_node)
     graph.add_node("finalise_trimmed", finalise_trimmed_node)
+    graph.add_node("recheck", recheck_node)
 
     graph.add_edge("plan", "structure")
     graph.add_edge("structure", "draft")
     graph.add_conditional_edges("draft", route_after_cited_draft, {"truncated": "truncated", "strip": "strip"})
     graph.add_edge("truncated", END)
     graph.add_edge("strip", "finalise")
-    graph.add_conditional_edges("finalise", route_after_finalise, {"trim": "trim", "end": END})
+    graph.add_edge("finalise", "checks")
+    graph.add_conditional_edges("checks", route_to_trim, {"trim": "trim", "end": END})
     graph.add_edge("trim", "finalise_trimmed")
-    graph.add_edge("finalise_trimmed", END)
+    graph.add_edge("finalise_trimmed", "recheck")
+    graph.add_edge("recheck", END)
 
 
 # What runs after plan, per variant (config.features.PIPELINE_VARIANTS).

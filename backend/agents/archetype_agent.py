@@ -15,7 +15,6 @@ topic and every source, names the event (agents/draft_prompt.py).
 """
 
 import logging
-import re
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -23,7 +22,7 @@ from pydantic import BaseModel, Field
 from llm.client import HAIKU, TruncatedStructuredOutputError, complete_structured
 from pipeline.state import PipelineState
 from utils.formatters import ARCHETYPES, GENERAL_ARCHETYPE, STORY_ARCHETYPES
-from utils.sentences import note_quote_spans
+from utils.sentences import event_quote_failure, quote_is_in_note  # noqa: F401  (quote_is_in_note is re-exported)
 from utils.frames import chunk_field, chunk_tags, is_self_authored
 
 logger = logging.getLogger(__name__)
@@ -72,35 +71,6 @@ class ArchetypeChoice(BaseModel):
         description="For those types: one sentence copied word for word from that note, describing "
                     "the event. Otherwise null.",
     )
-
-
-def _normalise(text: str) -> str:
-    """Lower-case and collapse whitespace: deliberate quote tolerances."""
-    return re.sub(r"\s+", " ", text or "").strip().lower()
-
-
-def event_quote_failure(quote: str | None, note: dict) -> str | None:
-    """Verify a sentence/line/item end, starting at its beginning or a prose colon.
-
-    Literal/time colons are not starts; this checks syntax, never topic fit.
-    """
-    wanted = _normalise(quote or "")
-    text = chunk_field(note, "text") or chunk_field(note, "content")
-    if not wanted:
-        return "event_quote_missing"
-    if wanted in {_normalise(sentence) for sentence in note_quote_spans(text)}:
-        return None
-    normalised = _normalise(text)
-    if wanted not in normalised:
-        return "event_quote_not_in_note"
-    # This regex matches a literal copied span, not meaning or model intent.
-    if not re.search(r"(?<!\w)" + re.escape(wanted) + r"(?!\w)", normalised):
-        return "event_quote_partial_word"
-    return "event_quote_not_sentence"
-
-
-def quote_is_in_note(quote: str | None, note: dict) -> bool:
-    return event_quote_failure(quote, note) is None
 
 
 def allowed_archetypes(perspective: str, self_authored_count: int) -> list[str]:

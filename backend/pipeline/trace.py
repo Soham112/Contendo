@@ -48,7 +48,8 @@ def _chunk_snapshot(chunk: dict[str, Any], profile: dict[str, Any]) -> dict[str,
 # but final_validation are written only by the single-writer pipeline
 # (variants B and C).
 _OPTIONAL_OUTPUTS = ("source_index", "event", "citations", "citation_failures", "multi_sentence_spans",
-                     "draft_truncated", "trim_result", "final_validation")
+                     "draft_truncated", "trim_result", "checks_before_trim", "checks_final",
+                     "final_validation")
 
 
 def build_trace_row(state: PipelineState, llm_calls: list[dict]) -> dict[str, Any]:

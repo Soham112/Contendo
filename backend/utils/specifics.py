@@ -186,7 +186,7 @@ def _days(spec: Specific) -> float | None:
 
 
 def _supported(spec: Specific, allowed: set[tuple], allowed_values: set[float],
-               allowed_days: list[float]) -> bool:
+               allowed_days: list[float], convert_units: bool = True) -> bool:
     if spec.key in allowed:
         return True
     # A bare number restating a figure the sources give in another form
@@ -195,14 +195,19 @@ def _supported(spec: Specific, allowed: set[tuple], allowed_values: set[float],
         return spec.value in allowed_values
     # The same span of time in other units ("three months" vs "90 days"), and
     # "six days ago" when the sources say "for six days".
-    if spec.kind in ("duration", "ago"):
+    if convert_units and spec.kind in ("duration", "ago"):
         days = _days(spec)
         return days is not None and any(abs(days - d) <= 0.05 * max(days, d) for d in allowed_days)
     return False
 
 
-def unsupported_specifics(output: str, sources: Iterable[str]) -> list[Specific]:
-    """Specifics in output that no source text contains (first occurrence of each)."""
+def unsupported_specifics(output: str, sources: Iterable[str], *, convert_units: bool = True) -> list[Specific]:
+    """Specifics in output that no source text contains (first occurrence of each).
+
+    convert_units=False turns off the one approximate match: a span of time
+    given in other units ("three months" for "90 days", within 5%). Number
+    words, digit formats and a bare number restating a figure still match.
+    """
     allowed: set[tuple] = set()
     allowed_values: set[float] = set()
     allowed_days: list[float] = []
@@ -215,7 +220,7 @@ def unsupported_specifics(output: str, sources: Iterable[str]) -> list[Specific]
                 allowed_days.append(days)
     missing: dict[tuple, Specific] = {}
     for spec in extract_specifics(output or ""):
-        if not _supported(spec, allowed, allowed_values, allowed_days) and spec.key not in missing:
+        if not _supported(spec, allowed, allowed_values, allowed_days, convert_units) and spec.key not in missing:
             missing[spec.key] = spec
     return list(missing.values())
 

@@ -13,7 +13,7 @@ A_NODE_ORDER = [
 # B and C are the same for now (see _wire_cited_draft in pipeline/graph.py):
 # structure → cited draft → strip → finalise, then trim → finalise only when the
 # post is over its maximum. Checks, review and redraft for B are added later.
-SINGLE_WRITER_NODE_ORDER = ["load_profile", "retrieval", "structure", "cited_draft", "strip", "finalise"]
+SINGLE_WRITER_NODE_ORDER = ["load_profile", "retrieval", "structure", "cited_draft", "strip", "finalise", "checks"]
 
 
 @pytest.fixture
@@ -57,6 +57,8 @@ def stub_nodes(monkeypatch):
         monkeypatch.setattr(graph, "strip_draft_node", stub("strip"))
         monkeypatch.setattr(graph, "finalise_draft_node", stub("finalise", lambda s: s.update(
             final_post=s["current_draft"], final_validation={"length": finalise_length})))
+        monkeypatch.setattr(graph, "checks_node", stub("checks"))
+        monkeypatch.setattr(graph, "recheck_node", stub("recheck"))
         monkeypatch.setattr(graph, "trim_node", stub("trim"))
         monkeypatch.setattr(graph, "finalise_trimmed_node", stub("finalise_trimmed"))
         monkeypatch.setattr(graph, "truncated_node", stub("truncated", lambda s: s.update(final_post="")))
@@ -226,7 +228,7 @@ def test_single_writer_variants_run_one_draft_and_no_rewriting_node(run_graph, v
 def test_an_over_length_post_goes_through_trim_and_is_finalised_again(run_graph, variant):
     visited, _ = run_graph(scores=[], variant=variant, finalise_length="over_length")("standard")
 
-    assert visited == [*SINGLE_WRITER_NODE_ORDER, "trim", "finalise_trimmed"]
+    assert visited == [*SINGLE_WRITER_NODE_ORDER, "trim", "finalise_trimmed", "recheck"]
 
 
 @pytest.mark.parametrize("variant", ["B", "C"])
