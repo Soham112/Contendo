@@ -1,4 +1,5 @@
 import logging
+from typing import Callable
 
 from langgraph.graph import StateGraph, END
 
@@ -110,13 +111,10 @@ def should_retry(state: PipelineState) -> str:
     return "word_count_enforcer"
 
 
-def build_graph() -> StateGraph:
-    graph = StateGraph(PipelineState)
-
-    graph.add_node("load_profile", load_profile_node)
-    graph.add_node("retrieval", retrieval_node)
-    graph.add_node("plan", plan_node)
-    graph.add_node("draft", draft_node)
+def _wire_rewrite_chain(graph: StateGraph) -> None:
+    """Variant A, from the draft to the end: critic → humanizer →
+    predictability_audit → (scorer loop, polished only) → word_count_enforcer →
+    fact_checker → finalize."""
     graph.add_node("critic", critic_node)
     graph.add_node("humanizer", humanizer_node)
     graph.add_node("predictability_audit", predictability_audit_node)
@@ -124,17 +122,7 @@ def build_graph() -> StateGraph:
     graph.add_node("fact_checker", fact_check_node)
     graph.add_node("scorer", scorer_node)
     graph.add_node("finalize", finalize_node)
-    graph.add_node("low_coverage", low_coverage_node)
 
-    graph.set_entry_point("load_profile")
-    graph.add_edge("load_profile", "retrieval")
-    graph.add_conditional_edges(
-        "retrieval",
-        route_after_retrieval,
-        {"draft": "plan", "low_coverage": "low_coverage"},
-    )
-    graph.add_edge("plan", "draft")
-    graph.add_edge("low_coverage", END)
     graph.add_edge("draft", "critic")
     graph.add_edge("critic", "humanizer")
     graph.add_edge("humanizer", "predictability_audit")
@@ -158,11 +146,48 @@ def build_graph() -> StateGraph:
     graph.add_edge("fact_checker", "finalize")
     graph.add_edge("finalize", END)
 
+
+# What runs after the draft, per variant (config.features.PIPELINE_VARIANTS).
+# Everything up to and including the draft is shared.
+# STOPGAP: B and C are wired as A until their own steps exist, so selecting them
+# changes nothing yet except the variant recorded in the trace. Proper fix: the
+# single-writer wiring for B (checks → at most one redraft → trim) and the
+# draft-only wiring for C (trim), steps 3-6 of the feat/single-writer plan.
+_AFTER_DRAFT: dict[str, Callable[[StateGraph], None]] = {
+    "A": _wire_rewrite_chain,
+    "B": _wire_rewrite_chain,
+    "C": _wire_rewrite_chain,
+}
+
+
+def build_graph(variant: str):
+    """The compiled pipeline for one variant: the shared nodes up to the draft,
+    then that variant's steps. Raises PipelineConfigError for an unknown variant."""
+    wire_after_draft = _AFTER_DRAFT[features.validate_pipeline_variant(variant)]
+    graph = StateGraph(PipelineState)
+
+    graph.add_node("load_profile", load_profile_node)
+    graph.add_node("retrieval", retrieval_node)
+    graph.add_node("plan", plan_node)
+    graph.add_node("draft", draft_node)
+    graph.add_node("low_coverage", low_coverage_node)
+
+    graph.set_entry_point("load_profile")
+    graph.add_edge("load_profile", "retrieval")
+    graph.add_conditional_edges(
+        "retrieval",
+        route_after_retrieval,
+        {"draft": "plan", "low_coverage": "low_coverage"},
+    )
+    graph.add_edge("plan", "draft")
+    graph.add_edge("low_coverage", END)
+    wire_after_draft(graph)
+
     return graph.compile()
 
 
-# Singleton compiled graph — imported by main.py
-pipeline = build_graph()
+# One compiled graph per variant, built once at import.
+PIPELINES = {variant: build_graph(variant) for variant in features.PIPELINE_VARIANTS}
 
 
 def run_pipeline(
@@ -175,13 +200,19 @@ def run_pipeline(
     *,
     user_id: str,
     no_specifics: bool = False,
+    variant: str | None = None,
 ) -> dict:
     """Run the pipeline. Returns status "ok" with the post, or status
     "low_coverage" (empty post, closest_sources, suggestion) when the coverage
     gate stops it before drafting. no_specifics=True skips the gate; it raises
-    ValueError while config.features.NO_SPECIFICS_MODE_ENABLED is off."""
+    ValueError while config.features.NO_SPECIFICS_MODE_ENABLED is off.
+
+    variant: which pipeline to run (config.features.PIPELINE_VARIANTS). None
+    uses the configured one (PIPELINE_VARIANT, default A); evals pass it to
+    compare variants. An unknown variant raises PipelineConfigError."""
     if no_specifics and not features.NO_SPECIFICS_MODE_ENABLED:
         raise ValueError("no-specifics mode is disabled (config.features.NO_SPECIFICS_MODE_ENABLED)")
+    variant = features.pipeline_variant() if variant is None else features.validate_pipeline_variant(variant)
     initial_state: PipelineState = {
         "topic": topic,
         "format": format,
@@ -190,6 +221,7 @@ def run_pipeline(
         "context": context,
         "quality": quality,
         "user_id": user_id,
+        "variant": variant,
         "iterations": 0,
         "archetype": "",
         "critic_brief": {},
@@ -200,7 +232,7 @@ def run_pipeline(
     }
 
     with trace_calls() as calls:
-        result = pipeline.invoke(initial_state)
+        result = PIPELINES[variant].invoke(initial_state)
 
     # The trace is diagnostic only: a failed write must never fail generation.
     trace_id: str | None = None

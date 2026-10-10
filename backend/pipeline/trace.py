@@ -63,6 +63,7 @@ def build_trace_row(state: PipelineState, llm_calls: list[dict]) -> dict[str, An
         "retrieved_context": state.get("retrieved_context", ""),
         "profile_snapshot": state.get("profile", {}),
         "node_outputs": {
+            "variant": state.get("variant", ""),
             "no_specifics": bool(state.get("no_specifics")),
             "length_target": state.get("length_target"),
             "perspective": state.get("perspective", ""),

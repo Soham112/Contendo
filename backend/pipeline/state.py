@@ -11,6 +11,9 @@ class PipelineState(TypedDict, total=False):
     context: Optional[str]
     quality: str  # "draft" | "standard" | "polished" — defaults to "standard" at runtime
     user_id: str  # authenticated user; every store call is scoped by it
+    # Which pipeline ran: "A" | "B" | "C" (config.features.PIPELINE_VARIANTS),
+    # set by run_pipeline. Persisted in generation_traces.node_outputs.
+    variant: str
 
     # Loaded profile
     profile: dict[str, Any]
