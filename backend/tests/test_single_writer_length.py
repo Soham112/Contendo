@@ -23,7 +23,7 @@ def test_a_first_post_made_over_length_by_normalisation_is_trimmed(claude, fake_
     lines[4] = lines[4].replace("word", "alpha—beta", 1)
     marked = "\n\n".join(lines)
     assert count_words(_clean(marked)) == FIRST_POST_RANGE[1]      # 100 before normalisation
-    claude.queue(ARCHETYPE_GENERAL, marked, json.dumps({"delete": [2]}))
+    claude.queue(ARCHETYPE_GENERAL, marked, json.dumps({"ranking": [2]}))
 
     result = _run(variant, user_id=FIRST_POST_USER, topic="Forecast intervals",
                   context="Core opinion/take: intervals beat point forecasts")
@@ -40,7 +40,7 @@ def test_a_first_post_made_over_length_by_normalisation_is_trimmed(claude, fake_
 
 @pytest.mark.parametrize("variant", ["B", "C"])
 def test_an_over_length_post_is_trimmed_and_the_returned_post_is_the_validated_one(claude, fake_db, seeded_kb, variant):
-    claude.queue(ARCHETYPE_GENERAL, _post(36), json.dumps({"delete": [10]}))   # 360 words against 250-350
+    claude.queue(ARCHETYPE_GENERAL, _post(36), json.dumps({"ranking": [10]}))   # 360 words against 250-350
 
     result = _run(variant)
 
@@ -57,7 +57,7 @@ def test_an_over_length_post_is_trimmed_and_the_returned_post_is_the_validated_o
 
 @pytest.mark.parametrize("variant", ["B", "C"])
 def test_a_failed_trim_returns_the_post_with_the_failure_recorded(claude, fake_db, seeded_kb, variant):
-    claude.queue(ARCHETYPE_GENERAL, _post(36), json.dumps({"delete": [99]}))
+    claude.queue(ARCHETYPE_GENERAL, _post(36), json.dumps({"ranking": [99]}))
 
     result = _run(variant)
 

@@ -76,14 +76,17 @@ def test_trim_deletes_the_chosen_spans_and_the_post_is_measured_again(claude):
     state = _trim_state()                       # 12 spans of 10 words: 120 against a maximum of 100
     before = state["final_post"]
 
-    state = _trim(claude, state, json.dumps({"delete": [3, 7]}))
+    state = _trim(claude, state, json.dumps({"ranking": [3, 7]}))
 
     [call] = claude.calls
-    assert call["model"] == TRIM and call["tool_choice"]["name"] == "choose_sentences_to_delete"
+    assert call["model"] == TRIM and call["tool_choice"]["name"] == "rank_sentences_to_delete"
     assert state["trim_result"] == {
         "outcome": "trimmed", "reason": None, "max_words": 100, "words_before": 120, "words_after": 100,
+        "ranking": [{"index": 2, "span": 2, "text": _clean(_lines(12)[2])},
+                    {"index": 6, "span": 6, "text": _clean(_lines(12)[6])}],
         "deleted": [{"index": 2, "span": 2, "text": _clean(_lines(12)[2])},
                     {"index": 6, "span": 6, "text": _clean(_lines(12)[6])}],
+        "kept_ranked": [],
     }
     assert state["final_post"] == "\n\n".join(_clean(l) for i, l in enumerate(_lines(12)) if i not in (2, 6))
     assert state["final_validation"]["words"] == count_words(state["final_post"]) == 100
@@ -96,7 +99,7 @@ def test_trim_deletes_the_chosen_spans_and_the_post_is_measured_again(claude):
 
 def test_the_trim_call_sees_numbered_sentences_their_lengths_and_the_maximum(claude):
     state = _trim_state()
-    _trim(claude, state, json.dumps({"delete": [2, 3]}))
+    _trim(claude, state, json.dumps({"ranking": [2, 3]}))
 
     prompt = claude.calls[0]["messages"][-1]["content"]
     for number, line in enumerate(_lines(12), 1):
@@ -105,7 +108,7 @@ def test_the_trim_call_sees_numbered_sentences_their_lengths_and_the_maximum(cla
 
 
 def test_a_trim_that_leaves_the_post_over_is_a_recorded_failure(claude):
-    state = _trim(claude, _trim_state(), json.dumps({"delete": [5]}))
+    state = _trim(claude, _trim_state(), json.dumps({"ranking": [5]}))
 
     assert state["trim_result"]["outcome"] == "trim_failed"
     assert state["trim_result"]["reason"] == "still_over"
@@ -118,13 +121,14 @@ def test_a_trim_that_leaves_the_post_over_is_a_recorded_failure(claude):
 
 @pytest.mark.parametrize("delete,reason", [
     ([0], "invalid_indices"), ([13], "invalid_indices"), ([2, 99], "invalid_indices"), ([-1], "invalid_indices"),
-    ([], "no_sentences_chosen"), (list(range(1, 13)), "all_sentences_chosen"),
+    ([], "no_sentences_ranked"), (list(range(1, 13)), "all_sentences_ranked"),
+    ([3, 3], "repeated_indices"), ([3, 7, 3], "repeated_indices"), ([5, 6, 7, 5, 6], "repeated_indices"),
 ])
-def test_unusable_sentence_numbers_are_rejected_and_the_post_is_left_untrimmed(claude, delete, reason):
+def test_an_unusable_ranking_is_rejected_and_the_post_is_left_untrimmed(claude, delete, reason):
     state = _trim_state()
     before = state["final_post"]
 
-    state = _trim(claude, state, json.dumps({"delete": delete}))
+    state = _trim(claude, state, json.dumps({"ranking": delete}))
 
     assert state["trim_result"]["outcome"] == "trim_failed"
     assert state["trim_result"]["reason"].startswith(reason)
@@ -133,11 +137,58 @@ def test_unusable_sentence_numbers_are_rejected_and_the_post_is_left_untrimmed(c
     assert state["final_validation"]["length"] == "over_length"
 
 
-def test_repeated_sentence_numbers_delete_the_sentence_once(claude):
-    state = _trim(claude, _trim_state(), json.dumps({"delete": [3, 3, 7, 7]}))
+def test_deletion_stops_as_soon_as_the_post_fits_and_the_rest_of_the_ranking_is_kept(claude):
+    state = _trim_state()                       # 12 sentences of 10 words: 120 against 100, so two have to go
 
-    assert state["trim_result"]["outcome"] == "trimmed"
-    assert [d["index"] for d in state["trim_result"]["deleted"]] == [2, 6]
+    state = _trim(claude, state, json.dumps({"ranking": [9, 3, 7, 1, 11]}))
+
+    result = state["trim_result"]
+    assert result["outcome"] == "trimmed"
+    assert [r["index"] for r in result["ranking"]] == [8, 2, 6, 0, 10]         # the whole ranking, in the order given
+    assert [d["index"] for d in result["deleted"]] == [8, 2]                   # only the first two were needed
+    assert [k["index"] for k in result["kept_ranked"]] == [6, 0, 10]
+    assert (result["words_before"], result["words_after"]) == (120, 100)
+    for kept in result["kept_ranked"]:
+        assert kept["text"] in state["final_post"]
+    for deleted in result["deleted"]:
+        assert deleted["text"] not in state["final_post"]
+    assert len(state["citations"]) == 10
+
+
+def test_sentences_go_in_ranked_order_not_in_the_order_they_appear(claude):
+    state = _trim(claude, _trim_state(count=11), json.dumps({"ranking": [10, 2]}))      # 110 against 100: one goes
+
+    assert [d["index"] for d in state["trim_result"]["deleted"]] == [9]
+    assert [k["index"] for k in state["trim_result"]["kept_ranked"]] == [1]
+    assert _clean(_lines(11)[1]) in state["final_post"] and _clean(_lines(11)[9]) not in state["final_post"]
+
+
+def test_the_post_is_measured_after_each_deletion(claude):
+    # Three short sentences and one long: 8 words over. The first ranked (3 words) is not enough,
+    # the second (5 more) is, and the long one ranked third is never touched.
+    from pipeline.finalise import finalise_draft_node
+
+    marked = ("Tiny one here. [[V]]\n\nA second sentence of five. [[V]]\n\n"
+              + " ".join(["long"] * 20) + ". [[V]]\n\n" + _post(8))
+    state = finalise_draft_node(make_state([OWN], archetype="general", current_draft=marked,
+                                           length_target={"min_words": 0, "max_words": 100, "may_expand": False, "basis": "thin_sources"}))
+    assert state["final_validation"]["words"] == 108
+
+    state = _trim(claude, state, json.dumps({"ranking": [1, 2, 3]}))
+
+    assert [d["text"] for d in state["trim_result"]["deleted"]] == ["Tiny one here.", "A second sentence of five."]
+    assert [k["index"] for k in state["trim_result"]["kept_ranked"]] == [2]
+    assert state["trim_result"]["words_after"] == 100
+
+
+def test_deleting_the_whole_ranking_without_fitting_is_still_over_and_keeps_the_shorter_post(claude):
+    state = _trim(claude, _trim_state(count=15), json.dumps({"ranking": [4, 8, 12]}))   # 150 against 100
+
+    result = state["trim_result"]
+    assert (result["outcome"], result["reason"]) == ("trim_failed", "still_over")
+    assert [d["index"] for d in result["deleted"]] == [3, 7, 11] and result["kept_ranked"] == []
+    assert (result["words_before"], result["words_after"]) == (150, 120)
+    assert state["final_validation"]["words"] == count_words(state["final_post"]) == 120
 
 
 def test_a_truncated_trim_answer_is_a_recorded_failure_and_nothing_is_deleted(claude):
@@ -221,7 +272,7 @@ def test_a_post_seven_words_over_is_met_by_deleting_less_than_its_smallest_span(
     assert smallest_span == 13                                   # deleting any whole span costs 13 words or more
 
     # Sentence 3 is "The shape is simple." (4 words); sentence 14 is "The honest weakness?" (3 words).
-    state = _trim(claude, state, json.dumps({"delete": [3, 14]}))
+    state = _trim(claude, state, json.dumps({"ranking": [3, 14]}))
 
     assert state["trim_result"]["outcome"] == "trimmed"
     assert [(d["index"], d["span"], d["text"]) for d in state["trim_result"]["deleted"]] == [
@@ -235,7 +286,7 @@ def test_a_post_seven_words_over_is_met_by_deleting_less_than_its_smallest_span(
 
 def test_the_trim_call_numbers_every_sentence_of_every_span(claude):
     state = _pm09_state()
-    _trim(claude, state, json.dumps({"delete": [3]}))
+    _trim(claude, state, json.dumps({"ranking": [3]}))
 
     numbered = _numbered(claude)
     assert len(numbered) == 18                                    # 8 spans, 18 sentences
@@ -250,7 +301,7 @@ def test_kept_sentences_of_a_span_stay_one_span_with_its_citation(claude):
     state = _pm09_state()
     before = [(c["basis"], c["sources"]) for c in state["citations"]]
 
-    state = _trim(claude, state, json.dumps({"delete": [3, 14]}))
+    state = _trim(claude, state, json.dumps({"ranking": [3, 14]}))
 
     assert [(c["basis"], c["sources"]) for c in state["citations"]] == before      # same 8 spans, same citations
     assert state["citations"][2]["text"].startswith("One outcome sits at the top.")
@@ -260,7 +311,7 @@ def test_kept_sentences_of_a_span_stay_one_span_with_its_citation(claude):
 
 
 def test_deleting_every_sentence_of_a_span_removes_the_span_and_its_line(claude):
-    state = _trim(claude, _pm09_state(), json.dumps({"delete": [14, 15]}))        # both sentences of span 6
+    state = _trim(claude, _pm09_state(), json.dumps({"ranking": [14, 15]}))        # both sentences of span 6
 
     assert len(state["citations"]) == 7
     assert "honest weakness" not in state["final_post"] and "sticky notes" not in state["final_post"]
@@ -307,7 +358,7 @@ def test_code_and_urls_are_never_split_or_numbered(claude):
                                            length_target={"min_words": 0, "max_words": 120, "may_expand": False, "basis": "thin_sources"}))
     words_before = state["final_validation"]["words"]
 
-    state = _trim(claude, state, json.dumps({"delete": [2, 4]}))               # "It passed." and "Worth a read."
+    state = _trim(claude, state, json.dumps({"ranking": [2, 4]}))               # "It passed." and "Worth a read."
 
     numbered = _numbered(claude)
     assert len(numbered) == 14                                                 # 2 + 2 + 10 sentences: the code block has none

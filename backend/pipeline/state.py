@@ -99,9 +99,11 @@ class PipelineState(TypedDict, total=False):
     #   {max_tokens, output_tokens}; the run then returns no post.
     # trim_result: set only when the post was over its maximum and the trim ran,
     #   {outcome: trimmed | trim_failed, reason, max_words, words_before,
-    #    words_after, deleted: [{index, span, text}]}: index is the sentence's
-    #    position among the post's sentences, span the position of the span it
-    #    was in (agents.word_count_enforcer_agent.trim_node).
+    #    words_after, ranking, deleted, kept_ranked}: the model's ranking of
+    #    expendable sentences, those deleted, and those ranked but not needed.
+    #    Each is [{index, span, text}]: index is the sentence's position among
+    #    the post's sentences, span the position of the span it was in
+    #    (agents.word_count_enforcer_agent.trim_node).
     draft_truncated: dict[str, Any]
     trim_result: dict[str, Any]
 
