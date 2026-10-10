@@ -19,6 +19,7 @@ import sys
 from typing import Any
 
 import eval_config as config
+import spend
 from guard import EnvGuardError
 from loaders import FixtureError, load_goldens, load_persona, load_users, persona_slugs
 from reporting import read_jsonl
@@ -44,6 +45,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--only", action="append", help="golden id (repeatable); default: every ok run")
     parser.add_argument("--metric", action="append", choices=list(config.METRIC_ORDER),
                         help="judge only this metric (repeatable); default: all")
+    spend.add_arguments(parser)
     args = parser.parse_args(argv)
 
     run_dir = config.RESULTS_DIR / args.run_id
@@ -68,10 +70,12 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     from llm.client import trace_calls
+    from llm.pricing import call_cost
 
     import metrics
     from judge_model import ContendoJudge, is_fatal_api_error
 
+    cap = spend.open_cap(args.ablation, args.spend_cap, call_cost)
     scores_path = run_dir / config.SCORES_FILES[args.judge_model]
     print(f"Judge: {args.judge_model} -> {scores_path.name}")
     done = {cache_key(r) for r in read_jsonl(scores_path) if r["status"] in ("ok", "skipped")}
@@ -85,7 +89,8 @@ def main(argv: list[str] | None = None) -> int:
             score = "-" if row.get("score") is None else f"{row['score']:.2f}"
             print(f"  {row['golden_id']:<12} {row['metric']:<22} {row['status']:<8} {score}")
 
-        for run in runs:
+        for run in cap.guard(runs, lambda run, done: f"judge {args.judge_model} on run {args.run_id} before "
+                                                     f"{run['golden_id']}: {done} of {len(runs)} posts looked at"):
             if run.get("status") != "ok":
                 print(f"  {run['golden_id']:<12} not judged: run status {run.get('status')}")
                 continue
@@ -139,13 +144,14 @@ def main(argv: list[str] | None = None) -> int:
                        "success": metric.success if status == "ok" else None,
                        "reason": metric.reason if status == "ok" else error,
                        "schema_paths": dict(judge.stats), **judge_cost(calls)})
+                cap.record(calls, f"judge {args.judge_model} {spec.name} {args.run_id} {golden['id']}")
                 if status == "error" and fatal:
                     print(f"Stopping: {error}\nFix this (e.g. add credits), then re-run; finished results are cached.",
                           file=sys.stderr)
                     return 3
 
     print(f"Scores: {scores_path}. Next: python report.py {args.run_id}")
-    return 0
+    return spend.STOPPED_EXIT if cap.stopped_at else 0
 
 
 if __name__ == "__main__":

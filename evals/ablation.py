@@ -134,7 +134,8 @@ def _judged(variant: dict[str, Any], metric: str) -> str:
     n, avg, passed, _, errors = _stats(rows)
     if not n:
         return "not judged"
-    return f"{_fmt(avg)} ({_fmt(passed, pct=True)} pass, n={n}" + (f", {errors} errored)" if errors else ")")
+    passes = sum(1 for row in rows if row["status"] == "ok" and row.get("success"))      # the decision rules count passes
+    return f"{_fmt(avg)} ({passes} of {n} pass" + (f", {errors} errored)" if errors else ")")
 
 
 def _length_cell(posts: list[dict[str, Any]], counter: str) -> str:
@@ -221,16 +222,18 @@ def _content_rows(variants: list[dict[str, Any]]) -> list[list[str]]:
 def _instrument_rows(variants: list[dict[str, Any]]) -> list[list[str]]:
     rows = []
     for v in variants:
-        reviewed = [row for row in v["instrument"] if row["status"] == "ok"]
-        if not v["instrument"]:
+        # instrument.py appends a line each time it tries a post: the last one counts.
+        latest = list({row["golden_id"]: row for row in v["instrument"]}.values())
+        reviewed = [row for row in latest if row["status"] == "ok"]
+        if not latest:
             rows.append([v["meta"]["variant"], "not run", "–", "–", "–", "–"])
             continue
         by_type = sum((Counter(row["acting"]) for row in reviewed), Counter())
         compared = Counter({kind: n for kind, n in by_type.items() if kind not in CITATION_ONLY_ISSUES})
         with_any = sum(1 for row in reviewed if any(kind not in CITATION_ONLY_ISSUES for kind in row["acting"]))
         rows.append([v["meta"]["variant"], reviewed[0]["source"] if reviewed else "–",
-                     f"{len(reviewed)} ({len(v['instrument']) - len(reviewed)} failed, "
-                     f"{sum(1 for row in reviewed if row['outcome'] == 'not_reviewed')} not reviewed)",
+                     f"{len(reviewed)} ({sum(1 for row in latest if row['status'] == 'not_reviewed')} not reviewed, "
+                     f"{sum(1 for row in latest if row['status'] == 'error')} failed)",
                      f"{sum(compared.values())} on {with_any} post(s)", _counts(compared),
                      _counts(Counter({kind: by_type[kind] for kind in CITATION_ONLY_ISSUES if by_type[kind]}))])
     return rows
@@ -266,22 +269,75 @@ def _budget_rows(variants: list[dict[str, Any]]) -> list[list[str]]:
     return rows
 
 
+def _head_to_head_rows(blind: dict[str, Any]) -> list[list[str]]:
+    rows = []
+    for pair in blind["head_to_head"]:
+        met = {True: "met", False: "not met", None: "nothing ranked"}
+        rows.append([f"{pair['first']} vs {pair['second']}", str(pair["first_above"]),
+                     "–" if pair["first_share"] is None else f"{pair['first_share']:.0%}",
+                     str(pair["second_above"]), str(pair["goldens"]),
+                     "; ".join(f"{check['decides']}: {check['condition']}, {met[check['met']]}" for check in pair["checks"])])
+    return rows
+
+
 def _blind_rows(blind: dict[str, Any]) -> list[list[str]]:
     return [[variant, _num(stats["mean_rank"], 2), str(stats["first"]), str(stats["last"]), str(stats["ranked"])]
             for variant, stats in blind["variants"].items()]
 
 
+def _instrument_section(variants: list[dict[str, Any]]) -> list[str]:
+    return ["## Instrument: acting issues on the final post", "",
+            "Record-only, and **the same reviewer as B, so biased in B's favour**: B was fixed against this "
+            "reviewer's findings, A and C were not. For B the figures are the pipeline's own last review; for the "
+            f"others the review was run on the final post afterwards. {', '.join(CITATION_ONLY_ISSUES)} is shown "
+            "apart: A's posts have no citations to be wrong.", "",
+            *_table(["variant", "from", "posts", "acting issues", "by type", "citation only"], _instrument_rows(variants))]
+
+
+def audit_failed(audit: dict[str, Any] | None) -> bool:
+    """Whether a finished judge audit came back below the bar (AUDIT_MIN_CORRECT of AUDIT_FINDINGS)."""
+    return audit is not None and audit["marked"] == audit["of"] and audit["correct"] < config.AUDIT_MIN_CORRECT
+
+
+def decision_rules_lines(audit: dict[str, Any] | None) -> list[str]:
+    """The pre-registered rules as ablation.md opens with them (eval_config holds
+    the one copy), and, once the judge audit has failed, what that changes."""
+    lines = [f"## Decision rules (fixed {config.DECISION_RULES_DATE}, before the full run)", "",
+             *(f"{number}. {rule}" for number, rule in enumerate(config.DECISION_RULES, 1)), "",
+             config.DECISION_TIEBREAK, "", config.DECISION_NOTE, "",
+             config.DECISION_FEWER_RANKED, "", config.DECISION_AUDIT_BELOW, ""]
+    if audit_failed(audit):
+        lines += [f"**The judge audit came back at {audit['correct']} of {audit['of']}, below {config.AUDIT_MIN_CORRECT}: "
+                  "rule 1's judge criterion is dropped. Rules 1 and 2 are decided by the blind read alone, and the "
+                  "tiebreak does not apply.**", ""]
+    return lines
+
+
+def _spend_lines(spend: dict[str, Any] | None) -> list[str]:
+    """The ablation's spend ledger (spend.py), and where the cap stopped it if it did."""
+    if spend is None:
+        return []
+    lines = [f"Spend: **${spend['spent_usd']:.2f}** measured, against a cap of ${spend['cap_usd']:.2f} "
+             "(pipelines with their background fact checks, judges and the regression set)."]
+    lines += [f"**Stopped at the spend cap** {where}. What follows covers only what ran." for where in spend["stops"]]
+    return [*lines, ""]
+
+
 def build_ablation(name: str, variants: list[dict[str, Any]], audit: dict[str, Any] | None = None,
-                   blind: dict[str, Any] | None = None) -> str:
+                   blind: dict[str, Any] | None = None, spend: dict[str, Any] | None = None,
+                   regression: list[dict[str, Any]] | None = None) -> str:
     """ablation.md. variants: one {meta, runs, scores: {judge model: rows},
     instrument: rows} per run, in the order given; a run's rows carry the
-    post_record() made when it ran. audit and blind are blind.py's results."""
+    post_record() made when it ran. audit and blind are blind.py's results,
+    spend the ablation's ledger, regression the review regression set's rows."""
     names = [v["meta"]["variant"] for v in variants]
     lines = [f"# Ablation: {name}", "",
+             *decision_rules_lines(audit),
              "Judges are the same for every variant: `unsupported_specifics` from "
              f"{config.ABLATION_JUDGES['unsupported_specifics']}, answer relevancy from "
              f"{config.ABLATION_JUDGES['answer_relevancy']} (`eval_config.py`). Per-post figures are means over "
              "the posts that were returned (status ok). Costs: `backend/llm/pricing.py`.", ""]
+    lines += _spend_lines(spend)
     lines += ["## Runs", "", *_table(["variant", "run", "models called", "commit", "goldens"], _run_rows(variants))]
     lines += ["## Decision metrics", "", *_table(["", *names], _decision_rows(variants, audit))]
     lines += ["Length is measured both ways on every final post: `count_words` counts every token (headings and "
@@ -292,12 +348,12 @@ def build_ablation(name: str, variants: list[dict[str, Any]], audit: dict[str, A
                   *_table(["variant", "reviewed posts", "route", "outcome", "redraft not usable"], paths)]
     lines += ["## Trim, removed content, citation compliance", "",
               *_table(["variant", "trims", "removed content by kind", "multi_sentence_spans"], _content_rows(variants))]
-    lines += ["## Instrument: acting issues on the final post", "",
-              "Record-only, and **the same reviewer as B, so biased in B's favour**: B was fixed against this "
-              "reviewer's findings, A and C were not. For B the figures are the pipeline's own last review; for the "
-              f"others the review was run on the final post afterwards. {', '.join(CITATION_ONLY_ISSUES)} is shown "
-              "apart: A's posts have no citations to be wrong.", "",
-              *_table(["variant", "from", "posts", "acting issues", "by type", "citation only"], _instrument_rows(variants))]
+    if not any(v["instrument"] for v in variants):
+        lines += ["## Instrument: acting issues on the final post", "",
+                  "Not run for this ablation. It reviews every final post with B's own reviewer, so it is "
+                  "**biased in B's favour** by construction and cannot decide between the variants.", ""]
+    else:
+        lines += _instrument_section(variants)
     lines += ["## Fact-check flags (low precision, not decisive)", "",
               "The background fact check over-flags paraphrases. Leads, not verdicts.", "",
               *_table(["variant", "posts checked", "flags", "posts with a flag", "by type"], _fact_check_rows(variants))]
@@ -308,10 +364,21 @@ def build_ablation(name: str, variants: list[dict[str, Any]], audit: dict[str, A
                   "call (truncated and refused drafts included).", "",
                   *_table(["variant", "draft model", "drafts", "tokens per word, mean", "thinking tokens p50 / max",
                            "not end_turn"], budget)]
+    if regression:
+        passed = sum(1 for row in regression if row["passed"])
+        failed = ", ".join(row["id"] for row in regression if not row["passed"]) or "none"
+        lines += ["## Review regression set", "",
+                  f"{passed} of {len(regression)} cases passed on `{regression[0]['model']}` (failed: {failed}). "
+                  "The development set the review prompt was written against: it shows regressions and is "
+                  "**not part of the decision**.", ""]
     lines += ["## Blind read", ""]
     if blind is None:
         lines += ["Not scored yet (`python blind.py make`, then `score`). Orphaned sentences and flatness are judged there.", ""]
     else:
         lines += [f"{blind['ranked']} of {blind['goldens']} goldens ranked. Rank 1 is best.", "",
-                  *_table(["variant", "mean rank", "ranked first", "ranked last", "n"], _blind_rows(blind))]
+                  *_table(["variant", "mean rank", "ranked first", "ranked last", "n"], _blind_rows(blind)),
+                  "Head to head, as the decision rules read it (7 of 10, or 70% of those ranked, is the bar for "
+                  "\"clearly\"; a practical bar, not a statistical test):", "",
+                  *_table(["pair", "first ranked above second", "share", "second above first", "goldens ranked",
+                           "conditions"], _head_to_head_rows(blind))]
     return "\n".join(lines)

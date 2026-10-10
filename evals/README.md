@@ -117,8 +117,25 @@ python report.py <run_id>                         # writes and prints results/<r
 
 ## Ablation (pipeline variants)
 
-Variants are `A`, `B`, `C` and `B-Opus` (`backend/config/features.py`; models per role in `backend/llm/models.py`).
-The judge model and its settings are the same for every variant.
+Variants are `A`, `B`, `C`, `B-Opus` and `C-Opus` (`backend/config/features.py`; models per role in
+`backend/llm/models.py`). The judge model and its settings are the same for every variant.
+
+The full ablation is one command, under one spend cap:
+
+```bash
+python ablate.py --name full          # shows the plan and the cap, asks first
+```
+
+It runs the full ablation's variants (`eval_config.ABLATION_VARIANTS`: A, C, B-Opus, C-Opus; B is left out),
+judges `unsupported_specifics` (Sonnet) and answer relevancy (Haiku), runs the review regression set once and
+writes `results/ablations/full/ablation.md`, which opens with the decision rules fixed before the run
+(`eval_config.DECISION_RULES`). It does not run the instrument.
+`EVAL_SPEND_CAP_USD` in `eval_config.py` (14) caps the whole thing: measured cost is added to
+`results/ablations/full/spend.json` after every post, and the step in progress stops before its next post once
+the cap is reached and says where. `--spend-cap` overrides the cap; running the command again reuses the runs
+already made and continues the judging.
+
+The steps can also be run one at a time (add `--ablation <name>` to each to put them under the same cap):
 
 ```bash
 python run.py --quality standard --variant A --only pm-05 ...     # one run per variant

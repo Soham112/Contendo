@@ -34,8 +34,8 @@ class ModelSpec:
     forced_tool_choice: whether tool_choice {"type": "tool"} is accepted. Where
       it is not (a 400), a structured call sends tool_choice "auto" and says in
       the prompt to call the tool (llm.client.complete_structured).
-    default_effort: the API's own effort level when none is sent. Nothing here
-      sends one; it is recorded so a run's settings can be read back.
+    default_effort: the API's own effort level when none is sent. Only the
+      drafter sends one (DRAFT_EFFORT, below).
     """
     tokenizer: str
     thinks: bool
@@ -70,7 +70,22 @@ ROLE_MODELS: dict[str, str] = {"draft": DRAFT_MODEL, "review": REVIEW_MODEL, "sm
 # config.features.PIPELINE_VARIANTS (tests/test_models.py checks that).
 VARIANT_ROLE_MODELS: dict[str, dict[str, str]] = {
     "B-Opus": {"draft": OPUS_5_5},
+    "C-Opus": {"draft": OPUS_5_5},
 }
+
+
+# Effort for the drafter calls (output_config.effort), per draft model. Opus 5.5
+# drafts at the API's own default for that model, "medium" (Anthropic models
+# overview, "Default effort", checked 2026-10-10). Sending the default is the
+# same request as omitting it; it is sent so that a run's meta.json records the
+# setting instead of implying it. A model not listed sends no effort.
+OPUS_5_5_DRAFT_EFFORT = "medium"
+DRAFT_EFFORT: dict[str, str] = {OPUS_5_5: OPUS_5_5_DRAFT_EFFORT}
+
+
+def draft_effort(model: str) -> str | None:
+    """The effort a drafter call sends for this model; None when it sends none."""
+    return DRAFT_EFFORT.get(model)
 
 
 class ModelConfigError(ValueError):

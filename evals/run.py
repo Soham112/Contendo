@@ -11,6 +11,11 @@ runs.jsonl: one line per golden with trace_id, timing, the pipeline's Claude
 calls and cost from the trace, the post, its sources, and what the ablation
 report reads (ablation.post_record). A golden whose trace was not saved
 (trace_id None) or whose run raised is logged and skipped.
+
+With --ablation NAME the run belongs to that ablation: its measured cost (the
+background fact check included) is added to the ablation's spend ledger after
+every golden, and the run stops before the next golden once the cap is reached
+(spend.py; exit code 4).
 """
 
 import env  # noqa: F401  (must be the first project import)
@@ -25,6 +30,7 @@ from typing import Any
 
 import ablation
 import eval_config as config
+import spend
 from guard import EnvGuardError
 from loaders import FixtureError, load_goldens, load_persona, load_users, persona_slugs
 
@@ -87,6 +93,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="single-writer variants only: use this model for a role in this run, e.g. small=HAIKU_5_5")
     parser.add_argument("--only", action="append", help="golden id (repeatable); default: all")
     parser.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
+    spend.add_arguments(parser)
     args = parser.parse_args(argv)
 
     from config import features
@@ -126,7 +133,11 @@ def main(argv: list[str] | None = None) -> int:
             print("Aborted.")
             return 1
 
+    from llm.client import trace_calls
+    from llm.pricing import call_cost
     from pipeline.graph import run_pipeline
+
+    cap = spend.open_cap(args.ablation, args.spend_cap, call_cost)
 
     tag = variant + "".join(f"-{role}-{constant}" for role, _, constant in (item.partition("=") for item in args.model))
     run_id = f"{datetime.now(timezone.utc):%Y%m%d-%H%M%S}-{args.quality}-{tag}"
@@ -136,8 +147,11 @@ def main(argv: list[str] | None = None) -> int:
         "run_id": run_id,
         "quality": args.quality,
         "variant": variant,
+        "ablation": args.ablation,
         "models": run_models,
         "model_overrides": overrides,
+        # output_config.effort of the drafter calls; None means none is sent (the API default applies).
+        "draft_effort": models.draft_effort(run_models["draft"]) if "draft" in run_models else None,
         "project_ref": env.CONFIG.project_ref,
         "started_at": datetime.now(timezone.utc).isoformat(),
         "git": git_state(),
@@ -148,57 +162,61 @@ def main(argv: list[str] | None = None) -> int:
 
     ok = 0
     with (out_dir / "runs.jsonl").open("a") as runs:
-        for g in goldens:
+        for g in cap.guard(goldens, lambda g, done: f"run {run_id} (variant {variant}) before {g['id']}: "
+                                                    f"{done} of {len(goldens)} goldens run"):
             user_id = users[g["persona"]]
             row: dict[str, Any] = {"golden_id": g["id"], "persona": g["persona"], "difficulty": g["difficulty"],
                                    "variant": variant}
             start = time.perf_counter()
+            spent_calls: list[dict] = []
             try:
-                result = run_pipeline(
-                    topic=g["topic"], format=g["format"], tone=g["tone"], length=g["length"],
-                    context=g["context"], quality=args.quality, user_id=user_id,
-                    variant=variant, models=overrides or None,
-                )
-                row["seconds"] = round(time.perf_counter() - start, 1)
-                if result.get("fact_check_job"):  # log-only fact check, outside the timing (as in /generate)
-                    result["fact_check_job"]()
-                row["trace_id"] = result.get("trace_id")
-                if result.get("status") == "low_coverage":
-                    row["status"] = "gated"
-                    row["closest_sources"] = [s["title"] for s in result.get("closest_sources", [])]
-                    print(f"  {g['id']}: GATED (low coverage) in {row['seconds']}s")
-                elif not row["trace_id"]:
-                    row["status"] = "no_trace"
-                    print(f"  {g['id']}: SKIPPED, trace was not saved (trace_id None)")
-                else:
-                    trace = (client.table("generation_traces")
-                             .select("llm_calls,node_outputs,retrieved,profile_snapshot")
-                             .eq("id", row["trace_id"]).eq("user_id", user_id).execute().data or [{}])[0]
-                    # "ok", or a single-writer run that returned no post: draft_truncated, draft_refused.
-                    row["status"] = result.get("status", "ok")
-                    row.update(trace_fields(trace))
-                    # Background (log-only) fact check, as written to the trace by fact_check_job.
-                    fc = (trace.get("node_outputs") or {}).get("fact_check") or {}
-                    row["fact_check"] = {
-                        "mode": fc.get("mode"), "outcome": fc.get("outcome"),
-                        "flagged": [{"type": f.get("type"), "why": f.get("why"), "sentence": f.get("sentence")}
-                                    for f in fc.get("flagged") or []],
-                    }
-                    row["score"] = result.get("score")
-                    row["retrieval_confidence"] = result.get("retrieval_confidence")
-                    ok += row["status"] == "ok"
-                    print(f"  {g['id']}: {row['status']} in {row['seconds']}s, {row['pipeline']['calls']} Claude calls, "
-                          f"${row['pipeline']['cost_usd']:.4f}")
+                with trace_calls() as spent_calls:      # every call of this golden, the fact check included
+                    result = run_pipeline(
+                        topic=g["topic"], format=g["format"], tone=g["tone"], length=g["length"],
+                        context=g["context"], quality=args.quality, user_id=user_id,
+                        variant=variant, models=overrides or None,
+                    )
+                    row["seconds"] = round(time.perf_counter() - start, 1)
+                    if result.get("fact_check_job"):  # log-only fact check, outside the timing (as in /generate)
+                        result["fact_check_job"]()
+                    row["trace_id"] = result.get("trace_id")
+                    if result.get("status") == "low_coverage":
+                        row["status"] = "gated"
+                        row["closest_sources"] = [s["title"] for s in result.get("closest_sources", [])]
+                        print(f"  {g['id']}: GATED (low coverage) in {row['seconds']}s")
+                    elif not row["trace_id"]:
+                        row["status"] = "no_trace"
+                        print(f"  {g['id']}: SKIPPED, trace was not saved (trace_id None)")
+                    else:
+                        trace = (client.table("generation_traces")
+                                 .select("llm_calls,node_outputs,retrieved,profile_snapshot")
+                                 .eq("id", row["trace_id"]).eq("user_id", user_id).execute().data or [{}])[0]
+                        # "ok", or a single-writer run that returned no post: draft_truncated, draft_refused.
+                        row["status"] = result.get("status", "ok")
+                        row.update(trace_fields(trace))
+                        # Background (log-only) fact check, as written to the trace by fact_check_job.
+                        fc = (trace.get("node_outputs") or {}).get("fact_check") or {}
+                        row["fact_check"] = {
+                            "mode": fc.get("mode"), "outcome": fc.get("outcome"),
+                            "flagged": [{"type": f.get("type"), "why": f.get("why"), "sentence": f.get("sentence")}
+                                        for f in fc.get("flagged") or []],
+                        }
+                        row["score"] = result.get("score")
+                        row["retrieval_confidence"] = result.get("retrieval_confidence")
+                        ok += row["status"] == "ok"
+                        print(f"  {g['id']}: {row['status']} in {row['seconds']}s, {row['pipeline']['calls']} Claude calls, "
+                              f"${row['pipeline']['cost_usd']:.4f}")
             except Exception as exc:  # one failing golden must not stop the run
                 row["seconds"] = round(time.perf_counter() - start, 1)
                 row["status"] = "error"
                 row["error"] = f"{type(exc).__name__}: {exc}"
                 print(f"  {g['id']}: ERROR {row['error']}")
+            cap.record(spent_calls, f"run {variant} {g['id']}")
             runs.write(json.dumps(row) + "\n")
             runs.flush()
 
     print(f"Done: {ok}/{len(goldens)} ok. Next: python judge.py {run_id}")
-    return 0
+    return spend.STOPPED_EXIT if cap.stopped_at else 0
 
 
 if __name__ == "__main__":

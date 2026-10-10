@@ -17,14 +17,15 @@ NO_SPECIFICS_MODE_ENABLED = False
 #   A  current pipeline: draft → critic → humanizer → audit → enforcer
 #   B  single writer:    draft → checks → at most one redraft → trim
 #   C  draft only:       draft → trim
-#   B-Opus  B's pipeline with another draft model (llm.models.VARIANT_ROLE_MODELS)
+#   B-Opus, C-Opus  B's and C's pipelines with another draft model
+#           (llm.models.VARIANT_ROLE_MODELS)
 # Set with the PIPELINE_VARIANT environment variable. Unset or empty means A,
 # so production stays on A until the variable is set on Railway. Evals pass a
 # variant to run_pipeline directly; it is never a /generate request field.
-PIPELINE_VARIANTS = ("A", "B", "C", "B-Opus")
+PIPELINE_VARIANTS = ("A", "B", "C", "B-Opus", "C-Opus")
 # The graph each variant runs (pipeline.graph). A variant that differs from
 # another only in its models shares that one's graph.
-VARIANT_GRAPH = {"A": "A", "B": "B", "C": "C", "B-Opus": "B"}
+VARIANT_GRAPH = {"A": "A", "B": "B", "C": "C", "B-Opus": "B", "C-Opus": "C"}
 DEFAULT_PIPELINE_VARIANT = "A"
 PIPELINE_VARIANT_ENV = "PIPELINE_VARIANT"
 

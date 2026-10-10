@@ -47,7 +47,9 @@ def write_ablation(run_ids: list[str], name: str) -> int:
     out_dir = config.ABLATIONS_DIR / name
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "ablation.json").write_text(json.dumps({"name": name, "runs": run_ids}, indent=2) + "\n")
-    text = build_ablation(name, variants, audit=_read_json(out_dir / "audit.json"), blind=_read_json(out_dir / "blind.json"))
+    text = build_ablation(name, variants, audit=_read_json(out_dir / "audit.json"), blind=_read_json(out_dir / "blind.json"),
+                          spend=_read_json(out_dir / "spend.json"),
+                          regression=read_jsonl(out_dir / "review-regression.jsonl"))
     (out_dir / "ablation.md").write_text(text)
     print(text)
     return 0

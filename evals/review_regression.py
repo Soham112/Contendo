@@ -11,6 +11,8 @@ Each case is one marked post and one source. A case passes when the review ran,
 raised every issue type in `must` and none in `must_not`. Any other type raised
 is listed as "other" for a person to judge. Writes
 results/review-regression/<time>-<model>.jsonl and prints one line per case.
+With --ablation NAME it writes results/ablations/NAME/review-regression.jsonl
+instead, and its cost counts against that ablation's spend cap (spend.py).
 """
 
 import env  # noqa: F401  (must be the first project import)
@@ -22,11 +24,13 @@ from datetime import datetime, timezone
 from typing import Any
 
 import eval_config as config
+import spend
 from guard import EnvGuardError
 from loaders import FixtureError, load_persona, load_users
 
 CASES_FILE = config.EVALS_DIR / "fixtures" / "review_cases.jsonl"
 OUT_DIR = config.RESULTS_DIR / "review-regression"
+ABLATION_FILE = "review-regression.jsonl"
 
 
 def verdict(case: dict[str, Any], outcome: str, raised: set[str]) -> dict[str, Any]:
@@ -58,6 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--model", default="REVIEW_MODEL", help="a model constant in backend/llm/models.py")
     parser.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
+    spend.add_arguments(parser)
     args = parser.parse_args(argv)
 
     from llm import models
@@ -84,17 +89,23 @@ def main(argv: list[str] | None = None) -> int:
     from llm.client import trace_calls
     from llm.pricing import call_cost
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = OUT_DIR / f"{datetime.now(timezone.utc):%Y%m%d-%H%M%S}-{model}.jsonl"
+    cap = spend.open_cap(args.ablation, args.spend_cap, call_cost)
+    if args.ablation:
+        out_path = config.ABLATIONS_DIR / args.ablation / ABLATION_FILE
+    else:
+        out_path = OUT_DIR / f"{datetime.now(timezone.utc):%Y%m%d-%H%M%S}-{model}.jsonl"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     passed = 0
     cost = 0.0
     with out_path.open("a") as out:
-        for case in cases:
+        for case in cap.guard(cases, lambda case, done: f"review regression set before {case['id']}: "
+                                                        f"{done} of {len(cases)} cases run"):
             with trace_calls() as calls:
                 review = review_post(case_state(case, profiles[case["persona"]], users[case["persona"]], model))
             raised = {issue["type"] for issue in review["issues"]}
             result = verdict(case, review["outcome"], raised)
             cost += sum(call_cost(c["model"], c["input_tokens"], c["output_tokens"]) for c in calls)
+            cap.record(calls, f"review regression {case['id']}")
             passed += result["passed"]
             out.write(json.dumps({"id": case["id"], "model": model, "outcome": review["outcome"],
                                   "error": review.get("error"), "raised": sorted(raised), **result,
@@ -105,7 +116,7 @@ def main(argv: list[str] | None = None) -> int:
                 detail = f"not reviewed: {review.get('error')}"
             print(f"  {'PASS' if result['passed'] else 'FAIL'}  {case['id']:<32} {detail}")
     print(f"{passed}/{len(cases)} passed with {model}; ${cost:.4f}. Development set: not part of the ablation decision.\n{out_path}")
-    return 0
+    return spend.STOPPED_EXIT if cap.stopped_at else 0
 
 
 if __name__ == "__main__":

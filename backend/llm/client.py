@@ -12,7 +12,7 @@ from contextvars import ContextVar
 from typing import Any, Iterator, TypeVar
 
 import anthropic
-from anthropic.types import Message
+from anthropic.types import Message, TextBlock, Usage
 from dotenv import load_dotenv
 from pydantic import BaseModel, ValidationError
 
@@ -36,12 +36,14 @@ MAX_NON_STREAMING_OUTPUT_TOKENS = 16_000
 
 # Room added to a call's max_tokens on a model that thinks by default: thinking
 # counts against max_tokens, so a budget sized for the answer alone can be used
-# up before any text is written. STOPGAP (provisional value): no thinking measurement exists yet
-# for these prompts. 8,000 keeps the largest draft budget (long-form, about
-# 5,600 tokens on the newer tokenizer) under the non-streaming ceiling; replace
-# it with the thinking_tokens the step 7 runs record (evals ablation.md,
-# "Draft budget").
-THINKING_ALLOWANCE_TOKENS = 8_000
+# up before any text is written. Measured on Claude Opus 5.5 drafts at effort
+# "medium" (2026-10-10; the step 7 smoke's six goldens and three probe runs of
+# pm-05, concise and standard LinkedIn posts): 711 to 1,499 thinking tokens,
+# median 831. The allowance is twice the largest seen, because no long-form
+# draft was in the sample and a draft cut off by its budget is a lost post,
+# while allowance that is not used costs nothing. Re-measure on the full
+# ablation (evals ablation.md, "Draft budget").
+THINKING_ALLOWANCE_TOKENS = 3_000
 
 REFUSAL = "refusal"   # stop_reason of a reply a safety classifier declined
 
@@ -56,21 +58,17 @@ def output_budget(model: str, answer_tokens: int) -> int:
 
 
 def message_text(message: Message) -> str:
-    """The reply's text: its text blocks, joined. A model that thinks puts
-    thinking blocks first, so content[0] is not the answer; a refused or
+    """The reply's text: its TextBlocks, joined. A model that thinks puts
+    ThinkingBlocks first, so content[0] is not the answer; a refused or
     cut-off reply may hold no text block at all, which gives ""."""
-    return "".join(block.text for block in message.content if getattr(block, "type", "") == "text")
+    return "".join(block.text for block in message.content if isinstance(block, TextBlock))
 
 
-def _thinking_tokens(usage: Any) -> int:
-    """usage.output_tokens_details.thinking_tokens, 0 when the reply has none.
-    The field is newer than the pinned SDK's Usage type, which then keeps it as
-    a plain dict."""
-    details = getattr(usage, "output_tokens_details", None)
-    if details is None:
-        return 0
-    value = details.get("thinking_tokens") if isinstance(details, dict) else getattr(details, "thinking_tokens", None)
-    return int(value or 0)
+def _thinking_tokens(usage: Usage) -> int:
+    """The output tokens that were thinking (usage.output_tokens_details);
+    0 for a reply that reports no breakdown."""
+    details = usage.output_tokens_details
+    return 0 if details is None else details.thinking_tokens
 
 client = anthropic.Anthropic(
     api_key=os.environ["ANTHROPIC_API_KEY"],

@@ -14,7 +14,10 @@ Writes results/<run_id>/instrument.jsonl, one line per returned post:
   review model) is run once on the final post, rebuilt from its trace. A's
   posts have no citations, so every one of its sentences is reviewed as
   uncited; the report keeps the citation-only issue type apart for that reason.
-A post that already has a line is not reviewed again.
+A post that already has a reviewed line is not reviewed again. A review that
+did not happen (a call failed, or its answer could not be used) is written with
+status "not_reviewed" and its reason, and is tried again on the next run; the
+report reads the last line per post.
 """
 
 import env  # noqa: F401  (must be the first project import)
@@ -72,7 +75,8 @@ def reviewed_line(review: dict[str, Any], calls: list[dict[str, Any]]) -> dict[s
     from pipeline.redraft import split_issues
 
     acting, _ = split_issues({"issues": []}, review)
-    return {"status": "ok", "source": "review of the final post", "outcome": review["outcome"],
+    status = "not_reviewed" if review["outcome"] == "not_reviewed" else "ok"
+    return {"status": status, "source": "review of the final post", "outcome": review["outcome"],
             "acting": dict(Counter(issue["type"] for issue in acting)), "unreviewed": len(review["unreviewed"]),
             "error": review.get("error"), **{k: v for k, v in ablation.summarize_llm_calls(calls, call_cost).items()
                                              if k != "by_model"}}

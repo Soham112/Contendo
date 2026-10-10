@@ -11,7 +11,7 @@ class PipelineState(TypedDict, total=False):
     context: Optional[str]
     quality: str  # "draft" | "standard" | "polished" — defaults to "standard" at runtime
     user_id: str  # authenticated user; every store call is scoped by it
-    # Which pipeline ran: "A" | "B" | "C" | "B-Opus" (config.features.PIPELINE_VARIANTS),
+    # Which pipeline ran: "A" | "B" | "C" | "B-Opus" | "C-Opus" (config.features.PIPELINE_VARIANTS),
     # set by run_pipeline. Persisted in generation_traces.node_outputs.
     variant: str
     # The model each single-writer role uses in this run, {draft, review, small}

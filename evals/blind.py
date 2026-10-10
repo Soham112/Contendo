@@ -3,7 +3,7 @@ judge is right, and which post reads best.
 
 From the evals folder (file-only: no backend, no network, no API cost):
     python blind.py audit <ablation>   # audit.md: 10 judge findings to mark, audit-key.json
-    python blind.py make <ablation>    # read.md: 10 goldens, each variant's post, key.json
+    python blind.py make <ablation>    # read.md: 10 goldens, one post per variant, key.json
     python blind.py score <ablation>   # reads the marks back: audit.json, blind.json
 
 <ablation> is a folder in results/ablations/ made by `report.py --variants`.
@@ -125,54 +125,74 @@ def score_audit(ablation_dir: Path) -> dict[str, Any]:
 # ── Blind read ────────────────────────────────────────────────────────────────
 
 def make_read(variants: list[dict[str, Any]], goldens: dict[str, dict[str, Any]], seed: int) -> tuple[str, dict[str, Any]]:
-    """(read.md, key). BLIND_GOLDENS goldens every variant returned a post for,
-    chosen with the seed; under each, one post per variant in an order shuffled
+    """(read.md, key). BLIND_GOLDENS goldens every variant returned a post for
+    (a golden any variant has no post for is never in the read), chosen with the seed; under each, one post per variant in an order shuffled
     with the seed and the golden's id, labelled BLIND_LABELS."""
-    if len(variants) != len(config.BLIND_LABELS):
-        raise BlindError(f"the blind read takes {len(config.BLIND_LABELS)} variants, got {len(variants)}")
+    if not 2 <= len(variants) <= len(config.BLIND_LABELS):
+        raise BlindError(f"the blind read takes 2 to {len(config.BLIND_LABELS)} variants, got {len(variants)}")
+    labels_used = config.BLIND_LABELS[:len(variants)]
     shared = sorted(set.intersection(*(set(v["posts"]) for v in variants)))
     chosen = sorted(random.Random(seed).sample(shared, min(len(shared), config.BLIND_GOLDENS)))
     if not chosen:
         raise BlindError("no golden has a post from every variant")
-    labels = " ".join(config.BLIND_LABELS)
+    labels = " ".join(labels_used)
     lines = ["# Blind read", "",
              f"{len(chosen)} goldens, {len(variants)} posts each, in shuffled order. After each `ranking[...]:` write the "
-             f"labels best first, separated by `>` (for example `{' > '.join(config.BLIND_LABELS)}`). Use `note[...]:` for anything "
+             f"labels best first, separated by `>` (for example `{' > '.join(labels_used)}`). Use `note[...]:` for anything "
              "that decided it, and for sentences left orphaned by a deletion and posts that read flat: "
              f"name the label ({labels}).", ""]
-    key: dict[str, Any] = {"seed": seed, "runs": {v["variant"]: v["run_id"] for v in variants}, "goldens": {}}
+    key: dict[str, Any] = {"seed": seed, "labels": list(labels_used),
+                           "runs": {v["variant"]: v["run_id"] for v in variants}, "goldens": {}}
     for golden_id in chosen:
         order = list(variants)
         random.Random(f"{seed}:{golden_id}").shuffle(order)
-        key["goldens"][golden_id] = {label: v["variant"] for label, v in zip(config.BLIND_LABELS, order)}
+        key["goldens"][golden_id] = {label: v["variant"] for label, v in zip(labels_used, order)}
         golden = goldens[golden_id]
         lines += [f"## {golden_id}", "", f"Topic: {golden['topic']}",
                   *([f"Context: {golden['context']}"] if golden.get("context") else []), ""]
-        for label, v in zip(config.BLIND_LABELS, order):
+        for label, v in zip(labels_used, order):
             lines += [f"### {label}", "", v["posts"][golden_id]["post"].strip(), ""]
         lines += [_FIELD.format(name="ranking", entry=golden_id) + " ", _FIELD.format(name="note", entry=golden_id) + " ", ""]
     return "\n".join(lines), key
 
 
-def parse_ranking(value: str) -> list[str] | None:
+def parse_ranking(value: str, labels: list[str]) -> list[str] | None:
     """The labels of a `ranking:` line, best first; None when the line is
-    empty. Anything but each label exactly once is an error, never a guess."""
+    empty. Anything but each of `labels` exactly once is an error, never a guess."""
     if not value:
         return None
-    labels = [token.upper() for token in re.split(r"[\s>,]+", value) if token]
-    if sorted(labels) != sorted(config.BLIND_LABELS):
-        raise BlindError(f"ranking {value!r} must name each of {' '.join(config.BLIND_LABELS)} exactly once")
-    return labels
+    given = [token.upper() for token in re.split(r"[\s>,]+", value) if token]
+    if sorted(given) != sorted(labels):
+        raise BlindError(f"ranking {value!r} must name each of {' '.join(labels)} exactly once")
+    return given
+
+
+def head_to_head(first: str, second: str, first_above: int, ranked: int, checks: tuple) -> dict[str, Any]:
+    """One pair of the decision rules: in how many of the ranked goldens the
+    first variant was placed above the second, that count as a share, and
+    whether each of the pair's conditions holds on the share. With nothing
+    ranked there is no share and no condition is met or failed (None)."""
+    share = first_above / ranked if ranked else None
+    holds = {"at_least": lambda limit: share >= limit, "at_most": lambda limit: share <= limit}
+    return {"first": first, "second": second, "first_above": first_above, "second_above": ranked - first_above,
+            "goldens": ranked, "first_share": share,
+            "checks": [{"decides": decides, "condition": f"{kind.replace('_', ' ')} {limit:.0%}",
+                        "met": None if share is None else holds[kind](limit)} for decides, kind, limit in checks]}
 
 
 def score_read(read_text: str, key: dict[str, Any]) -> dict[str, Any]:
     """Join the marked read.md with its key: per variant, mean rank (1 is
-    best), times ranked first and last; and every note, with the labels named."""
+    best), times ranked first and last; the head-to-head counts the decision
+    rules read (eval_config.BLIND_HEAD_TO_HEAD: in how many ranked goldens the
+    first variant was placed above the second); and every note, with the labels named."""
     ranks: dict[str, list[int]] = {variant: [] for variant in key["runs"]}
+    pairs = [(first, second, checks) for first, second, checks in config.BLIND_HEAD_TO_HEAD
+             if {first, second} <= set(key["runs"])]
+    above = {(first, second): 0 for first, second, _ in pairs}
     notes, ranked = [], 0
     for golden_id, labels in key["goldens"].items():
         try:
-            ranking = parse_ranking(_field(read_text, "ranking", golden_id))
+            ranking = parse_ranking(_field(read_text, "ranking", golden_id), key["labels"])
         except BlindError as exc:
             raise BlindError(f"{golden_id}: {exc}") from None
         note = _field(read_text, "note", golden_id)
@@ -181,10 +201,15 @@ def score_read(read_text: str, key: dict[str, Any]) -> dict[str, Any]:
         if ranking is None:
             continue
         ranked += 1
-        for position, label in enumerate(ranking, 1):
-            ranks[labels[label]].append(position)
-    worst = len(config.BLIND_LABELS)
+        place = {labels[label]: position for position, label in enumerate(ranking, 1)}
+        for variant, position in place.items():
+            ranks[variant].append(position)
+        for first, second, _ in pairs:
+            above[(first, second)] += place[first] < place[second]
+    worst = len(key["labels"])
     return {"goldens": len(key["goldens"]), "ranked": ranked, "notes": notes,
+            "head_to_head": [head_to_head(first, second, above[(first, second)], ranked, checks)
+                             for first, second, checks in pairs],
             "variants": {variant: {"mean_rank": mean(given) if given else None, "first": given.count(1),
                                    "last": given.count(worst), "ranked": len(given)}
                          for variant, given in ranks.items()}}
@@ -222,6 +247,13 @@ def main(argv: list[str] | None = None) -> int:
                 for variant, stats in blind["variants"].items():
                     rank = "–" if stats["mean_rank"] is None else f"{stats['mean_rank']:.2f}"
                     print(f"  {variant:<8} mean rank {rank}  first {stats['first']}  last {stats['last']}")
+                for pair in blind["head_to_head"]:
+                    share = "–" if pair["first_share"] is None else f"{pair['first_share']:.0%}"
+                    print(f"  {pair['first']} ranked above {pair['second']} in {pair['first_above']} of "
+                          f"{pair['goldens']} goldens ({share}); {pair['second']} above in {pair['second_above']}")
+                    for check in pair["checks"]:
+                        met = {True: "met", False: "not met", None: "nothing ranked"}[check["met"]]
+                        print(f"      {check['decides']}: {check['condition']} -> {met}")
                 for note in blind["notes"]:
                     print(f"  {note['golden_id']}: {note['note']}  [{', '.join(f'{k}={v}' for k, v in note['labels'].items())}]")
                 done = True

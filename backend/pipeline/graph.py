@@ -199,8 +199,9 @@ def build_graph(variant: str):
     return graph.compile()
 
 
-# One compiled graph per variant, built once at import. (B-Opus compiles its
-# own copy of B's graph: the models are in the state, not in the graph.)
+# One compiled graph per variant, built once at import. (B-Opus and C-Opus
+# compile their own copies of B's and C's graphs: the models are in the state,
+# not in the graph.)
 PIPELINES = {variant: build_graph(variant) for variant in features.PIPELINE_VARIANTS}
 
 

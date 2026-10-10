@@ -13,8 +13,9 @@ sentences only, or the whole post again.
 
 The three single-writer calls use the run's draft model (llm.models.model_for).
 Their answer is read from the reply's text blocks (a model that thinks puts
-thinking blocks first), their budget leaves room for thinking, and a reply the
-model declined (stop_reason "refusal") is never treated as text to use.
+thinking blocks first), their budget leaves room for thinking, they send the
+model's effort setting where it has one (llm.models.DRAFT_EFFORT), and a reply
+the model declined (stop_reason "refusal") is never treated as text to use.
 """
 
 import logging
@@ -22,8 +23,10 @@ import logging
 from agents.archetype_agent import choose_archetype
 from agents.draft_prompt import build_cited_prompt, build_prompt, format_retrieval_context
 from agents.redraft_prompt import build_fix_prompt, build_redraft_prompt
+from anthropic.types import Message
+
 from llm.client import REFUSAL, SONNET, complete, message_text, output_budget
-from llm.models import model_for
+from llm.models import draft_effort, model_for
 from pipeline.fixes import apply_targeted_fixes
 from pipeline.redraft import apply_downgrade
 from pipeline.state import PipelineState
@@ -98,11 +101,19 @@ def _draft_budget(state: PipelineState, model: str) -> int:
     return output_budget(model, draft_max_tokens(state.get("length_target"), model))
 
 
-def _refusal(message) -> dict:
-    """What is recorded of a declined reply: the classifier's category when the API gives one."""
-    details = getattr(message, "stop_details", None)
-    category = details.get("category") if isinstance(details, dict) else getattr(details, "category", None)
-    return {"category": category}
+def _refusal(message: Message) -> dict:
+    """What is recorded of a declined reply: the classifier's category
+    (message.stop_details), None when the API names none."""
+    details = message.stop_details
+    return {"category": None if details is None else details.category}
+
+
+def _effort(model: str) -> dict:
+    """The effort setting a drafter call sends for this model, as the keyword
+    complete() passes on to the API; nothing for a model with no setting
+    (llm.models.DRAFT_EFFORT)."""
+    effort = draft_effort(model)
+    return {} if effort is None else {"output_config": {"effort": effort}}
 
 
 def cited_draft_node(state: PipelineState) -> PipelineState:
@@ -129,6 +140,7 @@ def cited_draft_node(state: PipelineState) -> PipelineState:
         user_id=state["user_id"],
         event_type="generate",
         usage_metadata=_usage_metadata(state),
+        **_effort(model),
     )
     state["current_draft"] = message_text(message).strip()
     record_draft(state, "draft")
@@ -160,6 +172,7 @@ def targeted_fix_node(state: PipelineState) -> PipelineState:
         user_id=state["user_id"],
         event_type="targeted_fix",
         usage_metadata=_usage_metadata(state),
+        **_effort(model),
     )
     answer = message_text(message).strip()
     targeted.update(answer=answer, input_tokens=message.usage.input_tokens, output_tokens=message.usage.output_tokens)
@@ -198,6 +211,7 @@ def redraft_node(state: PipelineState) -> PipelineState:
         user_id=state["user_id"],
         event_type="redraft",
         usage_metadata=_usage_metadata(state),
+        **_effort(model),
     )
     redraft["input_tokens"] = message.usage.input_tokens
     redraft["output_tokens"] = message.usage.output_tokens

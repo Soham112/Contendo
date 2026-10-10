@@ -5,7 +5,7 @@ forced, and a refusal that becomes an explicit status. All through the fake."""
 import asyncio
 
 import pytest
-from anthropic.types import Message, TextBlock, ToolUseBlock, Usage
+from anthropic.types import Message, OutputTokensDetails, RefusalStopDetails, TextBlock, ThinkingBlock, ToolUseBlock, Usage
 from pydantic import BaseModel
 
 from llm.models import HAIKU_4_5, HAIKU_5_5, OPUS_5_5, SONNET_4_6, SONNET_5_5
@@ -16,16 +16,18 @@ from tests.test_generation_trace import STANDARD_RUN, seeded_kb  # noqa: F401  (
 CLEAN = "pgvector makes retrieval fast. [[S1]]\n\nThat is most of the argument. [[V]]"
 
 
-def _thinking_block():
-    # As the pinned SDK builds a block type it does not know: no .text attribute.
-    return TextBlock.construct(type="thinking", thinking="", signature="sig")
+def _thinking_block() -> ThinkingBlock:
+    # As the API returns it by default: the thinking text is omitted, the signature is not.
+    return ThinkingBlock(type="thinking", thinking="", signature="sig")
 
 
-def _reply(*blocks, stop_reason="end_turn", output_tokens=900, thinking_tokens=None, **extra) -> Message:
-    usage = Usage.construct(input_tokens=10, output_tokens=output_tokens,
-                            **({} if thinking_tokens is None else {"output_tokens_details": {"thinking_tokens": thinking_tokens}}))
-    return Message.construct(id="msg", type="message", role="assistant", model="fake", content=list(blocks),
-                             stop_reason=stop_reason, stop_sequence=None, usage=usage, **extra)
+def _reply(*blocks, stop_reason="end_turn", output_tokens=900, thinking_tokens=None, refused_for=None) -> Message:
+    """A reply built from the SDK's own types, validated as a real response is."""
+    details = None if thinking_tokens is None else OutputTokensDetails(thinking_tokens=thinking_tokens)
+    stop_details = None if refused_for is None else RefusalStopDetails(type="refusal", category=refused_for, explanation=None)
+    return Message(id="msg", type="message", role="assistant", model="claude-opus-5-5", content=list(blocks),
+                   stop_reason=stop_reason, stop_sequence=None, stop_details=stop_details,
+                   usage=Usage(input_tokens=10, output_tokens=output_tokens, output_tokens_details=details))
 
 
 def _models_called(claude) -> dict[str, set[str]]:
@@ -43,7 +45,7 @@ def test_each_variant_resolves_its_role_models():
     from llm.models import role_models
 
     assert role_models("B") == role_models("C") == {"draft": SONNET_4_6, "review": SONNET_4_6, "small": HAIKU_4_5}
-    assert role_models("B-Opus") == {"draft": OPUS_5_5, "review": SONNET_4_6, "small": HAIKU_4_5}
+    assert role_models("B-Opus") == role_models("C-Opus") == {"draft": OPUS_5_5, "review": SONNET_4_6, "small": HAIKU_4_5}
     assert role_models("B", {"small": HAIKU_5_5})["small"] == HAIKU_5_5
 
 
@@ -66,7 +68,8 @@ def test_variant_tables_agree_and_every_model_has_a_price():
     assert set(MODELS) == set(PRICES)
 
 
-@pytest.mark.parametrize("variant,drafter", [("B", SONNET_4_6), ("C", SONNET_4_6), ("B-Opus", OPUS_5_5)])
+@pytest.mark.parametrize("variant,drafter", [("B", SONNET_4_6), ("C", SONNET_4_6), ("B-Opus", OPUS_5_5),
+                                             ("C-Opus", OPUS_5_5)])
 def test_each_call_of_a_run_uses_its_role_model(claude, fake_db, seeded_kb, variant, drafter):
     over = _post(36)                       # 360 words: over the standard maximum, so the trim runs too
     answer_pipeline(claude, [over, over], trim='{"ranking": [36, 35, 34, 33, 32, 31, 30]}')
@@ -77,8 +80,10 @@ def test_each_call_of_a_run_uses_its_role_model(claude, fake_db, seeded_kb, vari
     called = _models_called(claude)
     assert called["drafter"] == {drafter}
     assert called["choose_post_type"] == called["rank_sentences_to_delete"] == {HAIKU_4_5}
-    if variant != "C":
+    if variant in ("B", "B-Opus"):
         assert called["record_review"] == {SONNET_4_6}
+    else:
+        assert "record_review" not in called            # C and C-Opus draft and trim, nothing else
     outputs = _outputs(fake_db)
     assert outputs["variant"] == variant
     assert outputs["models"] == {"draft": drafter, "review": SONNET_4_6, "small": HAIKU_4_5}
@@ -157,14 +162,81 @@ def test_thinking_that_uses_the_whole_budget_is_a_truncated_draft_not_a_post(cla
     assert (result["status"], result["post"]) == ("draft_truncated", "")
 
 
+def test_a_refusal_without_a_category_records_none(claude, fake_db, seeded_kb):
+    answer_pipeline(claude, [_reply(stop_reason="refusal", output_tokens=0)])
+
+    assert _run("B-Opus")["status"] == "draft_refused"
+    assert _outputs(fake_db)["draft_refused"] == {"category": None}
+
+
+# --- Through the real SDK: what is sent, and what its types give back ----------------------
+
+def test_the_sdk_parses_a_thinking_reply_into_the_types_the_code_reads(claude, fake_db, seeded_kb, wire):
+    from anthropic.types import ThinkingBlock as SdkThinkingBlock
+
+    import llm.client as llm_client
+
+    parsed = []
+    real_create = llm_client.client.messages.create
+    llm_client.client.messages.create = lambda **kwargs: parsed.append(real_create(**kwargs)) or parsed[-1]
+    draft = _reply(_thinking_block(), TextBlock(type="text", text=enveloped(CLEAN)), thinking_tokens=400)
+    answer_pipeline(claude, [draft])
+
+    result = _run("B-Opus")
+
+    [message] = [m for m in parsed if m.model == OPUS_5_5]
+    assert [type(block) for block in message.content] == [SdkThinkingBlock, TextBlock]
+    assert message.usage.output_tokens_details.thinking_tokens == 400
+    assert result["post"] == "pgvector makes retrieval fast.\n\nThat is most of the argument."
+    [trace] = fake_db.tables["generation_traces"]
+    assert [c["thinking_tokens"] for c in trace["llm_calls"] if c["event_type"] == "generate"] == [400]
+
+
+def test_an_opus_draft_sends_its_effort_and_no_other_call_does(claude, fake_db, seeded_kb, wire):
+    from llm.models import MODELS, OPUS_5_5_DRAFT_EFFORT, draft_effort
+
+    assert OPUS_5_5_DRAFT_EFFORT == MODELS[OPUS_5_5].default_effort == "medium"      # the API default, written out
+    assert draft_effort(SONNET_4_6) is None
+
+    answer_pipeline(claude, [CLEAN])
+    _run("B-Opus")
+    by_model = {}
+    for request in wire:
+        by_model.setdefault(request["body"]["model"], []).append(request["body"].get("output_config"))
+    assert by_model[OPUS_5_5] == [{"effort": "medium"}]
+    assert set(by_model[SONNET_4_6]) == set(by_model[HAIKU_4_5]) == {None}
+
+    wire.clear()
+    claude.reset()
+    answer_pipeline(claude, [CLEAN])
+    _run("B")
+    assert all("output_config" not in request["body"] for request in wire)
+
+
+def test_c_opus_is_c_with_an_opus_draft_at_the_same_effort(claude, fake_db, seeded_kb, wire):
+    from config import features
+    from llm.models import OPUS_5_5_DRAFT_EFFORT
+
+    assert features.VARIANT_GRAPH["C-Opus"] == "C"
+    answer_pipeline(claude, [CLEAN])
+
+    result = _run("C-Opus")
+
+    assert result["status"] == "ok" and result["review"] is None
+    assert [(r["body"]["model"], r["body"].get("output_config")) for r in wire] == [
+        (HAIKU_4_5, None), (OPUS_5_5, {"effort": OPUS_5_5_DRAFT_EFFORT})]       # the structure choice, then the draft
+    outputs = _outputs(fake_db)
+    assert (outputs["variant"], outputs["models"]["draft"]) == ("C-Opus", OPUS_5_5)
+    assert "review" not in outputs
+
+
 # --- Refusals ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("variant", ["B-Opus", "C"])
 def test_a_refused_draft_is_an_explicit_status_and_no_post(claude, fake_db, seeded_kb, variant):
     from pipeline.graph import DRAFT_REFUSED_MESSAGE
 
-    refused = _reply(stop_reason="refusal", output_tokens=0,
-                     stop_details={"type": "refusal", "category": "bio", "explanation": None})
+    refused = _reply(stop_reason="refusal", output_tokens=0, refused_for="bio")
     answer_pipeline(claude, [refused])
 
     result = _run(variant)

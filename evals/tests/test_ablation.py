@@ -4,7 +4,6 @@ no database; the backend modules imported here are its pure ones (price table,
 word counts)."""
 
 import json
-import sys
 
 import pytest
 
@@ -14,18 +13,7 @@ import eval_config as config
 import guard
 from guard import EnvGuardError
 
-VARIANTS = ("A", "B", "C", "B-Opus")
-
-
-@pytest.fixture
-def backend(monkeypatch):
-    """backend/ importable for this test, and forgotten again after it."""
-    before = set(sys.modules)
-    monkeypatch.syspath_prepend(str(guard.BACKEND_DIR))
-    yield
-    for name in set(sys.modules) - before:
-        if name in guard.backend_modules_loaded(sys.modules):
-            del sys.modules[name]
+VARIANTS = ("A", "B", "C", "B-Opus", "C-Opus")
 
 
 # --- The env guard and PIPELINE_VARIANT ----------------------------------------------------
@@ -136,7 +124,8 @@ def test_the_report_gives_route_rates_outcomes_removed_content_and_the_labels():
     assert [r["route"] for r in records] == ["none", "code-only", "targeted", "full"]
     assert records[2]["remaining"] == {"not_in_sources": 1}            # the review's issues only, not the checks'
     rows = [_row(f"g{n}", record, seconds=float(n)) for n, record in enumerate(records, 1)]
-    instrument = [{"status": "ok", "source": "s", "outcome": "issues", "acting": {"not_in_sources": 2, "wrong_citation": 5}}]
+    instrument = [{"golden_id": "g1", "status": "ok", "source": "s", "outcome": "issues",
+                   "acting": {"not_in_sources": 2, "wrong_citation": 5}}]
 
     report = ablation.build_ablation("t", [_variant("B", rows, instrument=instrument)], audit={"of": 10, "marked": 10, "correct": 7})
 
@@ -149,6 +138,186 @@ def test_the_report_gives_route_rates_outcomes_removed_content_and_the_labels():
     assert "same reviewer as B, so biased in B's favour" in report
     assert "low precision, not decisive" in report
     assert "UNRELIABLE: 7 of 10 audited findings judged correct" in report
+
+
+def test_the_instrument_counts_the_last_line_per_post_and_never_a_review_that_did_not_happen():
+    record = _reviewed(None, "clean")
+    lines = [
+        {"golden_id": "g1", "status": "not_reviewed", "source": "s", "outcome": "not_reviewed", "acting": {}},
+        {"golden_id": "g1", "status": "ok", "source": "s", "outcome": "issues", "acting": {"off_topic": 1}},   # the retry
+        {"golden_id": "g2", "status": "not_reviewed", "source": "s", "outcome": "not_reviewed", "acting": {}},
+        {"golden_id": "g3", "status": "error", "error": "trace not found"},
+    ]
+
+    report = ablation.build_ablation("t", [_variant("C", [_row("g1", record)], instrument=lines)])
+
+    assert "| C | s | 1 (1 not reviewed, 1 failed) | 1 on 1 post(s) | off_topic 1 | – |" in report
+
+
+def test_the_full_run_report_says_why_the_instrument_was_not_run_and_shows_spend_and_the_regression_set():
+    record = _reviewed(None, "clean")
+    spend_ledger = {"cap_usd": 14.0, "spent_usd": 14.31, "reached": True, "entries": [],
+                    "stops": ["run r5 (variant C-Opus) before ds-07: 6 of 27 goldens run"]}
+    regression = [{"id": "flag-added-motive", "model": "claude-sonnet-4-6", "passed": True},
+                  {"id": "no-flag-authors-analogy", "model": "claude-sonnet-4-6", "passed": False}]
+
+    report = ablation.build_ablation("full", [_variant("A", [_row("g1", record)])], spend=spend_ledger, regression=regression)
+
+    assert "Not run for this ablation." in report and "biased in B's favour" in report
+    assert "| variant | from | posts |" not in report
+    assert "Spend: **$14.31** measured, against a cap of $14.00" in report
+    assert "**Stopped at the spend cap** run r5 (variant C-Opus) before ds-07: 6 of 27 goldens run." in report
+    assert "1 of 2 cases passed on `claude-sonnet-4-6` (failed: no-flag-authors-analogy)" in report
+    assert "not part of the decision" in report
+
+
+def test_the_full_ablation_leaves_b_out_and_the_report_opens_with_the_decision_rules():
+    assert config.ABLATION_VARIANTS == ("A", "C", "B-Opus", "C-Opus")
+    assert set(config.ABLATION_VARIANTS) <= set(VARIANTS) and config.EVAL_SPEND_CAP_USD == 14.0
+
+    report = ablation.build_ablation("full", [_variant("A", [_row("g1", _reviewed(None, "clean"))])])
+
+    rules = report.index("## Decision rules (fixed 2026-10-10, before the full run)")
+    assert report.index("# Ablation: full") < rules < report.index("Judges are the same") < report.index("## Runs")
+    assert len(config.DECISION_RULES) == 3
+    for number, rule in enumerate(config.DECISION_RULES, 1):
+        assert f"{number}. {rule}" in report
+    assert config.DECISION_TIEBREAK in report and config.DECISION_NOTE in report
+    assert rules < report.index(config.DECISION_FEWER_RANKED) < report.index(config.DECISION_AUDIT_BELOW) < report.index("## Runs")
+    assert "rule 1's judge criterion is dropped. Rules 1 and 2" not in report        # no audit yet: nothing is dropped
+    assert rules < report.index(config.DECISION_TIEBREAK) < report.index(config.DECISION_NOTE) < report.index("## Runs")
+
+
+def test_the_rules_are_pinned_to_counts_out_of_the_blind_reads_ten_goldens():
+    first, second, third = config.DECISION_RULES
+
+    assert config.BLIND_GOLDENS == 10
+    assert "at most 1 below B-Opus AND" in first and "B-Opus is ranked above C-Opus in 6 or fewer of the 10 goldens" in first
+    assert "ranked above C-Opus in 7 or more of the 10 goldens" in second
+    assert "C or C-Opus is ranked above A in at least 5 of the 10 goldens" in third
+    assert "excluded from both variants' pass counts equally" in config.DECISION_TIEBREAK
+    assert "B-Opus becomes the default" in config.DECISION_TIEBREAK and "I1" in config.DECISION_TIEBREAK
+    assert "practical bar, not a statistical test" in config.DECISION_NOTE
+    assert [(first, second) for first, second, _ in config.BLIND_HEAD_TO_HEAD] == [
+        ("B-Opus", "C-Opus"), ("C", "A"), ("C-Opus", "A")]
+    # the proportions are the same thresholds: 7, 6 and 5 of 10
+    assert (config.RULE_2_CLEARLY_SHARE, config.RULE_1_LIMIT_SHARE, config.RULE_3_SHARE) == (7 / 10, 6 / 10, 5 / 10)
+    assert "at least 70%" in config.DECISION_FEWER_RANKED and "at most 60%" in config.DECISION_FEWER_RANKED
+    assert "at least 50%" in config.DECISION_FEWER_RANKED and "every variant produced a post" in config.DECISION_FEWER_RANKED
+    assert "below 8 of 10" in config.DECISION_AUDIT_BELOW and "tiebreak does not apply" in config.DECISION_AUDIT_BELOW
+
+
+def test_score_gives_the_head_to_head_counts_the_rules_read():
+    full = [v for v in _blind_variants() if v["variant"] in config.ABLATION_VARIANTS]
+    text, key = blind.make_read(full, GOLDENS, seed=7)
+    # In 7 goldens the reader puts B-Opus first and A last; in the other 3, C-Opus first and A second.
+    usual, other = ["B-Opus", "C-Opus", "C", "A"], ["C-Opus", "A", "B-Opus", "C"]
+    for number, (golden_id, labels) in enumerate(sorted(key["goldens"].items())):
+        order = usual if number < 7 else other
+        ranking = " > ".join(sorted(labels, key=lambda label: order.index(labels[label])))
+        text = text.replace(f"ranking[{golden_id}]: ", f"ranking[{golden_id}]: {ranking}")
+
+    result = blind.score_read(text, key)
+
+    assert result["ranked"] == 10
+    assert [(p["first"], p["second"], p["first_above"], p["second_above"], p["goldens"], p["first_share"])
+            for p in result["head_to_head"]] == [
+        ("B-Opus", "C-Opus", 7, 3, 10, 0.7), ("C", "A", 7, 3, 10, 0.7), ("C-Opus", "A", 10, 0, 10, 1.0)]
+    b_vs_c, c_vs_a, _ = result["head_to_head"]
+    assert [(c["decides"], c["condition"], c["met"]) for c in b_vs_c["checks"]] == [
+        ("rule 2 (B-Opus clearly above)", "at least 70%", True), ("rule 1's blind-read condition", "at most 60%", False)]
+    assert [(c["condition"], c["met"]) for c in c_vs_a["checks"]] == [("at least 50%", True)]
+    assert result["variants"]["B-Opus"]["mean_rank"] == pytest.approx((7 * 1 + 3 * 3) / 10)
+    report = ablation.build_ablation("full", [_variant("A", [_row("g1", _reviewed(None, "clean"))])], blind=result)
+    assert "| B-Opus vs C-Opus | 7 | 70% | 3 | 10 | rule 2 (B-Opus clearly above): at least 70%, met; " in report
+    assert "| C-Opus vs A | 10 | 100% | 0 | 10 | rule 3: at least 50%, met |" in report
+    assert "a practical bar, not a statistical test" in report.split("## Blind read")[1]
+
+
+@pytest.mark.parametrize("above,ranked,rule_2,rule_1", [
+    (7, 10, True, False), (6, 10, False, True),          # the counts the rules name
+    (6, 9, False, False),                                # 67%: not clearly above, and over rule 1's 60% limit
+    (7, 9, True, False), (5, 9, False, True),            # 78% and 56%
+    (5, 8, False, False), (3, 5, False, True), (4, 5, True, False),
+])
+def test_with_fewer_than_ten_ranked_the_thresholds_are_proportions(above, ranked, rule_2, rule_1):
+    _, _, checks = config.BLIND_HEAD_TO_HEAD[0]
+
+    pair = blind.head_to_head("B-Opus", "C-Opus", above, ranked, checks)
+
+    assert pair["first_share"] == above / ranked
+    assert [check["met"] for check in pair["checks"]] == [rule_2, rule_1]
+
+
+@pytest.mark.parametrize("above,ranked,retired", [(5, 10, True), (4, 10, False), (4, 8, True), (4, 9, False), (5, 9, True)])
+def test_rule_three_is_at_least_half_of_those_ranked(above, ranked, retired):
+    _, _, checks = config.BLIND_HEAD_TO_HEAD[1]
+
+    assert [check["met"] for check in blind.head_to_head("C", "A", above, ranked, checks)["checks"]] == [retired]
+
+
+def test_nothing_ranked_meets_no_condition_and_fails_none():
+    _, _, checks = config.BLIND_HEAD_TO_HEAD[0]
+
+    pair = blind.head_to_head("B-Opus", "C-Opus", 0, 0, checks)
+
+    assert pair["first_share"] is None and [check["met"] for check in pair["checks"]] == [None, None]
+
+
+def test_the_read_never_includes_a_golden_a_variant_has_no_post_for():
+    full = [v for v in _blind_variants() if v["variant"] in config.ABLATION_VARIANTS]
+    incomplete = sorted(GOLDENS)[:3]
+    for golden_id in incomplete:                          # e.g. a truncated or refused C-Opus draft
+        del full[-1]["posts"][golden_id]
+
+    text, key = blind.make_read(full, GOLDENS, seed=7)
+
+    assert len(key["goldens"]) == config.BLIND_GOLDENS == 10              # 11 complete goldens were left to choose from
+    assert not set(incomplete) & set(key["goldens"])
+    for golden_id in sorted(GOLDENS)[3:6]:                                # now only 8 are complete: the read has 8
+        del full[0]["posts"][golden_id]
+    _, fewer = blind.make_read(full, GOLDENS, seed=7)
+    assert len(fewer["goldens"]) == 8
+
+
+@pytest.mark.parametrize("audit,dropped", [
+    (None, False), ({"of": 10, "marked": 10, "correct": 8}, False), ({"of": 10, "marked": 6, "correct": 3}, False),
+    ({"of": 10, "marked": 10, "correct": 7}, True),
+])
+def test_a_failed_judge_audit_is_stated_at_the_top_with_what_it_drops(audit, dropped):
+    report = ablation.build_ablation("full", [_variant("A", [_row("g1", _reviewed(None, "clean"))])], audit=audit)
+
+    statement = ("rule 1's judge criterion is dropped. Rules 1 and 2 are decided by the blind read alone, and the "
+                 "tiebreak does not apply.**")
+    assert ablation.audit_failed(audit) is dropped
+    assert (statement in report) is dropped
+    if dropped:
+        assert "**The judge audit came back at 7 of 10, below 8:" in report
+        assert report.index("The judge audit came back") < report.index("## Runs")
+
+
+def test_head_to_head_counts_only_goldens_that_were_ranked_and_pairs_that_are_in_the_read():
+    without_c = [v for v in _blind_variants() if v["variant"] in ("A", "B-Opus", "C-Opus")]
+    text, key = blind.make_read(without_c, GOLDENS, seed=7)
+    golden_id, labels = sorted(key["goldens"].items())[0]
+    ranking = " > ".join(sorted(labels, key=lambda label: ["C-Opus", "B-Opus", "A"].index(labels[label])))
+
+    result = blind.score_read(text.replace(f"ranking[{golden_id}]: ", f"ranking[{golden_id}]: {ranking}"), key)
+
+    assert [(p["first"], p["second"], p["first_above"], p["second_above"], p["goldens"]) for p in result["head_to_head"]] == [
+        ("B-Opus", "C-Opus", 0, 1, 1), ("C-Opus", "A", 1, 0, 1)]
+
+
+def test_the_judged_cell_gives_the_pass_count_the_first_rule_reads():
+    def scored(golden_id, score):
+        return {"golden_id": golden_id, "metric": "unsupported_specifics", "judge_model": "SONNET", "status": "ok",
+                "score": score, "success": score >= config.THRESHOLDS["unsupported_specifics"]}
+    scores = {"SONNET": [scored("g1", 1.0), scored("g2", 0.9), scored("g3", 0.6),
+                         {**scored("g4", 0.0), "status": "error", "score": None, "success": None}]}
+
+    report = ablation.build_ablation("t", [_variant("C-Opus", [_row("g1", _reviewed(None, "clean"))], scores=scores)])
+
+    assert "| 0.83 (2 of 3 pass, 1 errored) |" in report
 
 
 @pytest.mark.parametrize("audit,label", [
@@ -197,6 +366,7 @@ def test_make_is_seeded_and_hides_the_variant(monkeypatch):
 
     assert (text, key) == (again, same_key) and key != other_key
     assert len(key["goldens"]) == config.BLIND_GOLDENS
+    assert key["labels"] == list(config.BLIND_LABELS) and len(config.BLIND_LABELS) == len(VARIANTS)
     for labels in key["goldens"].values():
         assert tuple(labels) == config.BLIND_LABELS and sorted(labels.values()) == sorted(VARIANTS)
     assert len({tuple(labels.values()) for labels in key["goldens"].values()}) > 1     # shuffled per golden
@@ -205,7 +375,7 @@ def test_make_is_seeded_and_hides_the_variant(monkeypatch):
 
 def test_make_then_score_round_trips_through_the_key():
     text, key = blind.make_read(_blind_variants(), GOLDENS, seed=7)
-    order = {"B": 1, "B-Opus": 2, "C": 3, "A": 4}                     # the reader's true preference, every time
+    order = {"B": 1, "B-Opus": 2, "C-Opus": 3, "C": 4, "A": 5}        # the reader's true preference, every time
     unranked = sorted(key["goldens"])[-1]
     for golden_id, labels in key["goldens"].items():
         if golden_id == unranked:
@@ -220,11 +390,11 @@ def test_make_then_score_round_trips_through_the_key():
     assert (result["goldens"], result["ranked"]) == (10, 9)
     assert {name: stats["mean_rank"] for name, stats in result["variants"].items()} == order
     assert result["variants"]["B"] == {"mean_rank": 1, "first": 9, "last": 0, "ranked": 9}
-    assert result["variants"]["A"]["last"] == 9
+    assert result["variants"]["A"]["last"] == 9 and result["variants"]["C-Opus"]["mean_rank"] == 3
     assert result["notes"] == [{"golden_id": first, "note": "W has an orphaned sentence", "labels": key["goldens"][first]}]
 
 
-@pytest.mark.parametrize("ranking", ["W > X > Y", "W > X > Y > Y", "W > X > Y > Q", "the first one"])
+@pytest.mark.parametrize("ranking", ["V > W > X > Y", "V > W > X > Y > Y", "V > W > X > Y > Q", "the first one"])
 def test_a_ranking_that_is_not_each_label_once_is_an_error_not_a_guess(ranking):
     text, key = blind.make_read(_blind_variants(), GOLDENS, seed=7)
     golden_id = sorted(key["goldens"])[0]
@@ -234,8 +404,22 @@ def test_a_ranking_that_is_not_each_label_once_is_an_error_not_a_guess(ranking):
 
 
 def test_rankings_accept_the_separators_people_type():
-    assert blind.parse_ranking("x>w , z y") == ["X", "W", "Z", "Y"]
-    assert blind.parse_ranking("") is None
+    assert blind.parse_ranking("x>w , z y", ["W", "X", "Y", "Z"]) == ["X", "W", "Z", "Y"]
+    assert blind.parse_ranking("", ["W", "X"]) is None
+
+
+def test_a_read_of_fewer_variants_uses_as_many_labels_and_ranks_among_them():
+    four = [v for v in _blind_variants() if v["variant"] != "C-Opus"]
+
+    text, key = blind.make_read(four, GOLDENS, seed=7)
+
+    assert key["labels"] == ["V", "W", "X", "Y"] and "### Z" not in text
+    golden_id, labels = next(iter(key["goldens"].items()))
+    best_first = " > ".join(sorted(labels, key=lambda label: labels[label] != "C"))       # C first, the rest after
+    result = blind.score_read(text.replace(f"ranking[{golden_id}]: ", f"ranking[{golden_id}]: {best_first}"), key)
+    assert result["variants"]["C"]["first"] == 1 and result["ranked"] == 1
+    with pytest.raises(blind.BlindError, match="2 to 5 variants"):
+        blind.make_read(four[:1], GOLDENS, seed=7)
 
 
 def _scores():
