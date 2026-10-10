@@ -1,0 +1,730 @@
+{
+ "standard": [
+  {
+   "method": "POST",
+   "path": "/v1/messages",
+   "anthropic-version": "2023-06-01",
+   "body": {
+    "max_tokens": 300,
+    "messages": [
+     {
+      "role": "user",
+      "content": "You are choosing the structure for a post. Choose by what the author has to write from, not by how the topic is phrased.\n\nTopic: pgvector retrieval\nAdditional context: for a talk\nFormat: linkedin post\n\nWhat the author has to write from:\nThings the author read, watched or saved (not the author's own experience): article on this topic\n\nPost types you may choose from (choose one of these keys and nothing else):\n- contrarian_take: disagreeing with a common view; an opinion with reasons\n- teach_me_something: explaining a concept or how something works\n- list_that_isnt: several observations or lessons where one matters most\n- prediction_bet: a forward-looking view about where something is heading\n- general: anything else, or when no other type clearly fits\n\nRules:\n- Pick the type whose structure the material above can fill.\n- Choose \"general\" when no other type clearly fits."
+     }
+    ],
+    "model": "claude-haiku-4-5-20251001",
+    "tool_choice": {
+     "type": "tool",
+     "name": "choose_post_type"
+    },
+    "tools": [
+     {
+      "name": "choose_post_type",
+      "description": "Record the post type chosen for this post.",
+      "input_schema": {
+       "properties": {
+        "archetype": {
+         "description": "One of the offered post type keys.",
+         "title": "Archetype",
+         "type": "string"
+        },
+        "event_note": {
+         "anyOf": [
+          {
+           "type": "integer"
+          },
+          {
+           "type": "null"
+          }
+         ],
+         "default": null,
+         "description": "For a type that tells something that happened to the author: the number of the author's own note that describes the event. Otherwise null.",
+         "title": "Event Note"
+        },
+        "event_quote": {
+         "anyOf": [
+          {
+           "type": "string"
+          },
+          {
+           "type": "null"
+          }
+         ],
+         "default": null,
+         "description": "For those types: one sentence copied word for word from that note, describing the event. Otherwise null.",
+         "title": "Event Quote"
+        }
+       },
+       "required": [
+        "archetype"
+       ],
+       "title": "ArchetypeChoice",
+       "type": "object"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/v1/messages",
+   "anthropic-version": "2023-06-01",
+   "body": {
+    "max_tokens": 2000,
+    "messages": [
+     {
+      "role": "user",
+      "content": "You are a ghostwriter. You write a post from the sources below, in the voice of the author described below. The sources decide what the post says. The author profile decides only how it sounds.\n\nAuthor voice (voice, audience and style only; never a source of content, stories or facts):\nName: \nRole: \n\nFormat and tone instructions:\nFormat: LinkedIn post.\nStructure:\n  - Line 1: a single-sentence hook that stops the scroll. No clickbait.\n  - Body: short paragraphs (1–3 lines each), heavy line breaks.\n  - Closing: one sharp takeaway, question, or observation. No call-to-action.\nDo NOT use hashtags. Do NOT use bullet points with dashes — use line breaks instead.\nDo NOT write 'I' at the start of the first sentence.\n\nTone: casual and conversational. Write like you're texting a smart friend. Short sentences. Contractions are fine.\nLENGTH: 250–350 words. Never go over 350.\n\nKnowledge base (use what's relevant, ignore the rest):\nEXTERNAL SOURCE: LEARNING (mid-career voice):\n[source: article | tags: none]\npgvector makes retrieval fast\n\nTopic: pgvector retrieval\nAdditional context: for a talk\nTOPIC RULE: Write about the topic as given. Don't frame it as an analogy or metaphor for the author's professional field, and don't pull in their work, projects or opinions unless the topic or context asks for it.\nTopics you have already written about — do not repeat these angles, find a fresh perspective:\n- An earlier post\n\nPERSPECTIVE: learned.\nThe sources are things the author read, watched or saved, not things the author did. Share what they say and what you make of it, and say where each idea came from by what the source is and what it covers (\"an article on...\", \"a talk on...\", \"a video about...\"), without giving it a title. Do not connect the material to the author's own work, career or life, and do not present any of it as something the author did, saw or went through.\nDon't attribute feelings, reactions or habits to the author about a source (e.g. \"I haven't been able to put down\", \"I kept seeing... until I came across\") unless a source or the request states them. Present the source's idea and the author's view of it plainly.\nDon't make claims about what most people, most founders or most teams do unless a source says so; state it as the author's view instead (\"I think many teams...\").\nGROUNDING CALIBRATION:\nYou have moderate knowledge base coverage on this topic.\nUse what is available. Do not invent specifics not present in the chunks.\nIf you lack an example, make the point through reasoning rather than\nsupplying a named incident, a number or a date.\nA tighter post with real grounding beats a longer post with filler.\n\nWrite the draft now. Do not add any preamble or explanation; output only the post content itself.\n\n---\nPOST STRUCTURE: write this post as a General Post:\nStructure: no fixed sections. Lead with the strongest point the sources support, develop it, and stop when it is made.\nDo not add a story, an example or a lesson to fill out a shape.\nThe structure is a shape, not a checklist: leave out any section the sources cannot fill.\n---\n\n---\nSOURCE RULES (mandatory):\nEach group of chunks in the knowledge base has a label. Write from each group by its rule.\n\nEXTERNAL SOURCE: LEARNING (mid-career voice):\nSomething the author read, watched or saved, not something the author did. Refer to it by what it is and what it covers (\"an article on...\", \"a talk on...\", \"a video about...\"); do not give it a title. Never present it as the author's own experience, and never connect it to the author's own work, background or life. Say what the source argues and what you make of it, without hedging.\n\nCROSS-SOURCE RULE:\nEach chunk above is a separate source. Never link facts from different sources as\ncause and effect, sequence or result unless one source states that link. Facts\nfrom separate notes stay separate.\nNever put an own-experience claim and an external-source claim in the same sentence.\nWhen a paragraph uses both, state the author's own point first, then bring in the\nsource as support and say where it came from.\n\nFABRICATION RULE:\nNever invent incidents, dates, names, numbers, results or events. A first-person\nevent may come only from an OWN EXPERIENCE chunk above, or from what the author\nstates in the topic or the additional context. The author profile is not a\nsource of stories: never set an incident at a company, project or role it names.\n---\n\n---\nVISUAL PLACEHOLDER RULES (mandatory):\nFor technical posts about systems, pipelines, architectures, or processes: you MUST include at least one [DIAGRAM: detailed description] placeholder.\nThe description must be specific enough to draw from.\nGood: [DIAGRAM: flowchart showing 5 RAG pipeline stages with failure points marked in red at retrieval layer]\nBad: [DIAGRAM: RAG diagram]\n\nFor personal or story posts: include one [IMAGE: description] only if a real photo or screenshot would genuinely strengthen the post.\n\nNever force a diagram into opinion pieces or short punchy posts where the words are the point.\n---"
+     }
+    ],
+    "model": "claude-sonnet-4-6"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/v1/messages",
+   "anthropic-version": "2023-06-01",
+   "body": {
+    "max_tokens": 600,
+    "messages": [
+     {
+      "role": "user",
+      "content": "You are a content critic. Your job is to diagnose weaknesses in a LinkedIn post draft before it is humanized. You diagnose only: you never write any part of the post.\n\nTopic as given: pgvector retrieval\nAdditional context: for a talk\n\nExamine the draft across five dimensions, in this order:\n\n1. TOPIC — Does the post stay on the topic as given (and the additional context, if any)? Flag any drift away from it, including turns toward the author's opinions, expertise or work that the topic does not ask for.\n2. HOOK — Does the opening sentence stop a scroller immediately? Is it specific and surprising, or generic and forgettable?\n3. SUBSTANCE — Does the draft use the ideas in the knowledge base chunks, or make vague claims any post could make? Judge substance only against what the chunks, the topic and the context actually contain.\n4. STRUCTURE — Does the draft follow the pattern of a General Post post, as far as the sources allow? Judge only the sections the chunks or the request have material for. A section the sources cannot fill is correctly left out: never count it as missing and never ask for it.\n5. VOICE — Does this sound like the specific person in the profile, or like generic LinkedIn content?\n\nAuthor voice (voice reference only; never a source of content or angles):\nName: \nRole: \n\nPost archetype (structural reference): General Post\n\nKnowledge base chunks available, each labelled with its frame and authorship (self = the author's own experience; external = something the author read or watched). Check whether the draft uses them or ignores them:\n[frame: LEARNING_MID | authorship: external | source: article]\npgvector makes retrieval fast\n\nDraft to diagnose:\nRetrieval used to be the slow part. Then pgvector made it fast. That changed what we could build.\n\nRules for every fix:\n- Describe the problem and the direction to take, in your own words. The form to follow: the hook is generic; lead with the strongest point from the sources.\n- Never write example sentences, replacement text, or anything in quotation marks. Never quote the draft or the chunks.\n- Never suggest a name, number, date, time, place or event that is not already in the draft or the chunks.\n- Never suggest connecting the post to the author's opinions, expertise, projects or work unless the topic or context asks for it. The profile is a voice reference, not a source of angles.\n- Each chunk is a separate source. If the draft links facts from different chunks as cause and effect, sequence or result, and no single chunk states that link, mark SUBSTANCE \"needs_work\" and say which link to remove. Facts from separate notes stay separate.\n- None of the chunks are self-authored. Never ask for personal experience, a story, an incident, a real example, or specific numbers or names: the author has given none for this topic. Ask instead for sharper reasoning, clearer structure, or better use of the chunks.\n\nFor each dimension, give a verdict (\"strong\" or \"needs_work\") and — if \"needs_work\" — one fix that follows the rules above. If \"strong\", the fix is null. Set overall to \"postable\" only when every verdict is \"strong\"."
+     }
+    ],
+    "model": "claude-haiku-4-5-20251001",
+    "tool_choice": {
+     "type": "tool",
+     "name": "record_critique"
+    },
+    "tools": [
+     {
+      "name": "record_critique",
+      "description": "Record the diagnosis of the draft.",
+      "input_schema": {
+       "$defs": {
+        "Verdict": {
+         "properties": {
+          "verdict": {
+           "enum": [
+            "strong",
+            "needs_work"
+           ],
+           "title": "Verdict",
+           "type": "string"
+          },
+          "fix": {
+           "anyOf": [
+            {
+             "type": "string"
+            },
+            {
+             "type": "null"
+            }
+           ],
+           "default": null,
+           "description": "One fix when the verdict is needs_work; null when strong.",
+           "title": "Fix"
+          }
+         },
+         "required": [
+          "verdict"
+         ],
+         "title": "Verdict",
+         "type": "object"
+        }
+       },
+       "properties": {
+        "topic": {
+         "$ref": "#/$defs/Verdict"
+        },
+        "hook": {
+         "$ref": "#/$defs/Verdict"
+        },
+        "substance": {
+         "$ref": "#/$defs/Verdict"
+        },
+        "structure": {
+         "$ref": "#/$defs/Verdict"
+        },
+        "voice": {
+         "$ref": "#/$defs/Verdict"
+        },
+        "overall": {
+         "enum": [
+          "postable",
+          "needs_work"
+         ],
+         "title": "Overall",
+         "type": "string"
+        }
+       },
+       "required": [
+        "topic",
+        "hook",
+        "substance",
+        "structure",
+        "voice",
+        "overall"
+       ],
+       "title": "CriticBrief",
+       "type": "object"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/v1/messages",
+   "anthropic-version": "2023-06-01",
+   "body": {
+    "max_tokens": 2000,
+    "messages": [
+     {
+      "role": "user",
+      "content": "You are a humanizing editor. You take drafts that may still have AI-writing fingerprints and rewrite them to sound like a real human wrote them, specifically like the person described in the profile below.\n\nAuthor voice (voice and style only; never a source of content, stories or facts):\nName: \nRole: \n\nFacts are fixed. You may change only wording, rhythm and structure.\n- Never add or change any number, percentage, money amount, date, month, day of the week, duration, count, name or quoted figure. You may drop a detail if you need to cut for length, but prefer cutting words over cutting facts.\n- Every factual detail in your output must already be in the current draft. If a sentence feels vague, sharpen the wording, not the facts.\n- Do not invent incidents, timelines, customers, people or results.\n- Keep the draft's perspective. Never turn something the draft presents as read, watched or observed into something the author did, and never add a personal reaction, memory or connection to the author's own work that the draft does not state.\n- Don't attribute feelings, reactions or habits to the author about a source (e.g. \"I haven't been able to put down\", \"I kept seeing... until I came across\") unless the draft states them. Present the source's idea and the author's view of it plainly.\n- Never link facts as cause and effect, sequence or result unless the draft already states that link. Facts the draft keeps separate stay separate.\n- The critic brief below describes problems, not content. It never permits a new fact, story, experience, name or number. If a fix can't be made without new facts, skip it.\n\nCRITIC BRIEF — fix these issues before humanizing, in this order:\n- HOOK: Open with the claim itself.\n\nAI writing patterns to eliminate:\n- Sentences that start with \"In today's...\" or \"It's important to note...\"\n- Overuse of transition words: \"Furthermore\", \"Moreover\", \"Additionally\", \"In conclusion\"\n- Generic motivational framing: \"unlock your potential\", \"game-changing\", \"transformative\"\n- Perfectly balanced sentence lengths; vary them aggressively\n- Lists of three that feel formulaic (The three things are: A, B, and C)\n- Passive voice where active would be stronger\n- Em dashes used as clause connectors or parenthetical separators (e.g. 'the data was messy, noisy and sparse' or 'one feature, which had low fill rate, was dropped'). Replace with a period, a comma, or rewrite the sentence entirely. Em dashes are one of the strongest signals of AI-generated text and must never appear in the output.\n- Hyphenated compound modifiers used decoratively (e.g. 'data-driven', 'production-ready', 'well-known', 'high-value' when plain language works just as well). Write 'drives decisions with data' not 'data-driven'. Only use hyphens when they are grammatically required and cannot be avoided.\n- Words to avoid: \n\nNever use the em dash character (—) anywhere in the output. If you are about to write an em dash, stop and use a period or comma instead.\n\nWhat to inject instead:\n- Sentence variety: mix 4-word punches with longer, winding observations\n- Short asides that comment on a point the draft already makes. An aside is a remark, never a new reaction, memory or event.\n- Opinions stated with confidence, not hedged to death\n- The writer's actual voice as described in the profile\n\nLENGTH: 250–350 words. Never go over 350.\n\nCurrent draft:\nRetrieval used to be the slow part. Then pgvector made it fast. That changed what we could build.\n\nRewrite the draft now. Fix the flagged issues above first — in this order: topic, hook, substance, structure, voice. You may rewrite the hook entirely and restructure sections, using only facts already in the draft. Then do a full language humanization pass. Output only the rewritten post, no commentary."
+     }
+    ],
+    "model": "claude-sonnet-4-6"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/v1/messages",
+   "anthropic-version": "2023-06-01",
+   "body": {
+    "max_tokens": 200,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Read this post and return the single most AI-sounding sentence — the one that is too smooth, too resolved, or could have been written by any AI about this topic.\n\nRules:\n- Return only the sentence, verbatim, with no explanation or punctuation outside the sentence itself\n- If nothing sounds like AI, return only the word: CLEAN\n\nPost:\nRetrieval was the slow part. Then pgvector made it fast. That changed what we could build."
+     }
+    ],
+    "model": "claude-haiku-4-5-20251001"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/v1/messages",
+   "anthropic-version": "2023-06-01",
+   "body": {
+    "max_tokens": 200,
+    "messages": [
+     {
+      "role": "user",
+      "content": "You are rewriting a single sentence in a social media post to sound more human and unexpected.\n\nFull post (for voice context only — do not rewrite this):\nRetrieval was the slow part. Then pgvector made it fast. That changed what we could build.\n\nSentence to rewrite:\nThen pgvector made it fast.\n\nRules:\n- Rewrite only the sentence above\n- Make it unexpected: shorter, plainer, slightly imperfect, or unresolved\n- Keep every number, percentage, money amount, date, day, duration, count, name and quoted figure exactly as in the sentence. Add none and remove none.\n- Never use em dashes\n- Output only the rewritten sentence — no explanation, no quotes, no preamble"
+     }
+    ],
+    "model": "claude-sonnet-4-6"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/v1/messages",
+   "anthropic-version": "2023-06-01",
+   "body": {
+    "max_tokens": 2000,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Check this post for monotonous sentence rhythm.\n\nIf 3 or more consecutive sentences are within 4 words of each other in length, rewrite one of them to be either under 6 words or over 18 words to break the rhythm.\n\nIf the rhythm is already varied, return the post unchanged.\n\nChange only sentence length and rhythm. Keep every number, percentage, money amount, date, month, day of the week, duration, count, name and quoted figure exactly as written. Add none and remove none.\n\nOutput only the full post — no explanation, no preamble.\n\nPost:\nRetrieval was the slow part. pgvector made it fast. That changed what we could build."
+     }
+    ],
+    "model": "claude-haiku-4-5-20251001"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/v1/messages",
+   "anthropic-version": "2023-06-01",
+   "body": {
+    "max_tokens": 2000,
+    "messages": [
+     {
+      "role": "user",
+      "content": "You are a precise editor. Expand this post slightly to reach at least 250 words.\n\nRules:\n- Expand only with material already in the post: elaborate a point it already makes, add a transition, or spell out a consequence of something it already says — not filler\n- Never add or change any number, percentage, money amount, date, month, day of the week, duration, count, name or quoted figure, and do not introduce new examples, incidents, people or results\n- Preserve the voice and meaning exactly\n- Stay under 350 words\n- Never use the em dash character (—) anywhere in the output. Use a period or a comma instead\n- Output only the expanded post — no commentary, no preamble\n\nCurrent word count: 15\nTarget: 250–350 words\n\nPost:\nRetrieval was the slow part. pgvector made it fast. That changed what we could build."
+     }
+    ],
+    "model": "claude-haiku-4-5-20251001"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/v1/messages",
+   "anthropic-version": "2023-06-01",
+   "body": {
+    "max_tokens": 400,
+    "messages": [
+     {
+      "role": "user",
+      "content": "You are a fact checker for a LinkedIn post written in the author's voice. Find the claims in the post that the allowed sources do not support. Do not judge style or quality.\n\nPost, one sentence per line, numbered:\n<post>\n1. Final text.\n</post>\n\nAllowed sources:\n\nSELF-AUTHORED NOTES (the author's own experiences; the only notes that can support a first-person event):\nnone\n\nOTHER SOURCES (articles, videos and other material the author read or saved; can support general and \"research says\" claims, never a first-person event):\npgvector makes retrieval fast\n\nTHE REQUEST (what the author typed; supports only what it explicitly states. A topic that names a subject, such as \"my favourite trails\" or \"my experience at X\", states no event: it does not support any specific thing that happened):\nTopic: pgvector retrieval\nContext: for a talk\n\nAUTHOR IDENTITY (supports only who the author is, never what happened to them):\nName: unknown\nRole: unknown\n\nWhat to check:\n- event: something presented as having happened, to the author (\"I watched...\", \"my legs gave out\", \"we shipped\") or to a specific person, team, company or customer. Supported only if the self-authored notes or the request describe that same specific event (what happened, and to whom). A topic or context that only implies the author has done something in general does not support a specific incident.\n- statistic: a number, measurement, research finding, or specific factual claim about the world (\"research shows...\", \"agents loop when tools change\"). Supported if any source states it, in any wording.\n- A statement of who the author is (name, role, employer) is supported by the author identity.\n- Paraphrase is fine. A changed number, name, place, time or outcome is not supported.\n- Never flag opinions: views, arguments, recommendations, predictions, hypotheticals, or widely known general statements with no numbers, named studies or specific outcomes.\n\nUse the record_fact_check tool to return the unsupported claims in flagged.\nEach claim has i (sentence number), type (event, statistic or name), and why (under 10 words).\nReturn an empty flagged list when everything is supported."
+     }
+    ],
+    "model": "claude-haiku-4-5-20251001",
+    "tool_choice": {
+     "type": "tool",
+     "name": "record_fact_check"
+    },
+    "tools": [
+     {
+      "name": "record_fact_check",
+      "description": "Record unsupported claims in the final post.",
+      "input_schema": {
+       "$defs": {
+        "UnsupportedClaim": {
+         "properties": {
+          "i": {
+           "title": "I",
+           "type": "integer"
+          },
+          "type": {
+           "enum": [
+            "event",
+            "statistic",
+            "name"
+           ],
+           "title": "Type",
+           "type": "string"
+          },
+          "why": {
+           "title": "Why",
+           "type": "string"
+          }
+         },
+         "required": [
+          "i",
+          "type",
+          "why"
+         ],
+         "title": "UnsupportedClaim",
+         "type": "object"
+        }
+       },
+       "properties": {
+        "flagged": {
+         "items": {
+          "$ref": "#/$defs/UnsupportedClaim"
+         },
+         "title": "Flagged",
+         "type": "array"
+        }
+       },
+       "required": [
+        "flagged"
+       ],
+       "title": "FactCheckResult",
+       "type": "object"
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "polished": [
+  {
+   "method": "POST",
+   "path": "/v1/messages",
+   "anthropic-version": "2023-06-01",
+   "body": {
+    "max_tokens": 300,
+    "messages": [
+     {
+      "role": "user",
+      "content": "You are choosing the structure for a post. Choose by what the author has to write from, not by how the topic is phrased.\n\nTopic: pgvector retrieval\nAdditional context: none\nFormat: linkedin post\n\nWhat the author has to write from:\nThings the author read, watched or saved (not the author's own experience): article on this topic\n\nPost types you may choose from (choose one of these keys and nothing else):\n- contrarian_take: disagreeing with a common view; an opinion with reasons\n- teach_me_something: explaining a concept or how something works\n- list_that_isnt: several observations or lessons where one matters most\n- prediction_bet: a forward-looking view about where something is heading\n- general: anything else, or when no other type clearly fits\n\nRules:\n- Pick the type whose structure the material above can fill.\n- Choose \"general\" when no other type clearly fits."
+     }
+    ],
+    "model": "claude-haiku-4-5-20251001",
+    "tool_choice": {
+     "type": "tool",
+     "name": "choose_post_type"
+    },
+    "tools": [
+     {
+      "name": "choose_post_type",
+      "description": "Record the post type chosen for this post.",
+      "input_schema": {
+       "properties": {
+        "archetype": {
+         "description": "One of the offered post type keys.",
+         "title": "Archetype",
+         "type": "string"
+        },
+        "event_note": {
+         "anyOf": [
+          {
+           "type": "integer"
+          },
+          {
+           "type": "null"
+          }
+         ],
+         "default": null,
+         "description": "For a type that tells something that happened to the author: the number of the author's own note that describes the event. Otherwise null.",
+         "title": "Event Note"
+        },
+        "event_quote": {
+         "anyOf": [
+          {
+           "type": "string"
+          },
+          {
+           "type": "null"
+          }
+         ],
+         "default": null,
+         "description": "For those types: one sentence copied word for word from that note, describing the event. Otherwise null.",
+         "title": "Event Quote"
+        }
+       },
+       "required": [
+        "archetype"
+       ],
+       "title": "ArchetypeChoice",
+       "type": "object"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/v1/messages",
+   "anthropic-version": "2023-06-01",
+   "body": {
+    "max_tokens": 2000,
+    "messages": [
+     {
+      "role": "user",
+      "content": "You are a ghostwriter. You write a post from the sources below, in the voice of the author described below. The sources decide what the post says. The author profile decides only how it sounds.\n\nAuthor voice (voice, audience and style only; never a source of content, stories or facts):\nName: \nRole: \n\nFormat and tone instructions:\nFormat: LinkedIn post.\nStructure:\n  - Line 1: a single-sentence hook that stops the scroll. No clickbait.\n  - Body: short paragraphs (1–3 lines each), heavy line breaks.\n  - Closing: one sharp takeaway, question, or observation. No call-to-action.\nDo NOT use hashtags. Do NOT use bullet points with dashes — use line breaks instead.\nDo NOT write 'I' at the start of the first sentence.\n\nTone: technical and precise. Assume the reader is an engineer or builder. Use accurate terminology and state mechanisms exactly. Use the numbers and names the sources give; add none.\nLENGTH: 100–180 words. Never go over 180.\n\nKnowledge base (use what's relevant, ignore the rest):\nEXTERNAL SOURCE: LEARNING (mid-career voice):\n[source: article | tags: none]\npgvector makes retrieval fast\n\nTopic: pgvector retrieval\n\nTOPIC RULE: Write about the topic as given. Don't frame it as an analogy or metaphor for the author's professional field, and don't pull in their work, projects or opinions unless the topic or context asks for it.\nTopics you have already written about — do not repeat these angles, find a fresh perspective:\n- An earlier post\n\nPERSPECTIVE: learned.\nThe sources are things the author read, watched or saved, not things the author did. Share what they say and what you make of it, and say where each idea came from by what the source is and what it covers (\"an article on...\", \"a talk on...\", \"a video about...\"), without giving it a title. Do not connect the material to the author's own work, career or life, and do not present any of it as something the author did, saw or went through.\nDon't attribute feelings, reactions or habits to the author about a source (e.g. \"I haven't been able to put down\", \"I kept seeing... until I came across\") unless a source or the request states them. Present the source's idea and the author's view of it plainly.\nDon't make claims about what most people, most founders or most teams do unless a source says so; state it as the author's view instead (\"I think many teams...\").\n\n\nWrite the draft now. Do not add any preamble or explanation; output only the post content itself.\n\n---\nPOST STRUCTURE: write this post as a General Post:\nStructure: no fixed sections. Lead with the strongest point the sources support, develop it, and stop when it is made.\nDo not add a story, an example or a lesson to fill out a shape.\nThe structure is a shape, not a checklist: leave out any section the sources cannot fill.\n---\n\n---\nSOURCE RULES (mandatory):\nEach group of chunks in the knowledge base has a label. Write from each group by its rule.\n\nEXTERNAL SOURCE: LEARNING (mid-career voice):\nSomething the author read, watched or saved, not something the author did. Refer to it by what it is and what it covers (\"an article on...\", \"a talk on...\", \"a video about...\"); do not give it a title. Never present it as the author's own experience, and never connect it to the author's own work, background or life. Say what the source argues and what you make of it, without hedging.\n\nCROSS-SOURCE RULE:\nEach chunk above is a separate source. Never link facts from different sources as\ncause and effect, sequence or result unless one source states that link. Facts\nfrom separate notes stay separate.\nNever put an own-experience claim and an external-source claim in the same sentence.\nWhen a paragraph uses both, state the author's own point first, then bring in the\nsource as support and say where it came from.\n\nFABRICATION RULE:\nNever invent incidents, dates, names, numbers, results or events. A first-person\nevent may come only from an OWN EXPERIENCE chunk above, or from what the author\nstates in the topic or the additional context. The author profile is not a\nsource of stories: never set an incident at a company, project or role it names.\n---\n\n---\nVISUAL PLACEHOLDER RULES (mandatory):\nFor technical posts about systems, pipelines, architectures, or processes: you MUST include at least one [DIAGRAM: detailed description] placeholder.\nThe description must be specific enough to draw from.\nGood: [DIAGRAM: flowchart showing 5 RAG pipeline stages with failure points marked in red at retrieval layer]\nBad: [DIAGRAM: RAG diagram]\n\nFor personal or story posts: include one [IMAGE: description] only if a real photo or screenshot would genuinely strengthen the post.\n\nNever force a diagram into opinion pieces or short punchy posts where the words are the point.\n---"
+     }
+    ],
+    "model": "claude-sonnet-4-6"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/v1/messages",
+   "anthropic-version": "2023-06-01",
+   "body": {
+    "max_tokens": 600,
+    "messages": [
+     {
+      "role": "user",
+      "content": "You are a content critic. Your job is to diagnose weaknesses in a LinkedIn post draft before it is humanized. You diagnose only: you never write any part of the post.\n\nTopic as given: pgvector retrieval\nAdditional context: none\n\nExamine the draft across five dimensions, in this order:\n\n1. TOPIC — Does the post stay on the topic as given (and the additional context, if any)? Flag any drift away from it, including turns toward the author's opinions, expertise or work that the topic does not ask for.\n2. HOOK — Does the opening sentence stop a scroller immediately? Is it specific and surprising, or generic and forgettable?\n3. SUBSTANCE — Does the draft use the ideas in the knowledge base chunks, or make vague claims any post could make? Judge substance only against what the chunks, the topic and the context actually contain.\n4. STRUCTURE — Does the draft follow the pattern of a General Post post, as far as the sources allow? Judge only the sections the chunks or the request have material for. A section the sources cannot fill is correctly left out: never count it as missing and never ask for it.\n5. VOICE — Does this sound like the specific person in the profile, or like generic LinkedIn content?\n\nAuthor voice (voice reference only; never a source of content or angles):\nName: \nRole: \n\nPost archetype (structural reference): General Post\n\nKnowledge base chunks available, each labelled with its frame and authorship (self = the author's own experience; external = something the author read or watched). Check whether the draft uses them or ignores them:\n[frame: LEARNING_MID | authorship: external | source: article]\npgvector makes retrieval fast\n\nDraft to diagnose:\nRetrieval used to be the slow part. Then pgvector made it fast. That changed what we could build.\n\nRules for every fix:\n- Describe the problem and the direction to take, in your own words. The form to follow: the hook is generic; lead with the strongest point from the sources.\n- Never write example sentences, replacement text, or anything in quotation marks. Never quote the draft or the chunks.\n- Never suggest a name, number, date, time, place or event that is not already in the draft or the chunks.\n- Never suggest connecting the post to the author's opinions, expertise, projects or work unless the topic or context asks for it. The profile is a voice reference, not a source of angles.\n- Each chunk is a separate source. If the draft links facts from different chunks as cause and effect, sequence or result, and no single chunk states that link, mark SUBSTANCE \"needs_work\" and say which link to remove. Facts from separate notes stay separate.\n- None of the chunks are self-authored. Never ask for personal experience, a story, an incident, a real example, or specific numbers or names: the author has given none for this topic. Ask instead for sharper reasoning, clearer structure, or better use of the chunks.\n\nFor each dimension, give a verdict (\"strong\" or \"needs_work\") and — if \"needs_work\" — one fix that follows the rules above. If \"strong\", the fix is null. Set overall to \"postable\" only when every verdict is \"strong\"."
+     }
+    ],
+    "model": "claude-haiku-4-5-20251001",
+    "tool_choice": {
+     "type": "tool",
+     "name": "record_critique"
+    },
+    "tools": [
+     {
+      "name": "record_critique",
+      "description": "Record the diagnosis of the draft.",
+      "input_schema": {
+       "$defs": {
+        "Verdict": {
+         "properties": {
+          "verdict": {
+           "enum": [
+            "strong",
+            "needs_work"
+           ],
+           "title": "Verdict",
+           "type": "string"
+          },
+          "fix": {
+           "anyOf": [
+            {
+             "type": "string"
+            },
+            {
+             "type": "null"
+            }
+           ],
+           "default": null,
+           "description": "One fix when the verdict is needs_work; null when strong.",
+           "title": "Fix"
+          }
+         },
+         "required": [
+          "verdict"
+         ],
+         "title": "Verdict",
+         "type": "object"
+        }
+       },
+       "properties": {
+        "topic": {
+         "$ref": "#/$defs/Verdict"
+        },
+        "hook": {
+         "$ref": "#/$defs/Verdict"
+        },
+        "substance": {
+         "$ref": "#/$defs/Verdict"
+        },
+        "structure": {
+         "$ref": "#/$defs/Verdict"
+        },
+        "voice": {
+         "$ref": "#/$defs/Verdict"
+        },
+        "overall": {
+         "enum": [
+          "postable",
+          "needs_work"
+         ],
+         "title": "Overall",
+         "type": "string"
+        }
+       },
+       "required": [
+        "topic",
+        "hook",
+        "substance",
+        "structure",
+        "voice",
+        "overall"
+       ],
+       "title": "CriticBrief",
+       "type": "object"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/v1/messages",
+   "anthropic-version": "2023-06-01",
+   "body": {
+    "max_tokens": 2000,
+    "messages": [
+     {
+      "role": "user",
+      "content": "You are a humanizing editor. You take drafts that may still have AI-writing fingerprints and rewrite them to sound like a real human wrote them, specifically like the person described in the profile below.\n\nAuthor voice (voice and style only; never a source of content, stories or facts):\nName: \nRole: \n\nFacts are fixed. You may change only wording, rhythm and structure.\n- Never add or change any number, percentage, money amount, date, month, day of the week, duration, count, name or quoted figure. You may drop a detail if you need to cut for length, but prefer cutting words over cutting facts.\n- Every factual detail in your output must already be in the current draft. If a sentence feels vague, sharpen the wording, not the facts.\n- Do not invent incidents, timelines, customers, people or results.\n- Keep the draft's perspective. Never turn something the draft presents as read, watched or observed into something the author did, and never add a personal reaction, memory or connection to the author's own work that the draft does not state.\n- Don't attribute feelings, reactions or habits to the author about a source (e.g. \"I haven't been able to put down\", \"I kept seeing... until I came across\") unless the draft states them. Present the source's idea and the author's view of it plainly.\n- Never link facts as cause and effect, sequence or result unless the draft already states that link. Facts the draft keeps separate stay separate.\n- The critic brief below describes problems, not content. It never permits a new fact, story, experience, name or number. If a fix can't be made without new facts, skip it.\n\nCRITIC BRIEF — fix these issues before humanizing, in this order:\n- HOOK: Open with the claim itself.\n\nAI writing patterns to eliminate:\n- Sentences that start with \"In today's...\" or \"It's important to note...\"\n- Overuse of transition words: \"Furthermore\", \"Moreover\", \"Additionally\", \"In conclusion\"\n- Generic motivational framing: \"unlock your potential\", \"game-changing\", \"transformative\"\n- Perfectly balanced sentence lengths; vary them aggressively\n- Lists of three that feel formulaic (The three things are: A, B, and C)\n- Passive voice where active would be stronger\n- Em dashes used as clause connectors or parenthetical separators (e.g. 'the data was messy, noisy and sparse' or 'one feature, which had low fill rate, was dropped'). Replace with a period, a comma, or rewrite the sentence entirely. Em dashes are one of the strongest signals of AI-generated text and must never appear in the output.\n- Hyphenated compound modifiers used decoratively (e.g. 'data-driven', 'production-ready', 'well-known', 'high-value' when plain language works just as well). Write 'drives decisions with data' not 'data-driven'. Only use hyphens when they are grammatically required and cannot be avoided.\n- Words to avoid: \n\nNever use the em dash character (—) anywhere in the output. If you are about to write an em dash, stop and use a period or comma instead.\n\nWhat to inject instead:\n- Sentence variety: mix 4-word punches with longer, winding observations\n- Short asides that comment on a point the draft already makes. An aside is a remark, never a new reaction, memory or event.\n- Opinions stated with confidence, not hedged to death\n- The writer's actual voice as described in the profile\n\nLENGTH: 100–180 words. Never go over 180.\n\nCurrent draft:\nRetrieval used to be the slow part. Then pgvector made it fast. That changed what we could build.\n\nRewrite the draft now. Fix the flagged issues above first — in this order: topic, hook, substance, structure, voice. You may rewrite the hook entirely and restructure sections, using only facts already in the draft. Then do a full language humanization pass. Output only the rewritten post, no commentary."
+     }
+    ],
+    "model": "claude-sonnet-4-6"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/v1/messages",
+   "anthropic-version": "2023-06-01",
+   "body": {
+    "max_tokens": 200,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Read this post and return the single most AI-sounding sentence — the one that is too smooth, too resolved, or could have been written by any AI about this topic.\n\nRules:\n- Return only the sentence, verbatim, with no explanation or punctuation outside the sentence itself\n- If nothing sounds like AI, return only the word: CLEAN\n\nPost:\nRetrieval was the slow part. Then pgvector made it fast. That changed what we could build."
+     }
+    ],
+    "model": "claude-haiku-4-5-20251001"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/v1/messages",
+   "anthropic-version": "2023-06-01",
+   "body": {
+    "max_tokens": 2000,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Check this post for monotonous sentence rhythm.\n\nIf 3 or more consecutive sentences are within 4 words of each other in length, rewrite one of them to be either under 6 words or over 18 words to break the rhythm.\n\nIf the rhythm is already varied, return the post unchanged.\n\nChange only sentence length and rhythm. Keep every number, percentage, money amount, date, month, day of the week, duration, count, name and quoted figure exactly as written. Add none and remove none.\n\nOutput only the full post — no explanation, no preamble.\n\nPost:\nRetrieval was the slow part. Then pgvector made it fast. That changed what we could build."
+     }
+    ],
+    "model": "claude-haiku-4-5-20251001"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/v1/messages",
+   "anthropic-version": "2023-06-01",
+   "body": {
+    "max_tokens": 800,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Score this post:\n\nRetrieval was the slow part. pgvector made it fast. That changed what we could build."
+     }
+    ],
+    "model": "claude-sonnet-4-6",
+    "system": "You are a content authenticity scorer. Score the following post on how much it reads like a real person wrote it: one specific person with a direct voice. Not polished corporate content. Not AI-generated filler. Real.\n\nYou cannot see the author's sources, so you cannot know which details are true. Judge how the post is written, never how many details it contains. A post that argues precisely from reasoning, or that shares what the author learned from someone else's work, can score full marks. Never reward a post for containing personal anecdotes, numbers or named examples, and never mark one down for lacking them.\n\nScore across exactly these 5 dimensions, each out of 20 points:\n\n1. Natural voice (0–20): Does it sound like a specific person talking? Does it have personality, opinions, or quirks? Or does it sound like a template?\n\n2. Sentence variety (0–20): Is there rhythm and variation in sentence length? Short punches mixed with longer thoughts? Or is every sentence the same length and structure?\n\n3. Precision (0–20): Does each sentence say something exact that a reader could agree or disagree with? Or does it hedge and deal in vague generalities? Precision is about how claims are stated, not about adding detail.\n\n4. No LLM fingerprints (0–20): Is it free from AI tells? No \"In today's world\", no \"It's worth noting\", no perfectly balanced lists of three, no corporate buzzwords, no passive voice chains?\n\n5. Value delivery (0–20): Does the reader get something real — an insight, a lesson, a new way to see something? Or is it fluff?\n\nAlso identify up to 3 specific sentences that most hurt the score, and give up to 3 actionable notes.\n\nRules for the notes: each one says how to rewrite what is already there (tighten, cut, reorder, state more plainly). Never ask the author to add an anecdote, a personal story, an example, a number, a name or any other new detail.",
+    "tool_choice": {
+     "type": "tool",
+     "name": "record_score"
+    },
+    "tools": [
+     {
+      "name": "record_score",
+      "description": "Record the scores for this post.",
+      "input_schema": {
+       "$defs": {
+        "DimensionScores": {
+         "properties": {
+          "natural_voice": {
+           "maximum": 20,
+           "minimum": 0,
+           "title": "Natural Voice",
+           "type": "integer"
+          },
+          "sentence_variety": {
+           "maximum": 20,
+           "minimum": 0,
+           "title": "Sentence Variety",
+           "type": "integer"
+          },
+          "precision": {
+           "maximum": 20,
+           "minimum": 0,
+           "title": "Precision",
+           "type": "integer"
+          },
+          "no_llm_fingerprints": {
+           "maximum": 20,
+           "minimum": 0,
+           "title": "No Llm Fingerprints",
+           "type": "integer"
+          },
+          "value_delivery": {
+           "maximum": 20,
+           "minimum": 0,
+           "title": "Value Delivery",
+           "type": "integer"
+          }
+         },
+         "required": [
+          "natural_voice",
+          "sentence_variety",
+          "precision",
+          "no_llm_fingerprints",
+          "value_delivery"
+         ],
+         "title": "DimensionScores",
+         "type": "object"
+        }
+       },
+       "properties": {
+        "dimension_scores": {
+         "$ref": "#/$defs/DimensionScores"
+        },
+        "flagged_sentences": {
+         "description": "Up to 3 sentences that most hurt the score.",
+         "items": {
+          "type": "string"
+         },
+         "title": "Flagged Sentences",
+         "type": "array"
+        },
+        "feedback": {
+         "description": "Up to 3 notes on rewriting what is already there.",
+         "items": {
+          "type": "string"
+         },
+         "title": "Feedback",
+         "type": "array"
+        }
+       },
+       "required": [
+        "dimension_scores"
+       ],
+       "title": "ScoreResult",
+       "type": "object"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/v1/messages",
+   "anthropic-version": "2023-06-01",
+   "body": {
+    "max_tokens": 2000,
+    "messages": [
+     {
+      "role": "user",
+      "content": "You are a precise editor. Expand this post slightly to reach at least 100 words.\n\nRules:\n- Expand only with material already in the post: elaborate a point it already makes, add a transition, or spell out a consequence of something it already says — not filler\n- Never add or change any number, percentage, money amount, date, month, day of the week, duration, count, name or quoted figure, and do not introduce new examples, incidents, people or results\n- Preserve the voice and meaning exactly\n- Stay under 180 words\n- Never use the em dash character (—) anywhere in the output. Use a period or a comma instead\n- Output only the expanded post — no commentary, no preamble\n\nCurrent word count: 15\nTarget: 100–180 words\n\nPost:\nRetrieval was the slow part. pgvector made it fast. That changed what we could build."
+     }
+    ],
+    "model": "claude-haiku-4-5-20251001"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/v1/messages",
+   "anthropic-version": "2023-06-01",
+   "body": {
+    "max_tokens": 400,
+    "messages": [
+     {
+      "role": "user",
+      "content": "You are a fact checker for a LinkedIn post written in the author's voice. Find the claims in the post that the allowed sources do not support. Do not judge style or quality.\n\nPost, one sentence per line, numbered:\n<post>\n1. Final text.\n</post>\n\nAllowed sources:\n\nSELF-AUTHORED NOTES (the author's own experiences; the only notes that can support a first-person event):\nnone\n\nOTHER SOURCES (articles, videos and other material the author read or saved; can support general and \"research says\" claims, never a first-person event):\npgvector makes retrieval fast\n\nTHE REQUEST (what the author typed; supports only what it explicitly states. A topic that names a subject, such as \"my favourite trails\" or \"my experience at X\", states no event: it does not support any specific thing that happened):\nTopic: pgvector retrieval\nContext: none\n\nAUTHOR IDENTITY (supports only who the author is, never what happened to them):\nName: unknown\nRole: unknown\n\nWhat to check:\n- event: something presented as having happened, to the author (\"I watched...\", \"my legs gave out\", \"we shipped\") or to a specific person, team, company or customer. Supported only if the self-authored notes or the request describe that same specific event (what happened, and to whom). A topic or context that only implies the author has done something in general does not support a specific incident.\n- statistic: a number, measurement, research finding, or specific factual claim about the world (\"research shows...\", \"agents loop when tools change\"). Supported if any source states it, in any wording.\n- A statement of who the author is (name, role, employer) is supported by the author identity.\n- Paraphrase is fine. A changed number, name, place, time or outcome is not supported.\n- Never flag opinions: views, arguments, recommendations, predictions, hypotheticals, or widely known general statements with no numbers, named studies or specific outcomes.\n\nUse the record_fact_check tool to return the unsupported claims in flagged.\nEach claim has i (sentence number), type (event, statistic or name), and why (under 10 words).\nReturn an empty flagged list when everything is supported."
+     }
+    ],
+    "model": "claude-haiku-4-5-20251001",
+    "tool_choice": {
+     "type": "tool",
+     "name": "record_fact_check"
+    },
+    "tools": [
+     {
+      "name": "record_fact_check",
+      "description": "Record unsupported claims in the final post.",
+      "input_schema": {
+       "$defs": {
+        "UnsupportedClaim": {
+         "properties": {
+          "i": {
+           "title": "I",
+           "type": "integer"
+          },
+          "type": {
+           "enum": [
+            "event",
+            "statistic",
+            "name"
+           ],
+           "title": "Type",
+           "type": "string"
+          },
+          "why": {
+           "title": "Why",
+           "type": "string"
+          }
+         },
+         "required": [
+          "i",
+          "type",
+          "why"
+         ],
+         "title": "UnsupportedClaim",
+         "type": "object"
+        }
+       },
+       "properties": {
+        "flagged": {
+         "items": {
+          "$ref": "#/$defs/UnsupportedClaim"
+         },
+         "title": "Flagged",
+         "type": "array"
+        }
+       },
+       "required": [
+        "flagged"
+       ],
+       "title": "FactCheckResult",
+       "type": "object"
+      }
+     }
+    ]
+   }
+  }
+ ]
+}

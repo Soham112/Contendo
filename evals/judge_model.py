@@ -79,7 +79,9 @@ class ContendoJudge(DeepEvalBaseLLM):
             messages=[{"role": "user", "content": prompt}],
             user_id=self.user_id,
             event_type=config.JUDGE_EVENT_TYPE,
-            temperature=0,
+            # anthropic 1.x no longer has `temperature` in the method signature;
+            # extra_body puts it in the request body, where the API reads it.
+            extra_body={"temperature": 0},
             **kwargs,
         )
 
