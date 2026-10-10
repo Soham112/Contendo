@@ -44,9 +44,11 @@ def _chunk_snapshot(chunk: dict[str, Any], profile: dict[str, Any]) -> dict[str,
     }
 
 
-# Written only by the single-writer pipeline (variants B and C). Left out of a
-# trace whose run never set them, so a variant A trace keeps its shape.
-_SINGLE_WRITER_OUTPUTS = ("source_index", "event", "citations", "citation_failures")
+# Outputs a run may or may not set, left out of the trace when it did not. All
+# but final_validation are written only by the single-writer pipeline
+# (variants B and C).
+_OPTIONAL_OUTPUTS = ("source_index", "event", "citations", "citation_failures",
+                     "draft_truncated", "trim_result", "final_validation")
 
 
 def build_trace_row(state: PipelineState, llm_calls: list[dict]) -> dict[str, Any]:
@@ -81,7 +83,7 @@ def build_trace_row(state: PipelineState, llm_calls: list[dict]) -> dict[str, An
             "coverage_gate": state.get("coverage_gate", {}),
             "fact_check": state.get("fact_check", {}),
             "final_post": state.get("final_post", state.get("current_draft", "")),
-            **{key: state[key] for key in _SINGLE_WRITER_OUTPUTS if key in state},
+            **{key: state[key] for key in _OPTIONAL_OUTPUTS if key in state},
         },
         "llm_calls": llm_calls,
         "score": state.get("score", 0),

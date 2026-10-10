@@ -3,7 +3,8 @@ and post archetype. One table per concern; every agent reads from here.
 
 - Length: WORD_RANGES is the only place word counts live. resolve_length_target()
   turns a request into the one target a post has; word_count_rule() is the only
-  wording of it.
+  wording of it; count_words() is the only way a post is measured against it;
+  draft_max_tokens() sizes the single-writer draft call from it.
 - Archetypes: ARCHETYPES holds every archetype's name, structure block and
   whether it needs a real event. A block describes structure only: no lengths,
   no diagram advice, no demand for details the sources may not have.
@@ -13,6 +14,7 @@ and post archetype. One table per concern; every agent reads from here.
   both read it.
 """
 
+import math
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -115,6 +117,32 @@ def word_count_rule(target: dict[str, Any] | None) -> str:
         f"LENGTH: at most {high} words. A short post is complete: say what the sources "
         "support and stop. Never pad to reach a length."
     )
+
+
+def count_words(text: str) -> int:
+    """How long a post is, in words: its whitespace-separated tokens. The one
+    count every length decision uses (enforcer, finalise, trim, evals)."""
+    return len(text.split())
+
+
+# Output tokens one word of a marked draft costs. Measured on the pm-01 golden
+# under variant C (2026-10-09): 419 output tokens for a 225-word post, citation
+# markers and EVENT line included, so about 1.9. One sample: hence the margin.
+TOKENS_PER_WORD = 1.9
+# Room above the target's ceiling, so a draft that runs somewhat long is
+# finished and then trimmed, rather than cut off mid-sentence.
+DRAFT_TOKEN_MARGIN = 1.25
+# Never less than pipeline A's draft budget. Short targets (a 100-word first
+# post) get the most room for an overlong draft; threads have no word target.
+MIN_DRAFT_MAX_TOKENS = 2000
+
+
+def draft_max_tokens(target: dict[str, Any] | None) -> int:
+    """max_tokens for a single-writer draft call: enough for the target's
+    ceiling with markers, plus the margin. No target (threads) gets the minimum."""
+    if not target:
+        return MIN_DRAFT_MAX_TOKENS
+    return max(MIN_DRAFT_MAX_TOKENS, math.ceil(target["max_words"] * TOKENS_PER_WORD * DRAFT_TOKEN_MARGIN))
 
 
 # ── Archetypes ────────────────────────────────────────────────────────────────

@@ -15,11 +15,13 @@ from agents.draft_prompt import build_cited_prompt, build_prompt, format_retriev
 from llm.client import SONNET, complete
 from pipeline.state import PipelineState
 from pipeline.trace import record_draft
+from utils.formatters import draft_max_tokens
 from utils.specifics import find_violations, guard_entry, guard_sources, remove_sentences, retry_note
 
 logger = logging.getLogger(__name__)
 
-# Output budget for one draft call, in both pipelines.
+# Output budget for pipeline A's draft call. The single-writer draft takes its
+# budget from the length target (utils.formatters.draft_max_tokens).
 _DRAFT_MAX_TOKENS = 2000
 
 
@@ -88,14 +90,19 @@ def structure_node(state: PipelineState) -> PipelineState:
 def cited_draft_node(state: PipelineState) -> PipelineState:
     """One Sonnet call writes the post with citation markers (and, for a story
     type, the EVENT line). The output is stored exactly as written: the markers
-    are read and removed by the step after this one."""
+    are read and removed by the steps after this one.
+
+    A draft that stops at its output limit is not a finished post. It is kept
+    in draft_history for diagnosis and flagged in state["draft_truncated"]
+    ({max_tokens, output_tokens}); the pipeline then returns no post."""
     prompt, sources = build_cited_prompt(state)
     state["draft_frame_block"] = sources.text
     state["source_index"] = sources.index
 
+    max_tokens = draft_max_tokens(state.get("length_target"))
     message = complete(
         model=SONNET,
-        max_tokens=_DRAFT_MAX_TOKENS,
+        max_tokens=max_tokens,
         messages=[{"role": "user", "content": prompt}],
         user_id=state["user_id"],
         event_type="generate",
@@ -103,4 +110,7 @@ def cited_draft_node(state: PipelineState) -> PipelineState:
     )
     state["current_draft"] = message.content[0].text.strip()
     record_draft(state, "draft")
+    if message.stop_reason == "max_tokens":
+        logger.warning("draft: cut off at max_tokens=%d; no post will be returned", max_tokens)
+        state["draft_truncated"] = {"max_tokens": max_tokens, "output_tokens": message.usage.output_tokens}
     return state

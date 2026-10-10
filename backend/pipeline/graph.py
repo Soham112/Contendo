@@ -7,8 +7,11 @@ from config import features
 from llm.client import trace_calls
 from pipeline.state import PipelineState
 from pipeline.trace import build_trace_row
-from utils.citations import parse_event_header, strip_citations
-from utils.formatters import GENERAL_ARCHETYPE, STORY_ARCHETYPES, normalise_post_punctuation, resolve_length_target
+from pipeline.finalise import (
+    finalise_draft_node, finalise_trimmed_node, route_after_cited_draft, route_after_finalise,
+    strip_draft_node, truncated_node, validation_record,
+)
+from utils.formatters import normalise_post_punctuation, resolve_length_target
 from utils.frames import decide_perspective
 from memory.profile_store import load_profile
 from memory.feedback_store import get_all_topics_posted
@@ -18,7 +21,7 @@ from agents.draft_agent import cited_draft_node, draft_node, structure_node
 from agents.critic_agent import critic_node
 from agents.humanizer_agent import humanizer_node
 from agents.predictability_audit_agent import predictability_audit_node
-from agents.word_count_enforcer_agent import word_count_enforcer_node
+from agents.word_count_enforcer_agent import trim_node, word_count_enforcer_node
 from agents.fact_check_agent import fact_check_node, log_fact_check
 from agents.scorer_agent import scorer_node
 
@@ -65,6 +68,11 @@ def plan_node(state: PipelineState) -> PipelineState:
     return state
 
 
+DRAFT_TRUNCATED_MESSAGE = (
+    "The draft was cut off before it was finished, so there is no post to show. "
+    "Generate again, or choose a shorter length."
+)
+
 LOW_COVERAGE_SUGGESTION = (
     "Your memory doesn't cover this topic yet. Add a source about it, "
     "or write an opinion post without specifics."
@@ -85,42 +93,8 @@ def low_coverage_node(state: PipelineState) -> PipelineState:
 
 def finalize_node(state: PipelineState) -> PipelineState:
     state["final_post"] = normalise_post_punctuation(state["current_draft"])
-    return state
-
-
-def strip_draft_node(state: PipelineState) -> PipelineState:
-    """Single writer: turn the marked draft into the post the user sees.
-
-    Reads and removes the EVENT line and the citation markers, and records what
-    they said (event, citations) and anything wrong with them
-    (citation_failures). When the drafter answered "EVENT: none" it wrote to the
-    General structure, so the archetype becomes General and the decision says why.
-    """
-    chosen = state.get("archetype", "")
-    header = parse_event_header(state.get("current_draft", ""), required=chosen in STORY_ARCHETYPES)
-    stripped = strip_citations(header.body)
-
-    state["event"] = {"status": header.status, "source": header.source,
-                      "quote": header.quote, "line": header.line}
-    state["citations"] = [
-        {"start": s.start, "end": s.end, "text": s.text, "basis": s.basis, "sources": list(s.sources)}
-        for s in stripped.spans
-    ]
-    state["citation_failures"] = [
-        {"kind": f.kind, "text": f.text, "start": f.start, "end": f.end} for f in stripped.failures
-    ]
-    if header.status == "none":
-        state["archetype"] = GENERAL_ARCHETYPE
-        state["archetype_decision"] = {
-            **(state.get("archetype_decision") or {}),
-            "archetype": GENERAL_ARCHETYPE, "downgraded_from": chosen,
-            "reason": "the drafter found no event that fits the topic",
-        }
-    if header.failed or stripped.failures:
-        logger.warning("strip: event header %s, %d marker failure(s)", header.status, len(stripped.failures))
-
-    state["current_draft"] = stripped.text
-    state["final_post"] = stripped.text
+    # Record only: pipeline A's post is returned as it is, whatever this says.
+    state["final_validation"] = validation_record(state["final_post"], state.get("length_target"))
     return state
 
 
@@ -189,24 +163,33 @@ def _wire_rewrite_chain(graph: StateGraph) -> None:
 def _wire_cited_draft(graph: StateGraph) -> None:
     """Variants B and C, after plan: structure (the archetype, structure only;
     "archetype" is a state key, so the node cannot have that name) → draft (with
-    citation markers) → strip (markers and EVENT line removed) → end.
+    citation markers) → strip (EVENT line removed) → finalise (punctuation
+    normalised, markers removed, validated) → trim (only when over the maximum)
+    → finalise again → end. A draft cut off at its output limit goes straight
+    to "truncated" and returns no post.
 
-    STOPGAP: B and C are the same pipeline and both stop after the draft. The
-    post is returned without finalise (punctuation normalisation, final
-    validation) or a length trim, `quality` is ignored, and nothing acts on
-    citation_failures or a failed EVENT line: they are only recorded.
-    Proper fix: finalise and trim-by-deletion for both (step 4 of the
-    feat/single-writer plan); deterministic checks, the structured review and
-    at most one redraft for B (steps 5-6).
+    STOPGAP: B and C are still the same pipeline, `quality` is ignored, and
+    nothing acts on what is recorded: marker failures, a failed EVENT line,
+    leftover markers and a failed trim are in the trace only.
+    Proper fix: deterministic checks, the structured review, at most one redraft
+    and the quality rules for B (steps 5-6 of the feat/single-writer plan).
     """
     graph.add_node("structure", structure_node)
     graph.add_node("draft", cited_draft_node)
+    graph.add_node("truncated", truncated_node)
     graph.add_node("strip", strip_draft_node)
+    graph.add_node("finalise", finalise_draft_node)
+    graph.add_node("trim", trim_node)
+    graph.add_node("finalise_trimmed", finalise_trimmed_node)
 
     graph.add_edge("plan", "structure")
     graph.add_edge("structure", "draft")
-    graph.add_edge("draft", "strip")
-    graph.add_edge("strip", END)
+    graph.add_conditional_edges("draft", route_after_cited_draft, {"truncated": "truncated", "strip": "strip"})
+    graph.add_edge("truncated", END)
+    graph.add_edge("strip", "finalise")
+    graph.add_conditional_edges("finalise", route_after_finalise, {"trim": "trim", "end": END})
+    graph.add_edge("trim", "finalise_trimmed")
+    graph.add_edge("finalise_trimmed", END)
 
 
 # What runs after plan, per variant (config.features.PIPELINE_VARIANTS).
@@ -258,9 +241,10 @@ def run_pipeline(
     no_specifics: bool = False,
     variant: str | None = None,
 ) -> dict:
-    """Run the pipeline. Returns status "ok" with the post, or status
+    """Run the pipeline. Returns status "ok" with the post, status
     "low_coverage" (empty post, closest_sources, suggestion) when the coverage
-    gate stops it before drafting. no_specifics=True skips the gate; it raises
+    gate stops it before drafting, or status "draft_truncated" (empty post,
+    message) when a single-writer draft was cut off at its output limit. no_specifics=True skips the gate; it raises
     ValueError while config.features.NO_SPECIFICS_MODE_ENABLED is off.
 
     variant: which pipeline to run (config.features.PIPELINE_VARIANTS). None
@@ -316,6 +300,20 @@ def run_pipeline(
             "retrieval_confidence": result.get("retrieval_confidence", "low"),
             "closest_sources": gate.get("closest_sources", []),
             "suggestion": LOW_COVERAGE_SUGGESTION,
+            "trace_id": trace_id,
+        }
+
+    if result.get("draft_truncated"):
+        return {
+            "status": "draft_truncated",
+            "post": "",
+            "message": DRAFT_TRUNCATED_MESSAGE,
+            "score": 0,
+            "score_feedback": [],
+            "iterations": 0,
+            "archetype": result.get("archetype", ""),
+            "scored": False,
+            "retrieval_confidence": result.get("retrieval_confidence", "medium"),
             "trace_id": trace_id,
         }
 

@@ -1,6 +1,7 @@
-"""The single-writer drafter (variants B and C), as far as it goes in step 3:
-structure-only archetype choice, the cited draft prompt, one draft call with no
-guard retry, and the strip step that removes markers and the EVENT line."""
+"""The single-writer drafter (variants B and C): structure-only archetype choice,
+the cited draft prompt, one draft call with no guard retry, and the strip and
+finalise steps that remove the EVENT line and the markers. Length, trimming and
+truncation are in test_finalise_and_trim.py."""
 
 import json
 
@@ -231,12 +232,24 @@ def test_unsupported_specifics_cause_no_retry_and_no_sentence_removal(claude):
 # --- Strip --------------------------------------------------------------------
 
 def _strip(marked: str, archetype: str, **decision):
-    from pipeline.graph import strip_draft_node
+    """strip (EVENT line) then finalise (markers), as the graph runs them."""
+    from pipeline.finalise import finalise_draft_node, strip_draft_node
 
     state = make_state([OWN, ARTICLE], archetype=archetype, current_draft=marked,
                        archetype_decision={"archetype": archetype, "chosen": archetype, "allowed": [archetype, "general"],
                                            "downgraded_from": None, "reason": None, **decision})
-    return strip_draft_node(state)
+    return finalise_draft_node(strip_draft_node(state))
+
+
+def test_strip_alone_removes_only_the_event_line():
+    from pipeline.finalise import strip_draft_node
+
+    state = strip_draft_node(make_state([OWN], archetype=STORY_KEY,
+                                        current_draft=f"{EVENT_LINE}\n\nWe rebuilt the ranker. [[S1]]"))
+
+    assert state["current_draft"] == "We rebuilt the ranker. [[S1]]"
+    assert state["event"]["status"] == "cited"
+    assert "final_post" not in state
 
 
 def test_strip_removes_markers_and_the_event_line_and_records_both():

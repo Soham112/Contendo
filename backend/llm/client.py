@@ -26,6 +26,12 @@ logger = logging.getLogger(__name__)
 SONNET = "claude-sonnet-4-6"
 HAIKU = "claude-haiku-4-5-20251001"
 
+# The most output a call here should ask for. Every call is non-streaming, and
+# Anthropic's guidance for non-streaming requests is to stay near 16,000 output
+# tokens so a response fits the SDK's HTTP timeout. The models' own caps are far
+# higher (128,000 for Sonnet 4.6). A budget above this needs streaming first.
+MAX_NON_STREAMING_OUTPUT_TOKENS = 16_000
+
 # Label passed to usage logging (usage_store prices by it).
 _USAGE_LABELS = {SONNET: "sonnet", HAIKU: "haiku"}
 

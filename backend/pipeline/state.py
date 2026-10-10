@@ -91,6 +91,19 @@ class PipelineState(TypedDict, total=False):
     event: dict[str, Any]
     citations: list[dict[str, Any]]
     citation_failures: list[dict[str, Any]]
+    # draft_truncated: set only when the draft stopped at its output limit,
+    #   {max_tokens, output_tokens}; the run then returns no post.
+    # trim_result: set only when the post was over its maximum and the trim ran,
+    #   {outcome: trimmed | trim_failed, reason, max_words, words_before,
+    #    words_after, deleted: [{index, text}]} (agents.word_count_enforcer_agent.trim_node).
+    draft_truncated: dict[str, Any]
+    trim_result: dict[str, Any]
+
+    # The validation record of the returned post (pipeline.finalise), all
+    # variants: {words, target, length: ok | over_length | under_length |
+    # no_target, over_by, under_by, leftover_markers, em_dashes_remaining}.
+    # Pipeline A is recorded only: its post is never changed by it.
+    final_validation: dict[str, Any]
 
     # Final fact check (fact_check_node): {flagged: [{i, sentence, type, why}],
     # rewrites: [{sentence, type, why, rewrite, recheck, outcome}],

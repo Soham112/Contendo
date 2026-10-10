@@ -46,7 +46,10 @@ class ClosestSource(BaseModel):
 class GenerateResponse(BaseModel):
     # "ok", or "low_coverage": the knowledge base doesn't cover the topic, so
     # nothing was drafted (post is ""); see closest_sources and suggestion.
+    # Or "draft_truncated": the draft was cut off at its output limit, so no
+    # post is returned (post is ""); message says so. Single-writer pipeline only.
     status: str = "ok"
+    message: str = ""
     post: str
     score: int
     score_feedback: list[str]
@@ -160,6 +163,7 @@ async def generate(
 
     return GenerateResponse(
         status=result.get("status", "ok"),
+        message=result.get("message", ""),
         closest_sources=result.get("closest_sources", []),
         suggestion=result.get("suggestion", ""),
         post=result["post"],

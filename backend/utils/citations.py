@@ -25,6 +25,7 @@ support it, or whether the quoted sentence is really in the source.
 
 import re
 from dataclasses import dataclass
+from typing import Collection, Sequence
 
 from utils.text_spans import protected_spans
 
@@ -65,6 +66,14 @@ class Span:
     text: str
     basis: str                 # "sources" | "request" | "view" | "uncited"
     sources: tuple[str, ...]   # the cited S-ids when basis is "sources", else ()
+
+    def as_dict(self) -> dict:
+        return {"start": self.start, "end": self.end, "text": self.text,
+                "basis": self.basis, "sources": list(self.sources)}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Span":
+        return cls(data["start"], data["end"], data["text"], data["basis"], tuple(data["sources"]))
 
 
 @dataclass(frozen=True)
@@ -225,6 +234,81 @@ def strip_citations(text: str) -> StrippedPost:
 
     failures.sort(key=lambda f: (f.start, f.end))
     return StrippedPost(clean, tuple(spans), tuple(failures))
+
+
+def delete_spans(text: str, spans: Sequence[Span], delete: Collection[int]) -> tuple[str, tuple[Span, ...]]:
+    """text without the spans at the given positions in `spans`, and the
+    remaining spans with their offsets in the new text.
+
+    Only whole spans go; nothing is reworded. Spans never cross a line, so the
+    work is per line: the spans kept on a line are joined by single spaces, and a
+    line left with no content is dropped, with one of the blank lines around it
+    so no double gap is left. Lines that hold no span (headings, placeholders,
+    code, blank lines) are untouched.
+    """
+    lines = text.split("\n")
+    starts, offset = [], 0
+    for line in lines:
+        starts.append(offset)
+        offset += len(line) + 1
+    on_line: dict[int, list[int]] = {}
+    for index, span in enumerate(spans):
+        row = max(i for i, start in enumerate(starts) if start <= span.start)
+        on_line.setdefault(row, []).append(index)
+
+    out: list[list[tuple[str, Span | None]]] = []   # one list of (text, span) pieces per kept line
+    skip_blank = False
+    for row, line in enumerate(lines):
+        if skip_blank and not line.strip():
+            skip_blank = False
+            continue
+        skip_blank = False
+        if row not in on_line:
+            out.append([(line, None)])
+            continue
+        start = cursor = starts[row]
+        first = spans[on_line[row][0]]
+        pieces: list[tuple[str, Span | None]] = []
+        for index in on_line[row]:
+            span = spans[index]
+            between = text[cursor:span.start].strip()
+            if between:
+                pieces.append((between, None))
+            if index not in delete:
+                pieces.append((span.text, span))
+            cursor = span.end
+        after = text[cursor:start + len(line)].strip()
+        if after:
+            pieces.append((after, None))
+        if pieces:
+            indent = text[start:first.start] if not text[start:first.start].strip() else ""
+            out.append([(indent, None), *pieces] if indent else pieces)
+            continue
+        # The line is gone. Close the gap it leaves between blank lines.
+        last_is_blank = not out or not "".join(t for t, _ in out[-1]).strip()
+        if row + 1 < len(lines):
+            skip_blank = last_is_blank and not lines[row + 1].strip()
+        elif out and last_is_blank:
+            out.pop()
+
+    built: list[str] = []
+    kept: list[Span] = []
+    length = 0
+    for row, pieces in enumerate(out):
+        if row:
+            built.append("\n")
+            length += 1
+        previous_was_content = False
+        for piece, span in pieces:
+            if previous_was_content:
+                built.append(" ")
+                length += 1
+            built.append(piece)
+            if span is not None:
+                kept.append(Span(length, length + len(piece), piece, span.basis, span.sources))
+            length += len(piece)
+            previous_was_content = bool(piece.strip())
+    return "".join(built), tuple(kept)
 
 
 # ── The EVENT line ────────────────────────────────────────────────────────────

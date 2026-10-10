@@ -11,8 +11,9 @@ A_NODE_ORDER = [
     "predictability_audit", "word_count_enforcer", "fact_checker",
 ]
 # B and C are the same for now (see _wire_cited_draft in pipeline/graph.py):
-# structure → cited draft → strip. Their own steps are added after it.
-SINGLE_WRITER_NODE_ORDER = ["load_profile", "retrieval", "structure", "cited_draft", "strip"]
+# structure → cited draft → strip → finalise, then trim → finalise only when the
+# post is over its maximum. Checks, review and redraft for B are added later.
+SINGLE_WRITER_NODE_ORDER = ["load_profile", "retrieval", "structure", "cited_draft", "strip", "finalise"]
 
 
 @pytest.fixture
@@ -21,7 +22,7 @@ def stub_nodes(monkeypatch):
     the stubs append their names to, in the order they run."""
     import pipeline.graph as graph
 
-    def install(scores):
+    def install(scores, finalise_length="ok"):
         visited: list[str] = []
         score_iter = iter(scores)
 
@@ -53,7 +54,12 @@ def stub_nodes(monkeypatch):
         monkeypatch.setattr(graph, "fact_check_node", stub("fact_checker"))
         monkeypatch.setattr(graph, "structure_node", stub("structure"))
         monkeypatch.setattr(graph, "cited_draft_node", stub("cited_draft", draft))
-        monkeypatch.setattr(graph, "strip_draft_node", stub("strip", lambda s: s.update(final_post=s["current_draft"])))
+        monkeypatch.setattr(graph, "strip_draft_node", stub("strip"))
+        monkeypatch.setattr(graph, "finalise_draft_node", stub("finalise", lambda s: s.update(
+            final_post=s["current_draft"], final_validation={"length": finalise_length})))
+        monkeypatch.setattr(graph, "trim_node", stub("trim"))
+        monkeypatch.setattr(graph, "finalise_trimmed_node", stub("finalise_trimmed"))
+        monkeypatch.setattr(graph, "truncated_node", stub("truncated", lambda s: s.update(final_post="")))
         return visited
 
     return install
@@ -63,12 +69,12 @@ def stub_nodes(monkeypatch):
 def run_graph(stub_nodes):
     import pipeline.graph as graph
 
-    def factory(scores, variant="A"):
-        visited = stub_nodes(scores)
+    def factory(scores, variant="A", finalise_length="ok"):
+        visited = stub_nodes(scores, finalise_length)
         compiled = graph.build_graph(variant)
 
-        def run(quality):
-            result = compiled.invoke({"topic": "t", "quality": quality, "user_id": "u"})
+        def run(quality, **state):
+            result = compiled.invoke({"topic": "t", "quality": quality, "user_id": "u", **state})
             return visited, result
 
         return run
@@ -214,6 +220,29 @@ def test_single_writer_variants_run_one_draft_and_no_rewriting_node(run_graph, v
 
     assert visited == SINGLE_WRITER_NODE_ORDER
     assert result["final_post"] == "draft text"
+
+
+@pytest.mark.parametrize("variant", ["B", "C"])
+def test_an_over_length_post_goes_through_trim_and_is_finalised_again(run_graph, variant):
+    visited, _ = run_graph(scores=[], variant=variant, finalise_length="over_length")("standard")
+
+    assert visited == [*SINGLE_WRITER_NODE_ORDER, "trim", "finalise_trimmed"]
+
+
+@pytest.mark.parametrize("variant", ["B", "C"])
+@pytest.mark.parametrize("length", ["ok", "under_length", "no_target"])
+def test_a_post_that_is_not_over_length_is_never_trimmed(run_graph, variant, length):
+    visited, _ = run_graph(scores=[], variant=variant, finalise_length=length)("standard")
+
+    assert visited == SINGLE_WRITER_NODE_ORDER
+
+
+@pytest.mark.parametrize("variant", ["B", "C"])
+def test_a_truncated_draft_skips_every_later_step(run_graph, variant):
+    visited, result = run_graph(scores=[], variant=variant)("standard", draft_truncated={"max_tokens": 2000})
+
+    assert visited == ["load_profile", "retrieval", "structure", "cited_draft", "truncated"]
+    assert result["final_post"] == ""
 
 
 def test_run_pipeline_defaults_to_a_and_records_it_in_the_trace(stubbed_pipelines, fake_db):
