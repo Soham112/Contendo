@@ -18,6 +18,8 @@ interface Source {
 const TYPE_LABELS: Record<string, string> = {
   article: "Article",
   note: "Note",
+  personal_note: "Personal Note",
+  saved_content: "Saved Content",
   image: "Image",
   youtube: "YouTube",
 };
@@ -25,6 +27,8 @@ const TYPE_LABELS: Record<string, string> = {
 const TYPE_COLORS: Record<string, string> = {
   article: "bg-surface-container text-secondary border-surface-container-high",
   note: "bg-surface-container text-secondary border-surface-container-high",
+  personal_note: "bg-surface-container text-secondary border-surface-container-high",
+  saved_content: "bg-surface-container text-secondary border-surface-container-high",
   image: "bg-surface-container text-secondary border-surface-container-high",
   youtube: "bg-surface-container text-secondary border-surface-container-high",
 };
@@ -57,6 +61,8 @@ function getSourceIcon(type: string): React.ReactNode {
           <line x1="9" y1="15" x2="13" y2="15" />
         </svg>
       );
+    case "personal_note":
+    case "saved_content":
     case "note":
       return (
         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#81543c" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
@@ -571,17 +577,31 @@ export default function LibraryPage() {
   const [visibleCount, setVisibleCount] = useState(6);
 
   useEffect(() => {
-    api.getLibrary()
+    let active = true;
+    const loadLibrary = () => api.getLibrary()
       .then((r) => {
         if (!r.ok) throw new Error("Failed to load library");
         return r.json();
       })
       .then((data) => {
+        if (!active) return;
         setSources(data.sources ?? []);
         setTotalChunks(data.total_chunks ?? 0);
+        setError("");
       })
-      .catch(() => setError("Could not load library. Is the backend running?"))
-      .finally(() => setLoading(false));
+      .catch(() => { if (active) setError("Could not load library. Is the backend running?"); })
+      .finally(() => { if (active) setLoading(false); });
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void loadLibrary();
+    };
+    void loadLibrary();
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
   }, []);
 
   useEffect(() => {
@@ -612,7 +632,8 @@ export default function LibraryPage() {
   const allTags = Array.from(new Set(sources.flatMap((s) => s.tags))).sort();
 
   const filtered = sources
-    .filter((s) => filter === "all" || s.source_type === filter)
+    .filter((s) => filter === "all" || s.source_type === filter ||
+      (filter === "note" && ["personal_note", "saved_content"].includes(s.source_type)))
     .filter((s) => {
       if (!search.trim()) return true;
       const q = search.toLowerCase();
