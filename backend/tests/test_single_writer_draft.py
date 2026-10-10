@@ -1,6 +1,6 @@
 """The single-writer drafter (variants B and C): structure-only archetype choice,
 the cited draft prompt, one draft call with no guard retry, and the strip and
-finalise steps that remove the EVENT line and the markers. Length, trimming and
+finalise steps that read the output envelope and remove the markers. Length, trimming and
 truncation are in test_finalise_and_trim.py."""
 
 import json
@@ -8,11 +8,15 @@ import json
 import pytest
 
 from tests.conftest import ARCHETYPE_GENERAL
-from tests.generation_fixtures import ARTICLE, OBSERVED, OWN, PROFILE, STORY, last_prompt, make_state
+from tests.generation_fixtures import ARTICLE, OBSERVED, OWN, PROFILE, STORY, enveloped, last_prompt, make_state
 from tests.test_generation_trace import USER as KB_USER, seeded_kb  # noqa: F401  (shared knowledge-base fixture)
 
 STORY_KEY = "before_after"
-EVENT_LINE = 'EVENT: S1 | "We rebuilt the ranker in March and latency fell."'
+EVENT = 'S1 | "We rebuilt the ranker in March and latency fell."'
+
+
+def _output(post: str, event: str | None = None) -> str:
+    return enveloped(post, event)
 
 
 def _structure(key: str) -> str:
@@ -175,25 +179,33 @@ def test_every_marker_form_the_prompt_names_is_one_the_code_accepts(claude):
 
 
 @pytest.mark.parametrize("key", sorted(STORY))
-def test_a_story_structure_asks_for_the_event_line_and_offers_the_general_structure(claude, key):
-    from utils.citations import parse_event_header
+def test_a_story_structure_asks_for_the_event_and_offers_the_general_structure(claude, key):
+    from utils.draft_output import parse_draft_output
     from utils.formatters import ARCHETYPES
 
     _, prompt = _draft(claude, make_state([OWN], archetype=key))
 
     assert ARCHETYPES[key].structure in prompt
     assert ARCHETYPES["general"].structure in prompt
-    event_lines = [line for line in prompt.splitlines() if line.startswith("EVENT:")]
-    assert "EVENT: none" in event_lines
-    # The other form is shown with placeholders only: it is not itself a usable EVENT line.
-    assert all(parse_event_header(line, required=True).status in ("none", "malformed") for line in event_lines)
+    event_lines = [line for line in prompt.splitlines() if line.startswith("<event>")]
+    assert "<event>none</event>" in event_lines
+    # The other form is shown with placeholders only: it is not itself a usable event.
+    assert {parse_draft_output(line, story=True).status for line in event_lines} == {"none", "malformed"}
+    assert "<post>" in prompt and "</post>" in prompt
 
 
 @pytest.mark.parametrize("key", ["general", "contrarian_take", "teach_me_something", "list_that_isnt", "prediction_bet"])
-def test_other_structures_do_not_ask_for_an_event_line(claude, key):
+def test_other_structures_ask_for_the_post_envelope_and_no_event(claude, key):
     _, prompt = _draft(claude, make_state([OWN], archetype=key))
 
-    assert not [line for line in prompt.splitlines() if line.startswith("EVENT:")]
+    assert "<event>" not in prompt
+    assert "Your whole output is the post between <post> and </post>, and nothing else:" in prompt
+
+
+def test_the_prompt_no_longer_asks_for_a_first_line_or_a_blank_line(claude):
+    _, prompt = _draft(claude, make_state([OWN], archetype=STORY_KEY))
+
+    assert "EVENT:" not in prompt and "first line" not in prompt and "blank line" not in prompt
 
 
 def test_with_no_sources_the_prompt_says_so_and_the_index_is_empty(claude):
@@ -208,7 +220,7 @@ def test_with_no_sources_the_prompt_says_so_and_the_index_is_empty(claude):
 # --- The draft call ---------------------------------------------------------------
 
 def test_the_draft_is_one_sonnet_call_stored_exactly_as_written(claude):
-    reply = f"{EVENT_LINE}\n\nWe rebuilt the ranker in March. [[S1]]\n\nIt was worth it. [[V]]"
+    reply = _output("We rebuilt the ranker in March. [[S1]]\n\nIt was worth it. [[V]]", EVENT)
 
     state, _ = _draft(claude, make_state([OWN], archetype=STORY_KEY), reply)
 
@@ -231,34 +243,40 @@ def test_unsupported_specifics_cause_no_retry_and_no_sentence_removal(claude):
 
 # --- Strip --------------------------------------------------------------------
 
-def _strip(marked: str, archetype: str, **decision):
-    """strip (EVENT line) then finalise (markers), as the graph runs them."""
+def _finalise(state):
     from pipeline.finalise import finalise_draft_node, strip_draft_node
 
-    state = make_state([OWN, ARTICLE], archetype=archetype, current_draft=marked,
+    return finalise_draft_node(strip_draft_node(state))
+
+
+def _strip(marked: str, archetype: str, **decision):
+    """strip (the envelope) then finalise (markers), as the graph runs them."""
+    from pipeline.finalise import finalise_draft_node, strip_draft_node
+
+    state = make_state([OWN, ARTICLE], archetype=archetype, current_draft=enveloped(marked),
                        archetype_decision={"archetype": archetype, "chosen": archetype, "allowed": [archetype, "general"],
                                            "downgraded_from": None, "reason": None, **decision})
     return finalise_draft_node(strip_draft_node(state))
 
 
-def test_strip_alone_removes_only_the_event_line():
+def test_strip_alone_reads_the_envelope_and_leaves_the_markers():
     from pipeline.finalise import strip_draft_node
 
     state = strip_draft_node(make_state([OWN], archetype=STORY_KEY,
-                                        current_draft=f"{EVENT_LINE}\n\nWe rebuilt the ranker. [[S1]]"))
+                                        current_draft=_output("We rebuilt the ranker. [[S1]]", EVENT)))
 
     assert state["current_draft"] == "We rebuilt the ranker. [[S1]]"
     assert state["event"]["status"] == "cited"
     assert "final_post" not in state
 
 
-def test_strip_removes_markers_and_the_event_line_and_records_both():
-    state = _strip(f"{EVENT_LINE}\n\nWe rebuilt the ranker in March. [[S1]]\n\nThe talk agrees. [[S2]] So do I. [[V]]", STORY_KEY)
+def test_strip_removes_markers_and_the_envelope_and_records_both():
+    state = _strip(_output("We rebuilt the ranker in March. [[S1]]\n\nThe talk agrees. [[S2]] So do I. [[V]]", EVENT), STORY_KEY)
 
     assert state["final_post"] == "We rebuilt the ranker in March.\n\nThe talk agrees. So do I."
     assert state["current_draft"] == state["final_post"]
     assert state["event"] == {"status": "cited", "source": "S1",
-                              "quote": "We rebuilt the ranker in March and latency fell.", "line": EVENT_LINE}
+                              "quote": "We rebuilt the ranker in March and latency fell.", "line": EVENT}
     assert [(c["text"], c["basis"], c["sources"]) for c in state["citations"]] == [
         ("We rebuilt the ranker in March.", "sources", ["S1"]),
         ("The talk agrees.", "sources", ["S2"]),
@@ -271,7 +289,7 @@ def test_strip_removes_markers_and_the_event_line_and_records_both():
 
 
 def test_event_none_makes_the_post_general_and_the_decision_says_why():
-    state = _strip("EVENT: none\n\nMost teams skip this. [[V]]", STORY_KEY)
+    state = _strip(_output("Most teams skip this. [[V]]", "none"), STORY_KEY)
 
     assert state["final_post"] == "Most teams skip this."
     assert state["event"]["status"] == "none"
@@ -283,15 +301,47 @@ def test_event_none_makes_the_post_general_and_the_decision_says_why():
 
 
 @pytest.mark.parametrize("marked,status", [
-    ("We rebuilt the ranker. [[S1]]", "missing"),
-    ("EVENT: the rebuild\n\nWe rebuilt the ranker. [[S1]]", "malformed"),
+    (_output("We rebuilt the ranker. [[S1]]"), "missing"),
+    (_output("We rebuilt the ranker. [[S1]]", "the rebuild"), "malformed"),
 ])
-def test_a_failed_event_line_is_recorded_and_never_reaches_the_post(marked, status):
+def test_a_failed_event_is_recorded_and_never_reaches_the_post(marked, status):
     state = _strip(marked, STORY_KEY)
 
     assert state["event"]["status"] == status
     assert state["final_post"] == "We rebuilt the ranker."
     assert state["archetype"] == STORY_KEY  # acting on the failure is for the checks, not this step
+
+
+def test_a_draft_with_no_post_tag_is_kept_whole_and_the_missing_tag_is_recorded():
+    # The fallback, on purpose: a draft that ignored the envelope is not thrown away.
+    from pipeline.finalise import finalise_draft_node, strip_draft_node
+
+    written = "Most teams skip this. [[V]]\n\nWe did not. [[S1]]"
+    state = make_state([OWN], archetype="general", current_draft=written,
+                       draft_history=[{"node": "draft", "iteration": 0, "text": written}])
+
+    state = finalise_draft_node(strip_draft_node(state))
+
+    assert state["final_post"] == "Most teams skip this.\n\nWe did not."
+    assert state["draft_format"] == [{"draft": "draft", "kind": "post_tag_missing", "text": ""}]
+
+
+def test_text_outside_the_envelope_never_reaches_the_post_and_is_recorded():
+    # The 6b live run on pm-01: a "---" line between the event and the post reached the author.
+    written = f"<event>{EVENT}</event>\n\n---\n\n<post>\nWe rebuilt the ranker. [[S1]]\n</post>\n\nHope this helps."
+    state = make_state([OWN], archetype=STORY_KEY, current_draft=written,
+                       draft_history=[{"node": "draft", "iteration": 0, "text": written}])
+
+    state = _finalise(state)
+
+    assert state["final_post"] == "We rebuilt the ranker."
+    assert state["draft_format"] == [{"draft": "draft", "kind": "text_outside_tags", "text": "---"},
+                                     {"draft": "draft", "kind": "text_outside_tags", "text": "Hope this helps."}]
+    assert state["event"]["status"] == "cited"
+
+
+def test_a_well_formed_draft_records_no_format_failure():
+    assert "draft_format" not in _strip(_output("Most teams skip this. [[V]]"), "general")
 
 
 def test_marker_failures_are_recorded_with_where_they_were():
@@ -316,7 +366,7 @@ def _run(variant, **overrides):
 @pytest.mark.parametrize("variant,quality", [("C", "draft"), ("C", "standard"), ("C", "polished"), ("B", "draft")])
 def test_a_run_is_two_calls_and_returns_the_post_without_markers(claude, fake_db, seeded_kb, variant, quality):
     marked = "pgvector makes retrieval fast. [[S1]]\n\nThat is most of the argument. [[V]]"
-    claude.queue(ARCHETYPE_GENERAL, marked)
+    claude.queue(ARCHETYPE_GENERAL, enveloped(marked))
 
     result = _run(variant, quality=quality)
 
@@ -330,14 +380,14 @@ def test_a_run_is_two_calls_and_returns_the_post_without_markers(claude, fake_db
 
 def test_the_trace_records_what_the_drafter_cited(claude, fake_db, seeded_kb):
     marked = "pgvector makes retrieval fast. [[S1]]\n\nThat is most of the argument. [[V]] Loose end. [S1]"
-    claude.queue(ARCHETYPE_GENERAL, marked)
+    claude.queue(ARCHETYPE_GENERAL, enveloped(marked))
 
     result = _run("C")
 
     [trace] = fake_db.tables["generation_traces"]
     outputs = trace["node_outputs"]
     assert outputs["variant"] == "C"
-    assert outputs["draft_history"] == [{"node": "draft", "iteration": 0, "text": marked}]
+    assert outputs["draft_history"] == [{"node": "draft", "iteration": 0, "text": enveloped(marked)}]
     assert outputs["final_post"] == result["post"]
     assert "[[" not in outputs["final_post"]
     assert outputs["event"] == {"status": "absent", "source": None, "quote": None, "line": ""}

@@ -7,7 +7,7 @@ import json
 import pytest
 
 from tests.conftest import ARCHETYPE_GENERAL
-from tests.generation_fixtures import OWN, make_state
+from tests.generation_fixtures import OWN, enveloped, make_state
 from tests.length_fixtures import TRIM, _clean, _cut_off, _lines, _outputs, _post, _run
 from tests.test_generation_trace import seeded_kb  # noqa: F401  (shared fixture)
 from utils.formatters import count_words, resolve_length_target
@@ -377,13 +377,13 @@ def test_multi_sentence_spans_are_counted_and_trigger_nothing(claude, fake_db, s
     assert state["multi_sentence_spans"] == 5                                  # spans 3, 4, 5, 6 and 8 of the eight
 
     one_each = "\n\n".join(_lines(30))                                        # 30 spans of one sentence each, 300 words
-    claude.queue(ARCHETYPE_GENERAL, one_each)
+    claude.queue(ARCHETYPE_GENERAL, enveloped(one_each))
     _run("B", quality="draft")
     assert _outputs(fake_db)["multi_sentence_spans"] == 0
 
     fake_db.tables["generation_traces"].clear()
     paired = "\n\n".join(f"{a.removesuffix(' [[V]]')}. {b}" for a, b in zip(_lines(15), _lines(15)))
-    claude.queue(ARCHETYPE_GENERAL, paired)                                    # 15 spans of two sentences each
+    claude.queue(ARCHETYPE_GENERAL, enveloped(paired))                                    # 15 spans of two sentences each
     _run("C")
     assert _outputs(fake_db)["multi_sentence_spans"] == 15
     assert len(claude.calls) == 4                                              # two runs of two calls: the count changed nothing

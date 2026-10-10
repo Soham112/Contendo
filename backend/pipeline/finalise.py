@@ -19,7 +19,8 @@ The record:
 An under-length post is recorded and nothing else: no step lengthens a post.
 
 The single-writer nodes that apply this (variants B and C) are here too:
-strip_draft_node, finalise_draft_node, finalise_trimmed_node, truncated_node.
+strip_draft_node, finalise_draft_node, finalise_trimmed_node, truncated_node,
+and settle(), which the code-made edits of variant B use (pipeline/fixes.py).
 """
 
 import logging
@@ -27,7 +28,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from pipeline.state import PipelineState
-from utils.citations import StrippedPost, leftover_markers, parse_event_header, strip_citations
+from utils.citations import StrippedPost, leftover_markers, strip_citations
+from utils.draft_output import parse_draft_output
 from utils.sentences import multi_sentence_span_count
 from utils.formatters import GENERAL_ARCHETYPE, STORY_ARCHETYPES, count_words, normalise_post_punctuation
 from utils.text_spans import protected_spans
@@ -94,26 +96,35 @@ def finalise_marked(marked: str, target: dict[str, Any] | None) -> tuple[Finalis
 # ── Single-writer nodes (variants B and C) ────────────────────────────────────
 
 def strip_draft_node(state: PipelineState) -> PipelineState:
-    """Read and remove the draft's EVENT line; the markers stay for finalise_draft_node.
+    """Read the draft's envelope: keep what is inside <post>, read the <event>
+    part, and drop everything else. The markers stay for finalise_draft_node.
 
-    Records what the line said (event). When the drafter answered "EVENT: none"
-    it wrote to the General structure, so the archetype becomes General and the
-    decision says why. A failed EVENT line is recorded, not acted on here.
+    Records what the <event> part said (event) and anything that broke the
+    envelope (draft_format: [{draft, kind, text}], one entry per failure, where
+    draft is the draft_history node that wrote it). When the drafter answered
+    <event>none</event> it wrote to the General structure, so the archetype
+    becomes General and the decision says why. A failed event is recorded, not
+    acted on here.
     """
     chosen = state.get("archetype", "")
-    header = parse_event_header(state.get("current_draft", ""), required=chosen in STORY_ARCHETYPES)
-    state["event"] = {"status": header.status, "source": header.source,
-                      "quote": header.quote, "line": header.line}
-    if header.status == "none":
+    output = parse_draft_output(state.get("current_draft", ""), story=chosen in STORY_ARCHETYPES)
+    state["event"] = {"status": output.status, "source": output.source,
+                      "quote": output.quote, "line": output.line}
+    if output.format_failures:
+        history = state.get("draft_history") or [{}]
+        logger.warning("strip: draft format failures: %s", [f["kind"] for f in output.format_failures])
+        state["draft_format"] = [*state.get("draft_format", []),
+                                 *({"draft": history[-1].get("node", ""), **f} for f in output.format_failures)]
+    if output.status == "none":
         state["archetype"] = GENERAL_ARCHETYPE
         state["archetype_decision"] = {
             **(state.get("archetype_decision") or {}),
             "archetype": GENERAL_ARCHETYPE, "downgraded_from": chosen,
             "reason": "the drafter found no event that fits the topic",
         }
-    if header.failed:
-        logger.warning("strip: event header %s", header.status)
-    state["current_draft"] = header.body
+    if output.failed:
+        logger.warning("strip: event %s", output.status)
+    state["current_draft"] = output.body
     return state
 
 
@@ -155,6 +166,15 @@ def finalise_trimmed_node(state: PipelineState) -> PipelineState:
     state["current_draft"] = state["final_post"] = finalised.text
     state["final_validation"] = record
     return state
+
+
+def settle(state: PipelineState, text: str, spans) -> None:
+    """Make an edited post (text and its spans, after a deletion or a
+    replacement made in code) the post in state, finalised: the same record
+    finalise_trimmed_node keeps after a trim."""
+    state["current_draft"] = text
+    state["citations"] = [span.as_dict() for span in spans]
+    finalise_trimmed_node(state)
 
 
 def truncated_node(state: PipelineState) -> PipelineState:

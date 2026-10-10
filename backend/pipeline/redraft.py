@@ -1,43 +1,49 @@
-"""What variant B does with what the checks and the review found. No model calls.
+"""What variant B does with what the checks and the review found: which issues
+act, what a model is told about each, and how the run ended. No model calls.
 
-Three decisions, all in code:
-- which issues act (trigger the one redraft) and which are recorded only;
-- what the redraft is told about each acting issue: a fixed instruction for its
-  type and quoted material, never anything a model wrote about the draft;
-- how the run ended (clean, fixed, issues_remain, not_reviewed).
+REDRAFT_RULES is the one table. An issue type acts when it has a row there. Its
+row says how the issue is dealt with:
+  scope "sentence"  one sentence has to change: a targeted fix rewrites only
+                    that sentence (pipeline/fixes.py)
+  scope "post"      the post's structure or length has to change: the one full
+                    redraft
+and holds the fixed instruction a model is given for it and the fields of the
+issue it is shown: never anything a model wrote about the draft. Two fixes
+need no model and are made in code first (pipeline/fixes.py): a sentence
+nothing states is deleted, and a marker that points to the wrong place is
+replaced. A type with no row must be listed in RECORD_ONLY, or the run fails:
+a new issue type is never silently ignored or silently acted on.
 
-REDRAFT_RULES is the one table. An issue type acts when it has a row there; its
-row is the instruction the redraft gets and the fields of the issue it is
-shown. A type with no row must be listed in RECORD_ONLY, or the run fails: a
-new issue type is never silently ignored or silently acted on.
-
-The record this builds is state["review"]:
+The record this builds, with pipeline/fixes.py, is state["review"]:
     first      {checks, acting, recorded}: the first draft's issues, split
-    redraft    {entries, downgraded_from?, ...}: only when a redraft ran; the
-               entries are exactly what the redraft prompt listed
-               (agents.draft_agent.redraft_node adds the call's tokens)
-    redraft_truncated  {max_tokens, output_tokens}: only when the redraft was
-               cut off at its output limit; the first draft is then returned
-    second     {checks, acting, recorded}: the redraft's issues, before any trim
+    fixes      {code, origin, unplaced, route}: the fixes made in code, and
+               which path the remaining issues took (see pipeline/fixes.py)
+    targeted   {entries, flagged, applied, invalid, ...}: only on the targeted path
+    redraft    {entries, downgraded_from?, ...}: only on the full-redraft path;
+               the entries are exactly what the prompt listed
+    redraft_truncated  {max_tokens, output_tokens}: only when the full redraft
+               was cut off; the post as the code fixes left it is then returned
+    second     {checks, acting, recorded}: the issues after the fixes or the
+               redraft, before any trim
+    removed    content taken out because nothing states it: [{kind, text, how, by}]
     remaining  acting issues on the post that is returned (after any trim)
     unreviewed sentences of the returned post with no valid review record
     outcome    clean | fixed | issues_remain | not_reviewed
 
 The outcome describes the post that is returned. It is not_reviewed only when
 some sentence of that post has no valid review record; a first review that
-failed does not make it so when a redraft followed and its review covered
-every sentence.
+failed does not make it so when the second review covered every sentence.
 The review model's own answers are state["review_first"] and state["review_second"].
 """
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from pipeline.checks import REQUEST
 from pipeline.state import PipelineState
 from utils.citations import escape_markers
-from utils.formatters import GENERAL_ARCHETYPE, STORY_ARCHETYPES
+from utils.formatters import GENERAL_ARCHETYPE
 
 logger = logging.getLogger(__name__)
 
@@ -108,15 +114,18 @@ def _banned(issue: dict) -> list[Line]:
 
 @dataclass(frozen=True)
 class RedraftRule:
-    instruction: str                                    # fixed text; the same for every issue of the type
+    # Fixed text, the same for every issue of the type. None: the type is always
+    # fixed in code (pipeline/fixes.py) and never described to a model.
+    instruction: str | None
     material: tuple[Callable[[dict], list[Line]], ...]  # the quoted fields of the issue the entry shows
+    scope: Literal["sentence", "post"] = "sentence"
 
 
-# The one table: every issue type that triggers the redraft, with what the
-# redraft is told. Deterministic check types first (pipeline.checks.ISSUE_TYPES),
-# then review types (pipeline.review_rules.ISSUE_TYPES). under_length is not an
-# issue type at all: nothing ever lengthens a post. No instruction asks for
-# anything to be added, and each one allows leaving the text out.
+# The one table: every issue type that acts, with what a model is told about it.
+# Deterministic check types first (pipeline.checks.ISSUE_TYPES), then review
+# types (pipeline.review_rules.ISSUE_TYPES). under_length is not an issue type
+# at all: nothing ever lengthens a post. No instruction asks for anything to be
+# added, and each sentence-level one allows leaving the text out.
 REDRAFT_RULES: dict[str, RedraftRule] = {
     "citation_malformed": RedraftRule(
         "This text is not a valid marker. End the sentence it belongs to with exactly one marker, "
@@ -140,10 +149,10 @@ REDRAFT_RULES: dict[str, RedraftRule] = {
         "or the request, cite that instead of [[V]]. If it says nowhere, leave the specific out.",
         (_text, _detail("specific", "Specific"), _found_in)),
     "event_unverified": RedraftRule(
-        "The EVENT line could not be checked against one of the author's own sources. Write this post "
-        "to the structure given above, with no EVENT line. Tell nothing as something that happened to "
-        "the author unless a source whose kind begins OWN EXPERIENCE states it.",
-        (_text,)),
+        "The event this post named could not be checked against one of the author's own sources. Write "
+        "this post to the structure given above, with no <event> part. Tell nothing as something that "
+        "happened to the author unless a source whose kind begins OWN EXPERIENCE states it.",
+        (_text,), scope="post"),
     "mixed_authorship_span": RedraftRule(
         "This text cites one of the author's own sources together with a source the author read. Give "
         "the author's own point and the source's point in separate sentences, each with its own marker.",
@@ -151,19 +160,18 @@ REDRAFT_RULES: dict[str, RedraftRule] = {
     "over_length": RedraftRule(
         "The post is longer than its maximum. Leave out whole sentences, the ones the post loses "
         "least by, until it is within the length given above. Add nothing.",
-        (_detail("words", "Words"), _detail("max_words", "Maximum"))),
+        (_detail("words", "Words"), _detail("max_words", "Maximum")), scope="post"),
     "banned_text": RedraftRule(
         "This text contains something the post must not contain, named below. Write the sentence without it.",
         (_text, _banned)),
     "not_in_sources": RedraftRule(
-        'No source and no part of the request states this. If "Words nothing states" is given, leave '
-        "those words out and keep the rest. Otherwise leave the sentence out. Put no other fact, "
-        "feeling or reason in its place.",
+        # A whole sentence that nothing states is deleted in code; this is for part of one.
+        'No source and no part of the request states the words after "Words nothing states". Leave '
+        "those words out and keep the rest of the sentence, or leave the sentence out. Put no other "
+        "fact, feeling or reason in their place.",
         (_text, _detail("unsupported_part", "Words nothing states"))),
-    "wrong_citation": RedraftRule(
-        'The place named after "Stated by" states this, and the sentence\'s marker points somewhere '
-        "else. Keep the sentence's words and change its marker to that place.",
-        (_text, _detail("supported_by", "Stated by"), _evidence)),
+    # Always fixed in code: the marker is replaced with the place the review found.
+    "wrong_citation": RedraftRule(None, ()),
     "wrong_attribution": RedraftRule(
         "This sentence presents its content as coming from the wrong place. What a source whose kind "
         "begins OWN EXPERIENCE states is the author's own, and is told as the author's own. What any "
@@ -200,42 +208,40 @@ def split_issues(checks: dict, review: dict) -> tuple[list[dict], list[dict]]:
     return acting, recorded
 
 
-def issue_entries(acting: list[dict]) -> list[dict[str, Any]]:
-    """One entry per acting issue, as the redraft prompt lists it: {type,
-    instruction, material: [[label, value], ...]}. Everything in it is the
-    type's fixed instruction or a field of the issue chosen by the type's rule."""
+def issue_entries(issues: list[dict], *, numbered: bool = False) -> list[dict[str, Any]]:
+    """One entry per issue, as a fix or redraft prompt lists it: {type,
+    instruction, material: [[label, value], ...]} and, when numbered, sentence:
+    the 1-based number of the sentence it is about (issue["at"] + 1). Everything
+    in it is the type's fixed instruction or a field of the issue chosen by the
+    type's rule."""
     entries = []
-    for issue in acting:
+    for issue in issues:
         rule = REDRAFT_RULES[issue["type"]]
-        material = [list(line) for lines in rule.material for line in lines(issue)]
-        entries.append({"type": issue["type"], "instruction": rule.instruction, "material": material})
+        if rule.instruction is None:
+            raise ValueError(f"{issue['type']} is fixed in code and has no instruction for a model")
+        entry = {"type": issue["type"], "instruction": rule.instruction,
+                 "material": [list(line) for lines in rule.material for line in lines(issue)]}
+        if numbered:
+            entry["sentence"] = issue["at"] + 1
+        entries.append(entry)
     return entries
 
 
 def decide_node(state: PipelineState) -> PipelineState:
-    """After the first review: split the first draft's issues and, when any
-    acts, prepare the one redraft.
-
-    A story whose event could not be verified is to be redrafted to the General
-    structure: that is recorded here (downgraded_from) and applied by
-    apply_downgrade when the redraft is written.
-    """
+    """After the first review: split the first draft's issues into those that
+    act and those that are only recorded. What is done about the acting ones is
+    pipeline/fixes.py."""
     checks = state["checks_before_trim"]
     acting, recorded = split_issues(checks, state["review_first"])
-    record: dict[str, Any] = {"first": {"checks": checks, "acting": acting, "recorded": recorded}}
+    state["review"] = {"first": {"checks": checks, "acting": acting, "recorded": recorded}}
     if acting:
-        record["redraft"] = {"entries": issue_entries(acting)}
-        chosen = state.get("archetype", "")
-        if chosen in STORY_ARCHETYPES and any(issue["type"] == "event_unverified" for issue in acting):
-            record["redraft"]["downgraded_from"] = chosen
-        logger.info("decide: redraft for %s", sorted({issue["type"] for issue in acting}))
-    state["review"] = record
+        logger.info("decide: acting on %s", sorted({issue["type"] for issue in acting}))
     return state
 
 
 def apply_downgrade(state: PipelineState) -> None:
-    """Make the post a General Post when decide_node recorded that its event
-    could not be verified. Does nothing otherwise."""
+    """Make the post a General Post when its event could not be verified
+    (review.redraft.downgraded_from). Does nothing otherwise."""
     chosen = state["review"]["redraft"].get("downgraded_from")
     if chosen is None:
         return
@@ -248,18 +254,17 @@ def apply_downgrade(state: PipelineState) -> None:
 
 
 def route_after_decide(state: PipelineState) -> str:
-    return "redraft" if "redraft" in state["review"] else "outcome"
+    return "fix" if state["review"]["first"]["acting"] else "outcome"
 
 
 def outcome_node(state: PipelineState) -> PipelineState:
     """How the run ended, for the post that is returned.
 
-    Does nothing when no review ran (quality="draft"). The returned post is the
-    redraft, or the first draft when there was no redraft or the redraft was
-    cut off; its review is the last one that ran on it. After a redraft was
-    attempted, the remaining issues are the final checks' acting issues plus
-    that review's acting issues whose sentence the trim did not delete. The
-    post is not_reviewed when a sentence still in it has no valid review record.
+    Does nothing when no review ran (quality="draft"). The returned post's
+    review is the last one that ran: the second, whenever anything acted. The
+    remaining issues are then the final checks' acting issues plus that
+    review's acting issues whose sentence the trim did not delete. The post is
+    not_reviewed when a sentence still in it has no valid review record.
     """
     record = state.get("review")
     if record is None:
@@ -272,17 +277,17 @@ def outcome_node(state: PipelineState) -> PipelineState:
     if second_review is not None:
         acting, recorded = split_issues(state["checks_before_trim"], second_review)
         record["second"] = {"checks": state["checks_before_trim"], "acting": acting, "recorded": recorded}
-    if "redraft" in record:
-        reviewed_acting, _ = split_issues({"issues": []}, review)
         final_acting, _ = split_issues(state["checks_final"], {"issues": []})
-        remaining = [*final_acting, *(issue for issue in reviewed_acting if issue["sentence"] not in deleted)]
+        remaining = [*final_acting,
+                     *(issue for issue in acting if issue["origin"] == "review" and issue["sentence"] not in deleted)]
     unreviewed = [position for position in review["unreviewed"] if position not in deleted]
     if unreviewed:
         outcome = "not_reviewed"
-    elif "redraft" not in record:
+    elif "fixes" not in record:
         outcome = "clean"
     else:
         outcome = "issues_remain" if remaining else "fixed"
+    record.setdefault("removed", [])
     record["remaining"] = remaining
     record["unreviewed"] = [review["sentences"][position]["text"] for position in unreviewed]
     record["outcome"] = outcome
@@ -291,10 +296,12 @@ def outcome_node(state: PipelineState) -> PipelineState:
 
 
 def review_summary(state: PipelineState) -> dict[str, Any] | None:
-    """What /generate returns about the review: the outcome and the acting
-    issues on the returned post. None when no review ran."""
+    """What /generate returns about the review: the outcome, the acting issues
+    on the returned post, and the content that was taken out because nothing
+    states it (by kind, for asking the author later). None when no review ran."""
     record = state.get("review")
     if record is None or "outcome" not in record:
         return None
     return {"outcome": record["outcome"],
-            "issues": [{"type": issue["type"], "sentence_text": issue["text"]} for issue in record["remaining"]]}
+            "issues": [{"type": issue["type"], "sentence_text": issue["text"]} for issue in record["remaining"]],
+            "removed": [{"kind": item["kind"], "text": item["text"]} for item in record["removed"]]}

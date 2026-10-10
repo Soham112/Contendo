@@ -72,6 +72,8 @@ def stub_nodes(monkeypatch):
         monkeypatch.setattr(single_writer, "review_node", stub("review", lambda s: s.update(
             review_first={"outcome": "clean", "issues": [], "unreviewed": [], "sentences": []})))
         monkeypatch.setattr(single_writer, "redraft_node", stub("redraft"))
+        monkeypatch.setattr(single_writer, "targeted_fix_node", stub("targeted_fix"))
+        monkeypatch.setattr(single_writer, "review_fixed_node", stub("review_fixed"))
         monkeypatch.setattr(single_writer, "review_redraft_node", stub("review_redraft"))
         return visited
 
@@ -264,31 +266,30 @@ def test_a_post_that_is_not_over_length_is_never_trimmed(run_graph, variant, qua
     assert visited == SINGLE_WRITER_NODE_ORDER
 
 
-def test_no_edge_leads_back_to_the_redraft():
-    """Never a third draft: nothing after the redraft can reach a drafting node."""
+def _reachable_from(node: str) -> set[str]:
     import pipeline.graph as graph
 
-    edges = graph.build_graph("B").get_graph().edges
     after: dict[str, set[str]] = {}
-    for edge in edges:
+    for edge in graph.build_graph("B").get_graph().edges:
         after.setdefault(edge.source, set()).add(edge.target)
-    reached, frontier = set(), {"redraft"}
+    reached, frontier = set(), {node}
     while frontier:
-        node = frontier.pop()
-        for target in after.get(node, ()):
+        for target in after.get(frontier.pop(), ()):
             if target not in reached:
                 reached.add(target)
                 frontier.add(target)
-    assert not {"draft", "redraft"} & reached
-    assert {"review_redraft", "trim", "outcome"} <= reached
+    return reached
 
 
-@pytest.mark.parametrize("variant", ["B", "C"])
-def test_a_truncated_draft_skips_every_later_step(run_graph, variant):
-    visited, result = run_graph(scores=[], variant=variant)("standard", draft_truncated={"max_tokens": 2000})
+def test_a_run_takes_the_targeted_path_or_the_full_redraft_never_both_and_never_a_third_draft():
+    """By the graph's edges alone: nothing after either drafter call can reach a drafter call."""
+    writers = {"draft", "targeted_fix", "redraft"}
 
-    assert visited == ["load_profile", "retrieval", "structure", "cited_draft", "truncated"]
-    assert result["final_post"] == ""
+    assert not writers & _reachable_from("targeted_fix")
+    assert not writers & _reachable_from("redraft")
+    assert {"targeted_fix", "redraft", "review_fixed"} <= _reachable_from("code_fix")      # code_fix chooses one
+    assert {"review_fixed", "trim", "outcome"} <= _reachable_from("targeted_fix")
+    assert {"review_redraft", "review_fixed", "trim", "outcome"} <= _reachable_from("redraft")
 
 
 def test_run_pipeline_defaults_to_a_and_records_it_in_the_trace(stubbed_pipelines, fake_db):

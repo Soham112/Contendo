@@ -33,7 +33,8 @@ sentence of the first draft takes that sentence's record, and only the new or
 changed sentences are sent, grouped the same way.
 
 The prompt is built in agents/review_prompt.py; this file holds the call, the
-merge and the two graph nodes of variant B (review_node, review_redraft_node);
+merge and the graph nodes of variant B (review_node, review_fixed_node,
+review_redraft_node);
 the validation is in pipeline/review_validation.py. What an issue leads to is
 decided in pipeline/redraft.py.
 """
@@ -161,19 +162,27 @@ def _same_sentence_key(text: str, basis: str, sources) -> tuple:
     return " ".join(text.split()), basis, tuple(sources)
 
 
-def _reusable(previous: dict[str, Any], sentences: list[tuple[int, Span]]) -> dict[int, dict]:
+def _reusable(previous: dict[str, Any], sentences: list[tuple[int, Span]],
+              origin: list[int | None] | None = None) -> dict[int, dict]:
     """sentence number in this post -> {record, rhythm} taken from the previous
     review, for each sentence that review already described. A sentence that
     occurs more than once is matched in order: the second occurrence here takes
     the second occurrence there, and one with no counterpart left is sent for
     review. A sentence the previous review left without a valid record
-    (previous["unreviewed"]) is never reused: it is sent again."""
+    (previous["unreviewed"]) is never reused: it is sent again.
+
+    origin, when given, says outright which earlier sentence each sentence is
+    (0-based, None for a new one), and nothing is matched by text: the review
+    never sees a citation, so a sentence whose marker alone changed keeps its record."""
     unreviewed = set(previous["unreviewed"])
     records = {record["sentence"]: record for record in previous["records"]}
     rhythm: dict[int, list[str]] = {}
     for issue in previous["issues"]:
         if issue["type"] == "ai_rhythm":
             rhythm.setdefault(issue["sentence"] + 1, []).append(issue["detail"]["why"])
+    if origin is not None:
+        return {number: {"record": {**records[was + 1], "sentence": number}, "rhythm": rhythm.get(was + 1, [])}
+                for number, was in enumerate(origin, 1) if was is not None and was not in unreviewed}
     earlier: dict[tuple, list[int]] = {}
     for number, sentence in enumerate(previous["sentences"], 1):
         if number - 1 in unreviewed:
@@ -233,13 +242,17 @@ def _run_groups(state: PipelineState, sentences: list[tuple[int, Span]],
     return reviews, errors, calls
 
 
-def review_post(state: PipelineState, previous: dict[str, Any] | None = None) -> dict[str, Any]:
+def review_post(state: PipelineState, previous: dict[str, Any] | None = None,
+                origin: list[int | None] | None = None) -> dict[str, Any]:
     """Review the post in state. Changes nothing.
 
     previous: an earlier review_post result for an earlier draft of this post.
     A sentence it holds a valid record for, and that is unchanged here (same
     text after whitespace normalisation, same citation), takes that record and
-    is not sent again.
+    is not sent again. origin (pipeline.fixes): for each sentence here, the
+    sentence of that earlier draft it is, or None; given, it decides the reuse
+    and no text is matched. An origin that does not fit the post's sentences is
+    not used, and the result says so (origin_mismatch).
 
     Returns {outcome, issues, invalid, unreviewed, records, sentences, reused,
     reviewed, groups, model, input_tokens, output_tokens} and, when the review
@@ -268,7 +281,8 @@ def review_post(state: PipelineState, previous: dict[str, Any] | None = None) ->
     source_texts = {sid: chunk_field(chunks[entry["position"]], "text") or chunk_field(chunks[entry["position"]], "content")
                     for sid, entry in source_index.items() if entry["position"] < len(chunks)}
     request_text = "\n".join([state.get("topic") or "", state.get("context") or ""])
-    reuse = _reusable(previous, sentences) if previous else {}
+    mismatch = origin is not None and len(origin) != len(sentences)
+    reuse = _reusable(previous, sentences, None if mismatch else origin) if previous else {}
     to_review = [number for number in range(1, len(sentences) + 1) if number not in reuse]
     groups = [[to_review[position - 1] for position in group] for group in review_groups(len(to_review))]
     result: dict[str, Any] = {
@@ -278,6 +292,9 @@ def review_post(state: PipelineState, previous: dict[str, Any] | None = None) ->
         "reused": len(reuse), "reviewed": len(to_review),
         "groups": len(groups), "model": REVIEW_MODEL, "input_tokens": 0, "output_tokens": 0}
 
+    if mismatch:
+        logger.warning("review: origin has %d entries for %d sentences; matching by text", len(origin), len(sentences))
+        result["origin_mismatch"] = True
     reviews, errors, calls = _run_groups(state, sentences, groups)
     result["input_tokens"] = sum(c["input_tokens"] for c in calls)
     result["output_tokens"] = sum(c["output_tokens"] for c in calls)
@@ -326,7 +343,17 @@ def review_node(state: PipelineState) -> PipelineState:
 
 
 def review_redraft_node(state: PipelineState) -> PipelineState:
-    """Review the redraft, sending only the sentences it changed or added:
-    state["review_second"]."""
+    """Review a full redraft, sending only the sentences it changed or added
+    (matched by text and citation): state["review_second"]."""
     state["review_second"] = review_post(state, previous=state["review_first"])
+    return state
+
+
+def review_fixed_node(state: PipelineState) -> PipelineState:
+    """Review the post after the code fixes and any targeted fix. Only the
+    sentences a model replaced are sent; every other sentence is known to be
+    one the first review described (review.fixes.origin) and keeps its record,
+    from which the issues are derived again: state["review_second"]."""
+    state["review_second"] = review_post(state, previous=state["review_first"],
+                                         origin=state["review"]["fixes"]["origin"])
     return state

@@ -8,7 +8,7 @@ import pytest
 
 from tests.conftest import ARCHETYPE_GENERAL
 from tests.checks_fixtures import PRICING, SURVEY
-from tests.generation_fixtures import ARTICLE, OWN, PROFILE, make_state
+from tests.generation_fixtures import ARTICLE, OWN, PROFILE, enveloped, make_state
 from tests.length_fixtures import DRAFT_ONLY, _outputs, _run
 from tests.test_generation_trace import STANDARD_RUN, seeded_kb  # noqa: F401  (shared fixture)
 
@@ -32,7 +32,7 @@ def _check(marked: str, chunks=(PRICING, SURVEY), archetype="general", **overrid
     from utils.frames import build_sources_block
 
     chunks = list(chunks)
-    state = make_state(chunks, archetype=archetype, current_draft=marked,
+    state = make_state(chunks, archetype=archetype, current_draft=enveloped(marked),
                        source_index=build_sources_block(chunks, PROFILE).index, **overrides)
     state = checks_node(finalise_draft_node(strip_draft_node(state)))
     assert state["checks_before_trim"] == state["checks_final"]
@@ -202,38 +202,40 @@ def test_a_view_with_no_specific_is_fine():
 # --- 6. event_unverified -----------------------------------------------------------
 
 QUOTE = "Early meetings were me presenting slides for an hour."
-BODY = "\n\nEarly on I presented slides for an hour. [[S1]]"
+BODY = "Early on I presented slides for an hour. [[S1]]"
 
 
-def _event(line: str, archetype=STORY_KEY, chunks=(PRICING, SURVEY)) -> list[dict]:
-    return _of(_check(line + BODY if line else BODY.strip(), chunks, archetype=archetype), "event_unverified")
+def _event(event: str | None, archetype=STORY_KEY, chunks=(PRICING, SURVEY)) -> list[dict]:
+    """The event issues of a draft whose <event> part holds `event` (None: no <event> part)."""
+    tag = "" if event is None else f"<event>{event}</event>\n"
+    return _of(_check(f"{tag}<post>\n{BODY}\n</post>", chunks, archetype=archetype), "event_unverified")
 
 
 def test_an_event_quoted_word_for_word_from_the_authors_own_note_is_verified():
-    assert _event(f'EVENT: S1 | "{QUOTE}"') == []
-    assert _event('EVENT: S1 | "Results: conversion improved from 13 to 16 percent; average revenue per account '
+    assert _event(f'S1 | "{QUOTE}"') == []
+    assert _event('S1 | "Results: conversion improved from 13 to 16 percent; average revenue per account '
                   'fell 4 percent; shared logins rose."') == []
 
 
-@pytest.mark.parametrize("line,reason,sources", [
-    ('EVENT: S1 | "My first board meetings were me presenting slides for an hour."', "event_quote_not_in_note", ["S1"]),
-    ('EVENT: S1 | "Early meetings were me presenting slides"', "event_quote_not_sentence", ["S1"]),
-    ('EVENT: S2 | "The survey found that 41 percent of teams skip reviews."', "source_not_own_experience", ["S2"]),
-    ('EVENT: S9 | "Early meetings were me presenting slides for an hour."', "unknown_source", ["S9"]),
-    ("EVENT: the board meetings", "event_line_malformed", []),
-    ("", "event_line_missing", []),
+@pytest.mark.parametrize("event,reason,sources", [
+    ('S1 | "My first board meetings were me presenting slides for an hour."', "event_quote_not_in_note", ["S1"]),
+    ('S1 | "Early meetings were me presenting slides"', "event_quote_not_sentence", ["S1"]),
+    ('S2 | "The survey found that 41 percent of teams skip reviews."', "source_not_own_experience", ["S2"]),
+    ('S9 | "Early meetings were me presenting slides for an hour."', "unknown_source", ["S9"]),
+    ("the board meetings", "event_line_malformed", []),
+    (None, "event_line_missing", []),
 ])
-def test_an_event_that_is_not_verified_says_why(line, reason, sources):
-    [issue] = _event(line)
+def test_an_event_that_is_not_verified_says_why(event, reason, sources):
+    [issue] = _event(event)
 
     assert issue["detail"]["reason"] == reason
-    assert (issue["span"], issue["sources"], issue["text"]) == (None, sources, line)
+    assert (issue["span"], issue["sources"], issue["text"]) == (None, sources, event or "")
 
 
 def test_event_none_and_non_story_posts_have_no_event_to_verify():
-    assert _event("EVENT: none") == []
-    assert _event("", archetype="general") == []
-    [issue] = _event(f'EVENT: S1 | "{QUOTE}"', archetype="general")
+    assert _event("none") == []
+    assert _event(None, archetype="general") == []
+    [issue] = _event(f'S1 | "{QUOTE}"', archetype="general")
     assert issue["detail"]["reason"] == "event_line_unexpected"
 
 
@@ -364,7 +366,7 @@ def test_a_word_to_avoid_in_a_heading_is_reported_without_a_span():
 @pytest.mark.parametrize("variant,quality", DRAFT_ONLY)
 def test_checks_are_recorded_and_add_no_call_and_change_no_post(claude, fake_db, seeded_kb, variant, quality):
     marked = "\n\n".join([*_lines(28), "Latency fell 37 percent on a Tuesday. [[S1]]", "No marker on this line."])
-    claude.queue(ARCHETYPE_GENERAL, marked)
+    claude.queue(ARCHETYPE_GENERAL, enveloped(marked))
 
     result = _run(variant, quality=quality)
 
@@ -379,7 +381,7 @@ def test_checks_are_recorded_and_add_no_call_and_change_no_post(claude, fake_db,
 
 @pytest.mark.parametrize("variant,quality", DRAFT_ONLY)
 def test_checks_run_again_on_the_trimmed_post(claude, fake_db, seeded_kb, variant, quality):
-    claude.queue(ARCHETYPE_GENERAL, _post(36), json.dumps({"ranking": [10]}))      # 360 words, trimmed to 350
+    claude.queue(ARCHETYPE_GENERAL, enveloped(_post(36)), json.dumps({"ranking": [10]}))      # 360 words, trimmed to 350
 
     _run(variant, quality=quality)
 

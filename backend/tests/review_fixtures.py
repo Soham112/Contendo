@@ -5,6 +5,7 @@ import json
 import re
 
 from tests.conftest import ARCHETYPE_GENERAL
+from tests.generation_fixtures import enveloped  # noqa: F401  (also imported from here)
 
 
 def record(sentence: int, **changes) -> dict:
@@ -48,16 +49,25 @@ def answer_groups(claude, changes: dict | None = None, rhythm: dict | None = Non
     claude.respond_with(reply)
 
 
-def answer_pipeline(claude, drafts, reviews=(), trim=None, structure=ARCHETYPE_GENERAL) -> list[str]:
+def fixes_reply(replace: dict | None = None, delete=()) -> str:
+    """A targeted-fix answer: replacements {sentence number: marked text} and deletions."""
+    fixes = [f'<fix sentence="{n}">{text}</fix>' for n, text in (replace or {}).items()]
+    fixes += [f'<fix sentence="{n}" delete="true"/>' for n in delete]
+    return "<fixes>\n" + "\n".join(fixes) + "\n</fixes>"
+
+
+def answer_pipeline(claude, drafts, reviews=(), trim=None, fixes=None, structure=ARCHETYPE_GENERAL) -> list[str]:
     """Make the fake model play every call of a single-writer run, whatever
     order the parallel review calls arrive in.
 
-    drafts: what each draft call returns, in order (the draft, then the
-    redraft). A draft call with none left fails the test: there is never a
-    third draft. reviews: one dict per review pass, {changes, rhythm, replace}
-    as answer_groups takes them; a pass with no dict gets benign records.
-    trim: the trim call's reply; a trim call without one fails the test.
-    Returns the list the draft prompts are appended to, in order.
+    drafts: what each draft call returns, in order (the draft, then a full
+    redraft), put in the output envelope unless it has one. A draft call with
+    none left fails the test: there is never a third draft. fixes: the
+    targeted-fix call's reply; a targeted-fix call without one fails the test.
+    reviews: one dict per review pass (before and after the fix or redraft),
+    {changes, rhythm, replace} as answer_groups takes them; a pass with no dict
+    gets benign records. trim: the trim call's reply; a trim call without one
+    fails the test. Returns the list the drafter's prompts are appended to, in order.
     """
     drafts, prompts = list(drafts), []
 
@@ -78,8 +88,12 @@ def answer_pipeline(claude, drafts, reviews=(), trim=None, structure=ARCHETYPE_G
                 return override
             notes = [note for n, note in (spec.get("rhythm") or {}).items() if n in group]
             return review_reply(group, spec.get("changes"), notes)
+        prompt = kwargs["messages"][-1]["content"]
+        prompts.append(prompt)
+        if "<post_sentences>" in prompt:
+            assert fixes is not None, "an unexpected targeted-fix call"
+            return fixes
         assert drafts, "a draft call with no draft left to return: a third draft?"
-        prompts.append(kwargs["messages"][-1]["content"])
-        return drafts.pop(0)
+        return enveloped(drafts.pop(0))
     claude.respond_with(reply)
     return prompts

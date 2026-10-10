@@ -79,16 +79,21 @@ class PipelineState(TypedDict, total=False):
     # Single-writer drafting (variants B and C only; absent under A).
     # source_index: S-id -> {position, chunk_id, frame, authorship}, as the
     #   drafter's sources block numbered the chunks (utils.frames.build_sources_block).
-    # event: the draft's EVENT line, {status, source, quote, line}
-    #   (utils.citations.EventHeader; status "absent" for a non-story post).
+    # event: what the draft's <event> part said, {status, source, quote, line}
+    #   (utils.draft_output.DraftOutput; status "absent" for a non-story post).
+    # draft_format: what broke a draft's output envelope, [{draft, kind, text}]
+    #   (text outside the tags, a missing or unclosed <post>, a second <event>);
+    #   set only when something did. Text outside the tags never reaches the post.
     # citations: the post's spans, [{start, end, text, basis, sources}], offsets
-    #   into the post without markers.
+    #   into the post without markers. One per sentence once variant B has
+    #   fixed anything (pipeline.fixes).
     # citation_failures: marker-like text that is not a usable citation,
     #   [{kind, text, start, end}], offsets into the marked draft's body.
-    # All four are persisted in generation_traces.node_outputs; the marked draft
-    # itself is the "draft" entry in draft_history.
+    # All are persisted in generation_traces.node_outputs; the draft as the
+    # model wrote it, envelope included, is the "draft" entry in draft_history.
     source_index: dict[str, dict[str, Any]]
     event: dict[str, Any]
+    draft_format: list[dict[str, Any]]
     citations: list[dict[str, Any]]
     citation_failures: list[dict[str, Any]]
     # multi_sentence_spans: how many spans of the draft hold more than one
@@ -116,17 +121,22 @@ class PipelineState(TypedDict, total=False):
 
     # Variant B only (absent under A and C, and under B with quality="draft").
     # review_first, review_second: the structured review of the first draft and
-    #   of the redraft (agents.review_agent.review_post): {outcome, issues,
-    #   invalid, unreviewed, records, sentences, reused, reviewed, groups, model,
+    #   of the post after the fixes or the full redraft
+    #   (agents.review_agent.review_post): {outcome, issues, invalid,
+    #   unreviewed, records, sentences, reused, reviewed, groups, model,
     #   input_tokens, output_tokens, error?}. The second sends only the
-    #   sentences the redraft changed; reused / reviewed count both kinds.
-    # review: what was done about the issues (pipeline.redraft):
+    #   sentences a model wrote since; reused / reviewed count both kinds.
+    # review: what was done about the issues (pipeline.redraft, pipeline.fixes):
     #   {first: {checks, acting, recorded},
-    #    redraft: {entries: [{type, instruction, material}], downgraded_from?,
-    #              input_tokens, output_tokens}        only when a redraft ran
-    #    redraft_truncated: {max_tokens, output_tokens} only when the redraft
-    #              was cut off; the first draft is then the returned post
-    #    second: {checks, acting, recorded}            only when a redraft ran
+    #    fixes: {code: [{type, issue, sentence, before, after}], origin,
+    #            unplaced, route: none | targeted | full}   when anything acted
+    #    targeted: {entries, flagged, parts, answer, applied, invalid,
+    #               format_failures, input_tokens, output_tokens}   targeted path only
+    #    redraft: {entries, downgraded_from?, input_tokens, output_tokens}   full path only
+    #    redraft_truncated: {max_tokens, output_tokens}   only when the full
+    #              redraft was cut off; the post is then returned as it was
+    #    second: {checks, acting, recorded}            when anything acted
+    #    removed: [{kind, text, how: deleted | trimmed, by: code | model}],
     #    remaining: acting issues on the returned post,
     #    unreviewed: sentences of the returned post with no valid review record,
     #    outcome: clean | fixed | issues_remain | not_reviewed}

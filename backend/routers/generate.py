@@ -48,12 +48,22 @@ class ReviewIssue(BaseModel):
     sentence_text: str
 
 
+class RemovedContent(BaseModel):
+    # What the review said the removed text mainly was (feeling_or_reaction,
+    # motive, fact_or_event, generalisation, ...); None when it had no record.
+    kind: str | None
+    text: str
+
+
 class ReviewSummary(BaseModel):
     # clean | fixed | issues_remain | not_reviewed (pipeline.redraft.outcome_node).
     outcome: str
     # The acting issues still on the returned post. Record-only issue types
     # (changed_detail, ai_rhythm) are in the generation trace, never here.
     issues: list[ReviewIssue] = []
+    # Content taken out of the post because no source states it. Nothing shows
+    # it yet; it is what a later "ask the author" step would ask about.
+    removed: list[RemovedContent] = []
 
 
 class GenerateResponse(BaseModel):

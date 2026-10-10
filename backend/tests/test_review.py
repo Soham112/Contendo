@@ -10,7 +10,7 @@ import json
 import pytest
 
 from tests.checks_fixtures import PRICING, SURVEY
-from tests.generation_fixtures import PROFILE, make_state
+from tests.generation_fixtures import PROFILE, enveloped, make_state
 from tests.length_fixtures import _cut_off
 from tests.review_fixtures import answer_groups, assigned, record, review_reply
 
@@ -28,7 +28,7 @@ def _state(marked: str = MARKED, chunks=(PRICING, SURVEY), **overrides) -> dict:
     from utils.frames import build_sources_block
 
     chunks = list(chunks)
-    state = make_state(chunks, archetype="general", current_draft=marked,
+    state = make_state(chunks, archetype="general", current_draft=enveloped(marked),
                        source_index=build_sources_block(chunks, PROFILE).index, **overrides)
     return finalise_draft_node(strip_draft_node(state))
 

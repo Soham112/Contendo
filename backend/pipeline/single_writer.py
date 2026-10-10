@@ -4,18 +4,26 @@ C (draft only): structure → draft → strip → finalise → checks → trim (
 when over the maximum) → finalise → checks again → end. The checks are recorded
 and nothing acts on them.
 
-B (reviewed): the same first draft, then review → decide → [redraft → strip →
-finalise → checks → review of the changed sentences] → trim (only when over the
-maximum) → finalise → checks again → outcome → end. The second pass has its own
-nodes and no edge leads back to the redraft, so a third draft cannot happen.
+B (reviewed): the same first draft, then review → decide. With no acting issue
+it ends there. Otherwise code_fix makes the fixes that need no model and
+chooses one path for what is left (pipeline/fixes.py):
+  none      → review_fixed
+  targeted  → targeted_fix (one drafter call, replacements for the flagged
+              sentences only) → review_fixed
+  full      → redraft (one drafter call, the whole post) → strip → finalise →
+              checks → review_redraft
+then trim (only when over the maximum) → finalise → checks again → outcome.
+No edge joins the targeted and the full path, and none leads back to a
+drafting step, so a run makes at most one of those calls and never a third
+draft. A full redraft cut off at its output limit leaves the post as the code
+fixes made it, which goes on through review_fixed.
 With quality="draft" B takes C's path after the first checks: no review and no
-redraft. quality="polished" is the same as "standard".
+fix. quality="polished" is the same as "standard".
 
 In both, a first draft cut off at its output limit goes straight to
-"truncated" and the run returns no post. A cut-off redraft (B) is dropped and
-the first draft goes on to the trim and the outcome as it stands. "structure" is the archetype choice (structure only;
-"archetype" is a state key, so the node cannot have that name; "review_draft"
-is the first review for the same reason).
+"truncated" and the run returns no post. "structure" is the archetype choice
+(structure only; "archetype" is a state key, so the node cannot have that name;
+"review_draft" is the first review for the same reason).
 
 Every B step records how long it took (state["step_timings"]).
 """
@@ -26,14 +34,15 @@ from typing import Callable
 from langgraph.graph import END, StateGraph
 
 from agents.archetype_agent import structure_node
-from agents.draft_agent import cited_draft_node, redraft_node
-from agents.review_agent import review_node, review_redraft_node
+from agents.draft_agent import cited_draft_node, redraft_node, targeted_fix_node
+from agents.review_agent import review_fixed_node, review_node, review_redraft_node
 from agents.trim_agent import trim_node
 from pipeline.checks import checks_node, recheck_node
 from pipeline.finalise import (
     finalise_draft_node, finalise_trimmed_node, route_after_cited_draft, route_to_trim,
     strip_draft_node, truncated_node,
 )
+from pipeline.fixes import code_fix_node, route_after_fix
 from pipeline.redraft import decide_node, outcome_node, route_after_decide
 from pipeline.state import PipelineState
 
@@ -84,11 +93,9 @@ def route_after_checks(state: PipelineState) -> str:
 
 
 def route_after_redraft(state: PipelineState) -> str:
-    """A redraft goes through the second pass. A cut-off one left the first
-    draft in place, which goes on as a draft with no redraft would."""
-    if "redraft_truncated" in state["review"]:
-        return route_to_trim(state)
-    return "strip"
+    """A full redraft goes through its own second pass. A cut-off one left the
+    post as the code fixes made it, which is reviewed as that."""
+    return "kept" if "redraft_truncated" in state["review"] else "strip"
 
 
 def wire_reviewed(graph: StateGraph) -> None:
@@ -104,6 +111,9 @@ def wire_reviewed(graph: StateGraph) -> None:
     add("checks", checks_node)
     add("review_draft", review_node)
     add("decide", decide_node)
+    add("code_fix", code_fix_node)
+    add("targeted_fix", targeted_fix_node)
+    add("review_fixed", review_fixed_node)
     add("redraft", redraft_node)
     add("strip_redraft", strip_draft_node)
     add("finalise_redraft", finalise_draft_node)
@@ -122,9 +132,12 @@ def wire_reviewed(graph: StateGraph) -> None:
     graph.add_edge("finalise", "checks")
     graph.add_conditional_edges("checks", route_after_checks, {"review": "review_draft", "trim": "trim", "end": END})
     graph.add_edge("review_draft", "decide")
-    graph.add_conditional_edges("decide", route_after_decide, {"redraft": "redraft", "outcome": "outcome"})
-    graph.add_conditional_edges("redraft", route_after_redraft,
-                                {"strip": "strip_redraft", "trim": "trim", "end": "outcome"})
+    graph.add_conditional_edges("decide", route_after_decide, {"fix": "code_fix", "outcome": "outcome"})
+    graph.add_conditional_edges("code_fix", route_after_fix,
+                                {"none": "review_fixed", "targeted": "targeted_fix", "full": "redraft"})
+    graph.add_edge("targeted_fix", "review_fixed")
+    graph.add_conditional_edges("review_fixed", route_to_trim, {"trim": "trim", "end": "outcome"})
+    graph.add_conditional_edges("redraft", route_after_redraft, {"strip": "strip_redraft", "kept": "review_fixed"})
     graph.add_edge("strip_redraft", "finalise_redraft")
     graph.add_edge("finalise_redraft", "checks_redraft")
     graph.add_edge("checks_redraft", "review_redraft")
