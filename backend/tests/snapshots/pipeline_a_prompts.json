@@ -1,0 +1,518 @@
+{
+ "story (pm-01)": {
+  "state": {
+   "user_id": "snapshot-user",
+   "quality": "standard",
+   "profile": {
+    "name": "Theo Okafor",
+    "role": "Senior Product Manager at Brightloom (fictional)",
+    "bio": "Fictional eval persona. Product manager at Brightloom, a made-up B2B scheduling platform for small healthcare clinics. Previously a support lead, which is why every roadmap argument starts with a ticket count.",
+    "location": "Manchester, UK",
+    "voice_descriptors": [
+     "warm",
+     "direct",
+     "customer quotes over frameworks",
+     "self-deprecating"
+    ],
+    "writing_rules": [
+     "Quote a real customer sentence when one exists",
+     "Name the trade-off, then say which side I chose",
+     "Short paragraphs, no bullet soup"
+    ],
+    "topics_of_expertise": [
+     "product discovery",
+     "onboarding and activation",
+     "pricing",
+     "prioritisation",
+     "working with sales"
+    ],
+    "target_audience": "Product managers and founders at early-stage B2B SaaS companies",
+    "words_to_avoid": [
+     "north star",
+     "leverage",
+     "delight",
+     "10x",
+     "game-changer"
+    ],
+    "opinions": [
+     "Activation problems are usually setup problems wearing a growth costume",
+     "A good PRD fits on one page; the rest belongs in the ticket",
+     "Saying no to sales is part of the job, saying it without data is not"
+    ],
+    "writing_samples": [
+     "A clinic manager told me: 'I don't have time to set up software that is supposed to save me time.' That sentence rewrote our onboarding.",
+     "We cut onboarding from nine steps to four. Two of the five we removed were steps I had personally argued for."
+    ]
+   },
+   "topic": "Why removing onboarding steps beat every growth tactic we tried",
+   "context": "",
+   "format": "linkedin post",
+   "tone": "storytelling",
+   "length": "standard",
+   "retrieval_bundle": {
+    "chunks": [
+     {
+      "text": "Brightloom onboarding had nine steps: clinic details, locations, practitioners, services, opening hours, booking rules, reminders, payments, and calendar sync. Only 38 percent of new clinics finished setup within 14 days, and clinics that did not finish almost never converted from trial.\n\nDiscovery calls kept surfacing the same sentence, from a clinic manager at Northgate Health: \"I don't have time to set up software that is supposed to save me time.\"\n\nWhat we did: kept four required steps (clinic, practitioners, services, hours), filled sensible defaults for booking rules and reminders, and moved payments and calendar sync to after the first booking. Two of the steps we cut were ones I had argued for in the original design.\n\nResult after eight weeks: 14-day setup completion went from 38 to 61 percent. Trial-to-paid moved from 11 to 15 percent. Support tickets tagged \"setup\" fell by a third.\n\nLesson: the activation problem was a setup problem wearing a growth costume.",
+      "source_type": "personal_note",
+      "memory_context": "work",
+      "source_title": "Cutting Brightloom onboarding from nine steps to four",
+      "tags": "onboarding, activation"
+     }
+    ]
+   },
+   "retrieved_chunks": [],
+   "has_chunks": true,
+   "retrieval_confidence": "high",
+   "posted_topics": [
+    "An earlier topic"
+   ],
+   "first_post": false,
+   "critic_brief": {},
+   "iterations": 0,
+   "draft_history": [],
+   "specifics_guard": [],
+   "perspective": "experience",
+   "length_target": {
+    "min_words": 250,
+    "max_words": 350,
+    "may_expand": true,
+    "basis": "length_setting"
+   }
+  },
+  "replies": [
+   "{\"archetype\": \"before_after\", \"event_note\": 1, \"event_quote\": \"Result after eight weeks: 14-day setup completion went from 38 to 61 percent.\"}",
+   "A draft about the topic.",
+   "{\"topic\": {\"verdict\": \"strong\", \"fix\": null}, \"hook\": {\"verdict\": \"needs_work\", \"fix\": \"The hook is generic; lead with the strongest point from the sources.\"}, \"substance\": {\"verdict\": \"strong\", \"fix\": null}, \"structure\": {\"verdict\": \"strong\", \"fix\": null}, \"voice\": {\"verdict\": \"strong\", \"fix\": null}, \"overall\": \"needs_work\"}",
+   "A humanized draft."
+  ],
+  "requests": [
+   {
+    "model": "claude-haiku-4-5-20251001",
+    "max_tokens": 300,
+    "messages": [
+     {
+      "role": "user",
+      "content": "You are choosing the structure for a post. Choose by what the author has to write from, not by how the topic is phrased.\n\nTopic: Why removing onboarding steps beat every growth tactic we tried\nAdditional context: none\nFormat: linkedin post\n\nWhat the author has to write from:\nThe author's own notes:\n\n[1]\nBrightloom onboarding had nine steps: clinic details, locations, practitioners, services, opening hours, booking rules, reminders, payments, and calendar sync. Only 38 percent of new clinics finished setup within 14 days, and clinics that did not finish almost never converted from trial.\n\nDiscovery calls kept surfacing the same sentence, from a clinic manager at Northgate Health: \"I don't have time to set up software that is supposed to save me time.\"\n\nWhat we did: kept four required steps (clinic, practitioners, services, hours), filled sensible defaults for booking rules and reminders, and moved payments and calendar sync to after the first booking. Two of the steps we cut were ones I had argued for in the original design.\n\nResult after eight weeks: 14-day setup completion went from 38 to 61 percent. Trial-to-paid moved from 11 to 15 percent. Support tickets tagged \"setup\" fell by a third.\n\nLesson: the activation problem was a setup problem wearing a growth costume.\n\nPost types you may choose from (choose one of these keys and nothing else):\n- incident_report: something that went wrong in the author's own work and what it showed\n- personal_story: a moment the author lived through and what it revealed\n- before_after: a change the author made and what was different afterwards\n- contrarian_take: disagreeing with a common view; an opinion with reasons\n- teach_me_something: explaining a concept or how something works\n- list_that_isnt: several observations or lessons where one matters most\n- prediction_bet: a forward-looking view about where something is heading\n- general: anything else, or when no other type clearly fits\n\nRules:\n- Pick the type whose structure the material above can fill.\n- Choose \"general\" when no other type clearly fits.\n- These types tell something that happened to the author: incident_report, personal_story, before_after. Choose one only if one of the author's own notes above describes the event this post is about. Then give that note's number as event_note, and copy one sentence from that note, word for word, that describes the event as event_quote. If no own note describes the event, choose a different type."
+     }
+    ],
+    "tools": [
+     {
+      "name": "choose_post_type",
+      "description": "Record the post type chosen for this post.",
+      "input_schema": {
+       "properties": {
+        "archetype": {
+         "description": "One of the offered post type keys.",
+         "title": "Archetype",
+         "type": "string"
+        },
+        "event_note": {
+         "anyOf": [
+          {
+           "type": "integer"
+          },
+          {
+           "type": "null"
+          }
+         ],
+         "default": null,
+         "description": "For a type that tells something that happened to the author: the number of the author's own note that describes the event. Otherwise null.",
+         "title": "Event Note"
+        },
+        "event_quote": {
+         "anyOf": [
+          {
+           "type": "string"
+          },
+          {
+           "type": "null"
+          }
+         ],
+         "default": null,
+         "description": "For those types: one sentence copied word for word from that note, describing the event. Otherwise null.",
+         "title": "Event Quote"
+        }
+       },
+       "required": [
+        "archetype"
+       ],
+       "title": "ArchetypeChoice",
+       "type": "object"
+      }
+     }
+    ],
+    "tool_choice": {
+     "type": "tool",
+     "name": "choose_post_type"
+    }
+   },
+   {
+    "model": "claude-sonnet-4-6",
+    "max_tokens": 2000,
+    "messages": [
+     {
+      "role": "user",
+      "content": "You are a ghostwriter. You write a post from the sources below, in the voice of the author described below. The sources decide what the post says. The author profile decides only how it sounds.\n\nAuthor voice (voice, audience and style only; never a source of content, stories or facts):\nName: Theo Okafor\nRole: Senior Product Manager at Brightloom (fictional)\n\nTarget audience: Product managers and founders at early-stage B2B SaaS companies\n\nVoice: warm, direct, customer quotes over frameworks, self-deprecating\n\nWriting rules:\n  - Quote a real customer sentence when one exists\n  - Name the trade-off, then say which side I chose\n  - Short paragraphs, no bullet soup\n  These rules are about style only. Where one asks for examples, numbers, real moments or specifics, it means the ones the sources give. Never invent one to satisfy a rule.\n\nWords to avoid: north star, leverage, delight, 10x, game-changer\n\nWriting samples:\n  These are examples of the author's style. Do not reuse any facts, numbers, names or events from them.\n  Sample 1:\n  A clinic manager told me: 'I don't have time to set up software that is supposed to save me time.' That sentence rewrote our onboarding.\n  Sample 2:\n  We cut onboarding from nine steps to four. Two of the five we removed were steps I had personally argued for.\n\nFormat and tone instructions:\nFormat: LinkedIn post.\nStructure:\n  - Line 1: a single-sentence hook that stops the scroll. No clickbait.\n  - Body: short paragraphs (1–3 lines each), heavy line breaks.\n  - Closing: one sharp takeaway, question, or observation. No call-to-action.\nDo NOT use hashtags. Do NOT use bullet points with dashes — use line breaks instead.\nDo NOT write 'I' at the start of the first sentence.\n\nTone: narrative voice. Plain, vivid wording and sentences that pull the reader forward. This is how the post sounds, not what it contains: it does not license a scene, a moment or an event the sources don't describe.\nLENGTH: 250–350 words. Never go over 350.\n\nKnowledge base (use what's relevant, ignore the rest):\nOWN EXPERIENCE: WORK:\n[source: personal_note | tags: activation, onboarding]\nBrightloom onboarding had nine steps: clinic details, locations, practitioners, services, opening hours, booking rules, reminders, payments, and calendar sync. Only 38 percent of new clinics finished setup within 14 days, and clinics that did not finish almost never converted from trial.\n\nDiscovery calls kept surfacing the same sentence, from a clinic manager at Northgate Health: \"I don't have time to set up software that is supposed to save me time.\"\n\nWhat we did: kept four required steps (clinic, practitioners, services, hours), filled sensible defaults for booking rules and reminders, and moved payments and calendar sync to after the first booking. Two of the steps we cut were ones I had argued for in the original design.\n\nResult after eight weeks: 14-day setup completion went from 38 to 61 percent. Trial-to-paid moved from 11 to 15 percent. Support tickets tagged \"setup\" fell by a third.\n\nLesson: the activation problem was a setup problem wearing a growth costume.\n\nTopic: Why removing onboarding steps beat every growth tactic we tried\n\nTOPIC RULE: Write about the topic as given. Don't frame it as an analogy or metaphor for the author's professional field, and don't pull in their work, projects or opinions unless the topic or context asks for it.\nTopics you have already written about — do not repeat these angles, find a fresh perspective:\n- An earlier topic\n\nPERSPECTIVE: experience.\nThe sources are the author's own notes. Write in first person, and only about what those notes describe.\nDon't make claims about what most people, most founders or most teams do unless a source says so; state it as the author's view instead (\"I think many teams...\").\n\n\nWrite the draft now. Do not add any preamble or explanation; output only the post content itself.\n\n---\nPOST STRUCTURE: write this post as a Before & After:\nStructure: State before → The thing that changed it → State after → What you'd tell yourself before.\nTell only the change the author's own notes describe. Compact and chronological, no detours.\nThe closing line is honest, not inspirational.\nUse the dates, places, names and numbers the sources give. Where they give none, write the point without one; never supply one.\nThe structure is a shape, not a checklist: leave out any section the sources cannot fill.\n---\n\n---\nSOURCE RULES (mandatory):\nEach group of chunks in the knowledge base has a label. Write from each group by its rule.\n\nOWN EXPERIENCE: WORK:\nSomething the author did or built professionally. First person. Tell only what the note describes: never add an incident, result, person, place or date to it.\n\nCROSS-SOURCE RULE:\nEach chunk above is a separate source. Never link facts from different sources as\ncause and effect, sequence or result unless one source states that link. Facts\nfrom separate notes stay separate.\nNever put an own-experience claim and an external-source claim in the same sentence.\nWhen a paragraph uses both, state the author's own point first, then bring in the\nsource as support and say where it came from.\n\nFABRICATION RULE:\nNever invent incidents, dates, names, numbers, results or events. A first-person\nevent may come only from an OWN EXPERIENCE chunk above, or from what the author\nstates in the topic or the additional context. The author profile is not a\nsource of stories: never set an incident at a company, project or role it names.\n---\n\n---\nVISUAL PLACEHOLDER RULES (mandatory):\nFor technical posts about systems, pipelines, architectures, or processes: you MUST include at least one [DIAGRAM: detailed description] placeholder.\nThe description must be specific enough to draw from.\nGood: [DIAGRAM: flowchart showing 5 RAG pipeline stages with failure points marked in red at retrieval layer]\nBad: [DIAGRAM: RAG diagram]\n\nFor personal or story posts: include one [IMAGE: description] only if a real photo or screenshot would genuinely strengthen the post.\n\nNever force a diagram into opinion pieces or short punchy posts where the words are the point.\n---"
+     }
+    ]
+   },
+   {
+    "model": "claude-haiku-4-5-20251001",
+    "max_tokens": 600,
+    "messages": [
+     {
+      "role": "user",
+      "content": "You are a content critic. Your job is to diagnose weaknesses in a LinkedIn post draft before it is humanized. You diagnose only: you never write any part of the post.\n\nTopic as given: Why removing onboarding steps beat every growth tactic we tried\nAdditional context: none\n\nExamine the draft across five dimensions, in this order:\n\n1. TOPIC — Does the post stay on the topic as given (and the additional context, if any)? Flag any drift away from it, including turns toward the author's opinions, expertise or work that the topic does not ask for.\n2. HOOK — Does the opening sentence stop a scroller immediately? Is it specific and surprising, or generic and forgettable?\n3. SUBSTANCE — Does the draft use the ideas in the knowledge base chunks, or make vague claims any post could make? Judge substance only against what the chunks, the topic and the context actually contain.\n4. STRUCTURE — Does the draft follow the pattern of a Before & After post, as far as the sources allow? Judge only the sections the chunks or the request have material for. A section the sources cannot fill is correctly left out: never count it as missing and never ask for it.\n5. VOICE — Does this sound like the specific person in the profile, or like generic LinkedIn content?\n\nAuthor voice (voice reference only; never a source of content or angles):\nName: Theo Okafor\nRole: Senior Product Manager at Brightloom (fictional)\n\nTarget audience: Product managers and founders at early-stage B2B SaaS companies\n\nVoice: warm, direct, customer quotes over frameworks, self-deprecating\n\nWriting rules:\n  - Quote a real customer sentence when one exists\n  - Name the trade-off, then say which side I chose\n  - Short paragraphs, no bullet soup\n  These rules are about style only. Where one asks for examples, numbers, real moments or specifics, it means the ones the sources give. Never invent one to satisfy a rule.\n\nWords to avoid: north star, leverage, delight, 10x, game-changer\n\nWriting samples:\n  These are examples of the author's style. Do not reuse any facts, numbers, names or events from them.\n  Sample 1:\n  A clinic manager told me: 'I don't have time to set up software that is supposed to save me time.' That sentence rewrote our onboarding.\n  Sample 2:\n  We cut onboarding from nine steps to four. Two of the five we removed were steps I had personally argued for.\n\nPost archetype (structural reference): Before & After\n\nKnowledge base chunks available, each labelled with its frame and authorship (self = the author's own experience; external = something the author read or watched). Check whether the draft uses them or ignores them:\n[frame: PERSONAL_WORK | authorship: self | source: personal_note]\nBrightloom onboarding had nine steps: clinic details, locations, practitioners, services, opening hours, booking rules, reminders, payments, and calendar sync. Only 38 percent of new clinics finished setup within 14 days, and clinics that did not finish almost never converted from trial.\n\nDiscovery calls kept surfacing the same sentence, from a clinic manager at Northgate Health: \"I don't have time to set up software that is supposed to save me time.\"\n\nWhat we did: kept four required steps (clinic, practitioners, services, hours), filled sensible defaults for booking rules and reminders, and moved payments and calendar sync to after the first booking. Two of the steps we cut were ones I had argued for in the original design.\n\nResult after eight weeks: 14-day setup completion went from 38 to 61 percent. Trial-to-paid moved from 11 to 15 percent. Support tickets tagged \"setup\" fell by a third.\n\nLesson: the activation problem was a setup problem wearing a growth costume.\n\nDraft to diagnose:\nA draft about the topic.\n\nRules for every fix:\n- Describe the problem and the direction to take, in your own words. The form to follow: the hook is generic; lead with the strongest point from the sources.\n- Never write example sentences, replacement text, or anything in quotation marks. Never quote the draft or the chunks.\n- Never suggest a name, number, date, time, place or event that is not already in the draft or the chunks.\n- Never suggest connecting the post to the author's opinions, expertise, projects or work unless the topic or context asks for it. The profile is a voice reference, not a source of angles.\n- Each chunk is a separate source. If the draft links facts from different chunks as cause and effect, sequence or result, and no single chunk states that link, mark SUBSTANCE \"needs_work\" and say which link to remove. Facts from separate notes stay separate.\n- Ask for first-person experience only where a self-authored chunk describes it, and say which chunk's point to use.\n\nFor each dimension, give a verdict (\"strong\" or \"needs_work\") and — if \"needs_work\" — one fix that follows the rules above. If \"strong\", the fix is null. Set overall to \"postable\" only when every verdict is \"strong\"."
+     }
+    ],
+    "tools": [
+     {
+      "name": "record_critique",
+      "description": "Record the diagnosis of the draft.",
+      "input_schema": {
+       "$defs": {
+        "Verdict": {
+         "properties": {
+          "verdict": {
+           "enum": [
+            "strong",
+            "needs_work"
+           ],
+           "title": "Verdict",
+           "type": "string"
+          },
+          "fix": {
+           "anyOf": [
+            {
+             "type": "string"
+            },
+            {
+             "type": "null"
+            }
+           ],
+           "default": null,
+           "description": "One fix when the verdict is needs_work; null when strong.",
+           "title": "Fix"
+          }
+         },
+         "required": [
+          "verdict"
+         ],
+         "title": "Verdict",
+         "type": "object"
+        }
+       },
+       "properties": {
+        "topic": {
+         "$ref": "#/$defs/Verdict"
+        },
+        "hook": {
+         "$ref": "#/$defs/Verdict"
+        },
+        "substance": {
+         "$ref": "#/$defs/Verdict"
+        },
+        "structure": {
+         "$ref": "#/$defs/Verdict"
+        },
+        "voice": {
+         "$ref": "#/$defs/Verdict"
+        },
+        "overall": {
+         "enum": [
+          "postable",
+          "needs_work"
+         ],
+         "title": "Overall",
+         "type": "string"
+        }
+       },
+       "required": [
+        "topic",
+        "hook",
+        "substance",
+        "structure",
+        "voice",
+        "overall"
+       ],
+       "title": "CriticBrief",
+       "type": "object"
+      }
+     }
+    ],
+    "tool_choice": {
+     "type": "tool",
+     "name": "record_critique"
+    }
+   },
+   {
+    "model": "claude-sonnet-4-6",
+    "max_tokens": 2000,
+    "messages": [
+     {
+      "role": "user",
+      "content": "You are a humanizing editor. You take drafts that may still have AI-writing fingerprints and rewrite them to sound like a real human wrote them, specifically like the person described in the profile below.\n\nAuthor voice (voice and style only; never a source of content, stories or facts):\nName: Theo Okafor\nRole: Senior Product Manager at Brightloom (fictional)\n\nTarget audience: Product managers and founders at early-stage B2B SaaS companies\n\nVoice: warm, direct, customer quotes over frameworks, self-deprecating\n\nWriting rules:\n  - Quote a real customer sentence when one exists\n  - Name the trade-off, then say which side I chose\n  - Short paragraphs, no bullet soup\n  These rules are about style only. Where one asks for examples, numbers, real moments or specifics, it means the ones the sources give. Never invent one to satisfy a rule.\n\nWords to avoid: north star, leverage, delight, 10x, game-changer\n\nWriting samples:\n  These are examples of the author's style. Do not reuse any facts, numbers, names or events from them.\n  Sample 1:\n  A clinic manager told me: 'I don't have time to set up software that is supposed to save me time.' That sentence rewrote our onboarding.\n  Sample 2:\n  We cut onboarding from nine steps to four. Two of the five we removed were steps I had personally argued for.\n\nFacts are fixed. You may change only wording, rhythm and structure.\n- Never add or change any number, percentage, money amount, date, month, day of the week, duration, count, name or quoted figure. You may drop a detail if you need to cut for length, but prefer cutting words over cutting facts.\n- Every factual detail in your output must already be in the current draft. If a sentence feels vague, sharpen the wording, not the facts.\n- Do not invent incidents, timelines, customers, people or results.\n- Keep the draft's perspective. Never turn something the draft presents as read, watched or observed into something the author did, and never add a personal reaction, memory or connection to the author's own work that the draft does not state.\n- Don't attribute feelings, reactions or habits to the author about a source (e.g. \"I haven't been able to put down\", \"I kept seeing... until I came across\") unless the draft states them. Present the source's idea and the author's view of it plainly.\n- Never link facts as cause and effect, sequence or result unless the draft already states that link. Facts the draft keeps separate stay separate.\n- The critic brief below describes problems, not content. It never permits a new fact, story, experience, name or number. If a fix can't be made without new facts, skip it.\n\nCRITIC BRIEF — fix these issues before humanizing, in this order:\n- HOOK: The hook is generic; lead with the strongest point from the sources.\n\nAI writing patterns to eliminate:\n- Sentences that start with \"In today's...\" or \"It's important to note...\"\n- Overuse of transition words: \"Furthermore\", \"Moreover\", \"Additionally\", \"In conclusion\"\n- Generic motivational framing: \"unlock your potential\", \"game-changing\", \"transformative\"\n- Perfectly balanced sentence lengths; vary them aggressively\n- Lists of three that feel formulaic (The three things are: A, B, and C)\n- Passive voice where active would be stronger\n- Em dashes used as clause connectors or parenthetical separators (e.g. 'the data was messy, noisy and sparse' or 'one feature, which had low fill rate, was dropped'). Replace with a period, a comma, or rewrite the sentence entirely. Em dashes are one of the strongest signals of AI-generated text and must never appear in the output.\n- Hyphenated compound modifiers used decoratively (e.g. 'data-driven', 'production-ready', 'well-known', 'high-value' when plain language works just as well). Write 'drives decisions with data' not 'data-driven'. Only use hyphens when they are grammatically required and cannot be avoided.\n- Words to avoid: north star, leverage, delight, 10x, game-changer\n\nNever use the em dash character (—) anywhere in the output. If you are about to write an em dash, stop and use a period or comma instead.\n\nWhat to inject instead:\n- Sentence variety: mix 4-word punches with longer, winding observations\n- Short asides that comment on a point the draft already makes. An aside is a remark, never a new reaction, memory or event.\n- Opinions stated with confidence, not hedged to death\n- The writer's actual voice as described in the profile\n\nLENGTH: 250–350 words. Never go over 350.\n\nCurrent draft:\nA draft about the topic.\n\nRewrite the draft now. Fix the flagged issues above first — in this order: topic, hook, substance, structure, voice. You may rewrite the hook entirely and restructure sections, using only facts already in the draft. Then do a full language humanization pass. Output only the rewritten post, no commentary."
+     }
+    ]
+   }
+  ]
+ },
+ "external only (pm-09)": {
+  "state": {
+   "user_id": "snapshot-user",
+   "quality": "standard",
+   "profile": {
+    "name": "Theo Okafor",
+    "role": "Senior Product Manager at Brightloom (fictional)",
+    "bio": "Fictional eval persona. Product manager at Brightloom, a made-up B2B scheduling platform for small healthcare clinics. Previously a support lead, which is why every roadmap argument starts with a ticket count.",
+    "location": "Manchester, UK",
+    "voice_descriptors": [
+     "warm",
+     "direct",
+     "customer quotes over frameworks",
+     "self-deprecating"
+    ],
+    "writing_rules": [
+     "Quote a real customer sentence when one exists",
+     "Name the trade-off, then say which side I chose",
+     "Short paragraphs, no bullet soup"
+    ],
+    "topics_of_expertise": [
+     "product discovery",
+     "onboarding and activation",
+     "pricing",
+     "prioritisation",
+     "working with sales"
+    ],
+    "target_audience": "Product managers and founders at early-stage B2B SaaS companies",
+    "words_to_avoid": [
+     "north star",
+     "leverage",
+     "delight",
+     "10x",
+     "game-changer"
+    ],
+    "opinions": [
+     "Activation problems are usually setup problems wearing a growth costume",
+     "A good PRD fits on one page; the rest belongs in the ticket",
+     "Saying no to sales is part of the job, saying it without data is not"
+    ],
+    "writing_samples": [
+     "A clinic manager told me: 'I don't have time to set up software that is supposed to save me time.' That sentence rewrote our onboarding.",
+     "We cut onboarding from nine steps to four. Two of the five we removed were steps I had personally argued for."
+    ]
+   },
+   "topic": "Opportunity solution trees, explained",
+   "context": "",
+   "format": "linkedin post",
+   "tone": "casual",
+   "length": "concise",
+   "retrieval_bundle": {
+    "chunks": [
+     {
+      "text": "Learning notes. An opportunity solution tree starts with one desired outcome at the top, maps customer opportunities (needs, pains, desires) beneath it, then solutions beneath each opportunity, then small experiments beneath each solution.\n\nWhy I like it: it stops teams jumping from an outcome straight to a solution, and it makes it obvious when we have five solutions for one opportunity and none for the rest.\n\nWhere it struggles: it can turn into a wall of sticky notes that nobody maintains. I keep ours to one outcome per quarter.",
+      "source_type": "article",
+      "memory_context": "learning",
+      "source_title": "Notes on opportunity solution trees",
+      "tags": "product discovery"
+     }
+    ]
+   },
+   "retrieved_chunks": [],
+   "has_chunks": true,
+   "retrieval_confidence": "high",
+   "posted_topics": [
+    "An earlier topic"
+   ],
+   "first_post": false,
+   "critic_brief": {},
+   "iterations": 0,
+   "draft_history": [],
+   "specifics_guard": [],
+   "perspective": "learned",
+   "length_target": {
+    "min_words": 100,
+    "max_words": 180,
+    "may_expand": true,
+    "basis": "length_setting"
+   }
+  },
+  "replies": [
+   "{\"archetype\": \"teach_me_something\"}",
+   "A draft about the topic.",
+   "{\"topic\": {\"verdict\": \"strong\", \"fix\": null}, \"hook\": {\"verdict\": \"needs_work\", \"fix\": \"The hook is generic; lead with the strongest point from the sources.\"}, \"substance\": {\"verdict\": \"strong\", \"fix\": null}, \"structure\": {\"verdict\": \"strong\", \"fix\": null}, \"voice\": {\"verdict\": \"strong\", \"fix\": null}, \"overall\": \"needs_work\"}",
+   "A humanized draft."
+  ],
+  "requests": [
+   {
+    "model": "claude-haiku-4-5-20251001",
+    "max_tokens": 300,
+    "messages": [
+     {
+      "role": "user",
+      "content": "You are choosing the structure for a post. Choose by what the author has to write from, not by how the topic is phrased.\n\nTopic: Opportunity solution trees, explained\nAdditional context: none\nFormat: linkedin post\n\nWhat the author has to write from:\nThings the author read, watched or saved (not the author's own experience): article on product discovery\n\nPost types you may choose from (choose one of these keys and nothing else):\n- contrarian_take: disagreeing with a common view; an opinion with reasons\n- teach_me_something: explaining a concept or how something works\n- list_that_isnt: several observations or lessons where one matters most\n- prediction_bet: a forward-looking view about where something is heading\n- general: anything else, or when no other type clearly fits\n\nRules:\n- Pick the type whose structure the material above can fill.\n- Choose \"general\" when no other type clearly fits."
+     }
+    ],
+    "tools": [
+     {
+      "name": "choose_post_type",
+      "description": "Record the post type chosen for this post.",
+      "input_schema": {
+       "properties": {
+        "archetype": {
+         "description": "One of the offered post type keys.",
+         "title": "Archetype",
+         "type": "string"
+        },
+        "event_note": {
+         "anyOf": [
+          {
+           "type": "integer"
+          },
+          {
+           "type": "null"
+          }
+         ],
+         "default": null,
+         "description": "For a type that tells something that happened to the author: the number of the author's own note that describes the event. Otherwise null.",
+         "title": "Event Note"
+        },
+        "event_quote": {
+         "anyOf": [
+          {
+           "type": "string"
+          },
+          {
+           "type": "null"
+          }
+         ],
+         "default": null,
+         "description": "For those types: one sentence copied word for word from that note, describing the event. Otherwise null.",
+         "title": "Event Quote"
+        }
+       },
+       "required": [
+        "archetype"
+       ],
+       "title": "ArchetypeChoice",
+       "type": "object"
+      }
+     }
+    ],
+    "tool_choice": {
+     "type": "tool",
+     "name": "choose_post_type"
+    }
+   },
+   {
+    "model": "claude-sonnet-4-6",
+    "max_tokens": 2000,
+    "messages": [
+     {
+      "role": "user",
+      "content": "You are a ghostwriter. You write a post from the sources below, in the voice of the author described below. The sources decide what the post says. The author profile decides only how it sounds.\n\nAuthor voice (voice, audience and style only; never a source of content, stories or facts):\nName: Theo Okafor\nRole: Senior Product Manager at Brightloom (fictional)\n\nTarget audience: Product managers and founders at early-stage B2B SaaS companies\n\nVoice: warm, direct, customer quotes over frameworks, self-deprecating\n\nWriting rules:\n  - Quote a real customer sentence when one exists\n  - Name the trade-off, then say which side I chose\n  - Short paragraphs, no bullet soup\n  These rules are about style only. Where one asks for examples, numbers, real moments or specifics, it means the ones the sources give. Never invent one to satisfy a rule.\n\nWords to avoid: north star, leverage, delight, 10x, game-changer\n\nWriting samples:\n  These are examples of the author's style. Do not reuse any facts, numbers, names or events from them.\n  Sample 1:\n  A clinic manager told me: 'I don't have time to set up software that is supposed to save me time.' That sentence rewrote our onboarding.\n  Sample 2:\n  We cut onboarding from nine steps to four. Two of the five we removed were steps I had personally argued for.\n\nFormat and tone instructions:\nFormat: LinkedIn post.\nStructure:\n  - Line 1: a single-sentence hook that stops the scroll. No clickbait.\n  - Body: short paragraphs (1–3 lines each), heavy line breaks.\n  - Closing: one sharp takeaway, question, or observation. No call-to-action.\nDo NOT use hashtags. Do NOT use bullet points with dashes — use line breaks instead.\nDo NOT write 'I' at the start of the first sentence.\n\nTone: casual and conversational. Write like you're texting a smart friend. Short sentences. Contractions are fine.\nLENGTH: 100–180 words. Never go over 180.\n\nKnowledge base (use what's relevant, ignore the rest):\nEXTERNAL SOURCE: IN THE AUTHOR'S FIELD:\n[source: article | tags: product discovery]\nLearning notes. An opportunity solution tree starts with one desired outcome at the top, maps customer opportunities (needs, pains, desires) beneath it, then solutions beneath each opportunity, then small experiments beneath each solution.\n\nWhy I like it: it stops teams jumping from an outcome straight to a solution, and it makes it obvious when we have five solutions for one opportunity and none for the rest.\n\nWhere it struggles: it can turn into a wall of sticky notes that nobody maintains. I keep ours to one outcome per quarter.\n\nTopic: Opportunity solution trees, explained\n\nTOPIC RULE: Write about the topic as given. Don't frame it as an analogy or metaphor for the author's professional field, and don't pull in their work, projects or opinions unless the topic or context asks for it.\nTopics you have already written about — do not repeat these angles, find a fresh perspective:\n- An earlier topic\n\nPERSPECTIVE: learned.\nThe sources are things the author read, watched or saved, not things the author did. Share what they say and what you make of it, and say where each idea came from by what the source is and what it covers (\"an article on...\", \"a talk on...\", \"a video about...\"), without giving it a title. Do not connect the material to the author's own work, career or life, and do not present any of it as something the author did, saw or went through.\nDon't attribute feelings, reactions or habits to the author about a source (e.g. \"I haven't been able to put down\", \"I kept seeing... until I came across\") unless a source or the request states them. Present the source's idea and the author's view of it plainly.\nDon't make claims about what most people, most founders or most teams do unless a source says so; state it as the author's view instead (\"I think many teams...\").\n\n\nWrite the draft now. Do not add any preamble or explanation; output only the post content itself.\n\n---\nPOST STRUCTURE: write this post as a Teach Me Something:\nStructure: Surprising premise → Core concept explained through one analogy → Why this matters beyond the obvious → One thing to try or watch for.\nThe analogy carries the post: if it is weak, the post fails. An analogy is a comparison, not a story about something that happened.\nThe premise must be something the target reader does not already know.\nThe structure is a shape, not a checklist: leave out any section the sources cannot fill.\n---\n\n---\nSOURCE RULES (mandatory):\nEach group of chunks in the knowledge base has a label. Write from each group by its rule.\n\nEXTERNAL SOURCE: IN THE AUTHOR'S FIELD:\nSomething the author read, watched or saved, not something the author did. Refer to it by what it is and what it covers (\"an article on...\", \"a talk on...\", \"a video about...\"); do not give it a title. Never present it as the author's own experience, and never connect it to the author's own work, background or life. The author knows this field, so write about the idea with authority.\n\nCROSS-SOURCE RULE:\nEach chunk above is a separate source. Never link facts from different sources as\ncause and effect, sequence or result unless one source states that link. Facts\nfrom separate notes stay separate.\nNever put an own-experience claim and an external-source claim in the same sentence.\nWhen a paragraph uses both, state the author's own point first, then bring in the\nsource as support and say where it came from.\n\nFABRICATION RULE:\nNever invent incidents, dates, names, numbers, results or events. A first-person\nevent may come only from an OWN EXPERIENCE chunk above, or from what the author\nstates in the topic or the additional context. The author profile is not a\nsource of stories: never set an incident at a company, project or role it names.\n---\n\n---\nVISUAL PLACEHOLDER RULES (mandatory):\nFor technical posts about systems, pipelines, architectures, or processes: you MUST include at least one [DIAGRAM: detailed description] placeholder.\nThe description must be specific enough to draw from.\nGood: [DIAGRAM: flowchart showing 5 RAG pipeline stages with failure points marked in red at retrieval layer]\nBad: [DIAGRAM: RAG diagram]\n\nFor personal or story posts: include one [IMAGE: description] only if a real photo or screenshot would genuinely strengthen the post.\n\nNever force a diagram into opinion pieces or short punchy posts where the words are the point.\n---"
+     }
+    ]
+   },
+   {
+    "model": "claude-haiku-4-5-20251001",
+    "max_tokens": 600,
+    "messages": [
+     {
+      "role": "user",
+      "content": "You are a content critic. Your job is to diagnose weaknesses in a LinkedIn post draft before it is humanized. You diagnose only: you never write any part of the post.\n\nTopic as given: Opportunity solution trees, explained\nAdditional context: none\n\nExamine the draft across five dimensions, in this order:\n\n1. TOPIC — Does the post stay on the topic as given (and the additional context, if any)? Flag any drift away from it, including turns toward the author's opinions, expertise or work that the topic does not ask for.\n2. HOOK — Does the opening sentence stop a scroller immediately? Is it specific and surprising, or generic and forgettable?\n3. SUBSTANCE — Does the draft use the ideas in the knowledge base chunks, or make vague claims any post could make? Judge substance only against what the chunks, the topic and the context actually contain.\n4. STRUCTURE — Does the draft follow the pattern of a Teach Me Something post, as far as the sources allow? Judge only the sections the chunks or the request have material for. A section the sources cannot fill is correctly left out: never count it as missing and never ask for it.\n5. VOICE — Does this sound like the specific person in the profile, or like generic LinkedIn content?\n\nAuthor voice (voice reference only; never a source of content or angles):\nName: Theo Okafor\nRole: Senior Product Manager at Brightloom (fictional)\n\nTarget audience: Product managers and founders at early-stage B2B SaaS companies\n\nVoice: warm, direct, customer quotes over frameworks, self-deprecating\n\nWriting rules:\n  - Quote a real customer sentence when one exists\n  - Name the trade-off, then say which side I chose\n  - Short paragraphs, no bullet soup\n  These rules are about style only. Where one asks for examples, numbers, real moments or specifics, it means the ones the sources give. Never invent one to satisfy a rule.\n\nWords to avoid: north star, leverage, delight, 10x, game-changer\n\nWriting samples:\n  These are examples of the author's style. Do not reuse any facts, numbers, names or events from them.\n  Sample 1:\n  A clinic manager told me: 'I don't have time to set up software that is supposed to save me time.' That sentence rewrote our onboarding.\n  Sample 2:\n  We cut onboarding from nine steps to four. Two of the five we removed were steps I had personally argued for.\n\nPost archetype (structural reference): Teach Me Something\n\nKnowledge base chunks available, each labelled with its frame and authorship (self = the author's own experience; external = something the author read or watched). Check whether the draft uses them or ignores them:\n[frame: EXPERT_OUTSIDER | authorship: external | source: article]\nLearning notes. An opportunity solution tree starts with one desired outcome at the top, maps customer opportunities (needs, pains, desires) beneath it, then solutions beneath each opportunity, then small experiments beneath each solution.\n\nWhy I like it: it stops teams jumping from an outcome straight to a solution, and it makes it obvious when we have five solutions for one opportunity and none for the rest.\n\nWhere it struggles: it can turn into a wall of sticky notes that nobody maintains. I keep ours to one outcome per quarter.\n\nDraft to diagnose:\nA draft about the topic.\n\nRules for every fix:\n- Describe the problem and the direction to take, in your own words. The form to follow: the hook is generic; lead with the strongest point from the sources.\n- Never write example sentences, replacement text, or anything in quotation marks. Never quote the draft or the chunks.\n- Never suggest a name, number, date, time, place or event that is not already in the draft or the chunks.\n- Never suggest connecting the post to the author's opinions, expertise, projects or work unless the topic or context asks for it. The profile is a voice reference, not a source of angles.\n- Each chunk is a separate source. If the draft links facts from different chunks as cause and effect, sequence or result, and no single chunk states that link, mark SUBSTANCE \"needs_work\" and say which link to remove. Facts from separate notes stay separate.\n- None of the chunks are self-authored. Never ask for personal experience, a story, an incident, a real example, or specific numbers or names: the author has given none for this topic. Ask instead for sharper reasoning, clearer structure, or better use of the chunks.\n\nFor each dimension, give a verdict (\"strong\" or \"needs_work\") and — if \"needs_work\" — one fix that follows the rules above. If \"strong\", the fix is null. Set overall to \"postable\" only when every verdict is \"strong\"."
+     }
+    ],
+    "tools": [
+     {
+      "name": "record_critique",
+      "description": "Record the diagnosis of the draft.",
+      "input_schema": {
+       "$defs": {
+        "Verdict": {
+         "properties": {
+          "verdict": {
+           "enum": [
+            "strong",
+            "needs_work"
+           ],
+           "title": "Verdict",
+           "type": "string"
+          },
+          "fix": {
+           "anyOf": [
+            {
+             "type": "string"
+            },
+            {
+             "type": "null"
+            }
+           ],
+           "default": null,
+           "description": "One fix when the verdict is needs_work; null when strong.",
+           "title": "Fix"
+          }
+         },
+         "required": [
+          "verdict"
+         ],
+         "title": "Verdict",
+         "type": "object"
+        }
+       },
+       "properties": {
+        "topic": {
+         "$ref": "#/$defs/Verdict"
+        },
+        "hook": {
+         "$ref": "#/$defs/Verdict"
+        },
+        "substance": {
+         "$ref": "#/$defs/Verdict"
+        },
+        "structure": {
+         "$ref": "#/$defs/Verdict"
+        },
+        "voice": {
+         "$ref": "#/$defs/Verdict"
+        },
+        "overall": {
+         "enum": [
+          "postable",
+          "needs_work"
+         ],
+         "title": "Overall",
+         "type": "string"
+        }
+       },
+       "required": [
+        "topic",
+        "hook",
+        "substance",
+        "structure",
+        "voice",
+        "overall"
+       ],
+       "title": "CriticBrief",
+       "type": "object"
+      }
+     }
+    ],
+    "tool_choice": {
+     "type": "tool",
+     "name": "record_critique"
+    }
+   },
+   {
+    "model": "claude-sonnet-4-6",
+    "max_tokens": 2000,
+    "messages": [
+     {
+      "role": "user",
+      "content": "You are a humanizing editor. You take drafts that may still have AI-writing fingerprints and rewrite them to sound like a real human wrote them, specifically like the person described in the profile below.\n\nAuthor voice (voice and style only; never a source of content, stories or facts):\nName: Theo Okafor\nRole: Senior Product Manager at Brightloom (fictional)\n\nTarget audience: Product managers and founders at early-stage B2B SaaS companies\n\nVoice: warm, direct, customer quotes over frameworks, self-deprecating\n\nWriting rules:\n  - Quote a real customer sentence when one exists\n  - Name the trade-off, then say which side I chose\n  - Short paragraphs, no bullet soup\n  These rules are about style only. Where one asks for examples, numbers, real moments or specifics, it means the ones the sources give. Never invent one to satisfy a rule.\n\nWords to avoid: north star, leverage, delight, 10x, game-changer\n\nWriting samples:\n  These are examples of the author's style. Do not reuse any facts, numbers, names or events from them.\n  Sample 1:\n  A clinic manager told me: 'I don't have time to set up software that is supposed to save me time.' That sentence rewrote our onboarding.\n  Sample 2:\n  We cut onboarding from nine steps to four. Two of the five we removed were steps I had personally argued for.\n\nFacts are fixed. You may change only wording, rhythm and structure.\n- Never add or change any number, percentage, money amount, date, month, day of the week, duration, count, name or quoted figure. You may drop a detail if you need to cut for length, but prefer cutting words over cutting facts.\n- Every factual detail in your output must already be in the current draft. If a sentence feels vague, sharpen the wording, not the facts.\n- Do not invent incidents, timelines, customers, people or results.\n- Keep the draft's perspective. Never turn something the draft presents as read, watched or observed into something the author did, and never add a personal reaction, memory or connection to the author's own work that the draft does not state.\n- Don't attribute feelings, reactions or habits to the author about a source (e.g. \"I haven't been able to put down\", \"I kept seeing... until I came across\") unless the draft states them. Present the source's idea and the author's view of it plainly.\n- Never link facts as cause and effect, sequence or result unless the draft already states that link. Facts the draft keeps separate stay separate.\n- The critic brief below describes problems, not content. It never permits a new fact, story, experience, name or number. If a fix can't be made without new facts, skip it.\n\nCRITIC BRIEF — fix these issues before humanizing, in this order:\n- HOOK: The hook is generic; lead with the strongest point from the sources.\n\nAI writing patterns to eliminate:\n- Sentences that start with \"In today's...\" or \"It's important to note...\"\n- Overuse of transition words: \"Furthermore\", \"Moreover\", \"Additionally\", \"In conclusion\"\n- Generic motivational framing: \"unlock your potential\", \"game-changing\", \"transformative\"\n- Perfectly balanced sentence lengths; vary them aggressively\n- Lists of three that feel formulaic (The three things are: A, B, and C)\n- Passive voice where active would be stronger\n- Em dashes used as clause connectors or parenthetical separators (e.g. 'the data was messy, noisy and sparse' or 'one feature, which had low fill rate, was dropped'). Replace with a period, a comma, or rewrite the sentence entirely. Em dashes are one of the strongest signals of AI-generated text and must never appear in the output.\n- Hyphenated compound modifiers used decoratively (e.g. 'data-driven', 'production-ready', 'well-known', 'high-value' when plain language works just as well). Write 'drives decisions with data' not 'data-driven'. Only use hyphens when they are grammatically required and cannot be avoided.\n- Words to avoid: north star, leverage, delight, 10x, game-changer\n\nNever use the em dash character (—) anywhere in the output. If you are about to write an em dash, stop and use a period or comma instead.\n\nWhat to inject instead:\n- Sentence variety: mix 4-word punches with longer, winding observations\n- Short asides that comment on a point the draft already makes. An aside is a remark, never a new reaction, memory or event.\n- Opinions stated with confidence, not hedged to death\n- The writer's actual voice as described in the profile\n\nLENGTH: 100–180 words. Never go over 180.\n\nCurrent draft:\nA draft about the topic.\n\nRewrite the draft now. Fix the flagged issues above first — in this order: topic, hook, substance, structure, voice. You may rewrite the hook entirely and restructure sections, using only facts already in the draft. Then do a full language humanization pass. Output only the rewritten post, no commentary."
+     }
+    ]
+   }
+  ]
+ }
+}

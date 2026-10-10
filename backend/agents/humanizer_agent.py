@@ -5,7 +5,7 @@ from llm.client import SONNET, complete
 from pipeline.state import PipelineState
 from pipeline.trace import record_draft
 from memory.profile_store import profile_voice_context
-from utils.formatters import word_count_rule
+from utils.formatters import STYLE_RULES, word_count_rule
 from utils.specifics import find_violations, guard_entry, guard_sources, retry_note
 
 logger = logging.getLogger(__name__)
@@ -24,24 +24,7 @@ Facts are fixed. You may change only wording, rhythm and structure.
 - Never link facts as cause and effect, sequence or result unless the draft already states that link. Facts the draft keeps separate stay separate.
 - The critic brief below describes problems, not content. It never permits a new fact, story, experience, name or number. If a fix can't be made without new facts, skip it.
 
-{critic_section}AI writing patterns to eliminate:
-- Sentences that start with "In today's..." or "It's important to note..."
-- Overuse of transition words: "Furthermore", "Moreover", "Additionally", "In conclusion"
-- Generic motivational framing: "unlock your potential", "game-changing", "transformative"
-- Perfectly balanced sentence lengths; vary them aggressively
-- Lists of three that feel formulaic (The three things are: A, B, and C)
-- Passive voice where active would be stronger
-- Em dashes used as clause connectors or parenthetical separators (e.g. 'the data was messy, noisy and sparse' or 'one feature, which had low fill rate, was dropped'). Replace with a period, a comma, or rewrite the sentence entirely. Em dashes are one of the strongest signals of AI-generated text and must never appear in the output.
-- Hyphenated compound modifiers used decoratively (e.g. 'data-driven', 'production-ready', 'well-known', 'high-value' when plain language works just as well). Write 'drives decisions with data' not 'data-driven'. Only use hyphens when they are grammatically required and cannot be avoided.
-- Words to avoid: {words_to_avoid}
-
-Never use the em dash character (—) anywhere in the output. If you are about to write an em dash, stop and use a period or comma instead.
-
-What to inject instead:
-- Sentence variety: mix 4-word punches with longer, winding observations
-- Short asides that comment on a point the draft already makes. An aside is a remark, never a new reaction, memory or event.
-- Opinions stated with confidence, not hedged to death
-- The writer's actual voice as described in the profile
+{critic_section}{style_rules}
 
 {word_count_rule}Current draft:
 {current_draft}
@@ -143,7 +126,7 @@ def humanizer_node(state: PipelineState) -> PipelineState:
     def rewrite(violations, event_type: str) -> str:
         prompt = SYSTEM_PROMPT.format(
             profile_context=profile_context,
-            words_to_avoid=words_to_avoid,
+            style_rules=STYLE_RULES.format(words_to_avoid=words_to_avoid),
             current_draft=current_draft,
             critic_section=critic_section,
             rewrite_instruction=rewrite_instruction,

@@ -10,6 +10,9 @@ A_NODE_ORDER = [
     "load_profile", "retrieval", "draft", "critic", "humanizer",
     "predictability_audit", "word_count_enforcer", "fact_checker",
 ]
+# B and C are the same for now (see _wire_cited_draft in pipeline/graph.py):
+# structure → cited draft → strip. Their own steps are added after it.
+SINGLE_WRITER_NODE_ORDER = ["load_profile", "retrieval", "structure", "cited_draft", "strip"]
 
 
 @pytest.fixture
@@ -48,6 +51,9 @@ def stub_nodes(monkeypatch):
         monkeypatch.setattr(graph, "scorer_node", stub("scorer", score))
         monkeypatch.setattr(graph, "word_count_enforcer_node", stub("word_count_enforcer"))
         monkeypatch.setattr(graph, "fact_check_node", stub("fact_checker"))
+        monkeypatch.setattr(graph, "structure_node", stub("structure"))
+        monkeypatch.setattr(graph, "cited_draft_node", stub("cited_draft", draft))
+        monkeypatch.setattr(graph, "strip_draft_node", stub("strip", lambda s: s.update(final_post=s["current_draft"])))
         return visited
 
     return install
@@ -194,13 +200,19 @@ def test_every_variant_has_a_compiled_pipeline():
     assert set(graph.PIPELINES) == set(features.PIPELINE_VARIANTS)
 
 
-# B and C are wired as A for now (see _AFTER_DRAFT in pipeline/graph.py). When
-# their own steps land, the B and C cases here are replaced by their real order.
-@pytest.mark.parametrize("variant", ["A", "B", "C"])
-def test_each_variant_currently_runs_the_rewrite_chain(run_graph, variant):
-    visited, result = run_graph(scores=[], variant=variant)("standard")
+def test_variant_a_runs_the_rewrite_chain(run_graph):
+    visited, result = run_graph(scores=[], variant="A")("standard")
 
     assert visited == A_NODE_ORDER
+    assert result["final_post"] == "draft text"
+
+
+@pytest.mark.parametrize("variant", ["B", "C"])
+@pytest.mark.parametrize("quality", ["draft", "standard", "polished"])
+def test_single_writer_variants_run_one_draft_and_no_rewriting_node(run_graph, variant, quality):
+    visited, result = run_graph(scores=[], variant=variant)(quality)
+
+    assert visited == SINGLE_WRITER_NODE_ORDER
     assert result["final_post"] == "draft text"
 
 
@@ -216,6 +228,7 @@ def test_run_pipeline_uses_the_configured_variant(stubbed_pipelines, fake_db, mo
     _run_pipeline()
 
     assert _recorded_variant(fake_db) == "B"
+    assert stubbed_pipelines == SINGLE_WRITER_NODE_ORDER
 
 
 def test_an_explicit_variant_overrides_the_configured_one(stubbed_pipelines, fake_db, monkeypatch):

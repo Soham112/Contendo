@@ -76,6 +76,22 @@ class PipelineState(TypedDict, total=False):
     # generation_traces.node_outputs.
     specifics_guard: list[dict[str, Any]]
 
+    # Single-writer drafting (variants B and C only; absent under A).
+    # source_index: S-id -> {position, chunk_id, frame, authorship}, as the
+    #   drafter's sources block numbered the chunks (utils.frames.build_sources_block).
+    # event: the draft's EVENT line, {status, source, quote, line}
+    #   (utils.citations.EventHeader; status "absent" for a non-story post).
+    # citations: the post's spans, [{start, end, text, basis, sources}], offsets
+    #   into the post without markers.
+    # citation_failures: marker-like text that is not a usable citation,
+    #   [{kind, text, start, end}], offsets into the marked draft's body.
+    # All four are persisted in generation_traces.node_outputs; the marked draft
+    # itself is the "draft" entry in draft_history.
+    source_index: dict[str, dict[str, Any]]
+    event: dict[str, Any]
+    citations: list[dict[str, Any]]
+    citation_failures: list[dict[str, Any]]
+
     # Final fact check (fact_check_node): {flagged: [{i, sentence, type, why}],
     # rewrites: [{sentence, type, why, rewrite, recheck, outcome}],
     # outcome, error?}. Persisted in generation_traces.node_outputs.

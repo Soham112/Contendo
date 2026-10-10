@@ -12,8 +12,15 @@ line) and its own marker, so code never has to split model prose into sentences.
 Text with no marker is an "uncited" span. Headings, [DIAGRAM: ...] / [IMAGE: ...]
 lines and code are structure, not prose: they need no marker and give no span.
 
-Markers are a format this codebase defines, so they are matched exactly. Nothing
-here judges what a span means or whether its sources support it.
+For a story post the draft starts with one EVENT line naming the event it
+tells (parse_event_header):
+
+    EVENT: S3 | "a sentence copied word for word from that source"
+    EVENT: none          no source describes an event that fits the topic
+
+Markers and the EVENT line are formats this codebase defines, so they are
+matched exactly. Nothing here judges what a span means, whether its sources
+support it, or whether the quoted sentence is really in the source.
 """
 
 import re
@@ -218,3 +225,61 @@ def strip_citations(text: str) -> StrippedPost:
 
     failures.sort(key=lambda f: (f.start, f.end))
     return StrippedPost(clean, tuple(spans), tuple(failures))
+
+
+# ── The EVENT line ────────────────────────────────────────────────────────────
+
+_EVENT_PREFIX = "EVENT:"
+EVENT_NONE = "none"
+# Straight or curly double quotes around the copied sentence: a deliberate
+# tolerance. The sentence itself may contain quotation marks.
+_EVENT_CITED = re.compile(rf"(?P<source>{_SOURCE_ID})[ \t]*\|[ \t]*[\"“](?P<quote>.*\S.*)[\"”]")
+
+
+@dataclass(frozen=True)
+class EventHeader:
+    """What a draft's EVENT line says.
+
+    status:
+      "cited"       names a source and quotes a sentence (source, quote set)
+      "none"        the drafter found no event that fits ("EVENT: none")
+      "absent"      no EVENT line, and none was required
+      "missing"     no EVENT line on a post type that requires one   (failure)
+      "malformed"   an EVENT line that is neither form                (failure)
+      "unexpected"  an EVENT line on a post type that takes none      (failure)
+    line is the EVENT line as written ("" when there is none). body is the draft
+    without it: the EVENT line never stays in the post, whatever its status.
+    """
+    status: str
+    source: str | None
+    quote: str | None
+    line: str
+    body: str
+
+    @property
+    def failed(self) -> bool:
+        return self.status in ("missing", "malformed", "unexpected")
+
+
+def parse_event_header(text: str, *, required: bool) -> EventHeader:
+    """Read and remove the EVENT line, which is the draft's first non-empty line.
+
+    required: the post type tells an event (a story archetype). Whether the
+    quoted sentence is in the cited source is checked elsewhere.
+    """
+    lines = text.splitlines(keepends=True)
+    first = next((i for i, line in enumerate(lines) if line.strip()), None)
+    if first is None or not lines[first].strip().startswith(_EVENT_PREFIX):
+        return EventHeader("missing" if required else "absent", None, None, "", text)
+
+    line = lines[first].strip()
+    body = "".join(lines[first + 1:]).lstrip("\r\n")
+    value = line[len(_EVENT_PREFIX):].strip()
+    if not required:
+        return EventHeader("unexpected", None, None, line, body)
+    if value == EVENT_NONE:
+        return EventHeader("none", None, None, line, body)
+    cited = _EVENT_CITED.fullmatch(value)
+    if not cited:
+        return EventHeader("malformed", None, None, line, body)
+    return EventHeader("cited", cited.group("source"), cited.group("quote").strip(), line, body)

@@ -7,13 +7,14 @@ from config import features
 from llm.client import trace_calls
 from pipeline.state import PipelineState
 from pipeline.trace import build_trace_row
-from utils.formatters import normalise_post_punctuation, resolve_length_target
+from utils.citations import parse_event_header, strip_citations
+from utils.formatters import GENERAL_ARCHETYPE, STORY_ARCHETYPES, normalise_post_punctuation, resolve_length_target
 from utils.frames import decide_perspective
 from memory.profile_store import load_profile
 from memory.feedback_store import get_all_topics_posted
 from memory.trace_store import save_generation_trace
 from agents.retrieval_agent import retrieval_node
-from agents.draft_agent import draft_node
+from agents.draft_agent import cited_draft_node, draft_node, structure_node
 from agents.critic_agent import critic_node
 from agents.humanizer_agent import humanizer_node
 from agents.predictability_audit_agent import predictability_audit_node
@@ -87,6 +88,42 @@ def finalize_node(state: PipelineState) -> PipelineState:
     return state
 
 
+def strip_draft_node(state: PipelineState) -> PipelineState:
+    """Single writer: turn the marked draft into the post the user sees.
+
+    Reads and removes the EVENT line and the citation markers, and records what
+    they said (event, citations) and anything wrong with them
+    (citation_failures). When the drafter answered "EVENT: none" it wrote to the
+    General structure, so the archetype becomes General and the decision says why.
+    """
+    chosen = state.get("archetype", "")
+    header = parse_event_header(state.get("current_draft", ""), required=chosen in STORY_ARCHETYPES)
+    stripped = strip_citations(header.body)
+
+    state["event"] = {"status": header.status, "source": header.source,
+                      "quote": header.quote, "line": header.line}
+    state["citations"] = [
+        {"start": s.start, "end": s.end, "text": s.text, "basis": s.basis, "sources": list(s.sources)}
+        for s in stripped.spans
+    ]
+    state["citation_failures"] = [
+        {"kind": f.kind, "text": f.text, "start": f.start, "end": f.end} for f in stripped.failures
+    ]
+    if header.status == "none":
+        state["archetype"] = GENERAL_ARCHETYPE
+        state["archetype_decision"] = {
+            **(state.get("archetype_decision") or {}),
+            "archetype": GENERAL_ARCHETYPE, "downgraded_from": chosen,
+            "reason": "the drafter found no event that fits the topic",
+        }
+    if header.failed or stripped.failures:
+        logger.warning("strip: event header %s, %d marker failure(s)", header.status, len(stripped.failures))
+
+    state["current_draft"] = stripped.text
+    state["final_post"] = stripped.text
+    return state
+
+
 def should_score(state: PipelineState) -> str:
     """Route after predictability_audit.
 
@@ -112,9 +149,10 @@ def should_retry(state: PipelineState) -> str:
 
 
 def _wire_rewrite_chain(graph: StateGraph) -> None:
-    """Variant A, from the draft to the end: critic → humanizer →
-    predictability_audit → (scorer loop, polished only) → word_count_enforcer →
-    fact_checker → finalize."""
+    """Variant A, after plan: draft (which picks the archetype) → critic →
+    humanizer → predictability_audit → (scorer loop, polished only) →
+    word_count_enforcer → fact_checker → finalize."""
+    graph.add_node("draft", draft_node)
     graph.add_node("critic", critic_node)
     graph.add_node("humanizer", humanizer_node)
     graph.add_node("predictability_audit", predictability_audit_node)
@@ -123,6 +161,7 @@ def _wire_rewrite_chain(graph: StateGraph) -> None:
     graph.add_node("scorer", scorer_node)
     graph.add_node("finalize", finalize_node)
 
+    graph.add_edge("plan", "draft")
     graph.add_edge("draft", "critic")
     graph.add_edge("critic", "humanizer")
     graph.add_edge("humanizer", "predictability_audit")
@@ -147,29 +186,47 @@ def _wire_rewrite_chain(graph: StateGraph) -> None:
     graph.add_edge("finalize", END)
 
 
-# What runs after the draft, per variant (config.features.PIPELINE_VARIANTS).
-# Everything up to and including the draft is shared.
-# STOPGAP: B and C are wired as A until their own steps exist, so selecting them
-# changes nothing yet except the variant recorded in the trace. Proper fix: the
-# single-writer wiring for B (checks → at most one redraft → trim) and the
-# draft-only wiring for C (trim), steps 3-6 of the feat/single-writer plan.
-_AFTER_DRAFT: dict[str, Callable[[StateGraph], None]] = {
+def _wire_cited_draft(graph: StateGraph) -> None:
+    """Variants B and C, after plan: structure (the archetype, structure only;
+    "archetype" is a state key, so the node cannot have that name) → draft (with
+    citation markers) → strip (markers and EVENT line removed) → end.
+
+    STOPGAP: B and C are the same pipeline and both stop after the draft. The
+    post is returned without finalise (punctuation normalisation, final
+    validation) or a length trim, `quality` is ignored, and nothing acts on
+    citation_failures or a failed EVENT line: they are only recorded.
+    Proper fix: finalise and trim-by-deletion for both (step 4 of the
+    feat/single-writer plan); deterministic checks, the structured review and
+    at most one redraft for B (steps 5-6).
+    """
+    graph.add_node("structure", structure_node)
+    graph.add_node("draft", cited_draft_node)
+    graph.add_node("strip", strip_draft_node)
+
+    graph.add_edge("plan", "structure")
+    graph.add_edge("structure", "draft")
+    graph.add_edge("draft", "strip")
+    graph.add_edge("strip", END)
+
+
+# What runs after plan, per variant (config.features.PIPELINE_VARIANTS).
+# Everything up to and including plan is shared.
+_AFTER_PLAN: dict[str, Callable[[StateGraph], None]] = {
     "A": _wire_rewrite_chain,
-    "B": _wire_rewrite_chain,
-    "C": _wire_rewrite_chain,
+    "B": _wire_cited_draft,
+    "C": _wire_cited_draft,
 }
 
 
 def build_graph(variant: str):
-    """The compiled pipeline for one variant: the shared nodes up to the draft,
-    then that variant's steps. Raises PipelineConfigError for an unknown variant."""
-    wire_after_draft = _AFTER_DRAFT[features.validate_pipeline_variant(variant)]
+    """The compiled pipeline for one variant: the shared nodes up to plan, then
+    that variant's steps. Raises PipelineConfigError for an unknown variant."""
+    wire_after_plan = _AFTER_PLAN[features.validate_pipeline_variant(variant)]
     graph = StateGraph(PipelineState)
 
     graph.add_node("load_profile", load_profile_node)
     graph.add_node("retrieval", retrieval_node)
     graph.add_node("plan", plan_node)
-    graph.add_node("draft", draft_node)
     graph.add_node("low_coverage", low_coverage_node)
 
     graph.set_entry_point("load_profile")
@@ -179,9 +236,8 @@ def build_graph(variant: str):
         route_after_retrieval,
         {"draft": "plan", "low_coverage": "low_coverage"},
     )
-    graph.add_edge("plan", "draft")
     graph.add_edge("low_coverage", END)
-    wire_after_draft(graph)
+    wire_after_plan(graph)
 
     return graph.compile()
 

@@ -8,6 +8,9 @@ and post archetype. One table per concern; every agent reads from here.
   whether it needs a real event. A block describes structure only: no lengths,
   no diagram advice, no demand for details the sources may not have.
 - Tone describes voice only. It never asks for a scene, a story or specifics.
+- Style: STYLE_RULES is the one copy of the anti-AI phrasing, rhythm, em-dash
+  and voice rules. Pipeline A's humanizer and the single-writer draft prompt
+  both read it.
 """
 
 import re
@@ -227,6 +230,34 @@ STORY_ARCHETYPES = frozenset(key for key, a in ARCHETYPES.items() if a.needs_eve
 def get_archetype(archetype: str) -> Archetype:
     """The archetype for a key; an unknown key gets the neutral General Post."""
     return ARCHETYPES.get((archetype or "").lower().strip(), ARCHETYPES[GENERAL_ARCHETYPE])
+
+
+# ── Style ─────────────────────────────────────────────────────────────────────
+
+# How a post should read: AI phrasing to avoid, rhythm, no em dashes, voice.
+# The only copy. Read by pipeline A's humanizer (agents/humanizer_agent.py) and
+# by the single-writer draft prompt (agents/draft_prompt.py). Format it with
+# words_to_avoid (the profile's list, comma-separated).
+# The wording is the humanizer's, unchanged, because pipeline A's prompts must
+# not change on feat/single-writer; reword it for a writer when A is removed.
+STYLE_RULES = """AI writing patterns to eliminate:
+- Sentences that start with "In today's..." or "It's important to note..."
+- Overuse of transition words: "Furthermore", "Moreover", "Additionally", "In conclusion"
+- Generic motivational framing: "unlock your potential", "game-changing", "transformative"
+- Perfectly balanced sentence lengths; vary them aggressively
+- Lists of three that feel formulaic (The three things are: A, B, and C)
+- Passive voice where active would be stronger
+- Em dashes used as clause connectors or parenthetical separators (e.g. 'the data was messy, noisy and sparse' or 'one feature, which had low fill rate, was dropped'). Replace with a period, a comma, or rewrite the sentence entirely. Em dashes are one of the strongest signals of AI-generated text and must never appear in the output.
+- Hyphenated compound modifiers used decoratively (e.g. 'data-driven', 'production-ready', 'well-known', 'high-value' when plain language works just as well). Write 'drives decisions with data' not 'data-driven'. Only use hyphens when they are grammatically required and cannot be avoided.
+- Words to avoid: {words_to_avoid}
+
+Never use the em dash character (—) anywhere in the output. If you are about to write an em dash, stop and use a period or comma instead.
+
+What to inject instead:
+- Sentence variety: mix 4-word punches with longer, winding observations
+- Short asides that comment on a point the draft already makes. An aside is a remark, never a new reaction, memory or event.
+- Opinions stated with confidence, not hedged to death
+- The writer's actual voice as described in the profile"""
 
 
 # ── Format and tone ───────────────────────────────────────────────────────────

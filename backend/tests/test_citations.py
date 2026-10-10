@@ -280,3 +280,81 @@ def test_escaping_leaves_ordinary_text_and_brackets_alone():
     text = "Notes [draft 2] on pricing: see [the deck](https://example.com), items [1] and [a]."
 
     assert escape_markers(text) == text
+
+
+# --- The EVENT line -------------------------------------------------------------------
+
+from utils.citations import parse_event_header  # noqa: E402
+
+
+@pytest.mark.parametrize("draft,source,quote,body", [
+    ('EVENT: S3 | "We cut the form to four steps."\n\nThe post. [[S3]]', "S3", "We cut the form to four steps.", "The post. [[S3]]"),
+    ('EVENT: S12 | "We cut the form."\nThe post. [[V]]', "S12", "We cut the form.", "The post. [[V]]"),
+    ('\n\n  EVENT: S1 |"We cut the form."  \n\n\nThe post.', "S1", "We cut the form.", "The post."),
+    ('EVENT: S1 | “We cut the form.”\n\nThe post.', "S1", "We cut the form.", "The post."),
+    ('EVENT: S1 | "She said "ship it" and we did."\n\nThe post.', "S1", 'She said "ship it" and we did.', "The post."),
+    ('EVENT: S2 | "Result: completion went from 38 to 61 percent."\r\n\r\nThe post.', "S2",
+     "Result: completion went from 38 to 61 percent.", "The post."),
+])
+def test_an_event_line_gives_the_source_and_the_quote_and_leaves_the_post(draft, source, quote, body):
+    header = parse_event_header(draft, required=True)
+
+    assert (header.status, header.source, header.quote) == ("cited", source, quote)
+    assert header.body == body
+    assert not header.failed
+
+
+def test_event_none_is_an_answer_not_a_failure():
+    header = parse_event_header("EVENT: none\n\nThe post. [[V]]", required=True)
+
+    assert (header.status, header.source, header.quote, header.body) == ("none", None, None, "The post. [[V]]")
+    assert not header.failed
+
+
+@pytest.mark.parametrize("line", [
+    "EVENT:", "EVENT: ", "EVENT: S3", 'EVENT: S3 "no pipe"', "EVENT: S3 | no quotes", 'EVENT: S3 | ""',
+    'EVENT: S3 | "  "', 'EVENT: s3 | "lower case id"', 'EVENT: S0 | "no such id form"', 'EVENT: 3 | "bare number"',
+    'EVENT: S1,S2 | "two sources"', "EVENT: None", "EVENT: no", 'EVENT: none | "extra"',
+    'EVENT: S3 | "quote" and then more',
+])
+def test_a_malformed_event_line_is_a_failure_and_is_still_removed(line):
+    header = parse_event_header(f"{line}\n\nThe post. [[V]]", required=True)
+
+    assert header.status == "malformed" and header.failed
+    assert (header.source, header.quote) == (None, None)
+    assert header.line == line.strip()
+    assert header.body == "The post. [[V]]"
+
+
+@pytest.mark.parametrize("draft", [
+    "The post starts straight away. [[V]]",
+    "Here is the post:\n\nEVENT: S1 | \"not the first line\"\n\nThe post.",
+    "event: S1 | \"wrong case\"\n\nThe post.",
+    "",
+])
+def test_a_story_post_without_an_event_line_is_a_failure_and_the_text_is_untouched(draft):
+    header = parse_event_header(draft, required=True)
+
+    assert header.status == "missing" and header.failed
+    assert header.body == draft and header.line == ""
+
+
+def test_a_post_type_that_takes_no_event_line_needs_none():
+    header = parse_event_header("The post. [[V]]", required=False)
+
+    assert header.status == "absent" and not header.failed
+    assert header.body == "The post. [[V]]"
+
+
+@pytest.mark.parametrize("line", ['EVENT: S1 | "We cut the form."', "EVENT: none", "EVENT: nonsense"])
+def test_an_event_line_on_a_post_type_that_takes_none_is_a_failure_and_is_removed(line):
+    header = parse_event_header(f"{line}\n\nThe post. [[V]]", required=False)
+
+    assert header.status == "unexpected" and header.failed
+    assert header.body == "The post. [[V]]"
+
+
+def test_the_event_line_never_stays_in_the_post_whatever_its_status():
+    for draft, required in [('EVENT: S1 | "x y z."\n\nPost.', True), ("EVENT: none\n\nPost.", True),
+                            ("EVENT: garbage\n\nPost.", True), ("EVENT: none\n\nPost.", False)]:
+        assert "EVENT" not in parse_event_header(draft, required=required).body
