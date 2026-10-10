@@ -1,7 +1,8 @@
-"""The structured review (agents/review_agent.py): what it sends, how every
-returned issue is validated, and what counts as reviewed. Whether the model's
-judgements are right is measured on real calls (evals/fixtures/review_cases.jsonl),
-not here."""
+"""The structured review (agents/review_agent.py): what it sends, how the
+answer is validated, and what counts as reviewed. The model reports one record
+of observations per sentence; the verdicts are derived in code
+(tests/test_review_rules.py). Whether the model's observations are right is
+measured on real calls (evals/fixtures/review_cases.jsonl), not here."""
 
 import json
 
@@ -10,10 +11,13 @@ import pytest
 from tests.checks_fixtures import PRICING, SURVEY
 from tests.generation_fixtures import PROFILE, make_state
 from tests.length_fixtures import _cut_off
+from tests.review_fixtures import record, review_reply
 
 MARKED = ("Average revenue per account fell 4 percent. [[S1]] That is a fair trade. [[V]]\n\n"
           "About 41 percent of teams skip reviews. [[S2]] You asked about pricing. [[R]] No marker here.")
 REVIEW_MODEL = "claude-sonnet-4-6"
+FIELDS = ["sentence", "content", "stated_as", "supported_by", "evidence", "detail_differs", "differing_detail",
+          "presented_as", "links_cause_or_sequence", "link_sources", "link_stated_by", "off_topic"]
 
 
 def _state(marked: str = MARKED, chunks=(PRICING, SURVEY), **overrides) -> dict:
@@ -26,17 +30,12 @@ def _state(marked: str = MARKED, chunks=(PRICING, SURVEY), **overrides) -> dict:
     return finalise_draft_node(strip_draft_node(state))
 
 
-def _review(claude, *issues, state=None) -> dict:
+def _review(claude, changes=None, *, rhythm=(), count=5, state=None) -> dict:
+    """Review MARKED (five sentences) with a reply of benign records, changed as given."""
     from agents.review_agent import review_post
 
-    claude.queue(json.dumps({"issues": list(issues)}))
+    claude.queue(review_reply(count, changes or {}, rhythm))
     return review_post(state or _state())
-
-
-def _issue(**fields) -> dict:
-    return {"sentence": 1, "sources": ["S1"], "evidence": None,
-            "analysis": "The source gives the figure; the post adds a cause.", "excluded_by": "none",
-            "type": "not_in_sources", "why": "The source does not say this.", **fields}
 
 
 # --- The call ---------------------------------------------------------------------
@@ -46,28 +45,29 @@ def test_the_review_is_one_structured_sonnet_call_that_changes_nothing(claude):
 
     state = _state()
     before = json.dumps(state, sort_keys=True, default=str)
-    claude.queue(json.dumps({"issues": []}))
+    claude.queue(review_reply(5))
 
     result = review_post(state)
 
     [call] = claude.calls
     assert call["model"] == REVIEW_MODEL and call["tool_choice"] == {"type": "tool", "name": "record_review"}
     assert json.dumps(state, sort_keys=True, default=str) == before
-    assert result == {"outcome": "clean", "issues": [], "excluded": [], "invalid": [], "model": REVIEW_MODEL,
-                      "input_tokens": 10, "output_tokens": 10}
+    assert (result["outcome"], result["issues"], result["invalid"]) == ("clean", [], [])
+    assert (result["model"], result["input_tokens"], result["output_tokens"]) == (REVIEW_MODEL, 10, 10)
+    assert [r["sentence"] for r in result["records"]] == [1, 2, 3, 4, 5]
 
 
 def test_the_prompt_shows_the_sources_as_data_and_the_post_as_numbered_sentences_with_citations(claude):
     from utils.frames import PERSPECTIVES, SOURCES_ARE_DATA_RULE, build_sources_block
 
-    state = _state(topic="Pricing experiments", context="For founders")
-    _review(claude, state=state)
+    _review(claude, state=_state(topic="Pricing experiments", context="For founders"))
 
     prompt = claude.calls[0]["messages"][-1]["content"]
     assert build_sources_block([PRICING, SURVEY], PROFILE).text in prompt
     assert SOURCES_ARE_DATA_RULE in prompt
     assert PERSPECTIVES["mixed"] in prompt
     assert "Topic: Pricing experiments" in prompt and "Additional context: For founders" in prompt
+    assert f"Author: {PROFILE['name']}, {PROFILE['role']}" in prompt
     numbered = prompt[prompt.index("<post>") + 7:prompt.index("</post>")].strip().splitlines()
     assert numbered == [
         "1. [S1] Average revenue per account fell 4 percent.",
@@ -78,11 +78,12 @@ def test_the_prompt_shows_the_sources_as_data_and_the_post_as_numbered_sentences
     ]
 
 
-def test_a_multi_sentence_span_is_numbered_by_sentence_and_each_inherits_the_citation(claude):
-    _review(claude, state=_state("Revenue fell 4 percent. Conversion rose. Logins too. [[S1]]"))
+def test_the_prompt_never_shows_the_authors_bio_opinions_or_samples(claude):
+    _review(claude)
 
     prompt = claude.calls[0]["messages"][-1]["content"]
-    assert "1. [S1] Revenue fell 4 percent.\n2. [S1] Conversion rose.\n3. [S1] Logins too." in prompt
+    assert PROFILE["bio"] not in prompt and PROFILE["opinions"][0] not in prompt
+    assert PROFILE["writing_samples"][0] not in prompt
 
 
 @pytest.mark.parametrize("event,expected", [
@@ -98,138 +99,172 @@ def test_the_prompt_says_which_event_the_writer_named(claude, event, expected):
     assert expected in claude.calls[0]["messages"][-1]["content"]
 
 
-SEVEN = ("not_in_sources", "changed_detail", "wrong_citation", "wrong_attribution",
-         "cross_source_link", "off_topic", "ai_rhythm")
+def test_the_answer_is_observations_in_the_agreed_order_with_no_verdict_field():
+    from agents.review_agent import Review, RhythmNote, SentenceRecord
+
+    schema = SentenceRecord.model_json_schema()
+    assert list(schema["properties"]) == FIELDS
+    assert not {"type", "why", "excluded_by", "verdict", "issue"} & set(schema["properties"])
+    assert list(Review.model_json_schema()["properties"]) == ["sentences", "ai_rhythm"]
+    assert list(RhythmNote.model_json_schema()["properties"]) == ["sentence", "why"]
 
 
-def test_there_are_seven_issue_types_each_defined_by_what_counts_and_never_by_a_phrase_list():
+def test_every_field_and_every_value_is_described_in_the_prompt_without_quoted_phrases():
     from typing import get_args
 
-    from agents.review_agent import REVIEW_PROMPT, IssueType
+    from agents.review_agent import REVIEW_PROMPT, Content, PresentedAs, StatedAs
 
-    assert get_args(IssueType) == SEVEN
-    for issue_type in SEVEN:
-        definition = REVIEW_PROMPT.split(f"\n{issue_type}\n", 1)[1].split("\n\n", 1)[0]
-        assert "Counts:" in definition and "Does not count:" in definition
-        assert '"' not in definition and "“" not in definition          # described, never quoted phrases
-
-
-def test_the_answer_puts_the_reasoning_before_the_verdict():
-    from typing import get_args
-
-    from agents.review_agent import ExcludedBy, ReviewIssue
-
-    assert list(ReviewIssue.model_json_schema()["properties"]) == [
-        "sentence", "sources", "evidence", "analysis", "excluded_by", "type", "why"]
-    assert list(ReviewIssue.model_fields) == ["sentence", "sources", "evidence", "analysis", "excluded_by", "type", "why"]
-    assert get_args(ExcludedBy) == ("paraphrase", "opinion", "disclaimer", "authors_framing", "none")
-    assert {"sentence", "analysis", "excluded_by", "type", "why"} <= set(ReviewIssue.model_json_schema()["required"])
+    fields_part = REVIEW_PROMPT.split("Fill the fields of each entry in this order.", 1)[1]
+    for field in FIELDS:
+        assert f"\n{field}\n" in fields_part
+    for value in (*get_args(Content), *get_args(StatedAs), *get_args(PresentedAs)):
+        assert f"\n- {value}: " in fields_part or f"\n- {value}:" in fields_part
+    assert '"' not in fields_part and "“" not in fields_part       # described, never quoted phrases
+    assert len(get_args(Content)) == 9
 
 
-def test_every_exclusion_the_answer_can_name_is_explained_in_the_prompt():
-    from typing import get_args
+def test_the_output_budget_grows_with_the_post_and_stays_within_the_ceiling(claude):
+    from agents.review_agent import review_max_tokens
+    from llm.client import MAX_NON_STREAMING_OUTPUT_TOKENS
 
-    from agents.review_agent import REVIEW_PROMPT, ExcludedBy
+    _review(claude)
 
-    for exclusion in get_args(ExcludedBy):
-        if exclusion != "none":
-            assert f"\n- {exclusion}: " in REVIEW_PROMPT
-
-
-# --- Validation -------------------------------------------------------------------
-
-def test_a_valid_issue_counts_and_says_which_sentence_and_span(claude):
-    result = _review(claude, _issue(type="changed_detail", sentence=3, sources=["S2"],
-                                    evidence="41 percent of teams skip reviews", why="The share is changed."))
-
-    assert result["outcome"] == "issues" and result["invalid"] == [] and result["excluded"] == []
-    assert result["issues"] == [{
-        "sentence": 2, "span": 2, "text": "About 41 percent of teams skip reviews.",
-        "sources": ["S2"], "evidence": "41 percent of teams skip reviews",
-        "analysis": "The source gives the figure; the post adds a cause.", "excluded_by": "none",
-        "type": "changed_detail", "why": "The share is changed.",
-    }]
+    assert claude.calls[0]["max_tokens"] == review_max_tokens(5)
+    assert review_max_tokens(5) < review_max_tokens(40) <= MAX_NON_STREAMING_OUTPUT_TOKENS
+    assert review_max_tokens(10_000) == MAX_NON_STREAMING_OUTPUT_TOKENS
 
 
-@pytest.mark.parametrize("fields,reason", [
-    ({"sentence": 0}, "sentence_out_of_range"),
-    ({"sentence": 6}, "sentence_out_of_range"),
-    ({"sentence": -2}, "sentence_out_of_range"),
-    ({"sources": ["S9"]}, "unknown_source"),
-    ({"sources": ["S1", "S7"]}, "unknown_source"),
-    ({"type": "changed_detail", "evidence": None}, "evidence_required"),
-    ({"type": "changed_detail", "evidence": "   "}, "evidence_required"),
-    ({"evidence": "revenue per account fell 5 percent"}, "evidence_not_in_source"),            # not what the source says
-    ({"evidence": "revenue per account fell 4 per"}, "evidence_not_in_source"),                # stops inside a word
-    ({"evidence": "41 percent of teams skip reviews"}, "evidence_not_in_source"),              # in S2, but S1 is named
-    ({"evidence": "average revenue per account fell 4 percent", "sources": []}, "evidence_without_source"),
-    ({"type": "wrong_citation", "sources": []}, "source_required"),
+# --- Issues come from the rules ---------------------------------------------------
+
+def test_issues_are_derived_from_the_records_and_say_which_sentence_and_span(claude):
+    result = _review(claude, {
+        3: dict(content="fact_or_event", stated_as="fact", supported_by=["S2"], presented_as="neutral",
+                evidence="41 percent of teams skip reviews", detail_differs=True, differing_detail="41 against 14"),
+        5: dict(content="fact_or_event", stated_as="fact", presented_as="neutral"),
+    })
+
+    assert result["outcome"] == "issues" and result["invalid"] == []
+    assert [(i["type"], i["sentence"], i["span"], i["text"]) for i in result["issues"]] == [
+        ("changed_detail", 2, 2, "About 41 percent of teams skip reviews."),
+        ("not_in_sources", 4, 4, "No marker here."),
+    ]
+    assert result["issues"][0]["evidence"] == "41 percent of teams skip reviews"
+
+
+def test_rhythm_notes_become_ai_rhythm_issues(claude):
+    result = _review(claude, rhythm=[{"sentence": 2, "why": "A slogan-like closer."}])
+
+    assert [(i["type"], i["sentence"], i["text"]) for i in result["issues"]] == [("ai_rhythm", 1, "That is a fair trade.")]
+    assert result["outcome"] == "issues"
+
+
+def test_a_rhythm_note_on_a_sentence_that_does_not_exist_is_invalid(claude):
+    result = _review(claude, rhythm=[{"sentence": 9, "why": "x"}])
+
+    assert result["outcome"] == "clean"
+    assert [i["reason"] for i in result["invalid"]] == ["rhythm_sentence_out_of_range"]
+
+
+# --- Every sentence, exactly once ---------------------------------------------------
+
+@pytest.mark.parametrize("numbers,problem", [
+    ([1, 2, 3, 4], "missing [5]"),
+    ([1, 2, 4, 5], "missing [3]"),
+    ([1, 2, 2, 3, 4, 5], "repeated [2]"),
+    ([1, 2, 3, 4, 5, 6], "unknown [6]"),
+    ([0, 1, 2, 3, 4, 5], "unknown [0]"),
+    ([], "missing [1, 2, 3, 4, 5]"),
 ])
-def test_an_issue_that_fails_validation_is_kept_apart_with_the_reason_and_never_counts(claude, fields, reason):
-    result = _review(claude, _issue(**fields))
+def test_records_that_do_not_cover_every_sentence_exactly_once_mean_not_reviewed(claude, numbers, problem):
+    from agents.review_agent import review_post
+
+    claude.queue(json.dumps({"sentences": [record(n) for n in numbers], "ai_rhythm": []}))
+
+    result = review_post(_state())
+
+    assert result["outcome"] == "not_reviewed" and result["issues"] == []
+    assert result["error"].startswith("sentence_coverage") and problem in result["error"]
+    assert len(result["records"]) == len(numbers)                # kept for the trace
+
+
+def test_records_out_of_order_are_still_matched_to_their_sentences(claude):
+    from agents.review_agent import review_post
+
+    records = [record(n) for n in (5, 3, 1, 2, 4)]
+    records[0].update(content="fact_or_event", stated_as="fact", presented_as="neutral")     # sentence 5
+    claude.queue(json.dumps({"sentences": records, "ai_rhythm": []}))
+
+    result = review_post(_state())
+
+    assert [(i["type"], i["sentence"], i["text"]) for i in result["issues"]] == [("not_in_sources", 4, "No marker here.")]
+
+
+# --- Invalid records ----------------------------------------------------------------
+
+FACT = dict(content="fact_or_event", stated_as="fact", presented_as="neutral")
+
+
+@pytest.mark.parametrize("changes,reason", [
+    (dict(supported_by=["S9"]), "unknown_source"),
+    (dict(supported_by=["S1"], link_sources=["S1", "S7"], links_cause_or_sequence=True), "unknown_source"),
+    (dict(supported_by=["S1"], link_stated_by=["S8"]), "unknown_source"),
+    (dict(supported_by=["S1"], link_sources=["request"]), "request_is_not_a_link_source"),
+    (dict(supported_by=["S1"], evidence="revenue per account fell 5 percent"), "evidence_not_in_source"),     # not what it says
+    (dict(supported_by=["S1"], evidence="revenue per account fell 4 per"), "evidence_not_in_source"),         # stops inside a word
+    (dict(supported_by=["S1"], evidence="41 percent of teams skip reviews"), "evidence_not_in_source"),       # in S2, S1 named
+    (dict(supported_by=[], evidence="average revenue per account fell 4 percent"), "evidence_without_source"),
+    (dict(supported_by=["request"], evidence="average revenue per account fell 4 percent"), "evidence_not_in_source"),
+])
+def test_a_record_that_fails_validation_is_reported_and_nothing_is_derived_from_it(claude, changes, reason):
+    # Every one of these records would otherwise give an issue: a changed detail on sentence 1.
+    result = _review(claude, {1: {**FACT, "detail_differs": True, **changes}})
 
     assert result["outcome"] == "clean" and result["issues"] == []
     [invalid] = result["invalid"]
     assert invalid["reason"].startswith(reason)
-    assert invalid["type"] == fields.get("type", "not_in_sources")
+    assert (invalid["sentence"], invalid["text"]) == (0, "Average revenue per account fell 4 percent.")
+    assert invalid["record"]["sentence"] == 1
 
 
 @pytest.mark.parametrize("evidence", [
     "average revenue per account fell 4 percent",
     "AVERAGE revenue per account   fell\n4 percent",                  # case and whitespace may differ
-    "Results: conversion improved from 13 to 16 percent; average revenue per account fell 4 percent; shared logins rose.",
 ])
-def test_evidence_copied_word_for_word_from_a_named_source_is_accepted(claude, evidence):
-    result = _review(claude, _issue(evidence=evidence))
+def test_evidence_copied_word_for_word_from_a_supporting_source_is_accepted(claude, evidence):
+    result = _review(claude, {1: {**FACT, "supported_by": ["S1"], "evidence": evidence, "detail_differs": True}})
 
-    assert result["outcome"] == "issues" and result["issues"][0]["evidence"] == evidence.strip()
+    assert result["invalid"] == []
+    assert [i["type"] for i in result["issues"]] == ["changed_detail"]
 
 
-def test_evidence_may_come_from_any_of_the_sources_the_issue_names(claude):
-    result = _review(claude, _issue(type="cross_source_link", sources=["S1", "S2"],
-                                    evidence="41 percent of teams skip reviews"))
+def test_evidence_for_the_request_is_checked_against_the_topic_and_context(claude):
+    state = _state(topic="What 41 investor meetings taught me", context="We closed in March")
+    changes = {4: {**FACT, "supported_by": ["request"], "evidence": "41 investor meetings"}}
 
+    assert _review(claude, changes, state=state)["invalid"] == []
+    changes[4]["evidence"] = "42 investor meetings"
+    assert [i["reason"] for i in _review(claude, changes, state=state)["invalid"]] == ["evidence_not_in_source"]
+
+
+def test_an_invalid_record_does_not_stop_the_other_sentences_being_judged(claude):
+    result = _review(claude, {
+        1: {**FACT, "supported_by": ["S9"]},
+        5: FACT,
+    })
+
+    assert [i["reason"] for i in result["invalid"]] == ["unknown_source: ['S9']"]
+    assert [(i["type"], i["sentence"]) for i in result["issues"]] == [("not_in_sources", 4)]
     assert result["outcome"] == "issues"
 
 
-def test_an_issue_without_evidence_is_valid_unless_its_type_requires_it(claude):
-    result = _review(claude, _issue(type="not_in_sources", sentence=2, sources=[]),
-                     _issue(type="ai_rhythm", sentence=5, sources=[]),
-                     _issue(type="wrong_citation", sentence=2, sources=["S1"]))
-
-    assert [i["type"] for i in result["issues"]] == ["not_in_sources", "ai_rhythm", "wrong_citation"]
-
-
-def test_valid_and_invalid_issues_are_separated_and_only_valid_ones_decide_the_outcome(claude):
-    result = _review(claude, _issue(sentence=9), _issue(sentence=1), _issue(sources=["S4"]))
-
-    assert result["outcome"] == "issues"
-    assert [i["sentence"] for i in result["issues"]] == [0]
-    assert [i["reason"].split(":")[0] for i in result["invalid"]] == ["sentence_out_of_range", "unknown_source"]
-
-
-@pytest.mark.parametrize("issue_type", SEVEN)
-def test_each_of_the_seven_types_is_accepted(claude, issue_type):
-    evidence = "average revenue per account fell 4 percent" if issue_type == "changed_detail" else None
-
-    result = _review(claude, _issue(type=issue_type, evidence=evidence))
-
-    assert [i["type"] for i in result["issues"]] == [issue_type]
-
-
-@pytest.mark.parametrize("fields", [
-    {"type": "sounds_off"},
-    {"type": "unsupported_by_citation"},                 # a type from before the seven
-    {"type": "invented_reaction"},
-    {"type": "claim_marked_as_view"},
-    {"type": "invented_analogy"},
-    {"excluded_by": "style"},                            # not one of the exclusions
-    {"excluded_by": None},
+@pytest.mark.parametrize("field,value", [
+    ("content", "sounds_off"), ("stated_as", "maybe"), ("presented_as", "the_author"),
+    ("detail_differs", "unsure"), ("off_topic", None),
 ])
-def test_a_type_or_exclusion_outside_the_schema_is_not_a_usable_answer(claude, fields):
+def test_a_value_outside_the_schema_is_not_a_usable_answer(claude, field, value):
     from agents.review_agent import review_post
 
-    bad = json.dumps({"issues": [_issue(**fields)]})
+    bad = review_reply(5, {1: {field: value}})
     claude.queue(bad, bad)
 
     result = review_post(_state())
@@ -237,56 +272,13 @@ def test_a_type_or_exclusion_outside_the_schema_is_not_a_usable_answer(claude, f
     assert result["outcome"] == "not_reviewed" and result["error"].startswith("invalid_output")
 
 
-def test_an_answer_without_the_reasoning_fields_is_not_a_usable_answer(claude):
+def test_an_answer_in_the_old_issue_list_shape_is_not_a_usable_answer(claude):
     from agents.review_agent import review_post
 
-    old_shape = json.dumps({"issues": [{"type": "not_in_sources", "sentence": 1, "sources": ["S1"],
-                                        "evidence": None, "why": "The source does not say this."}]})
-    claude.queue(old_shape, old_shape)
+    old = json.dumps({"issues": [{"type": "not_in_sources", "sentence": 1, "sources": [], "why": "x"}]})
+    claude.queue(old, old)
 
     assert review_post(_state())["outcome"] == "not_reviewed"
-
-
-# --- Exclusions -------------------------------------------------------------------
-
-@pytest.mark.parametrize("excluded_by", ["paraphrase", "opinion", "disclaimer", "authors_framing"])
-def test_an_entry_the_model_excluded_is_recorded_and_never_counted(claude, excluded_by):
-    result = _review(claude, _issue(excluded_by=excluded_by))
-
-    assert result["outcome"] == "clean" and result["issues"] == [] and result["invalid"] == []
-    [excluded] = result["excluded"]
-    assert (excluded["excluded_by"], excluded["type"], excluded["sentence"]) == (excluded_by, "not_in_sources", 0)
-
-
-def test_excluded_and_counted_entries_are_kept_apart(claude):
-    result = _review(claude, _issue(sentence=1, excluded_by="paraphrase"), _issue(sentence=2, sources=[]),
-                     _issue(sentence=3, sources=["S2"], excluded_by="disclaimer"), _issue(sentence=9))
-
-    assert result["outcome"] == "issues"
-    assert [i["sentence"] for i in result["issues"]] == [1]
-    assert [(i["sentence"], i["excluded_by"]) for i in result["excluded"]] == [(0, "paraphrase"), (2, "disclaimer")]
-    assert [i["sentence"] for i in result["invalid"]] == [8]
-
-
-def test_an_excluded_entry_is_not_validated_it_is_only_recorded(claude):
-    # Out of range, an unknown source and a made-up quote: none of it matters once the entry is excluded.
-    result = _review(claude, _issue(sentence=40, sources=["S9"], evidence="not in any source", excluded_by="opinion"))
-
-    assert result["invalid"] == [] and result["issues"] == []
-    assert [(i["sentence"], i["span"], i["text"]) for i in result["excluded"]] == [(39, None, "")]
-
-
-def test_code_decides_on_the_structured_fields_and_never_on_the_free_text(claude):
-    # The words in analysis and why argue the other way in both entries: neither changes the outcome.
-    counted = _issue(sentence=1, analysis="On reflection this is fine and does not count.",
-                     why="Not a problem, a paraphrase.", excluded_by="none")
-    excluded = _issue(sentence=2, sources=[], analysis="This is clearly an invented fact.",
-                      why="A serious fabrication.", excluded_by="opinion")
-
-    result = _review(claude, counted, excluded)
-
-    assert [i["sentence"] for i in result["issues"]] == [0]
-    assert [i["sentence"] for i in result["excluded"]] == [1]
 
 
 # --- Not reviewed -----------------------------------------------------------------
@@ -299,7 +291,7 @@ def test_a_truncated_answer_is_not_reviewed_and_never_clean(claude):
     result = review_post(_state())
 
     assert (result["outcome"], result["error"]) == ("not_reviewed", "truncated")
-    assert result["issues"] == [] and result["invalid"] == []
+    assert result["issues"] == [] and result["invalid"] == [] and result["records"] == []
     assert (result["input_tokens"], result["output_tokens"]) == (20, 4000)      # both attempts are counted
 
 
@@ -337,7 +329,7 @@ def test_the_reviews_calls_still_reach_a_trace_around_it(claude):
     from agents.review_agent import review_post
     from llm.client import trace_calls
 
-    claude.queue(json.dumps({"issues": []}))
+    claude.queue(review_reply(5))
     with trace_calls() as outer:
         result = review_post(_state())
 
