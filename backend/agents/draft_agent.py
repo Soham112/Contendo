@@ -2,15 +2,15 @@
 
 draft_node is pipeline A's drafter: it picks the archetype, drafts, and runs
 the specifics guard (one retry, then sentence removal).
-structure_node and cited_draft_node are the single-writer drafter for variants
-B and C: the archetype's structure is chosen first, then one draft call whose
-output carries citation markers. No guard retry and no sentence removal run
+cited_draft_node is the single-writer drafter for variants B and C: after the
+structure is chosen (agents/archetype_agent.structure_node), one draft call
+whose output carries citation markers. No guard retry and no sentence removal run
 there; what the draft got wrong is for the checks after it to find.
 """
 
 import logging
 
-from agents.archetype_agent import choose_archetype, choose_structure
+from agents.archetype_agent import choose_archetype
 from agents.draft_prompt import build_cited_prompt, build_prompt, format_retrieval_context
 from llm.client import SONNET, complete
 from pipeline.state import PipelineState
@@ -77,15 +77,6 @@ def draft_node(state: PipelineState) -> PipelineState:
 
 
 # ── Single writer (variants B and C) ──────────────────────────────────────────
-
-def structure_node(state: PipelineState) -> PipelineState:
-    """One Haiku call picks the post's structure from the types the sources
-    allow. It names no event: for a story type the drafter does that."""
-    decision = choose_structure(state)
-    state["archetype"] = decision["archetype"]
-    state["archetype_decision"] = decision
-    return state
-
 
 def cited_draft_node(state: PipelineState) -> PipelineState:
     """One Sonnet call writes the post with citation markers (and, for a story

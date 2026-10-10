@@ -72,7 +72,7 @@ def test_well_formed_markers_and_ordinary_brackets_are_not_malformed():
 
 
 def test_after_a_trim_only_markers_still_in_the_post_are_reported(claude):
-    from agents.word_count_enforcer_agent import trim_node
+    from agents.trim_agent import trim_node
     from pipeline.checks import checks_node, recheck_node
     from pipeline.finalise import finalise_draft_node, finalise_trimmed_node
 

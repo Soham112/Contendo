@@ -1,6 +1,8 @@
 """The review's verdicts are decided in code (pipeline/review_rules.py) from the
-model's observations, the sentence's own citation and the source index. Each
-rule has a record that gives the issue and one that does not."""
+model's observations, the sentence's own citation (which the model never sees)
+and the source index. Each rule has a record that gives the issue and one that
+does not. Records here are as review_agent passes them on: a detail_change or
+an unsupported_part is present only if it passed its checks."""
 
 import pytest
 
@@ -102,21 +104,50 @@ def test_wrong_citation_is_decided_by_the_citation_alone():
     assert _types("S2", **observed) == ["wrong_citation"]
 
 
+# --- not_in_sources from an unsupported part --------------------------------------
+
+def test_words_nothing_states_in_a_sentence_stated_as_fact_are_not_in_sources():
+    from pipeline.review_rules import derive_issues
+
+    [issue] = derive_issues([record(1, **FACT, supported_by=["S1"], unsupported_part="trying to find the fix")],
+                            [(0, _sentence("S1"))], INDEX)
+
+    assert issue["type"] == "not_in_sources"
+    assert issue["detail"]["unsupported_part"] == "trying to find the fix"
+
+
+@pytest.mark.parametrize("changes", [
+    dict(**FACT, supported_by=["S1"]),                                                  # nothing unsupported
+    dict(content="generalisation", stated_as="authors_view", presented_as="authors_view",
+         unsupported_part="most teams"),                                                # stated as the author's view
+    dict(content="disclaimer", stated_as="fact", presented_as="neutral", supported_by=["S1"],
+         unsupported_part="not something we implemented"),                              # a disclaimer is the author's own
+    dict(content="opinion", stated_as="fact", unsupported_part="a fair trade"),
+])
+def test_an_unsupported_part_gives_no_issue_when_it_is_the_authors_own_or_absent(changes):
+    assert "not_in_sources" not in _types("S1", **changes)
+
+
+def test_a_wholly_unsupported_sentence_with_an_unsupported_part_is_one_issue_not_two():
+    assert _types("S1", **FACT, unsupported_part="all of it") == ["not_in_sources"]
+
+
 # --- changed_detail ---------------------------------------------------------------
 
-def test_a_differing_detail_with_evidence_is_a_changed_detail():
+def test_a_detail_change_is_a_changed_detail_quoting_both_sides():
     from pipeline.review_rules import derive_issues
 
     [issue] = derive_issues([record(1, **FACT, supported_by=["S1"], evidence="Early meetings were me presenting",
-                                    detail_differs=True, differing_detail="early against first")],
+                                    detail_change={"source_words": "Early meetings", "post_words": "first board meetings"})],
                             [(0, _sentence("S1"))], INDEX)
 
-    assert (issue["type"], issue["sources"], issue["evidence"]) == ("changed_detail", ["S1"], "Early meetings were me presenting")
+    assert (issue["type"], issue["sources"], issue["evidence"]) == ("changed_detail", ["S1"], "Early meetings")
+    assert issue["detail"] == {"source_words": "Early meetings", "post_words": "first board meetings"}
 
 
-def test_no_changed_detail_without_a_difference_or_without_evidence():
-    assert _types("S1", **FACT, supported_by=["S1"], evidence="x", detail_differs=False) == []
-    assert _types("S1", **FACT, supported_by=["S1"], evidence=None, detail_differs=True) == []
+def test_no_changed_detail_without_a_detail_change():
+    assert _types("S1", **FACT, supported_by=["S1"], evidence="x") == []
+    assert _types("S1", **FACT, supported_by=["S1"], evidence="x", detail_change=None) == []
 
 
 # --- wrong_attribution ------------------------------------------------------------
@@ -174,18 +205,19 @@ def test_an_analogy_offered_as_the_authors_own_framing_gives_no_issue():
 def test_facts_from_two_sources_linked_with_no_source_stating_the_link_is_a_cross_source_link():
     from pipeline.review_rules import derive_issues
 
-    [issue] = derive_issues([record(1, **FACT, supported_by=["S1", "S2"], links_cause_or_sequence=True,
-                                    link_sources=["S2", "S1", "S2"])], [(0, _sentence("S1,S2"))], INDEX)
+    [issue] = derive_issues([record(1, **FACT, supported_by=["S1", "S2"], link={"sources": ["S2", "S1", "S2"]})],
+                            [(0, _sentence("S1,S2"))], INDEX)
 
     assert (issue["type"], issue["sources"]) == ("cross_source_link", ["S1", "S2"])
 
 
 @pytest.mark.parametrize("changes", [
-    dict(links_cause_or_sequence=False, link_sources=["S1", "S2"]),                 # side by side, no link
-    dict(links_cause_or_sequence=True, link_sources=["S1"]),                        # one source
-    dict(links_cause_or_sequence=True, link_sources=["S1", "S1"]),
-    dict(links_cause_or_sequence=True, link_sources=["S1", "S2"], link_stated_by=["S2"]),   # a source states the link
-    dict(links_cause_or_sequence=True, link_sources=[]),
+    dict(),                                                                         # no link at all
+    dict(link=None),
+    dict(link={"sources": ["S1"]}),                                                 # one source
+    dict(link={"sources": ["S1", "S1"]}),
+    dict(link={"sources": ["S1", "S2"], "stated_by": ["S2"]}),                      # a source states the link
+    dict(link={"sources": []}),
 ])
 def test_no_cross_source_link_without_a_link_across_sources_that_nothing_states(changes):
     assert _types("S1,S2", **FACT, supported_by=["S1", "S2"], **changes) == []
@@ -204,7 +236,8 @@ def test_a_sentence_can_give_more_than_one_issue_and_issues_say_where_they_are()
     from pipeline.review_rules import derive_issues
 
     records = [record(1), record(2, content="fact_or_event", stated_as="fact", presented_as="author_did_or_experienced",
-                                 supported_by=["S2"], evidence="x", detail_differs=True, off_topic=True)]
+                                 supported_by=["S2"], evidence="x", off_topic=True,
+                                 detail_change={"source_words": "nine", "post_words": "eight"})]
     sentences = [(0, _sentence("view", "First.")), (4, _sentence("view", "Second."))]
 
     issues = derive_issues(records, sentences, INDEX)
@@ -213,9 +246,10 @@ def test_a_sentence_can_give_more_than_one_issue_and_issues_say_where_they_are()
     assert {(i["sentence"], i["span"], i["text"]) for i in issues} == {(1, 4, "Second.")}
 
 
-def test_no_rule_reads_free_text():
-    # differing_detail is the only free-text field in a record; whatever it says changes nothing.
-    base = dict(**FACT, supported_by=["S1"], evidence="x", detail_differs=False)
+def test_records_with_only_the_four_required_fields_are_enough():
+    from pipeline.review_rules import derive_issues
 
-    assert _types("S1", **base, differing_detail="This is a serious fabrication and must be flagged.") == []
-    assert _types("S1", **{**base, "detail_differs": True}, differing_detail="Not really a difference, ignore.") == ["changed_detail"]
+    bare = {"sentence": 1, "content": "fact_or_event", "stated_as": "fact", "presented_as": "neutral"}
+
+    assert [i["type"] for i in derive_issues([bare], [(0, _sentence("S1"))], INDEX)] == ["not_in_sources"]
+    assert derive_issues([{**bare, "content": "opinion"}], [(0, _sentence("view"))], INDEX) == []

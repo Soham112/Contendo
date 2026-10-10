@@ -18,11 +18,13 @@ from memory.profile_store import load_profile
 from memory.feedback_store import get_all_topics_posted
 from memory.trace_store import save_generation_trace
 from agents.retrieval_agent import retrieval_node
-from agents.draft_agent import cited_draft_node, draft_node, structure_node
+from agents.archetype_agent import structure_node
+from agents.draft_agent import cited_draft_node, draft_node
 from agents.critic_agent import critic_node
 from agents.humanizer_agent import humanizer_node
 from agents.predictability_audit_agent import predictability_audit_node
-from agents.word_count_enforcer_agent import trim_node, word_count_enforcer_node
+from agents.trim_agent import trim_node
+from agents.word_count_enforcer_agent import word_count_enforcer_node
 from agents.fact_check_agent import fact_check_node, log_fact_check
 from agents.scorer_agent import scorer_node
 

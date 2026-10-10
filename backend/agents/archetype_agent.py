@@ -210,3 +210,12 @@ def choose_structure(state: PipelineState) -> dict[str, Any]:
     if chosen not in allowed:
         return fall_back("not an allowed type for these sources", chosen)
     return {**decision, "archetype": chosen, "chosen": chosen}
+
+
+def structure_node(state: PipelineState) -> PipelineState:
+    """One Haiku call picks the post's structure from the types the sources
+    allow. It names no event: for a story type the drafter does that."""
+    decision = choose_structure(state)
+    state["archetype"] = decision["archetype"]
+    state["archetype_decision"] = decision
+    return state

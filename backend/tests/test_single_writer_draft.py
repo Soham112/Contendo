@@ -37,7 +37,7 @@ def test_the_structure_choice_asks_for_a_key_only():
 
 
 def test_the_structure_choice_is_one_haiku_call_and_names_no_event(claude):
-    from agents.draft_agent import structure_node
+    from agents.archetype_agent import structure_node
 
     claude.queue(_structure(STORY_KEY))
     state = structure_node(make_state([OWN, ARTICLE]))

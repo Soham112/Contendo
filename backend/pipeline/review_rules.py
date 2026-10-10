@@ -1,17 +1,19 @@
 """The review's verdicts, decided in code.
 
-The review model (agents/review_agent.py) does not judge a post. For every
-sentence it reports observations in closed fields: what kind of thing the
-sentence says, how it is stated, which sources state it, whether a detail
-differs, how it is presented, whether it links facts, whether it leaves the
-topic. derive_issues() turns those observations into issues by fixed rules,
-using the sentence's own citation and the run's source index. No rule reads a
-free-text field, so nothing the model writes in prose can argue an issue in or
-out.
+The review model (agents/review_agent.py) does not judge a post, and it never
+sees the post's citations. For every sentence it reports observations: what
+kind of thing the sentence says, how it is stated and presented, which sources
+state it, which of its words nothing states, which detail differs from a source,
+whether it links facts, whether it leaves the topic. derive_issues() turns
+those observations into issues by fixed rules, using the sentence's citation
+(from the draft, which only code has) and the run's source index. The pieces of
+text a record quotes have already been checked against the sentence and the
+sources; no rule reads free text.
 
 The seven issue types, each standing for one thing a redraft can do:
   not_in_sources     a fact, feeling, motive or event, or a generalisation stated
-                     as fact, that nothing states
+                     as fact, that nothing states; or words of a sentence
+                     stated as fact that nothing states (unsupported_part)
   wrong_citation     something states it, but the sentence's citation does not
                      point there
   changed_detail     a source states it, with a detail that differs
@@ -70,16 +72,18 @@ def derive_issues(records: list[dict], sentences: list[tuple[int, Span]],
                   source_index: dict[str, dict]) -> list[dict[str, Any]]:
     """Issues for the sentence records, in sentence order.
 
-    records: one validated record per sentence, in order (review_agent).
+    records: one validated record per sentence, in order (review_agent): its
+    detail_change and unsupported_part are present only if they passed their checks.
     sentences: (span position, sentence) for the same sentences.
     Each issue is {type, sentence, span, text, sources, evidence, detail}:
     sentence is 0-based; sources are the ids a redraft needs (the supporting
     sources for wrong_citation and changed_detail, the linked ones for
-    cross_source_link); detail is a small dict of the observations the rule used.
+    cross_source_link); evidence is the source's own words where there are
+    any; detail is a small dict of the observations the rule used.
     """
     issues: list[dict[str, Any]] = []
     for position, (record, (span_position, sentence)) in enumerate(zip(records, sentences)):
-        supported_by = record["supported_by"]
+        supported_by = record.get("supported_by") or []
         supporting_sources = [sid for sid in supported_by if sid != REQUEST]
         authorships = {source_index[sid]["authorship"] for sid in supporting_sources}
         authors_own = _is_authors_own(record)
@@ -88,32 +92,38 @@ def derive_issues(records: list[dict], sentences: list[tuple[int, Span]],
             issues.append({"type": kind, "sentence": position, "span": span_position, "text": sentence.text,
                            "sources": list(sources), "evidence": evidence, "detail": detail})
 
+        unsupported_part = record.get("unsupported_part")
         if _needs_support(record) and not supported_by:
             issue("not_in_sources", content=record["content"], stated_as=record["stated_as"])
+        elif unsupported_part and record["stated_as"] == "fact" and not authors_own:
+            issue("not_in_sources", content=record["content"], stated_as=record["stated_as"],
+                  unsupported_part=unsupported_part)
 
         if supported_by and not authors_own and not _citation_points_at(sentence, supported_by):
-            issue("wrong_citation", supporting_sources, record["evidence"],
+            issue("wrong_citation", supporting_sources, record.get("evidence"),
                   cited=list(sentence.sources) if sentence.basis == "sources" else sentence.basis,
                   supported_by=list(supported_by))
 
-        if record["detail_differs"] and record["evidence"]:
-            issue("changed_detail", supporting_sources, record["evidence"])
+        change = record.get("detail_change")
+        if change:
+            issue("changed_detail", supporting_sources, change["source_words"],
+                  source_words=change["source_words"], post_words=change["post_words"])
 
         if not authors_own:
             presented = record["presented_as"]
             if presented == "author_did_or_experienced" and authorships == {"external"}:
-                issue("wrong_attribution", supporting_sources, record["evidence"],
+                issue("wrong_attribution", supporting_sources, record.get("evidence"),
                       presented_as=presented, authorship="external")
             elif presented == "a_source_says" and authorships == {"self"}:
-                issue("wrong_attribution", supporting_sources, record["evidence"],
+                issue("wrong_attribution", supporting_sources, record.get("evidence"),
                       presented_as=presented, authorship="self")
             elif presented == "a_source_says" and not supporting_sources:
                 issue("wrong_attribution", presented_as=presented, authorship="none")
 
-        linked = sorted(set(record["link_sources"]))
-        if record["links_cause_or_sequence"] and len(linked) > 1 and not record["link_stated_by"]:
-            issue("cross_source_link", linked)
+        link = record.get("link")
+        if link and len(set(link["sources"])) > 1 and not link.get("stated_by"):
+            issue("cross_source_link", sorted(set(link["sources"])))
 
-        if record["off_topic"]:
+        if record.get("off_topic"):
             issue("off_topic")
     return issues

@@ -65,7 +65,7 @@ def _trim_state(count=12, words_each=10, max_words=100):
 
 
 def _trim(claude, state, *replies):
-    from agents.word_count_enforcer_agent import trim_node
+    from agents.trim_agent import trim_node
     from pipeline.finalise import finalise_trimmed_node
 
     claude.queue(*replies)
@@ -226,7 +226,7 @@ def test_an_api_error_during_the_trim_is_a_recorded_failure(claude):
     before = state["final_post"]
     claude.respond_with(overloaded)
 
-    from agents.word_count_enforcer_agent import trim_node
+    from agents.trim_agent import trim_node
     state = trim_node(state)
 
     assert state["trim_result"]["outcome"] == "trim_failed"
