@@ -50,13 +50,20 @@ _trace: ContextVar[list[dict] | None] = ContextVar("llm_trace", default=None)
 
 @contextmanager
 def trace_calls() -> Iterator[list[dict]]:
-    """Collect every complete() call made in this context: `with trace_calls() as calls:`."""
+    """Collect every complete() call made in this context: `with trace_calls() as calls:`.
+
+    Traces nest: a step that measures its own calls does not hide them from the
+    trace around it. When the inner block ends, its calls are added to the outer
+    list, in order."""
+    outer = _trace.get()
     calls: list[dict] = []
     token = _trace.set(calls)
     try:
         yield calls
     finally:
         _trace.reset(token)
+        if outer is not None:
+            outer.extend(calls)
 
 
 def complete(

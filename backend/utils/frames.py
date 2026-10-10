@@ -52,6 +52,10 @@ def infer_seniority_level(profile: dict) -> str:
 
     role = (profile.get("role") or "").lower()
 
+    # STOPGAP: seniority guessed from keywords matched as substrings of the role
+    # title ("lead" also matches "misleading"; titles outside the lists fall to
+    # "mid"). Proper fix: use years_of_experience, or ask for seniority as an
+    # explicit field at onboarding (a later branch).
     senior_keywords = [
         "senior", "lead", "principal", "director", "vp", "head of",
         "staff", "distinguished", "fellow", "cto", "ceo", "founder",
@@ -107,6 +111,9 @@ def chunk_frame(chunk: dict, profile: dict) -> str:
     if memory_context != "learning" and chunk_field(chunk, "source_type") in SELF_SOURCE_TYPES:
         return "PERSONAL"
 
+    # STOPGAP: "in the author's field" is decided by substring overlap between
+    # the profile's topics and the chunk's tags. Proper fix: decide it at ingest,
+    # semantically, and store it on the chunk (fix/ingest-attribution).
     topics_of_expertise = [t.lower().strip() for t in profile.get("topics_of_expertise", []) or []]
     tags = chunk_tags(chunk)
     in_expertise = any(

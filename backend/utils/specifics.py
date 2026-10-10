@@ -57,12 +57,20 @@ _WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
 
 _UNIT_RE = "|".join(sorted(_UNITS, key=len, reverse=True))
 _PCT = r"(?:%|\s?percent\b|\s?per\s?cent\b)"
+# STOPGAP: an open-ended list. Currencies not named here are not recognised, so
+# an amount in one is checked only as a bare number. Proper fix: structured
+# extraction of money, dates and durations (an entity recogniser, or the
+# structured review), not a longer list.
 _CURRENCY_SUFFIX = r"(?:SEK|USD|EUR|GBP|kr|euros?|dollars?|pounds?)\b"
 
 # Ordered: earlier patterns claim their span first, so "18 hours" is a duration
 # and not also a bare 18.
 _PATTERNS: list[tuple[str, re.Pattern]] = [
     ("ago", re.compile(rf"(?P<n>{_NUM})\s+(?P<u>{_UNIT_RE}|{'|'.join(_SEASONS)})s?\s+ago\b", re.I)),
+    # STOPGAP: the "time" phrases are an open-ended list ("last spring", "first
+    # sprint"); a time reference worded any other way is not seen. Proper fix:
+    # structured extraction of money, dates and durations (an entity recogniser,
+    # or the structured review), not more phrases.
     ("time", re.compile(
         rf"\b(?:last|next|past)\s+(?:{'|'.join(_SEASONS)}|year|month|week|weekend|quarter|"
         rf"{'|'.join(_MONTHS)}|{'|'.join(_WEEKDAYS)})\b"

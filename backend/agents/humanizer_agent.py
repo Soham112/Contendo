@@ -38,6 +38,9 @@ _QUOTED_RE = re.compile(
     r"|‘[^’\n]*’"           # ‘curly single quotes’
     r"|(?<![\w])'(?:[^'\n]|(?<=\w)'(?=\w))+'(?![\w])"  # 'single quotes', apostrophes inside allowed
 )
+# STOPGAP: a regex on model prose, guessing which part of a critic fix is a
+# worked example. Proper fix: none here; it goes with pipeline A
+# (chore/remove-pipeline-a). The single-writer redraft is never shown reviewer prose.
 _EXAMPLE_RE = re.compile(
     r"\(\s*(?:e\.g\.|eg\.|i\.e\.|(?:for example|for instance|such as|like)\b)[^)]*\)"
     r"|[,;:]?\s*(?:\be\.g\.|\bfor example\b|\bfor instance\b)[^.;]*"

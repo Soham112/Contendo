@@ -127,5 +127,15 @@ def event_quote_failure(quote: str | None, note: dict) -> str | None:
     return "event_quote_not_sentence"
 
 
+def is_verbatim_span(quote: str, text: str) -> bool:
+    """Whether quote is in text word for word, starting and ending on word
+    boundaries. Case and whitespace may differ; nothing else may."""
+    wanted = _normalise(quote or "")
+    if not wanted:
+        return False
+    # This regex matches a literal copied span, not meaning or model intent.
+    return re.search(r"(?<!\w)" + re.escape(wanted) + r"(?!\w)", _normalise(text)) is not None
+
+
 def quote_is_in_note(quote: str | None, note: dict) -> bool:
     return event_quote_failure(quote, note) is None
