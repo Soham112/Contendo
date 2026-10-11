@@ -234,7 +234,7 @@ def run_checks(state: PipelineState, marker_failures: list[dict]) -> dict[str, A
     """Every check on the post as it stands in state: {issues, counts}.
 
     marker_failures: what to report as citation_malformed. For the draft it is
-    what stripping its markers found; for a post changed since (a trim), the
+    what stripping its markers found; for a post changed since (compress), the
     marker-like text still in it.
     """
     spans = state.get("citations") or []
@@ -293,7 +293,9 @@ def checks_node(state: PipelineState) -> PipelineState:
     branch (feat/citations-ui), so the author decides what to change.
 
     Sets checks_before_trim, and checks_final to the same result: it stays the
-    final one unless a trim changes the post and recheck_node replaces it.
+    final one unless the compress step changes the post and recheck_node
+    replaces it. (The key keeps its name from the trim that compress replaced:
+    stored traces and the evals read it.)
     """
     result = run_checks(state, state.get("citation_failures") or [])
     state["checks_before_trim"] = state["checks_final"] = result
@@ -303,7 +305,7 @@ def checks_node(state: PipelineState) -> PipelineState:
 
 
 def recheck_node(state: PipelineState) -> PipelineState:
-    """Check the post again after a trim changed it: the checks on the text
+    """Check the post again after the compress step ran: the checks on the text
     that is returned (checks_final)."""
     leftover = (state.get("final_validation") or {}).get("leftover_markers") or []
     state["checks_final"] = run_checks(state, leftover)

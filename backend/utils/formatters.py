@@ -122,7 +122,7 @@ def word_count_rule(target: dict[str, Any] | None) -> str:
 
 def count_words(text: str) -> int:
     """How long a post is, in words: its whitespace-separated tokens. The one
-    count every length decision uses (enforcer, finalise, trim, evals)."""
+    count every length decision uses (enforcer, finalise, compress, evals)."""
     return len(text.split())
 
 
@@ -143,7 +143,7 @@ TOKENS_PER_WORD_CLAUDE_4 = 1.9
 TOKENS_PER_WORD_CLAUDE_4_7 = 2.5
 TOKENS_PER_WORD = {TOKENIZER_CLAUDE_4: TOKENS_PER_WORD_CLAUDE_4, TOKENIZER_CLAUDE_4_7: TOKENS_PER_WORD_CLAUDE_4_7}
 # Room above the target's ceiling, so a draft that runs somewhat long is
-# finished and then trimmed, rather than cut off mid-sentence.
+# finished and then shortened, rather than cut off mid-sentence.
 DRAFT_TOKEN_MARGIN = 1.25
 # Never less than pipeline A's draft budget. Short targets (a 100-word first
 # post) get the most room for an overlong draft; threads have no word target.

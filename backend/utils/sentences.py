@@ -16,6 +16,12 @@ from utils.text_spans import protected_spans
 _LIST_PREFIX = re.compile(r"^[ \t]*(?:[-+*]|\d+[.)])[ \t]+")
 
 
+def list_marker(text: str) -> str:
+    """The Markdown list marker text begins with ("-", "*", "+", "1.", "2)"), or "" when it begins with none."""
+    prefix = _LIST_PREFIX.match(text)
+    return prefix.group(0).strip() if prefix else ""
+
+
 def sentence_offsets(text: str) -> list[tuple[int, int]]:
     """(start, end) of each sentence/line/item in text, excluding list markers.
 

@@ -1,8 +1,9 @@
 """Graph wiring for the single-writer variants, after the shared plan step.
 
-C (draft only): structure → draft → strip → finalise → checks → trim (only
+C (draft only): structure → draft → strip → finalise → checks → compress (only
 when over the maximum) → finalise → checks again → end. The checks are recorded
-and nothing acts on them.
+and nothing acts on them. Compress shortens sentences and never deletes one
+(agents/compress_agent.py); the earlier trim by deletion is not wired in.
 
 B (reviewed): the same first draft, then review → decide. With no acting issue
 it ends there. Otherwise code_fix makes the fixes that need no model and
@@ -13,7 +14,7 @@ chooses one path for what is left (pipeline/fixes.py):
   full      → redraft (one drafter call, the whole post) → strip → finalise →
               checks → review_redraft → code_fix_redraft (the code fixes
               again, on the redraft) → review_refixed (no call)
-then trim (only when over the maximum) → finalise → checks again → outcome.
+then compress (only when over the maximum) → finalise → checks again → outcome.
 No edge joins the targeted and the full path, and none leads back to a
 drafting step, so a run makes at most one of those calls and never a third
 draft. A full redraft cut off at its output limit leaves the post as the code
@@ -35,12 +36,12 @@ from typing import Callable
 from langgraph.graph import END, StateGraph
 
 from agents.archetype_agent import structure_node
+from agents.compress_agent import compress_node
 from agents.draft_agent import cited_draft_node, redraft_node, targeted_fix_node
 from agents.review_agent import review_fixed_node, review_node, review_redraft_node, review_refixed_node
-from agents.trim_agent import trim_node
 from pipeline.checks import checks_node, recheck_node
 from pipeline.finalise import (
-    finalise_draft_node, finalise_trimmed_node, route_after_cited_draft, route_to_trim,
+    finalise_draft_node, refinalise_node, route_after_cited_draft, route_to_compress,
     strip_draft_node, truncated_node,
 )
 from pipeline.fixes import code_fix_node, code_fix_redraft_node, route_after_fix
@@ -58,8 +59,8 @@ def wire_draft_only(graph: StateGraph) -> None:
     graph.add_node("strip", strip_draft_node)
     graph.add_node("finalise", finalise_draft_node)
     graph.add_node("checks", checks_node)
-    graph.add_node("trim", trim_node)
-    graph.add_node("finalise_trimmed", finalise_trimmed_node)
+    graph.add_node("compress", compress_node)
+    graph.add_node("finalise_compressed", refinalise_node)
     graph.add_node("recheck", recheck_node)
 
     graph.add_edge("plan", "structure")
@@ -68,9 +69,9 @@ def wire_draft_only(graph: StateGraph) -> None:
     graph.add_edge("truncated", END)
     graph.add_conditional_edges("strip", route_after_cited_draft, {"truncated": "truncated", "strip": "finalise"})
     graph.add_edge("finalise", "checks")
-    graph.add_conditional_edges("checks", route_to_trim, {"trim": "trim", "end": END})
-    graph.add_edge("trim", "finalise_trimmed")
-    graph.add_edge("finalise_trimmed", "recheck")
+    graph.add_conditional_edges("checks", route_to_compress, {"compress": "compress", "end": END})
+    graph.add_edge("compress", "finalise_compressed")
+    graph.add_edge("finalise_compressed", "recheck")
     graph.add_edge("recheck", END)
 
 
@@ -89,7 +90,7 @@ def route_after_checks(state: PipelineState) -> str:
     """After the first draft's checks: quality="draft" is not reviewed and goes
     on as variant C does; every other quality is reviewed."""
     if state.get("quality", "standard") == "draft":
-        return route_to_trim(state)
+        return route_to_compress(state)
     return "review"
 
 
@@ -123,8 +124,8 @@ def wire_reviewed(graph: StateGraph) -> None:
     add("review_redraft", review_redraft_node)
     add("code_fix_redraft", code_fix_redraft_node)
     add("review_refixed", review_refixed_node)
-    add("trim", trim_node)
-    add("finalise_trimmed", finalise_trimmed_node)
+    add("compress", compress_node)
+    add("finalise_compressed", refinalise_node)
     add("recheck", recheck_node)
     add("outcome", outcome_node)
 
@@ -134,21 +135,21 @@ def wire_reviewed(graph: StateGraph) -> None:
     graph.add_edge("truncated", END)
     graph.add_conditional_edges("strip", route_after_cited_draft, {"truncated": "truncated", "strip": "finalise"})
     graph.add_edge("finalise", "checks")
-    graph.add_conditional_edges("checks", route_after_checks, {"review": "review_draft", "trim": "trim", "end": END})
+    graph.add_conditional_edges("checks", route_after_checks, {"review": "review_draft", "compress": "compress", "end": END})
     graph.add_edge("review_draft", "decide")
     graph.add_conditional_edges("decide", route_after_decide, {"fix": "code_fix", "outcome": "outcome"})
     graph.add_conditional_edges("code_fix", route_after_fix,
                                 {"none": "review_fixed", "targeted": "targeted_fix", "full": "redraft"})
     graph.add_edge("targeted_fix", "review_fixed")
-    graph.add_conditional_edges("review_fixed", route_to_trim, {"trim": "trim", "end": "outcome"})
+    graph.add_conditional_edges("review_fixed", route_to_compress, {"compress": "compress", "end": "outcome"})
     graph.add_conditional_edges("redraft", route_after_redraft, {"strip": "strip_redraft", "kept": "review_fixed"})
     graph.add_edge("strip_redraft", "finalise_redraft")
     graph.add_edge("finalise_redraft", "checks_redraft")
     graph.add_edge("checks_redraft", "review_redraft")
     graph.add_edge("review_redraft", "code_fix_redraft")
     graph.add_edge("code_fix_redraft", "review_refixed")
-    graph.add_conditional_edges("review_refixed", route_to_trim, {"trim": "trim", "end": "outcome"})
-    graph.add_edge("trim", "finalise_trimmed")
-    graph.add_edge("finalise_trimmed", "recheck")
+    graph.add_conditional_edges("review_refixed", route_to_compress, {"compress": "compress", "end": "outcome"})
+    graph.add_edge("compress", "finalise_compressed")
+    graph.add_edge("finalise_compressed", "recheck")
     graph.add_edge("recheck", "outcome")
     graph.add_edge("outcome", END)

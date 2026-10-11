@@ -21,7 +21,7 @@ The record:
 An under-length post is recorded and nothing else: no step lengthens a post.
 
 The single-writer nodes that apply this (variants B and C) are here too:
-strip_draft_node, finalise_draft_node, finalise_trimmed_node, truncated_node,
+strip_draft_node, finalise_draft_node, refinalise_node, truncated_node,
 and settle(), which the code-made edits of variant B use (pipeline/fixes.py).
 """
 
@@ -159,18 +159,19 @@ def finalise_draft_node(state: PipelineState) -> PipelineState:
     return state
 
 
-def finalise_trimmed_node(state: PipelineState) -> PipelineState:
-    """Finalise the post again after the trim changed it.
+def refinalise_node(state: PipelineState) -> PipelineState:
+    """Finalise the post again after code changed it: the compress step's
+    splice, or a code-made edit (settle).
 
-    A trim only deletes spans, so normalising should change nothing. If it does,
-    the spans' offsets no longer match the text: that is recorded
-    (final_validation.spans_stale), never passed over.
+    What is spliced or kept was normalised already, so normalising should
+    change nothing. If it does, the spans' offsets no longer match the text:
+    that is recorded (final_validation.spans_stale), never passed over.
     """
     before = state.get("current_draft", "")
     finalised = finalise(before, state.get("length_target"))
     record = finalised.record
     if finalised.text != before:
-        logger.warning("finalise: normalising changed the trimmed post; span offsets are stale")
+        logger.warning("finalise: normalising changed the edited post; span offsets are stale")
         record = {**record, "spans_stale": True}
     if not finalised.text.strip():
         state["draft_empty"] = {"reason": "empty_output"}
@@ -182,10 +183,10 @@ def finalise_trimmed_node(state: PipelineState) -> PipelineState:
 def settle(state: PipelineState, text: str, spans) -> None:
     """Make an edited post (text and its spans, after a deletion or a
     replacement made in code) the post in state, finalised: the same record
-    finalise_trimmed_node keeps after a trim."""
+    refinalise_node keeps after the compress step."""
     state["current_draft"] = text
     state["citations"] = [span.as_dict() for span in spans]
-    finalise_trimmed_node(state)
+    refinalise_node(state)
 
 
 def truncated_node(state: PipelineState) -> PipelineState:
@@ -199,6 +200,6 @@ def route_after_cited_draft(state: PipelineState) -> str:
     return "truncated" if state.get("draft_truncated") or state.get("draft_refused") or state.get("draft_empty") else "strip"
 
 
-def route_to_trim(state: PipelineState) -> str:
-    """Trim only a post that is over its maximum. Under-length ends here."""
-    return "trim" if (state.get("final_validation") or {}).get("length") == "over_length" else "end"
+def route_to_compress(state: PipelineState) -> str:
+    """Compress only a post that is over its maximum. Under-length ends here."""
+    return "compress" if (state.get("final_validation") or {}).get("length") == "over_length" else "end"

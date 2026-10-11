@@ -1,14 +1,10 @@
 """Variant B's full-redraft path through run_pipeline (split out of
 test_pipeline_b.py): the second review of a redraft, the code fixes made again
-on it, the trim after it, and a redraft or a first draft cut off at its limit."""
-
-import json
-
-import pytest
+on it, the compress step after it, and a redraft or a first draft cut off at its limit."""
 
 from tests.length_fixtures import _cut_off, _outputs, _run
-from tests.review_fixtures import answer_pipeline
-from tests.test_checks import _post
+from tests.review_fixtures import answer_pipeline, fixes_reply
+from tests.test_checks import SHORT_LINE, _post
 from tests.test_generation_trace import seeded_kb  # noqa: F401  (shared fixture)
 from tests.test_pipeline_b import MADE_UP, UNSUPPORTED, _distinct, _events, _review
 
@@ -24,38 +20,41 @@ def test_the_full_redraft_is_reviewed_only_where_it_changed(claude, fake_db, see
     assert [d["node"] for d in _outputs(fake_db)["draft_history"]] == ["draft", "redraft"]
 
 
-def test_a_failed_trim_leaves_over_length_on_the_returned_post(claude, fake_db, seeded_kb):
-    answer_pipeline(claude, [_post(36), _post(36)], trim=json.dumps({"ranking": [99]}))
+def test_a_failed_compress_leaves_over_length_on_the_returned_post(claude, fake_db, seeded_kb):
+    answer_pipeline(claude, [_post(36), _post(36)], compress="no tags in this answer")
 
     result = _run("B")
 
-    assert _outputs(fake_db)["trim_result"]["outcome"] == "trim_failed"
+    assert _outputs(fake_db)["compress_result"]["outcome"] == "compress_failed"
     assert _review(result) == ("issues_remain", [("over_length", "")])
 
 
-@pytest.mark.parametrize("ranking,outcome", [([10], "fixed"), ([11], "not_reviewed")])
-def test_a_sentence_the_trim_deleted_does_not_count_against_the_post(claude, fake_db, seeded_kb, ranking, outcome):
+def test_a_sentence_compress_shortened_is_still_in_the_post_and_still_counts(claude, fake_db, seeded_kb):
     spec = {"changes": {10: MADE_UP}}                                 # sentence 10 never gets a valid record
-    answer_pipeline(claude, [_distinct(37), _distinct(36)], reviews=[spec, spec], trim=json.dumps({"ranking": ranking}))
+    shorter = {n: f"Short{chr(96 + n)} word word word word word word. [[V]]" for n in (9, 10, 11, 12)}
+    answer_pipeline(claude, [_distinct(37), _distinct(36)], reviews=[spec, spec], compress=fixes_reply(shorter))
 
     result = _run("B")
 
-    assert _outputs(fake_db)["review_second"]["unreviewed"] == [9]
-    assert result["review"]["outcome"] == outcome
+    outputs = _outputs(fake_db)
+    assert [entry["sentence"] for entry in outputs["compress_result"]["accepted"]] == [9, 10, 11, 12]
+    assert outputs["final_validation"]["words"] == 348
+    # Compress deletes nothing, so the sentence with no valid record is still there.
+    assert outputs["review_second"]["unreviewed"] == [9] and result["review"]["outcome"] == "not_reviewed"
 
 
-def test_a_cut_off_redraft_keeps_the_post_which_is_then_trimmed_and_reported(claude, fake_db, seeded_kb):
+def test_a_cut_off_redraft_keeps_the_post_which_is_then_compressed_and_reported(claude, fake_db, seeded_kb):
     cut = "<post>\nPlain word"
     over = f"{_post(36)}\n\nNo marker on this line."                 # 365 words
-    answer_pipeline(claude, [over, _cut_off(cut)], trim=json.dumps({"ranking": [10, 11]}))
+    answer_pipeline(claude, [over, _cut_off(cut)], compress=fixes_reply({n: SHORT_LINE for n in range(10, 15)}))
 
     result = _run("B")
 
     outputs = _outputs(fake_db)
     assert result["status"] == "ok" and outputs["review"]["redraft_truncated"] == {"max_tokens": 2000, "output_tokens": 2000}
-    assert _events(fake_db)[-2:] == ["redraft", "trim"] and "draft_truncated" not in outputs
-    assert [d["node"] for d in outputs["draft_history"]] == ["draft", "redraft_truncated", "trim"]
-    assert outputs["final_validation"]["words"] == 345 and result["post"] == outputs["final_post"]
+    assert _events(fake_db)[-2:] == ["redraft", "compress"] and "draft_truncated" not in outputs
+    assert [d["node"] for d in outputs["draft_history"]] == ["draft", "redraft_truncated", "compress"]
+    assert outputs["final_validation"]["words"] == 350 and result["post"] == outputs["final_post"]
     assert _review(result) == ("issues_remain", [("uncited_span", "No marker on this line.")])
 
 

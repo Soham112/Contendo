@@ -1,8 +1,9 @@
-"""Shared builders for the finalise, trim and single-writer length tests
-(test_finalise.py, test_trim.py, test_single_writer_length.py)."""
+"""Shared builders for the finalise, trim, compress and single-writer length tests
+(test_finalise.py, test_trim.py, test_compress.py, test_single_writer_length.py)."""
 
 from anthropic.types import Message, TextBlock, Usage
 
+from tests.review_fixtures import fixes_reply
 from tests.test_generation_trace import USER as KB_USER
 
 FIRST_POST_USER = "user-first-post"   # no posts and no notes: every run is a first post (70-100 words)
@@ -20,6 +21,12 @@ def _lines(count: int, words_each: int = 10, marker: str = "[[V]]") -> list[str]
 
 def _post(count: int, words_each: int = 10) -> str:
     return "\n\n".join(_lines(count, words_each))
+
+
+def _shorter(numbers, words_each: int = 7) -> str:
+    """A compress answer that shortens each numbered line of _post() to
+    words_each words, keeping its marker: three words fewer per line by default."""
+    return fixes_reply({n: _lines(n, words_each)[n - 1] for n in numbers})
 
 
 def _clean(marked: str) -> str:

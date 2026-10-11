@@ -83,13 +83,17 @@ def post_record(outputs: dict[str, Any], calls: list[dict[str, Any]],
                 counters: dict[str, Callable[[str], int]]) -> dict[str, Any]:
     """What the ablation reads from one generation trace (node_outputs and llm_calls)."""
     review = outputs.get("review")
-    trim = outputs.get("trim_result")
+    trim = outputs.get("trim_result")              # traces written before fix/shorten-not-trim
+    compress = outputs.get("compress_result")
     record: dict[str, Any] = {
         "length": length_record(outputs.get("final_post") or "", outputs.get("length_target"), counters),
         "route": _route(review),
         "outcome": (review or {}).get("outcome"),
         "redraft_unusable": next((kind for kind in ("redraft_truncated", "redraft_refused") if kind in (review or {})), None),
         "trim": None if trim is None else {"outcome": trim["outcome"], "reason": trim["reason"]},
+        "compress": None if compress is None else {
+            "outcome": compress["outcome"], "reason": compress["reason"],
+            "accepted": len(compress["accepted"]), "rejected": len(compress["rejected"])},
         "removed": dict(Counter(item["kind"] for item in (review or {}).get("removed", []))),
         "remaining": dict(Counter(issue["type"] for issue in (review or {}).get("remaining", [])
                                   if issue["origin"] == "review")),
@@ -213,7 +217,11 @@ def _content_rows(variants: list[dict[str, Any]]) -> list[list[str]]:
         failed = Counter(trim["reason"] for trim in trims if trim["outcome"] == "trim_failed")
         removed = sum((Counter(record["removed"]) for record in records), Counter())
         spans = [record["multi_sentence_spans"] for record in records if record["multi_sentence_spans"] is not None]
+        # .get: records kept by runs before fix/shorten-not-trim have no "compress" key.
+        compresses = [record["compress"] for record in records if record.get("compress")]
+        outcomes = Counter(c["outcome"] for c in compresses)
         rows.append([v["meta"]["variant"], f"{len(trims)} run, {sum(failed.values())} failed" + (f" ({_counts(failed)})" if failed else ""),
+                     f"{len(compresses)} run" + (f" ({_counts(outcomes)})" if outcomes else ""),
                      _counts(removed),
                      f"{sum(spans)} in {sum(1 for s in spans if s)} of {len(spans)} drafts" if spans else "no citations"])
     return rows
@@ -347,7 +355,8 @@ def build_ablation(name: str, variants: list[dict[str, Any]], audit: dict[str, A
         lines += ["## Review paths (variants that review)", "",
                   *_table(["variant", "reviewed posts", "route", "outcome", "redraft not usable"], paths)]
     lines += ["## Trim, removed content, citation compliance", "",
-              *_table(["variant", "trims", "removed content by kind", "multi_sentence_spans"], _content_rows(variants))]
+              *_table(["variant", "trims (before 2026-10-10)", "compress", "removed content by kind", "multi_sentence_spans"],
+                      _content_rows(variants))]
     if not any(v["instrument"] for v in variants):
         lines += ["## Instrument: acting issues on the final post", "",
                   "Not run for this ablation. It reviews every final post with B's own reviewer, so it is "

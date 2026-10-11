@@ -56,7 +56,14 @@ def fixes_reply(replace: dict | None = None, delete=()) -> str:
     return "<fixes>\n" + "\n".join(fixes) + "\n</fixes>"
 
 
-def answer_pipeline(claude, drafts, reviews=(), trim=None, fixes=None, structure=ARCHETYPE_GENERAL) -> list[str]:
+def is_compress_prompt(prompt: str) -> bool:
+    """Whether a drafter-model request is the compress call (by its prompt's first line)."""
+    from agents.compress_prompt import COMPRESS_PROMPT
+
+    return prompt.startswith(COMPRESS_PROMPT.split("\n", 1)[0])
+
+
+def answer_pipeline(claude, drafts, reviews=(), compress=None, fixes=None, structure=ARCHETYPE_GENERAL) -> list[str]:
     """Make the fake model play every call of a single-writer run, whatever
     order the parallel review calls arrive in.
 
@@ -66,8 +73,10 @@ def answer_pipeline(claude, drafts, reviews=(), trim=None, fixes=None, structure
     targeted-fix call's reply; a targeted-fix call without one fails the test.
     reviews: one dict per review pass (before and after the fix or redraft),
     {changes, rhythm, replace} as answer_groups takes them; a pass with no dict
-    gets benign records. trim: the trim call's reply; a trim call without one
-    fails the test. Returns the list the drafter's prompts are appended to, in order.
+    gets benign records. compress: the compress call's reply; a compress call
+    without one fails the test. Returns the list the draft, redraft and
+    targeted-fix prompts are appended to, in order (the compress prompt is not
+    one of them).
     """
     drafts, prompts = list(drafts), []
 
@@ -75,9 +84,6 @@ def answer_pipeline(claude, drafts, reviews=(), trim=None, fixes=None, structure
         tool = (kwargs.get("tool_choice") or {}).get("name")
         if tool == "choose_post_type":
             return structure
-        if tool == "rank_sentences_to_delete":
-            assert trim is not None, "an unexpected trim call"
-            return trim
         if tool == "record_review":
             spec = reviews[len(prompts) - 1] if len(prompts) - 1 < len(reviews) else {}
             group = assigned(kwargs)
@@ -89,6 +95,9 @@ def answer_pipeline(claude, drafts, reviews=(), trim=None, fixes=None, structure
             notes = [note for n, note in (spec.get("rhythm") or {}).items() if n in group]
             return review_reply(group, spec.get("changes"), notes)
         prompt = kwargs["messages"][-1]["content"]
+        if is_compress_prompt(prompt):
+            assert compress is not None, "an unexpected compress call"
+            return compress
         prompts.append(prompt)
         if "<post_sentences>" in prompt:
             assert fixes is not None, "an unexpected targeted-fix call"
