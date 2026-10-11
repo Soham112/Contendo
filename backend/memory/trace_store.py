@@ -88,6 +88,17 @@ def update_trace_fact_check(trace_id: str, user_id: str, record: dict[str, Any])
     return _update_node_outputs(trace_id, user_id, lambda current: {**current, "fact_check": record})
 
 
+def append_trace_refine(trace_id: str, user_id: str, entry: dict[str, Any]) -> bool:
+    """Append one selection refine of a single-writer post to
+    node_outputs.refine_selection on the user's own trace: what was selected,
+    what came back, and what the checks found on each attempt
+    (agents.refine_agent). False if no trace matched."""
+    return _update_node_outputs(
+        trace_id, user_id,
+        lambda current: {**current, "refine_selection": [*(current.get("refine_selection") or []), entry]},
+    )
+
+
 def append_trace_guard_entry(trace_id: str, user_id: str, entry: dict[str, Any]) -> bool:
     """Append one entry to node_outputs.specifics_guard on the user's own trace
     (a guard retry that happened after generation, e.g. a selection refine).

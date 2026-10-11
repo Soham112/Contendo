@@ -11,7 +11,7 @@ load_dotenv()
 import logging
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper())
 
-from config import security
+from config import features, security
 from memory.feedback_store import init_db
 from memory.hierarchy_store import init_db as init_hierarchy_db
 from memory.retrieval_stats_store import init_retrieval_stats_db
@@ -45,9 +45,17 @@ def _log_security_mode() -> None:
     )
 
 
+def _log_pipeline_variant() -> None:
+    """Log which pipeline /generate runs. features.pipeline_variant() raises on
+    an unknown PIPELINE_VARIANT, which aborts startup."""
+    logger.info("PIPELINE VARIANT: %s (%s; default %s).", features.pipeline_variant(),
+                features.PIPELINE_VARIANT_ENV, features.DEFAULT_PIPELINE_VARIANT)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _log_security_mode()
+    _log_pipeline_variant()
     init_db()
     init_hierarchy_db()
     init_retrieval_stats_db()

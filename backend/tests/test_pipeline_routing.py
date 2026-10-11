@@ -1,4 +1,4 @@
-"""LangGraph routing in pipeline/graph.py.
+"""LangGraph routing in pipeline/graph.py, and which pipeline variant runs.
 
 The agent nodes are replaced with stubs, so these tests check only which nodes
 run and in what order: no Claude calls, no retrieval.
@@ -6,12 +6,28 @@ run and in what order: no Claude calls, no retrieval.
 
 import pytest
 
+A_NODE_ORDER = [
+    "load_profile", "retrieval", "draft", "critic", "humanizer",
+    "predictability_audit", "word_count_enforcer", "fact_checker",
+]
+# Variant C, and variant B with quality="draft" (pipeline/single_writer.py):
+# structure → cited draft → strip → finalise → checks, then trim → finalise →
+# checks again only when the post is over its maximum.
+SINGLE_WRITER_NODE_ORDER = ["load_profile", "retrieval", "structure", "cited_draft", "strip", "finalise", "checks"]
+# Variant B: the first draft is reviewed. With nothing to act on, it ends there.
+# What the review leads to is tested with the real nodes in test_pipeline_b.py.
+REVIEWED_NODE_ORDER = [*SINGLE_WRITER_NODE_ORDER, "review"]
+NO_ISSUES = {"issues": [], "counts": {}}
+
 
 @pytest.fixture
-def run_graph(monkeypatch):
+def stub_nodes(monkeypatch):
+    """Replace every agent node with a stub. stub_nodes(scores) returns the list
+    the stubs append their names to, in the order they run."""
     import pipeline.graph as graph
+    import pipeline.single_writer as single_writer
 
-    def factory(scores):
+    def install(scores, finalise_length="ok"):
         visited: list[str] = []
         score_iter = iter(scores)
 
@@ -41,11 +57,39 @@ def run_graph(monkeypatch):
         monkeypatch.setattr(graph, "scorer_node", stub("scorer", score))
         monkeypatch.setattr(graph, "word_count_enforcer_node", stub("word_count_enforcer"))
         monkeypatch.setattr(graph, "fact_check_node", stub("fact_checker"))
+        monkeypatch.setattr(single_writer, "structure_node", stub("structure"))
+        monkeypatch.setattr(single_writer, "cited_draft_node", stub("cited_draft", draft))
+        monkeypatch.setattr(single_writer, "strip_draft_node", stub("strip"))
+        monkeypatch.setattr(single_writer, "finalise_draft_node", stub("finalise", lambda s: s.update(
+            final_post=s["current_draft"], final_validation={"length": finalise_length})))
+        monkeypatch.setattr(single_writer, "checks_node", stub("checks", lambda s: s.update(
+            checks_before_trim=NO_ISSUES, checks_final=NO_ISSUES)))
+        monkeypatch.setattr(single_writer, "recheck_node", stub("recheck"))
+        monkeypatch.setattr(single_writer, "trim_node", stub("trim"))
+        monkeypatch.setattr(single_writer, "finalise_trimmed_node", stub("finalise_trimmed"))
+        monkeypatch.setattr(single_writer, "truncated_node", stub("truncated", lambda s: s.update(final_post="")))
+        # decide_node and outcome_node are not stubbed: they are code, and decide what runs.
+        monkeypatch.setattr(single_writer, "review_node", stub("review", lambda s: s.update(
+            review_first={"outcome": "clean", "issues": [], "unreviewed": [], "sentences": []})))
+        monkeypatch.setattr(single_writer, "redraft_node", stub("redraft"))
+        monkeypatch.setattr(single_writer, "targeted_fix_node", stub("targeted_fix"))
+        monkeypatch.setattr(single_writer, "review_fixed_node", stub("review_fixed"))
+        monkeypatch.setattr(single_writer, "review_redraft_node", stub("review_redraft"))
+        return visited
 
-        compiled = graph.build_graph()
+    return install
 
-        def run(quality):
-            result = compiled.invoke({"topic": "t", "quality": quality, "user_id": "u"})
+
+@pytest.fixture
+def run_graph(stub_nodes):
+    import pipeline.graph as graph
+
+    def factory(scores, variant="A", finalise_length="ok"):
+        visited = stub_nodes(scores, finalise_length)
+        compiled = graph.build_graph(variant)
+
+        def run(quality, **state):
+            result = compiled.invoke({"topic": "t", "quality": quality, "user_id": "u", **state})
             return visited, result
 
         return run
@@ -57,10 +101,7 @@ def run_graph(monkeypatch):
 def test_non_polished_runs_each_node_once_and_never_scores(run_graph, quality):
     visited, result = run_graph(scores=[])(quality)
 
-    assert visited == [
-        "load_profile", "retrieval", "draft", "critic", "humanizer",
-        "predictability_audit", "word_count_enforcer", "fact_checker",
-    ]
+    assert visited == A_NODE_ORDER
     assert result["final_post"] == "draft text"
 
 
@@ -101,3 +142,206 @@ def test_fact_check_runs_last_after_the_enforcer_in_every_quality(run_graph):
         visited, _ = run_graph(scores=[90])(quality)
         assert visited[-1] == "fact_checker", quality
         assert visited[-2] == "word_count_enforcer", quality
+
+
+# --- Pipeline variant ---------------------------------------------------------
+
+@pytest.fixture
+def stubbed_pipelines(stub_nodes, monkeypatch):
+    """run_pipeline's compiled graphs rebuilt over stubbed nodes; returns the visited list."""
+    import pipeline.graph as graph
+    from config import features
+
+    visited = stub_nodes([])
+    monkeypatch.setattr(graph, "PIPELINES", {v: graph.build_graph(v) for v in features.PIPELINE_VARIANTS})
+    return visited
+
+
+def _recorded_variant(fake_db) -> str:
+    [trace] = fake_db.tables["generation_traces"]
+    return trace["node_outputs"]["variant"]
+
+
+def _run_pipeline(**kwargs):
+    from pipeline.graph import run_pipeline
+
+    return run_pipeline(topic="t", format="linkedin post", tone="casual", user_id="u", **kwargs)
+
+
+def test_the_default_variant_is_c_opus(monkeypatch):
+    from config import features
+
+    assert features.DEFAULT_PIPELINE_VARIANT == "C-Opus"
+    monkeypatch.delenv("PIPELINE_VARIANT", raising=False)
+    assert features.pipeline_variant() == "C-Opus"
+    monkeypatch.setenv("PIPELINE_VARIANT", "")
+    assert features.pipeline_variant() == "C-Opus"
+
+
+def test_pipeline_a_stays_selectable_as_the_rollback_switch(stubbed_pipelines, fake_db, monkeypatch):
+    monkeypatch.setenv("PIPELINE_VARIANT", "A")
+    _run_pipeline()
+
+    assert _recorded_variant(fake_db) == "A"
+    assert stubbed_pipelines == A_NODE_ORDER
+
+
+@pytest.mark.parametrize("variant", ["A", "B", "C"])
+def test_the_environment_variable_selects_the_variant(monkeypatch, variant):
+    from config import features
+
+    monkeypatch.setenv("PIPELINE_VARIANT", f" {variant} ")
+    assert features.pipeline_variant() == variant
+
+
+@pytest.mark.parametrize("value", ["D", "b", "single-writer", "A,B"])
+def test_an_unknown_variant_in_the_environment_is_an_error(monkeypatch, value):
+    from config import features
+
+    monkeypatch.setenv("PIPELINE_VARIANT", value)
+    with pytest.raises(features.PipelineConfigError):
+        features.pipeline_variant()
+
+
+def test_the_server_refuses_to_start_with_an_unknown_variant(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from config import features
+    from main import app
+
+    monkeypatch.setenv("PIPELINE_VARIANT", "D")
+    with pytest.raises(features.PipelineConfigError):
+        with TestClient(app):
+            pass
+
+
+def test_build_graph_rejects_an_unknown_variant():
+    import pipeline.graph as graph
+    from config import features
+
+    with pytest.raises(features.PipelineConfigError):
+        graph.build_graph("D")
+
+
+def test_every_variant_has_a_compiled_pipeline():
+    import pipeline.graph as graph
+    from config import features
+
+    assert set(graph.PIPELINES) == set(features.PIPELINE_VARIANTS)
+
+
+def test_variant_a_runs_the_rewrite_chain(run_graph):
+    visited, result = run_graph(scores=[], variant="A")("standard")
+
+    assert visited == A_NODE_ORDER
+    assert result["final_post"] == "draft text"
+
+
+# Variant C at every quality, and variant B at quality="draft": one draft, no review.
+DRAFT_ONLY = [("C", "draft"), ("C", "standard"), ("C", "polished"), ("B", "draft")]
+
+
+@pytest.mark.parametrize("variant,quality", DRAFT_ONLY)
+def test_draft_only_runs_one_draft_and_no_review_or_rewriting_node(run_graph, variant, quality):
+    visited, result = run_graph(scores=[], variant=variant)(quality)
+
+    assert visited == SINGLE_WRITER_NODE_ORDER
+    assert result["final_post"] == "draft text"
+    assert "review" not in result and "review_first" not in result
+
+
+@pytest.mark.parametrize("quality", ["standard", "polished"])
+def test_variant_b_reviews_the_draft_and_stops_when_nothing_acts(run_graph, quality):
+    visited, result = run_graph(scores=[], variant="B")(quality)
+
+    assert visited == REVIEWED_NODE_ORDER                       # no redraft, no second review, no scorer
+    assert result["review"]["outcome"] == "clean"
+    assert [t["step"] for t in result["step_timings"]] == [
+        "structure", "draft", "strip", "finalise", "checks", "review_draft", "decide", "outcome"]
+
+
+@pytest.mark.parametrize("variant,quality", DRAFT_ONLY)
+def test_an_over_length_post_goes_through_trim_and_is_finalised_again(run_graph, variant, quality):
+    visited, _ = run_graph(scores=[], variant=variant, finalise_length="over_length")(quality)
+
+    assert visited == [*SINGLE_WRITER_NODE_ORDER, "trim", "finalise_trimmed", "recheck"]
+
+
+@pytest.mark.parametrize("variant,quality", DRAFT_ONLY)
+@pytest.mark.parametrize("length", ["ok", "under_length", "no_target"])
+def test_a_post_that_is_not_over_length_is_never_trimmed(run_graph, variant, quality, length):
+    visited, _ = run_graph(scores=[], variant=variant, finalise_length=length)(quality)
+
+    assert visited == SINGLE_WRITER_NODE_ORDER
+
+
+def _reachable_from(node: str) -> set[str]:
+    import pipeline.graph as graph
+
+    after: dict[str, set[str]] = {}
+    for edge in graph.build_graph("B").get_graph().edges:
+        after.setdefault(edge.source, set()).add(edge.target)
+    reached, frontier = set(), {node}
+    while frontier:
+        for target in after.get(frontier.pop(), ()):
+            if target not in reached:
+                reached.add(target)
+                frontier.add(target)
+    return reached
+
+
+def test_a_run_takes_the_targeted_path_or_the_full_redraft_never_both_and_never_a_third_draft():
+    """By the graph's edges alone: nothing after either drafter call can reach a drafter call."""
+    writers = {"draft", "targeted_fix", "redraft"}
+
+    assert not writers & _reachable_from("targeted_fix")
+    assert not writers & _reachable_from("redraft")
+    assert {"targeted_fix", "redraft", "review_fixed"} <= _reachable_from("code_fix")      # code_fix chooses one
+    assert {"review_fixed", "trim", "outcome"} <= _reachable_from("targeted_fix")
+    assert {"review_redraft", "review_fixed", "trim", "outcome"} <= _reachable_from("redraft")
+
+
+@pytest.mark.parametrize("quality", ["draft", "standard", "polished"])
+def test_run_pipeline_defaults_to_c_opus_at_every_quality(stubbed_pipelines, fake_db, quality):
+    result = _run_pipeline(quality=quality)
+
+    [trace] = fake_db.tables["generation_traces"]
+    assert trace["node_outputs"]["variant"] == "C-Opus"
+    assert trace["node_outputs"]["models"]["draft"] == "claude-opus-5-5"
+    assert stubbed_pipelines == SINGLE_WRITER_NODE_ORDER          # one draft; no review, critic, scorer or rewrite
+    assert result["scored"] is False and result["review"] is None
+
+
+def test_run_pipeline_uses_the_configured_variant(stubbed_pipelines, fake_db, monkeypatch):
+    monkeypatch.setenv("PIPELINE_VARIANT", "B")
+    _run_pipeline()
+
+    assert _recorded_variant(fake_db) == "B"
+    assert stubbed_pipelines == REVIEWED_NODE_ORDER
+
+
+def test_an_explicit_variant_overrides_the_configured_one(stubbed_pipelines, fake_db, monkeypatch):
+    monkeypatch.setenv("PIPELINE_VARIANT", "B")
+    _run_pipeline(variant="C")
+
+    assert _recorded_variant(fake_db) == "C"
+
+
+def test_run_pipeline_rejects_an_unknown_variant_before_running_anything(stubbed_pipelines, fake_db):
+    from config import features
+
+    with pytest.raises(features.PipelineConfigError):
+        _run_pipeline(variant="D")
+    assert stubbed_pipelines == []
+    assert fake_db.tables.get("generation_traces", []) == []
+
+
+def test_a_generate_request_cannot_choose_the_variant(stubbed_pipelines, fake_db, client, auth_headers):
+    resp = client.post(
+        "/generate",
+        json={"topic": "t", "format": "linkedin post", "tone": "casual", "variant": "B"},
+        headers=auth_headers("u"),
+    )
+
+    assert resp.status_code == 200
+    assert _recorded_variant(fake_db) == "C-Opus"       # the configured default, not the "B" in the request

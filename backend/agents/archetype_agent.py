@@ -7,19 +7,25 @@ when the model names the self-authored note that describes the event and quotes
 a sentence from it, and the code finds that sentence in that note; otherwise
 the post gets the neutral General Post. A failed call also gets General Post.
 Every decision, including downgrades, is logged and stored in the trace.
+
+choose_archetype() is pipeline A's choice, as described above. choose_structure()
+is the single-writer one (variants B and C): the same allowed set and the same
+prompt, but the model names the structure only. The drafter, which sees the
+topic and every source, names the event (agents/draft_prompt.py).
 """
 
 import logging
-import re
+from uuid import uuid4
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 from llm.client import HAIKU, TruncatedStructuredOutputError, complete_structured
+from llm.models import model_for
 from pipeline.state import PipelineState
 from utils.formatters import ARCHETYPES, GENERAL_ARCHETYPE, STORY_ARCHETYPES
-from utils.sentences import note_quote_spans
-from utils.frames import chunk_field, chunk_tags, is_self_authored
+from utils.sentences import event_quote_failure, quote_is_in_note  # noqa: F401  (quote_is_in_note is re-exported)
+from utils.frames import SOURCES_ARE_DATA_RULE, build_sources_block, chunk_field, chunk_tags, is_self_authored
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +52,15 @@ _STORY_RULE = """
 - These types tell something that happened to the author: {story_keys}. Choose one only if one of the author's own notes above describes the event this post is about. Then give that note's number as event_note, and copy one sentence from that note, word for word, that describes the event as event_quote. If no own note describes the event, choose a different type."""
 
 
+# Single writer: the structure only. The drafter names and quotes the event.
+_STRUCTURE_STORY_RULE = """
+- These types tell something that happened to the author: {story_keys}. Choose one only if one of the author's own notes above describes something that happened to the author and that this post is about. If no own note does, choose a different type."""
+
+
+class StructureChoice(BaseModel):
+    archetype: str = Field(description="One of the offered post type keys.")
+
+
 class ArchetypeChoice(BaseModel):
     archetype: str = Field(description="One of the offered post type keys.")
     event_note: int | None = Field(
@@ -58,35 +73,6 @@ class ArchetypeChoice(BaseModel):
         description="For those types: one sentence copied word for word from that note, describing "
                     "the event. Otherwise null.",
     )
-
-
-def _normalise(text: str) -> str:
-    """Lower-case and collapse whitespace: deliberate quote tolerances."""
-    return re.sub(r"\s+", " ", text or "").strip().lower()
-
-
-def event_quote_failure(quote: str | None, note: dict) -> str | None:
-    """Verify a sentence/line/item end, starting at its beginning or a prose colon.
-
-    Literal/time colons are not starts; this checks syntax, never topic fit.
-    """
-    wanted = _normalise(quote or "")
-    text = chunk_field(note, "text") or chunk_field(note, "content")
-    if not wanted:
-        return "event_quote_missing"
-    if wanted in {_normalise(sentence) for sentence in note_quote_spans(text)}:
-        return None
-    normalised = _normalise(text)
-    if wanted not in normalised:
-        return "event_quote_not_in_note"
-    # This regex matches a literal copied span, not meaning or model intent.
-    if not re.search(r"(?<!\w)" + re.escape(wanted) + r"(?!\w)", normalised):
-        return "event_quote_partial_word"
-    return "event_quote_not_sentence"
-
-
-def quote_is_in_note(quote: str | None, note: dict) -> bool:
-    return event_quote_failure(quote, note) is None
 
 
 def allowed_archetypes(perspective: str, self_authored_count: int) -> list[str]:
@@ -120,6 +106,40 @@ def _material(own: list[dict], external: list[dict]) -> str:
     return "\n\n".join(lines) if lines else "No notes on this topic. Only the topic and context above."
 
 
+def _offer(state: PipelineState) -> tuple[list[dict], list[dict], list[str], list[str]]:
+    """(own notes, external sources, allowed keys, the story keys among them)."""
+    profile = state.get("profile") or {}
+    perspective = state.get("perspective") or "opinion"
+    chunks = [] if perspective == "opinion" else (state.get("retrieval_bundle") or {}).get("chunks", [])
+    own = [c for c in chunks if is_self_authored(c, profile)]
+    external = [c for c in chunks if not is_self_authored(c, profile)]
+    allowed = allowed_archetypes(perspective, len(own))
+    return own, external, allowed, [key for key in allowed if key in STORY_ARCHETYPES]
+
+
+def _ask(state: PipelineState, schema, own: list[dict], external: list[dict],
+         allowed: list[str], story_rule: str, model: str, material: str | None = None):
+    """The one call both choices make, to the model given (pipeline A: HAIKU;
+    single writer: the run's small model); raises what complete_structured raises."""
+    return complete_structured(
+        schema=schema,
+        tool_name="choose_post_type",
+        tool_description="Record the post type chosen for this post.",
+        model=model,
+        max_tokens=300,
+        messages=[{"role": "user", "content": ARCHETYPE_PROMPT.format(
+            topic=state.get("topic", ""),
+            context=(state.get("context") or "").strip() or "none",
+            format=state.get("format", ""),
+            material=_material(own, external) if material is None else material,
+            options="\n".join(f"- {key}: {ARCHETYPES[key].fits}" for key in allowed),
+            story_rule=story_rule,
+        )}],
+        user_id=state["user_id"],
+        event_type="archetype",
+    )
+
+
 def choose_archetype(state: PipelineState) -> dict[str, Any]:
     """Pick the archetype for this post.
 
@@ -128,13 +148,7 @@ def choose_archetype(state: PipelineState) -> dict[str, Any]:
     (None when the call failed); `downgraded_from` and `reason` are set when
     the two differ.
     """
-    profile = state.get("profile") or {}
-    perspective = state.get("perspective") or "opinion"
-    chunks = [] if perspective == "opinion" else (state.get("retrieval_bundle") or {}).get("chunks", [])
-    own = [c for c in chunks if is_self_authored(c, profile)]
-    external = [c for c in chunks if not is_self_authored(c, profile)]
-    allowed = allowed_archetypes(perspective, len(own))
-    story_keys = [key for key in allowed if key in STORY_ARCHETYPES]
+    own, external, allowed, story_keys = _offer(state)
 
     decision: dict[str, Any] = {
         "archetype": GENERAL_ARCHETYPE, "chosen": None, "allowed": allowed,
@@ -146,23 +160,8 @@ def choose_archetype(state: PipelineState) -> dict[str, Any]:
         return {**decision, "chosen": chosen, "downgraded_from": chosen, "reason": reason}
 
     try:
-        choice = complete_structured(
-            schema=ArchetypeChoice,
-            tool_name="choose_post_type",
-            tool_description="Record the post type chosen for this post.",
-            model=HAIKU,
-            max_tokens=300,
-            messages=[{"role": "user", "content": ARCHETYPE_PROMPT.format(
-                topic=state.get("topic", ""),
-                context=(state.get("context") or "").strip() or "none",
-                format=state.get("format", ""),
-                material=_material(own, external),
-                options="\n".join(f"- {key}: {ARCHETYPES[key].fits}" for key in allowed),
-                story_rule=_STORY_RULE.format(story_keys=", ".join(story_keys)) if story_keys else "",
-            )}],
-            user_id=state["user_id"],
-            event_type="archetype",
-        )
+        choice = _ask(state, ArchetypeChoice, own, external, allowed,
+                      _STORY_RULE.format(story_keys=", ".join(story_keys)) if story_keys else "", HAIKU)
     except TruncatedStructuredOutputError:
         return fall_back("truncated", None)
     except Exception as exc:
@@ -183,3 +182,49 @@ def choose_archetype(state: PipelineState) -> dict[str, Any]:
     if failure:
         return {**fall_back(failure, chosen), **cited}
     return {**decision, "archetype": chosen, "chosen": chosen, **cited}
+
+
+def choose_structure(state: PipelineState) -> dict[str, Any]:
+    """Pick the post's structure, for the single-writer pipeline (variants B and C).
+
+    Returns {archetype, chosen, allowed, downgraded_from, reason}, with the same
+    meanings as choose_archetype. No event is named here. A failed call, or an
+    answer outside the allowed set, gets General Post and says why.
+    """
+    own, external, allowed, story_keys = _offer(state)
+    model = model_for(state, "small")
+    request_id = str(uuid4())
+    chunks = [] if state.get("perspective") == "opinion" else (state.get("retrieval_bundle") or {}).get("chunks", [])
+    material = SOURCES_ARE_DATA_RULE + "\n" + build_sources_block(chunks, state.get("profile") or {}).text
+    decision: dict[str, Any] = {
+        "archetype": GENERAL_ARCHETYPE, "chosen": None, "allowed": allowed,
+        "downgraded_from": None, "reason": None,
+    }
+
+    def fall_back(reason: str, chosen: str | None) -> dict[str, Any]:
+        logger.warning("structure: category=%s model=%s request_id=%s", reason, model, request_id)
+        return {**decision, "chosen": chosen, "downgraded_from": chosen, "reason": reason}
+
+    try:
+        choice = _ask(state, StructureChoice, own, external, allowed,
+                      _STRUCTURE_STORY_RULE.format(story_keys=", ".join(story_keys)) if story_keys else "",
+                      model, material=material)
+    except TruncatedStructuredOutputError:
+        return fall_back("truncated", None)
+    except Exception as exc:
+        request_id = getattr(exc, "request_id", None) or request_id
+        return fall_back(f"inference failed: {type(exc).__name__}", None)
+
+    chosen = choice.archetype.lower().strip()
+    if chosen not in allowed:
+        return fall_back("not an allowed type for these sources", chosen)
+    return {**decision, "archetype": chosen, "chosen": chosen}
+
+
+def structure_node(state: PipelineState) -> PipelineState:
+    """One call to the small model picks the post's structure from the types the sources
+    allow. It names no event: for a story type the drafter does that."""
+    decision = choose_structure(state)
+    state["archetype"] = decision["archetype"]
+    state["archetype_decision"] = decision
+    return state

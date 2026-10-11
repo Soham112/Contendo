@@ -20,6 +20,22 @@ def restore_dotenv():
     dotenv.load_dotenv, dotenv.main.load_dotenv = original
 
 
+@pytest.fixture
+def backend(monkeypatch):
+    """backend/ importable for this test (its pure modules: the price table, the
+    word counts), and forgotten again after it."""
+    import sys
+
+    import guard
+
+    before = set(sys.modules)
+    monkeypatch.syspath_prepend(str(guard.BACKEND_DIR))
+    yield
+    for name in set(sys.modules) - before:
+        if name in guard.backend_modules_loaded(sys.modules):
+            del sys.modules[name]
+
+
 EVAL_REF = "abcdefghijklmnopqrst"
 FAKE_ANTHROPIC_KEY = "sk-ant-api03-" + "x" * 60  # right shape, not a real key
 

@@ -46,9 +46,11 @@ def seeded_kb(fake_db):
 
 
 def _run(**overrides):
+    """One run of pipeline A, which is what this file's traces are about. A is
+    no longer the default (config.features), so it is asked for by name."""
     from pipeline.graph import run_pipeline
 
-    kwargs = dict(topic="pgvector retrieval", format="linkedin post", tone="casual", user_id=USER)
+    kwargs = dict(topic="pgvector retrieval", format="linkedin post", tone="casual", user_id=USER, variant="A")
     kwargs.update(overrides)
     return run_pipeline(**kwargs)
 
@@ -433,7 +435,9 @@ def test_log_only_job_writes_only_to_the_callers_trace_and_records_errors(claude
     assert "fact_check" not in rows["t-b"]["node_outputs"]
 
 
-def test_generate_endpoint_runs_the_log_only_fact_check_after_responding(client, claude, fake_db, seeded_kb, auth_headers):
+def test_generate_endpoint_runs_the_log_only_fact_check_after_responding(client, claude, fake_db, seeded_kb, auth_headers,
+                                                                         monkeypatch):
+    monkeypatch.setenv("PIPELINE_VARIANT", "A")     # the rollback switch: /generate runs pipeline A again
     claude.queue(*STANDARD_RUN, '{"flagged": []}')
     resp = client.post(
         "/generate",

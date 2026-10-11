@@ -13,6 +13,7 @@ A cheap fix makes a failing case pass without addressing why it failed. Don't sh
 - Hard-coding a threshold or special case so one golden passes.
 - Loosening a check until a test goes green without knowing why it failed.
 - Patching symptoms in a later pipeline step (stripping invented facts in the humanizer) when an earlier step (the critic) creates them.
+- No global lists of banned, required or trigger words or phrases (style, topic, intent, quality). They only catch what someone listed and grow without limit as users grow. Judge these semantically (structured model review) or structurally (syntax, ids, offsets). Allowed: closed sets fixed by the language (number words, month and weekday names), single-character product rules, and lists the user writes for themselves (e.g. a profile's words_to_avoid), which are user data.
 
 Before proposing a fix:
 1. Find the root cause: which step, prompt, data or assumption produced the failure? Show the evidence (trace, test, log).
@@ -25,6 +26,7 @@ Before proposing a fix:
 Every task summary must end with a "Stopgaps introduced" line: "none", or a list with file:line, why it's a stopgap, and the proper fix.
 
 ## Files and code organisation
+- `backend/agents/`: one module per model call (its prompt assembly may live in a sibling `*_prompt.py`). `backend/pipeline/`: graph wiring, state, trace, and deterministic pipeline steps; no model calls. `backend/utils/`: small pure helpers with no pipeline state and no model calls.
 - Before creating a new file, check whether the code belongs in an existing module. Create a new file only when it has a clear, separate responsibility that existing modules don't cover. Say in your summary which new files you created and why.
 - Don't create one-off scripts, scratch files, or experiment files in the repo. Use the scratchpad outside the repo, and delete them when the task is done.
 - Don't duplicate helpers: search for existing functions before writing a new one.

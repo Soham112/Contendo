@@ -1,9 +1,20 @@
 """Selection refine: rewrite one selected passage of a post, outside the pipeline.
 
 The rewrite may change wording, structure and emphasis, never what the post
-claims. New facts may only come from the post, the author's instruction or the
-post's original sources (its generation trace). Numbers, dates, durations and
-money are checked by the same specifics guard the pipeline's rewrite nodes use.
+claims. New facts may only come from the author's instruction or the post's
+original sources (its generation trace).
+
+Which writer runs depends on how the post was made:
+- A single-writer post (its trace stored a source index: variants B, C, B-Opus,
+  C-Opus) is rewritten by the model that drafted it, from the same delimited
+  sources block, with a citation marker on every sentence, and the passage goes
+  through the deterministic checks (pipeline.checks.run_passage_checks). The
+  prompt is in agents/refine_prompt.py.
+- A post with no source index (pipeline A's, and posts from before the single
+  writer) keeps the earlier writer: Sonnet, the frame-formatted sources, and the
+  specifics guard on numbers, dates, durations and money.
+Both retry once with what was found, and return the selection unchanged
+(status "reverted") when the second attempt fails too.
 """
 
 import logging
@@ -11,11 +22,12 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from llm.client import SONNET, complete
+from llm.client import REFUSAL, SONNET, complete, message_text
+from llm.models import MODELS
 from memory.profile_store import load_profile, profile_voice_context
 from memory.trace_store import append_trace_guard_entry, get_trace_sources
 from utils.formatters import normalise_post_punctuation
-from utils.frames import format_chunks_by_frame
+from utils.frames import format_chunks_by_frame, sources_block_from_index
 from utils.specifics import GuardSources, find_violations, guard_entry, guard_sources, profile_facts, retry_note
 
 logger = logging.getLogger(__name__)
@@ -39,6 +51,10 @@ class MissingRefineSources(RuntimeError):
 
 
 _NO_SOURCES_BLOCK = "(No saved sources for this post. Use only the post and the instruction.)"
+
+# Output budget for the rewritten passage itself (a selection is a few
+# sentences); a model that thinks gets room for that on top (llm.client.output_budget).
+_REFINE_MAX_TOKENS = 500
 
 REFINE_SELECTION_PROMPT = """You are editing one selected section of a post. You may change its wording, structure and emphasis. You may not change what it claims.
 
@@ -82,12 +98,24 @@ _NOTE_RE = re.compile(r"<note>(.*?)(?:</note>|\Z)", re.DOTALL | re.IGNORECASE)
 
 
 @dataclass(frozen=True)
+class CitedSources:
+    """What a single-writer post's trace stored, for a cited rewrite."""
+    source_index: dict[str, dict]   # S-id -> {position, chunk_id, frame, authorship}, as the drafter numbered them
+    chunks: list[dict]              # the trace's stored chunks; an index entry's position points into this
+    block: str                      # the delimited sources block, rebuilt from the two
+    topic: str
+    context: str
+    model: str                      # the model that drafted the post, which rewrites it
+
+
+@dataclass(frozen=True)
 class RefineSources:
     """What a selection rewrite may draw on, and where that came from."""
     origin: str            # "trace"; missing tracking raises MissingRefineSources
     prompt_block: str      # the sources as shown to the model
     guard: GuardSources    # what the specifics guard accepts
     trace_id: str | None = None  # the trace the sources came from, if any
+    cited: CitedSources | None = None   # set for a single-writer post; None keeps the earlier writer
 
 
 def load_refine_sources(
@@ -125,7 +153,29 @@ def load_refine_sources(
     # it must not bring them in either.
     shown = "" if no_specifics else format_chunks_by_frame(chunks, state["profile"])
     return RefineSources("trace", shown or _NO_SOURCES_BLOCK, guard_sources(state, extra=always),
-                         trace_id=str(trace["id"]))
+                         trace_id=str(trace["id"]), cited=_cited_sources(trace, chunks))
+
+
+def _cited_sources(trace: dict[str, Any], chunks: list[dict]) -> CitedSources | None:
+    """The stored source index and what goes with it, when the trace has one.
+    The S-ids are the ones the drafter used, resolved through the stored index
+    to the stored chunks; they are never rebuilt from retrieval order. An index
+    that points outside the stored chunks is a broken trace: MissingRefineSources."""
+    outputs = trace.get("node_outputs") or {}
+    source_index = outputs.get("source_index")
+    if not source_index:
+        return None
+    try:
+        block = sources_block_from_index(source_index, chunks)
+    except (ValueError, KeyError, TypeError):
+        raise MissingRefineSources("source_index_does_not_match_chunks") from None
+    drafted_by = (outputs.get("models") or {}).get("draft")
+    if not drafted_by:
+        raise MissingRefineSources("draft_model_missing")
+    if drafted_by not in MODELS:
+        raise MissingRefineSources("draft_model_unknown")
+    model = drafted_by
+    return CitedSources(source_index, chunks, block, trace.get("topic") or "", trace.get("context") or "", model)
 
 
 def _record_guard_retry(sources: RefineSources, user_id: str, first: list, second: list) -> None:
@@ -146,6 +196,12 @@ def _split_note(raw: str) -> tuple[str, str]:
     return _NOTE_RE.sub("", raw).strip(), " ".join(notes)
 
 
+REFUSED_MESSAGE = "The model declined to rewrite this selection. Try different wording in your instruction."
+TRUNCATED_MESSAGE = "The rewrite was cut off before it finished. Try a shorter selection."
+EMPTY_REFINE_MESSAGE = "The model returned no rewrite after two attempts. Your selection was kept. Try again."
+
+
+
 def refine_selection(
     selected_text: str,
     instruction: str,
@@ -163,14 +219,20 @@ def refine_selection(
     in the trace's specifics_guard list (node "refine_selection") when the post
     has a trace.
 
+    A single-writer post takes the cited rewrite instead (agents.refine_cited_agent.refine_cited): the
+    same contract, with the deterministic checks in place of the guard.
+
     Returns {rewritten_text, status ("ok" | "reverted"), message, note,
     sources_used ("trace" | "post_and_profile"), sources_message}.
     """
     profile = load_profile(user_id)
     sources = load_refine_sources(full_post, instruction, profile,
                                   user_id=user_id, trace_id=trace_id, post_id=post_id)
+    if sources.cited is not None:
+        from agents.refine_cited_agent import refine_cited
+        return refine_cited(selected_text, instruction, full_post, profile, sources, user_id)
 
-    def rewrite(violations, event_type: str) -> tuple[str, str]:
+    def rewrite(violations, event_type: str) -> tuple[str, str, str | None]:
         prompt = REFINE_SELECTION_PROMPT.format(
             profile_context=profile_voice_context(profile),
             words_to_avoid=", ".join(profile.get("words_to_avoid", [])),
@@ -187,7 +249,9 @@ def refine_selection(
             user_id=user_id,
             event_type=event_type,
         )
-        return _split_note(response.content[0].text)
+        unusable = {REFUSAL: REFUSED_MESSAGE, "max_tokens": TRUNCATED_MESSAGE}.get(response.stop_reason)
+        text, note = _split_note(message_text(response))
+        return text, note, unusable
 
     result = {
         "rewritten_text": selected_text,
@@ -198,11 +262,15 @@ def refine_selection(
         "sources_message": "",
     }
 
-    rewritten, note = rewrite([], "refine_selection")
+    rewritten, note, unusable = rewrite([], "refine_selection")
+    if unusable:
+        return {**result, "status": "reverted", "message": unusable}
     first = find_violations(rewritten, sources.guard)
     if first:
         logger.info("refine_selection: first attempt added %s; retrying", [v.text for v in first])
-        rewritten, note = rewrite(first, "refine_selection_retry")
+        rewritten, note, unusable = rewrite(first, "refine_selection_retry")
+        if unusable:
+            return {**result, "status": "reverted", "message": unusable}
         second = find_violations(rewritten, sources.guard)
         _record_guard_retry(sources, user_id, first, second)
         if second:

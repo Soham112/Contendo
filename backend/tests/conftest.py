@@ -34,6 +34,7 @@ os.environ.update({
     # Set (to off) so a developer's backend/.env can't switch them on for tests.
     "ALLOW_DEV_AUTH": "",
     "ALLOW_LOCAL_PATH_INGEST": "",
+    "PIPELINE_VARIANT": "",
     "SUPADATA_API_KEY": "",
     "FRONTEND_ORIGIN": "",
     "DATA_DIR": tempfile.mkdtemp(prefix="contendo-test-data-"),

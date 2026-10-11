@@ -1,8 +1,14 @@
+"""Pipeline A's length gate: word_count_enforcer_node asks Haiku to rewrite the
+post shorter or longer. The single-writer trim (variants B and C), which only
+deletes sentences, is agents/trim_agent.py.
+"""
+
 import logging
 
 from llm.client import HAIKU, complete
 from pipeline.state import PipelineState
 from pipeline.trace import record_draft
+from utils.formatters import count_words
 from utils.specifics import find_violations, guard_entry, guard_sources, retry_note
 
 logger = logging.getLogger(__name__)
@@ -40,7 +46,7 @@ Post:
 
 
 def _count_words(text: str) -> int:
-    return len(text.split())
+    return count_words(text)
 
 
 def word_count_enforcer_node(state: PipelineState) -> PipelineState:

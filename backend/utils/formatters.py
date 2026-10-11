@@ -3,17 +3,23 @@ and post archetype. One table per concern; every agent reads from here.
 
 - Length: WORD_RANGES is the only place word counts live. resolve_length_target()
   turns a request into the one target a post has; word_count_rule() is the only
-  wording of it.
+  wording of it; count_words() is the only way a post is measured against it;
+  draft_max_tokens() sizes the single-writer draft call from it.
 - Archetypes: ARCHETYPES holds every archetype's name, structure block and
   whether it needs a real event. A block describes structure only: no lengths,
   no diagram advice, no demand for details the sources may not have.
 - Tone describes voice only. It never asks for a scene, a story or specifics.
+- Style: STYLE_RULES is the one copy of the anti-AI phrasing, rhythm, em-dash
+  and voice rules. Pipeline A's humanizer and the single-writer draft prompt
+  both read it.
 """
 
+import math
 import re
 from dataclasses import dataclass
 from typing import Any
 
+from llm.models import TOKENIZER_CLAUDE_4, TOKENIZER_CLAUDE_4_7, spec
 from utils.text_spans import protected_spans
 
 
@@ -112,6 +118,47 @@ def word_count_rule(target: dict[str, Any] | None) -> str:
         f"LENGTH: at most {high} words. A short post is complete: say what the sources "
         "support and stop. Never pad to reach a length."
     )
+
+
+def count_words(text: str) -> int:
+    """How long a post is, in words: its whitespace-separated tokens. The one
+    count every length decision uses (enforcer, finalise, trim, evals)."""
+    return len(text.split())
+
+
+# Output tokens one word of a marked draft costs, per tokenizer
+# (llm.models.ModelSpec.tokenizer). Thinking tokens are not part of it: they
+# get their own room (llm.client.output_budget).
+# Claude 4 tokenizer (Sonnet 4.6): measured on the pm-01 golden under variant C
+# (2026-10-09): 419 output tokens for a 225-word post, citation markers and
+# EVENT line included, so about 1.9. One sample: hence the margin.
+TOKENS_PER_WORD_CLAUDE_4 = 1.9
+# Claude 4.7 tokenizer (the 5.5 models): measured on the 40 Claude Opus 5.5
+# drafts of ablation "full" (2026-10-10; B-Opus and C-Opus, 20 goldens each):
+# 2.18 output tokens per word of the marked draft on average, thinking
+# excluded, and at most 2.50. The constant is the largest seen: the margin
+# below is for a draft that runs long, not for one that tokenizes heavily.
+# (The same ablation measured 1.52 on average and at most 1.70 on 20 Sonnet 4.6
+# drafts, so the Claude 4 figure above is on the safe side.)
+TOKENS_PER_WORD_CLAUDE_4_7 = 2.5
+TOKENS_PER_WORD = {TOKENIZER_CLAUDE_4: TOKENS_PER_WORD_CLAUDE_4, TOKENIZER_CLAUDE_4_7: TOKENS_PER_WORD_CLAUDE_4_7}
+# Room above the target's ceiling, so a draft that runs somewhat long is
+# finished and then trimmed, rather than cut off mid-sentence.
+DRAFT_TOKEN_MARGIN = 1.25
+# Never less than pipeline A's draft budget. Short targets (a 100-word first
+# post) get the most room for an overlong draft; threads have no word target.
+MIN_DRAFT_MAX_TOKENS = 2000
+
+
+def draft_max_tokens(target: dict[str, Any] | None, model: str) -> int:
+    """Output tokens a single-writer draft needs from this model: enough for
+    the target's ceiling with markers on the model's tokenizer, plus the margin.
+    No target (threads) gets the minimum. Room for thinking is added by the
+    caller (llm.client.output_budget)."""
+    if not target:
+        return MIN_DRAFT_MAX_TOKENS
+    per_word = TOKENS_PER_WORD[spec(model).tokenizer]
+    return max(MIN_DRAFT_MAX_TOKENS, math.ceil(target["max_words"] * per_word * DRAFT_TOKEN_MARGIN))
 
 
 # ── Archetypes ────────────────────────────────────────────────────────────────
@@ -227,6 +274,37 @@ STORY_ARCHETYPES = frozenset(key for key, a in ARCHETYPES.items() if a.needs_eve
 def get_archetype(archetype: str) -> Archetype:
     """The archetype for a key; an unknown key gets the neutral General Post."""
     return ARCHETYPES.get((archetype or "").lower().strip(), ARCHETYPES[GENERAL_ARCHETYPE])
+
+
+# ── Style ─────────────────────────────────────────────────────────────────────
+
+# How a post should read: AI phrasing to avoid, rhythm, no em dashes, voice.
+# The only copy. Read by pipeline A's humanizer (agents/humanizer_agent.py) and
+# by the single-writer draft prompt (agents/draft_prompt.py). Format it with
+# words_to_avoid (the profile's list, comma-separated).
+# The wording is the humanizer's, unchanged, because pipeline A's prompts must
+# not change on feat/single-writer; reword it for a writer when A is removed.
+# STOPGAP: these phrase examples are shared with frozen pipeline A.
+# Proper fix: replace them with a description-based style block when A is
+# removed on chore/remove-pipeline-a; do not change A's snapshot here.
+STYLE_RULES = """AI writing patterns to eliminate:
+- Sentences that start with "In today's..." or "It's important to note..."
+- Overuse of transition words: "Furthermore", "Moreover", "Additionally", "In conclusion"
+- Generic motivational framing: "unlock your potential", "game-changing", "transformative"
+- Perfectly balanced sentence lengths; vary them aggressively
+- Lists of three that feel formulaic (The three things are: A, B, and C)
+- Passive voice where active would be stronger
+- Em dashes used as clause connectors or parenthetical separators (e.g. 'the data was messy, noisy and sparse' or 'one feature, which had low fill rate, was dropped'). Replace with a period, a comma, or rewrite the sentence entirely. Em dashes are one of the strongest signals of AI-generated text and must never appear in the output.
+- Hyphenated compound modifiers used decoratively (e.g. 'data-driven', 'production-ready', 'well-known', 'high-value' when plain language works just as well). Write 'drives decisions with data' not 'data-driven'. Only use hyphens when they are grammatically required and cannot be avoided.
+- Words to avoid: {words_to_avoid}
+
+Never use the em dash character (—) anywhere in the output. If you are about to write an em dash, stop and use a period or comma instead.
+
+What to inject instead:
+- Sentence variety: mix 4-word punches with longer, winding observations
+- Short asides that comment on a point the draft already makes. An aside is a remark, never a new reaction, memory or event.
+- Opinions stated with confidence, not hedged to death
+- The writer's actual voice as described in the profile"""
 
 
 # ── Format and tone ───────────────────────────────────────────────────────────

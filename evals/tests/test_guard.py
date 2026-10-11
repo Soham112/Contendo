@@ -132,6 +132,7 @@ def test_after_bootstrap_load_dotenv_cannot_override(env_file, tmp_path, monkeyp
 # --- drift against the backend ----------------------------------------------
 
 _ENV_READ_RE = re.compile(r"""os\.(?:environ\.get|getenv|environ\.setdefault)\(\s*["']([A-Z0-9_]+)["']|os\.environ\[\s*["']([A-Z0-9_]+)["']\s*\]""")
+_ENV_READ_BY_CONSTANT_RE = re.compile(r"""os\.(?:environ\.get|getenv|environ\.setdefault)\(\s*([A-Z_][A-Z0-9_]*)\s*[,)]""")
 
 
 def test_backend_env_keys_match_backend_source():
@@ -139,8 +140,15 @@ def test_backend_env_keys_match_backend_source():
     for path in guard.BACKEND_DIR.rglob("*.py"):
         if path.is_relative_to(guard.BACKEND_VENV_DIR) or "tests" in path.relative_to(guard.BACKEND_DIR).parts:
             continue
-        for a, b in _ENV_READ_RE.findall(path.read_text()):
+        text = path.read_text()
+        for a, b in _ENV_READ_RE.findall(text):
             found.add(a or b)
+        # A variable read through a module constant (config/features.py reads
+        # PIPELINE_VARIANT that way): the constant must be a string in the same file.
+        for constant in _ENV_READ_BY_CONSTANT_RE.findall(text):
+            named = re.findall(rf"""^{constant}\s*=\s*["']([A-Z0-9_]+)["']\s*$""", text, flags=re.MULTILINE)
+            assert len(named) == 1, f"{path}: cannot tell which variable os.environ reads through {constant}"
+            found.add(named[0])
     assert found == set(guard.BACKEND_ENV_KEYS), (
         "backend env vars changed; update guard.BACKEND_ENV_KEYS and build_backend_env: "
         f"missing {sorted(found - set(guard.BACKEND_ENV_KEYS))}, stale {sorted(set(guard.BACKEND_ENV_KEYS) - found)}"

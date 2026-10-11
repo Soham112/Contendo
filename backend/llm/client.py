@@ -12,22 +12,62 @@ from contextvars import ContextVar
 from typing import Any, Iterator, TypeVar
 
 import anthropic
-from anthropic.types import Message
+from anthropic.types import Message, TextBlock, Usage
 from dotenv import load_dotenv
 from pydantic import BaseModel, ValidationError
 
+from llm import models
 from memory.usage_store import schedule_usage_event
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# The only place model strings live.
-SONNET = "claude-sonnet-4-6"
-HAIKU = "claude-haiku-4-5-20251001"
+# Pipeline A's models, and every call outside the single-writer pipeline. The
+# id strings, and the per-role models of variants B and C, are in llm/models.py.
+SONNET = models.SONNET_4_6
+HAIKU = models.HAIKU_4_5
 
-# Label passed to usage logging (usage_store prices by it).
-_USAGE_LABELS = {SONNET: "sonnet", HAIKU: "haiku"}
+# The most output a call here should ask for. Every call is non-streaming, and
+# Anthropic's guidance for non-streaming requests is to stay near 16,000 output
+# tokens so a response fits the SDK's HTTP timeout. The models' own caps are far
+# higher (128,000 for Sonnet 4.6). A budget above this needs streaming first.
+MAX_NON_STREAMING_OUTPUT_TOKENS = 16_000
+
+# Room added to a call's max_tokens on a model that thinks by default: thinking
+# counts against max_tokens, so a budget sized for the answer alone can be used
+# up before any text is written. Measured on the 40 Claude Opus 5.5 drafts of
+# ablation "full" (2026-10-10; B-Opus and C-Opus, 20 goldens each, effort
+# "medium", LinkedIn posts and Medium articles at every length the goldens
+# use): at most 1,740 thinking tokens in a draft, median about 1,050. The
+# allowance is twice the largest seen, rounded up to the hundred: a draft cut
+# off by its budget is a lost post, while allowance that is not used costs nothing.
+THINKING_ALLOWANCE_TOKENS = 3_500
+
+REFUSAL = "refusal"   # stop_reason of a reply a safety classifier declined
+
+
+def output_budget(model: str, answer_tokens: int) -> int:
+    """max_tokens for a call whose answer needs answer_tokens: unchanged for a
+    model that does not think, plus THINKING_ALLOWANCE_TOKENS for one that
+    does, never above the non-streaming ceiling."""
+    if not models.spec(model).thinks:
+        return answer_tokens
+    return min(MAX_NON_STREAMING_OUTPUT_TOKENS, answer_tokens + THINKING_ALLOWANCE_TOKENS)
+
+
+def message_text(message: Message) -> str:
+    """The reply's text: its TextBlocks, joined. A model that thinks puts
+    ThinkingBlocks first, so content[0] is not the answer; a refused or
+    cut-off reply may hold no text block at all, which gives ""."""
+    return "".join(block.text for block in message.content if isinstance(block, TextBlock))
+
+
+def _thinking_tokens(usage: Usage) -> int:
+    """The output tokens that were thinking (usage.output_tokens_details);
+    0 for a reply that reports no breakdown."""
+    details = usage.output_tokens_details
+    return 0 if details is None else details.thinking_tokens
 
 client = anthropic.Anthropic(
     api_key=os.environ["ANTHROPIC_API_KEY"],
@@ -44,13 +84,20 @@ _trace: ContextVar[list[dict] | None] = ContextVar("llm_trace", default=None)
 
 @contextmanager
 def trace_calls() -> Iterator[list[dict]]:
-    """Collect every complete() call made in this context: `with trace_calls() as calls:`."""
+    """Collect every complete() call made in this context: `with trace_calls() as calls:`.
+
+    Traces nest: a step that measures its own calls does not hide them from the
+    trace around it. When the inner block ends, its calls are added to the outer
+    list, in order."""
+    outer = _trace.get()
     calls: list[dict] = []
     token = _trace.set(calls)
     try:
         yield calls
     finally:
         _trace.reset(token)
+        if outer is not None:
+            outer.extend(calls)
 
 
 def complete(
@@ -70,8 +117,7 @@ def complete(
     passed to messages.create() unchanged (so Anthropic's own `metadata` stays
     available).
     """
-    if model not in _USAGE_LABELS:
-        raise ValueError(f"Unknown model {model!r}: use llm.client.SONNET or llm.client.HAIKU")
+    models.spec(model)   # raises for a model llm.models does not list
 
     create_kwargs: dict[str, Any] = {"model": model, "max_tokens": max_tokens, "messages": messages}
     if system is not None:
@@ -100,7 +146,7 @@ def complete(
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             metadata=usage_metadata,
-            model=_USAGE_LABELS[model],
+            model=model,
         )
     except Exception as exc:
         logger.warning("llm.complete: usage logging failed for %s: %s", event_type, exc)
@@ -112,6 +158,8 @@ def complete(
             "model": model,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
+            "thinking_tokens": _thinking_tokens(message.usage),
+            "stop_reason": message.stop_reason,
             "latency_ms": latency_ms,
         })
 
@@ -125,6 +173,11 @@ class StructuredOutputError(RuntimeError):
 
 class TruncatedStructuredOutputError(StructuredOutputError):
     """Both structured attempts exhausted their output budget."""
+
+
+class RefusedStructuredOutputError(StructuredOutputError):
+    """The model declined the request (stop_reason "refusal"). Not retried: the
+    same request would be declined again."""
 
 
 # Bounds each diagnostic (and the combined final error), keeping logs/traces
@@ -163,6 +216,17 @@ def _validation_summary(exc: ValidationError, schema: type[BaseModel]) -> str:
 
 _Schema = TypeVar("_Schema", bound=BaseModel)
 
+TOOL_INSTRUCTION = "Answer by calling the {tool_name} tool, and write nothing outside that call."
+
+
+def _with_tool_instruction(messages: list[dict], tool_name: str) -> list[dict]:
+    """messages with TOOL_INSTRUCTION added to the end of the last one (a
+    string prompt, as every structured caller sends). The caller's list is not changed."""
+    last = messages[-1]
+    if not isinstance(last["content"], str):
+        raise TypeError("complete_structured: the last message's content must be a string")
+    return [*messages[:-1], {**last, "content": f"{last['content']}\n\n{TOOL_INSTRUCTION.format(tool_name=tool_name)}"}]
+
 
 def complete_structured(
     *,
@@ -179,20 +243,34 @@ def complete_structured(
 ) -> _Schema:
     """Call Claude and return its answer as a validated `schema` instance.
 
-    The answer is requested as a forced tool call whose input must match the
-    schema's JSON schema, so there is no free-text JSON to parse. A reply with
-    stop_reason=max_tokens (even with valid tool input), no tool call, or one that fails
-    validation is retried once with the same request; both attempts are logged.
-    If the second also fails, raises StructuredOutputError naming both
-    failures. API errors propagate, as in complete() (the SDK retries those).
+    The answer is requested as a tool call whose input must match the schema's
+    JSON schema, so there is no free-text JSON to parse. Where the model accepts
+    it the tool is forced. Claude Opus 5.5 and Sonnet 5.5 reject a forced tool
+    choice with a 400 (llm.models.ModelSpec.forced_tool_choice): for them the
+    request sends tool_choice "auto" and ends the prompt with an instruction to
+    call the tool. Nothing guarantees the call then, so its absence is one of
+    the failures below. On a model that thinks, max_tokens gets room for the
+    thinking (output_budget).
+
+    A reply with stop_reason=max_tokens (even with valid tool input), no tool
+    call, or one that fails validation is retried once with the same request;
+    both attempts are logged. If the second also fails, raises
+    StructuredOutputError naming both failures. A refusal raises
+    RefusedStructuredOutputError at once. API errors propagate, as in
+    complete() (the SDK retries those).
     """
     failures: list[str] = []
     truncations = 0
+    if models.spec(model).forced_tool_choice:
+        tool_choice = {"type": "tool", "name": tool_name}
+    else:
+        tool_choice = {"type": "auto"}
+        messages = _with_tool_instruction(messages, tool_name)
     for attempt in (1, 2):
         message = complete(
             model=model,
             messages=messages,
-            max_tokens=max_tokens,
+            max_tokens=output_budget(model, max_tokens),
             user_id=user_id,
             event_type=event_type,
             system=system,
@@ -202,8 +280,10 @@ def complete_structured(
                 "description": tool_description,
                 "input_schema": schema.model_json_schema(),
             }],
-            tool_choice={"type": "tool", "name": tool_name},
+            tool_choice=tool_choice,
         )
+        if message.stop_reason == REFUSAL:
+            raise RefusedStructuredOutputError(f"{event_type}: the model declined the request (stop_reason=refusal)")
         tool_input = next(
             (block.input for block in message.content
              if getattr(block, "type", "") == "tool_use" and getattr(block, "name", "") == tool_name),

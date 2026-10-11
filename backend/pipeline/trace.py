@@ -44,6 +44,15 @@ def _chunk_snapshot(chunk: dict[str, Any], profile: dict[str, Any]) -> dict[str,
     }
 
 
+# Outputs a run may or may not set, left out of the trace when it did not. All
+# but final_validation are written only by the single-writer pipeline
+# (variants B and C).
+_OPTIONAL_OUTPUTS = ("models", "source_index", "event", "citations", "citation_failures", "multi_sentence_spans",
+                     "draft_format", "draft_truncated", "draft_refused", "draft_empty", "trim_result", "checks_before_trim", "checks_final",
+                     "review_first", "review_second", "review", "step_timings",
+                     "final_validation")
+
+
 def build_trace_row(state: PipelineState, llm_calls: list[dict]) -> dict[str, Any]:
     """One generation_traces row from the pipeline's final state."""
     chunks = (state.get("retrieval_bundle") or {}).get("chunks", [])
@@ -63,6 +72,7 @@ def build_trace_row(state: PipelineState, llm_calls: list[dict]) -> dict[str, An
         "retrieved_context": state.get("retrieved_context", ""),
         "profile_snapshot": state.get("profile", {}),
         "node_outputs": {
+            "variant": state.get("variant", ""),
             "no_specifics": bool(state.get("no_specifics")),
             "length_target": state.get("length_target"),
             "perspective": state.get("perspective", ""),
@@ -75,6 +85,7 @@ def build_trace_row(state: PipelineState, llm_calls: list[dict]) -> dict[str, An
             "coverage_gate": state.get("coverage_gate", {}),
             "fact_check": state.get("fact_check", {}),
             "final_post": state.get("final_post", state.get("current_draft", "")),
+            **{key: state[key] for key in _OPTIONAL_OUTPUTS if key in state},
         },
         "llm_calls": llm_calls,
         "score": state.get("score", 0),

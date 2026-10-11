@@ -6,6 +6,7 @@ import supabase from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Sparkles } from 'lucide-react'
 import { useApi } from '@/lib/api'
+import { generateErrorMessage as outcomeErrorMessage, generateOutcome } from '@/lib/generate-outcome'
 import { useTracking } from '@/lib/useTracking'
 import {
   ROLE_OPTIONS,
@@ -341,7 +342,7 @@ function GeneratingScreen() {
   )
 }
 
-function GenerateErrorScreen({ onGoToWorkspace }: { onGoToWorkspace: () => void }) {
+function GenerateErrorScreen({ message, onGoToWorkspace }: { message?: string; onGoToWorkspace: () => void }) {
   return (
     <div className="min-h-screen bg-[#faf9f8] flex flex-col items-center justify-center px-4 py-12">
       <Wordmark />
@@ -350,7 +351,7 @@ function GenerateErrorScreen({ onGoToWorkspace }: { onGoToWorkspace: () => void 
           Something went wrong.
         </h2>
         <p className="text-[14px] text-[#645e57] mb-8 leading-relaxed">
-          We couldn&apos;t generate your post. You can try again from the workspace.
+          {message || "We couldn't generate your post."} You can try again from the workspace.
         </p>
         <button
           onClick={onGoToWorkspace}
@@ -876,6 +877,8 @@ function FirstPostContent() {
 
   const [screen, setScreen] = useState(0)
   const [flowState, setFlowState] = useState<'form' | 'generating' | 'error' | 'draft' | 'gate' | 'intercept'>('form')
+  // Why no post came back, when /generate said so (cut off, declined); '' shows the generic line.
+  const [generateErrorMessage, setGenerateErrorMessage] = useState('')
   const [draftState, setDraftState] = useState<DraftState | null>(null)
   const [copied, setCopied] = useState(false)
   const [profileChecked, setProfileChecked] = useState(false)
@@ -1119,14 +1122,17 @@ function FirstPostContent() {
       }
 
       const data = await res.json()
-      generatedPost = data.post || ''
+      const outcome = generateOutcome(data)
+      if (outcome.kind !== 'post') {
+        // Nothing was written (cut off, declined, or not covered): show why.
+        setGenerateErrorMessage(outcomeErrorMessage(outcome))
+        setFlowState('error')
+        return
+      }
+      generatedPost = data.post
       score = data.score || 0
       archetype = data.archetype || ''
       traceId = data.trace_id ?? null
-
-      if (!generatedPost) {
-        throw new Error('Generated post was empty')
-      }
     } catch (err) {
       console.error('[first-post] generate error:', err)
       setFlowState('error')
@@ -1251,7 +1257,7 @@ function FirstPostContent() {
   }
 
   if (flowState === 'error') {
-    return <GenerateErrorScreen onGoToWorkspace={() => router.push('/create')} />
+    return <GenerateErrorScreen message={generateErrorMessage} onGoToWorkspace={() => router.push('/create')} />
   }
 
   if (flowState === 'gate') {

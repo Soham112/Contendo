@@ -125,7 +125,7 @@ def test_plan_node_sets_one_target_and_every_node_reads_it(monkeypatch):
     assert first["length_target"]["basis"] == "first_post"
     thin = plan_node(make_state(retrieval_confidence="low", length_target=None))
     assert thin["length_target"] == {"min_words": 0, "max_words": 350, "may_expand": False, "basis": "thin_sources"}
-    for name in ("draft_agent.py", "humanizer_agent.py", "word_count_enforcer_agent.py"):
+    for name in ("draft_prompt.py", "humanizer_agent.py", "word_count_enforcer_agent.py"):
         source = agent_sources()[name]
         assert 'state.get("length_target")' in source, name
         assert "resolve_length_target(" not in source, name  # nodes read the target; they never compute one

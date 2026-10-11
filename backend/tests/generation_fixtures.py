@@ -61,6 +61,15 @@ def make_state(chunks=(), **overrides):
     return state
 
 
+def enveloped(draft, event: str | None = None):
+    """A draft as the drafter returns it: the post between <post> tags, after an
+    <event> part when one is given. A draft that already has its envelope, and
+    anything that is not text (a prepared Message), is returned as it is."""
+    if not isinstance(draft, str) or "<post>" in draft:
+        return draft
+    return ("" if event is None else f"<event>{event}</event>\n") + f"<post>\n{draft}\n</post>"
+
+
 def last_prompt(claude, call=-1) -> str:
     return claude.calls[call]["messages"][-1]["content"]
 

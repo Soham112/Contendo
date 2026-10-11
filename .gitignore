@@ -68,3 +68,6 @@ evals/results/
 .deepeval/
 .deepeval-cache.json
 .pytest_cache/
+
+# Local planning docs (never pushed)
+docs/

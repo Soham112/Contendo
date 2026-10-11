@@ -1,11 +1,16 @@
 import logging
+from typing import Callable
 
 from langgraph.graph import StateGraph, END
 
 from config import features
 from llm.client import trace_calls
+from llm.models import role_models
 from pipeline.state import PipelineState
 from pipeline.trace import build_trace_row
+from pipeline.finalise import validation_record
+from pipeline.redraft import review_summary
+from pipeline.single_writer import wire_draft_only, wire_reviewed
 from utils.formatters import normalise_post_punctuation, resolve_length_target
 from utils.frames import decide_perspective
 from memory.profile_store import load_profile
@@ -63,6 +68,20 @@ def plan_node(state: PipelineState) -> PipelineState:
     return state
 
 
+DRAFT_TRUNCATED_MESSAGE = (
+    "The draft was cut off before it was finished, so there is no post to show. "
+    "Generate again, or choose a shorter length."
+)
+
+DRAFT_EMPTY_MESSAGE = (
+    "The model returned no post. Generate again, or try a different topic or wording."
+)
+
+DRAFT_REFUSED_MESSAGE = (
+    "The model declined to write this post, so there is no post to show. "
+    "Try a different topic or wording."
+)
+
 LOW_COVERAGE_SUGGESTION = (
     "Your memory doesn't cover this topic yet. Add a source about it, "
     "or write an opinion post without specifics."
@@ -83,6 +102,8 @@ def low_coverage_node(state: PipelineState) -> PipelineState:
 
 def finalize_node(state: PipelineState) -> PipelineState:
     state["final_post"] = normalise_post_punctuation(state["current_draft"])
+    # Record only: pipeline A's post is returned as it is, whatever this says.
+    state["final_validation"] = validation_record(state["final_post"], state.get("length_target"))
     return state
 
 
@@ -110,12 +131,10 @@ def should_retry(state: PipelineState) -> str:
     return "word_count_enforcer"
 
 
-def build_graph() -> StateGraph:
-    graph = StateGraph(PipelineState)
-
-    graph.add_node("load_profile", load_profile_node)
-    graph.add_node("retrieval", retrieval_node)
-    graph.add_node("plan", plan_node)
+def _wire_rewrite_chain(graph: StateGraph) -> None:
+    """Variant A, after plan: draft (which picks the archetype) → critic →
+    humanizer → predictability_audit → (scorer loop, polished only) →
+    word_count_enforcer → fact_checker → finalize."""
     graph.add_node("draft", draft_node)
     graph.add_node("critic", critic_node)
     graph.add_node("humanizer", humanizer_node)
@@ -124,17 +143,8 @@ def build_graph() -> StateGraph:
     graph.add_node("fact_checker", fact_check_node)
     graph.add_node("scorer", scorer_node)
     graph.add_node("finalize", finalize_node)
-    graph.add_node("low_coverage", low_coverage_node)
 
-    graph.set_entry_point("load_profile")
-    graph.add_edge("load_profile", "retrieval")
-    graph.add_conditional_edges(
-        "retrieval",
-        route_after_retrieval,
-        {"draft": "plan", "low_coverage": "low_coverage"},
-    )
     graph.add_edge("plan", "draft")
-    graph.add_edge("low_coverage", END)
     graph.add_edge("draft", "critic")
     graph.add_edge("critic", "humanizer")
     graph.add_edge("humanizer", "predictability_audit")
@@ -158,11 +168,45 @@ def build_graph() -> StateGraph:
     graph.add_edge("fact_checker", "finalize")
     graph.add_edge("finalize", END)
 
+
+# What runs after plan, per variant (config.features.PIPELINE_VARIANTS).
+# Everything up to and including plan is shared. B and C are wired in
+# pipeline/single_writer.py.
+_AFTER_PLAN: dict[str, Callable[[StateGraph], None]] = {
+    "A": _wire_rewrite_chain,
+    "B": wire_reviewed,
+    "C": wire_draft_only,
+}
+
+
+def build_graph(variant: str):
+    """The compiled pipeline for one variant: the shared nodes up to plan, then
+    that variant's steps. Raises PipelineConfigError for an unknown variant."""
+    wire_after_plan = _AFTER_PLAN[features.VARIANT_GRAPH[features.validate_pipeline_variant(variant)]]
+    graph = StateGraph(PipelineState)
+
+    graph.add_node("load_profile", load_profile_node)
+    graph.add_node("retrieval", retrieval_node)
+    graph.add_node("plan", plan_node)
+    graph.add_node("low_coverage", low_coverage_node)
+
+    graph.set_entry_point("load_profile")
+    graph.add_edge("load_profile", "retrieval")
+    graph.add_conditional_edges(
+        "retrieval",
+        route_after_retrieval,
+        {"draft": "plan", "low_coverage": "low_coverage"},
+    )
+    graph.add_edge("low_coverage", END)
+    wire_after_plan(graph)
+
     return graph.compile()
 
 
-# Singleton compiled graph — imported by main.py
-pipeline = build_graph()
+# One compiled graph per variant, built once at import. (B-Opus and C-Opus
+# compile their own copies of B's and C's graphs: the models are in the state,
+# not in the graph.)
+PIPELINES = {variant: build_graph(variant) for variant in features.PIPELINE_VARIANTS}
 
 
 def run_pipeline(
@@ -175,13 +219,44 @@ def run_pipeline(
     *,
     user_id: str,
     no_specifics: bool = False,
+    variant: str | None = None,
+    models: dict[str, str] | None = None,
 ) -> dict:
-    """Run the pipeline. Returns status "ok" with the post, or status
+    """Run the pipeline. Returns status "ok" with the post, status
     "low_coverage" (empty post, closest_sources, suggestion) when the coverage
-    gate stops it before drafting. no_specifics=True skips the gate; it raises
-    ValueError while config.features.NO_SPECIFICS_MODE_ENABLED is off."""
+    gate stops it before drafting, or status "draft_truncated" (empty post,
+    message) when a single-writer draft was cut off at its output limit, or
+    status "draft_refused" (empty post, message) when the draft model declined
+    to write it, or "draft_empty" when a completed reply contains no usable
+    post (recorded as empty_output). no_specifics=True skips the gate; it raises
+    ValueError while config.features.NO_SPECIFICS_MODE_ENABLED is off.
+
+    Under variant B an "ok" result carries review: {outcome, issues: [{type,
+    sentence_text}]}, the acting issues on the returned post
+    (pipeline.redraft); it is None when no review ran (A, C, and B with
+    quality="draft"). Only variant A scores a post.
+
+    STOPGAP: variant B's review summary is not shown by the frontend.
+    Proper fix: feat/citations-ui exposes per-sentence citations and recorded
+    check/review results; the author decides what to change. Refine alignment
+    and explicit no-post statuses are implemented here.
+
+    variant: which pipeline to run (config.features.PIPELINE_VARIANTS). None
+    uses the configured one (PIPELINE_VARIANT, default C-Opus); evals pass it to
+    compare variants. An unknown variant raises PipelineConfigError.
+
+    models: evals only. Role models that replace the variant's own
+    (llm.models.role_models), e.g. {"small": ...} for the small-model check. Not
+    accepted under A, whose agents use fixed models."""
     if no_specifics and not features.NO_SPECIFICS_MODE_ENABLED:
         raise ValueError("no-specifics mode is disabled (config.features.NO_SPECIFICS_MODE_ENABLED)")
+    variant = features.pipeline_variant() if variant is None else features.validate_pipeline_variant(variant)
+    if features.VARIANT_GRAPH[variant] == "A":
+        if models:
+            raise ValueError("pipeline A uses fixed models; role models apply to the single-writer variants")
+        single_writer_models = {}
+    else:
+        single_writer_models = {"models": role_models(variant, models)}
     initial_state: PipelineState = {
         "topic": topic,
         "format": format,
@@ -190,6 +265,8 @@ def run_pipeline(
         "context": context,
         "quality": quality,
         "user_id": user_id,
+        "variant": variant,
+        **single_writer_models,
         "iterations": 0,
         "archetype": "",
         "critic_brief": {},
@@ -200,7 +277,7 @@ def run_pipeline(
     }
 
     with trace_calls() as calls:
-        result = pipeline.invoke(initial_state)
+        result = PIPELINES[variant].invoke(initial_state)
 
     # The trace is diagnostic only: a failed write must never fail generation.
     trace_id: str | None = None
@@ -231,6 +308,22 @@ def run_pipeline(
             "trace_id": trace_id,
         }
 
+    if result.get("draft_truncated") or result.get("draft_refused") or result.get("draft_empty"):
+        refused = bool(result.get("draft_refused"))
+        empty = bool(result.get("draft_empty"))
+        return {
+            "status": "draft_refused" if refused else "draft_empty" if empty else "draft_truncated",
+            "post": "",
+            "message": DRAFT_REFUSED_MESSAGE if refused else DRAFT_EMPTY_MESSAGE if empty else DRAFT_TRUNCATED_MESSAGE,
+            "score": 0,
+            "score_feedback": [],
+            "iterations": 0,
+            "archetype": result.get("archetype", ""),
+            "scored": False,
+            "retrieval_confidence": result.get("retrieval_confidence", "medium"),
+            "trace_id": trace_id,
+        }
+
     return {
         "status": "ok",
         "post": result.get("final_post", result.get("current_draft", "")),
@@ -238,8 +331,9 @@ def run_pipeline(
         "score_feedback": result.get("score_feedback", []),
         "iterations": result.get("iterations", 1),
         "archetype": result.get("archetype", ""),
-        "scored": quality == "polished" and not result.get("score_error"),
+        "scored": variant == "A" and quality == "polished" and not result.get("score_error"),
         "retrieval_confidence": result.get("retrieval_confidence", "medium"),
         "trace_id": trace_id,
         "fact_check_job": fact_check_job,
+        "review": review_summary(result),
     }

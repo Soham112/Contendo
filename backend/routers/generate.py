@@ -43,10 +43,38 @@ class ClosestSource(BaseModel):
     similarity: float
 
 
+class ReviewIssue(BaseModel):
+    type: str
+    sentence_text: str
+
+
+class RemovedContent(BaseModel):
+    # What the review said the removed text mainly was (feeling_or_reaction,
+    # motive, fact_or_event, generalisation, ...); None when it had no record.
+    kind: str | None
+    text: str
+
+
+class ReviewSummary(BaseModel):
+    # clean | fixed | issues_remain | not_reviewed (pipeline.redraft.outcome_node).
+    outcome: str
+    # The acting issues still on the returned post. Record-only issue types
+    # (changed_detail, ai_rhythm) are in the generation trace, never here.
+    issues: list[ReviewIssue] = []
+    # Content taken out of the post because no source states it. Nothing shows
+    # it yet; it is what a later "ask the author" step would ask about.
+    removed: list[RemovedContent] = []
+
+
 class GenerateResponse(BaseModel):
     # "ok", or "low_coverage": the knowledge base doesn't cover the topic, so
     # nothing was drafted (post is ""); see closest_sources and suggestion.
+    # Or "draft_truncated": the draft was cut off at its output limit, so no
+    # post is returned (post is ""); message says so. Or "draft_refused": the
+    # draft model declined to write it; same shape. "draft_empty" means the
+    # completed reply contained no usable post. Single-writer pipeline only.
     status: str = "ok"
+    message: str = ""
     post: str
     score: int
     score_feedback: list[str]
@@ -59,6 +87,9 @@ class GenerateResponse(BaseModel):
     suggestion: str = ""
     # Whether the low-coverage notice may offer an opinion post without specifics.
     no_specifics_enabled: bool = False
+    # Single-writer pipeline B only: what its review of the post concluded.
+    # None when no review ran (pipeline A or C, or B with quality="draft").
+    review: ReviewSummary | None = None
 
 
 class ScoreRequest(BaseModel):
@@ -77,7 +108,7 @@ class RefineSelectionRequest(BaseModel):
     instruction: str
     full_post: str
     # Either one locates the post's generation trace (its original sources).
-    # Without a trace the rewrite is checked against the post and profile only.
+    # Missing tracking returns HTTP 409; it is never silently replaced.
     trace_id: UUID | None = None
     post_id: int | None = None
 
@@ -160,6 +191,7 @@ async def generate(
 
     return GenerateResponse(
         status=result.get("status", "ok"),
+        message=result.get("message", ""),
         closest_sources=result.get("closest_sources", []),
         suggestion=result.get("suggestion", ""),
         post=result["post"],
@@ -171,6 +203,7 @@ async def generate(
         retrieval_confidence=result.get("retrieval_confidence", "medium"),
         trace_id=result.get("trace_id"),
         no_specifics_enabled=features.NO_SPECIFICS_MODE_ENABLED,
+        review=result.get("review"),
     )
 
 

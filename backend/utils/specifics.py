@@ -57,12 +57,20 @@ _WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
 
 _UNIT_RE = "|".join(sorted(_UNITS, key=len, reverse=True))
 _PCT = r"(?:%|\s?percent\b|\s?per\s?cent\b)"
+# STOPGAP: an open-ended list. Currencies not named here are not recognised, so
+# an amount in one is checked only as a bare number. Proper fix: structured
+# extraction of money, dates and durations (an entity recogniser, or the
+# structured review), not a longer list.
 _CURRENCY_SUFFIX = r"(?:SEK|USD|EUR|GBP|kr|euros?|dollars?|pounds?)\b"
 
 # Ordered: earlier patterns claim their span first, so "18 hours" is a duration
 # and not also a bare 18.
 _PATTERNS: list[tuple[str, re.Pattern]] = [
     ("ago", re.compile(rf"(?P<n>{_NUM})\s+(?P<u>{_UNIT_RE}|{'|'.join(_SEASONS)})s?\s+ago\b", re.I)),
+    # STOPGAP: the "time" phrases are an open-ended list ("last spring", "first
+    # sprint"); a time reference worded any other way is not seen. Proper fix:
+    # structured extraction of money, dates and durations (an entity recogniser,
+    # or the structured review), not more phrases.
     ("time", re.compile(
         rf"\b(?:last|next|past)\s+(?:{'|'.join(_SEASONS)}|year|month|week|weekend|quarter|"
         rf"{'|'.join(_MONTHS)}|{'|'.join(_WEEKDAYS)})\b"
@@ -186,7 +194,7 @@ def _days(spec: Specific) -> float | None:
 
 
 def _supported(spec: Specific, allowed: set[tuple], allowed_values: set[float],
-               allowed_days: list[float]) -> bool:
+               allowed_days: list[float], convert_units: bool = True) -> bool:
     if spec.key in allowed:
         return True
     # A bare number restating a figure the sources give in another form
@@ -195,14 +203,19 @@ def _supported(spec: Specific, allowed: set[tuple], allowed_values: set[float],
         return spec.value in allowed_values
     # The same span of time in other units ("three months" vs "90 days"), and
     # "six days ago" when the sources say "for six days".
-    if spec.kind in ("duration", "ago"):
+    if convert_units and spec.kind in ("duration", "ago"):
         days = _days(spec)
         return days is not None and any(abs(days - d) <= 0.05 * max(days, d) for d in allowed_days)
     return False
 
 
-def unsupported_specifics(output: str, sources: Iterable[str]) -> list[Specific]:
-    """Specifics in output that no source text contains (first occurrence of each)."""
+def unsupported_specifics(output: str, sources: Iterable[str], *, convert_units: bool = True) -> list[Specific]:
+    """Specifics in output that no source text contains (first occurrence of each).
+
+    convert_units=False turns off the one approximate match: a span of time
+    given in other units ("three months" for "90 days", within 5%). Number
+    words, digit formats and a bare number restating a figure still match.
+    """
     allowed: set[tuple] = set()
     allowed_values: set[float] = set()
     allowed_days: list[float] = []
@@ -215,7 +228,7 @@ def unsupported_specifics(output: str, sources: Iterable[str]) -> list[Specific]
                 allowed_days.append(days)
     missing: dict[tuple, Specific] = {}
     for spec in extract_specifics(output or ""):
-        if not _supported(spec, allowed, allowed_values, allowed_days) and spec.key not in missing:
+        if not _supported(spec, allowed, allowed_values, allowed_days, convert_units) and spec.key not in missing:
             missing[spec.key] = spec
     return list(missing.values())
 

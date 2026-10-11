@@ -115,6 +115,47 @@ python report.py <run_id>                         # writes and prints results/<r
   `run.py`/`judge.py` refuse to start when the account is out of credits). Re-run after fixing
   it: finished results stay cached and errored ones are retried.
 
+## Ablation (pipeline variants)
+
+Variants are `A`, `B`, `C`, `B-Opus` and `C-Opus` (`backend/config/features.py`; models per role in
+`backend/llm/models.py`). The judge model and its settings are the same for every variant.
+
+The full ablation is one command, under one spend cap:
+
+```bash
+python ablate.py --name full          # shows the plan and the cap, asks first
+```
+
+It runs the full ablation's variants (`eval_config.ABLATION_VARIANTS`: A, C, B-Opus, C-Opus; B is left out),
+judges `unsupported_specifics` (Sonnet) and answer relevancy (Haiku), runs the review regression set once and
+writes `results/ablations/full/ablation.md`, which opens with the decision rules fixed before the run
+(`eval_config.DECISION_RULES`). It does not run the instrument.
+`EVAL_SPEND_CAP_USD` in `eval_config.py` (14) caps the whole thing: measured cost is added to
+`results/ablations/full/spend.json` after every post, and the step in progress stops before its next post once
+the cap is reached and says where. `--spend-cap` overrides the cap; running the command again reuses the runs
+already made and continues the judging.
+
+The steps can also be run one at a time (add `--ablation <name>` to each to put them under the same cap):
+
+```bash
+python run.py --quality standard --variant A --only pm-05 ...     # one run per variant
+python judge.py <run_id> --judge-model SONNET --metric unsupported_specifics
+python judge.py <run_id>                                          # full run only: the Haiku metrics
+python instrument.py <run_id>                                     # review of the final posts (calls Claude for A and C)
+python report.py --variants <run A> <run B> <run C> <run B-Opus> --name smoke
+python blind.py audit smoke     # audit.md: mark 10 judge findings correct / wrong
+python blind.py make smoke      # read.md: rank four posts per golden, blind
+python blind.py score smoke     # then re-run report.py --variants to add both to ablation.md
+python review_regression.py     # the review development set on REVIEW_MODEL; not part of the decision
+```
+
+- Everything lands in `results/ablations/<name>/`: `ablation.md`, `ablation.json` (the runs), `audit.md`,
+  `audit-key.json`, `read.md`, `key.json`, and after `score`, `audit.json` and `blind.json`.
+- `instrument.py` is record-only and uses the reviewer B was fixed against, so it is biased in B's favour.
+- Below 8 of 10 audited findings correct, `ablation.md` labels `unsupported_specifics` unreliable.
+- `PIPELINE_VARIANT` may be set in `evals/.env` as the default for `run.py`; an unknown value stops every script.
+- Costs everywhere come from `backend/llm/pricing.py`.
+
 ## Known retrieval gaps
 
 - **pm-04** ("How to say no to sales without becoming the villain"): the knowledge base
