@@ -257,8 +257,39 @@ def run_checks(state: PipelineState, marker_failures: list[dict]) -> dict[str, A
     return {"issues": issues, "counts": {kind: n for kind, n in counts.items() if n}}
 
 
+def run_passage_checks(text: str, spans: list[dict], marker_failures: list[dict], source_index: dict,
+                       chunks: list[dict], request: list[str], profile: dict) -> dict[str, Any]:
+    """The checks that apply to one rewritten passage of a finished post (a
+    selection refine): the citation grammar (malformed markers, unknown ids,
+    uncited prose), specifics against the cited sources, specifics in a view,
+    and banned text. {issues, counts}, as run_checks returns.
+
+    The post-level checks are not run: the event, mixed authorship and length
+    are properties of a whole draft. request is what [[R]] may cite: the
+    topic, the context and the author's instruction."""
+    texts = _source_texts(source_index, chunks)
+    issues = [
+        *citation_malformed(marker_failures),
+        *citation_unknown_id(spans, source_index),
+        *uncited_span(spans),
+        *specific_not_in_cited_source(spans, texts, request),
+        *view_contains_specific(spans, texts, request),
+        *banned_text(text, spans, profile, first_post=False),
+    ]
+    counts = {kind: sum(1 for issue in issues if issue["type"] == kind) for kind in ISSUE_TYPES}
+    return {"issues": issues, "counts": {kind: n for kind, n in counts.items() if n}}
+
+
 def checks_node(state: PipelineState) -> PipelineState:
     """Check the finalised draft. Recorded only: nothing here changes the post.
+
+    DECISION (2026-10-10): under the default pipeline (C-Opus) these results
+    stay in the generation trace and are not acted on or shown. The ablation
+    "full" compared acting on issues (B-Opus: review, fixes, deletions) with not
+    acting (C-Opus), and the blind read preferred the post left alone in 10 of
+    10 goldens, partly because deletions orphaned sentences. The results are to
+    be surfaced to the author with per-sentence citations instead, on a later
+    branch (feat/citations-ui), so the author decides what to change.
 
     Sets checks_before_trim, and checks_final to the same result: it stays the
     final one unless a trim changes the post and recheck_node replaces it.

@@ -6,6 +6,7 @@ import { useApi } from "@/lib/api";
 import DiagramView from "@/components/DiagramView";
 import { svgToPngDataURL } from "@/lib/svg";
 import type { ClosestSource, ScoreResponse } from "@/lib/api";
+import { generateOutcome } from "@/lib/generate-outcome";
 import { LowCoverageNotice, OpinionPostLabel } from "@/components/LowCoverageNotice";
 import { useTracking } from "@/lib/useTracking";
 
@@ -78,7 +79,8 @@ const LENGTH_META: Record<Format, Record<Length, string>> = {
 };
 
 interface GenerateResult {
-  status?: "ok" | "low_coverage";
+  status?: "ok" | "low_coverage" | "draft_truncated" | "draft_refused";
+  message?: string;
   post: string;
   score: number;
   score_feedback: string[];
@@ -1113,11 +1115,18 @@ export default function CreatePost() {
       }
 
       const data: GenerateResult = await res.json();
-      if (data.status === "low_coverage") {
-        setLowCoverage(data.closest_sources ?? []);
-        setNoSpecificsEnabled(data.no_specifics_enabled ?? false);
+      const outcome = generateOutcome(data);
+      if (outcome.kind === "low_coverage") {
+        setLowCoverage(outcome.closestSources);
+        setNoSpecificsEnabled(outcome.noSpecificsEnabled);
         logEvent({ event_type: "feature_start", page_url: "/create", button_name: "low_coverage_notice" });
         return; // nothing was drafted, so nothing to autosave
+      }
+      if (outcome.kind === "no_post") {
+        // The draft was cut off or declined: say so. Nothing is shown as a post or saved.
+        setError(outcome.message);
+        logEvent({ event_type: "feature_start", page_url: "/create", button_name: `generate_${outcome.status}` });
+        return;
       }
       setOpinionMode(opts?.noSpecifics ?? false);
       pendingTraceIdRef.current = data.trace_id ?? null;

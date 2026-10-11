@@ -14,19 +14,24 @@ NO_SPECIFICS_MODE_ENABLED = False
 # ── Pipeline variant (ablation on feat/single-writer) ─────────────────────────
 #
 # Which post-draft pipeline run_pipeline uses:
-#   A  current pipeline: draft → critic → humanizer → audit → enforcer
+#   A  the former pipeline: draft → critic → humanizer → audit → enforcer
 #   B  single writer:    draft → checks → at most one redraft → trim
 #   C  draft only:       draft → trim
 #   B-Opus, C-Opus  B's and C's pipelines with another draft model
 #           (llm.models.VARIANT_ROLE_MODELS)
-# Set with the PIPELINE_VARIANT environment variable. Unset or empty means A,
-# so production stays on A until the variable is set on Railway. Evals pass a
-# variant to run_pipeline directly; it is never a /generate request field.
+# The default is C-Opus (decided 2026-10-10 from the pre-registered ablation
+# "full": in the blind read C-Opus was ranked above B-Opus in 10 of 10 goldens
+# and above A in 10 of 10). Under C and C-Opus every quality setting runs the
+# same pipeline: there is no review, scorer or rewrite loop to switch.
+# The PIPELINE_VARIANT environment variable overrides the default. Unset or
+# empty means the default. PIPELINE_VARIANT=A is the rollback switch: it stays
+# valid until pipeline A's code is removed (chore/remove-pipeline-a). Evals
+# pass a variant to run_pipeline directly; it is never a /generate request field.
 PIPELINE_VARIANTS = ("A", "B", "C", "B-Opus", "C-Opus")
 # The graph each variant runs (pipeline.graph). A variant that differs from
 # another only in its models shares that one's graph.
 VARIANT_GRAPH = {"A": "A", "B": "B", "C": "C", "B-Opus": "B", "C-Opus": "C"}
-DEFAULT_PIPELINE_VARIANT = "A"
+DEFAULT_PIPELINE_VARIANT = "C-Opus"
 PIPELINE_VARIANT_ENV = "PIPELINE_VARIANT"
 
 

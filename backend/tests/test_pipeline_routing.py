@@ -168,13 +168,22 @@ def _run_pipeline(**kwargs):
     return run_pipeline(topic="t", format="linkedin post", tone="casual", user_id="u", **kwargs)
 
 
-def test_the_default_variant_is_a(monkeypatch):
+def test_the_default_variant_is_c_opus(monkeypatch):
     from config import features
 
+    assert features.DEFAULT_PIPELINE_VARIANT == "C-Opus"
     monkeypatch.delenv("PIPELINE_VARIANT", raising=False)
-    assert features.pipeline_variant() == "A"
+    assert features.pipeline_variant() == "C-Opus"
     monkeypatch.setenv("PIPELINE_VARIANT", "")
-    assert features.pipeline_variant() == "A"
+    assert features.pipeline_variant() == "C-Opus"
+
+
+def test_pipeline_a_stays_selectable_as_the_rollback_switch(stubbed_pipelines, fake_db, monkeypatch):
+    monkeypatch.setenv("PIPELINE_VARIANT", "A")
+    _run_pipeline()
+
+    assert _recorded_variant(fake_db) == "A"
+    assert stubbed_pipelines == A_NODE_ORDER
 
 
 @pytest.mark.parametrize("variant", ["A", "B", "C"])
@@ -292,11 +301,15 @@ def test_a_run_takes_the_targeted_path_or_the_full_redraft_never_both_and_never_
     assert {"review_redraft", "review_fixed", "trim", "outcome"} <= _reachable_from("redraft")
 
 
-def test_run_pipeline_defaults_to_a_and_records_it_in_the_trace(stubbed_pipelines, fake_db):
-    _run_pipeline()
+@pytest.mark.parametrize("quality", ["draft", "standard", "polished"])
+def test_run_pipeline_defaults_to_c_opus_at_every_quality(stubbed_pipelines, fake_db, quality):
+    result = _run_pipeline(quality=quality)
 
-    assert _recorded_variant(fake_db) == "A"
-    assert stubbed_pipelines == A_NODE_ORDER
+    [trace] = fake_db.tables["generation_traces"]
+    assert trace["node_outputs"]["variant"] == "C-Opus"
+    assert trace["node_outputs"]["models"]["draft"] == "claude-opus-5-5"
+    assert stubbed_pipelines == SINGLE_WRITER_NODE_ORDER          # one draft; no review, critic, scorer or rewrite
+    assert result["scored"] is False and result["review"] is None
 
 
 def test_run_pipeline_uses_the_configured_variant(stubbed_pipelines, fake_db, monkeypatch):
@@ -331,4 +344,4 @@ def test_a_generate_request_cannot_choose_the_variant(stubbed_pipelines, fake_db
     )
 
     assert resp.status_code == 200
-    assert _recorded_variant(fake_db) == "A"
+    assert _recorded_variant(fake_db) == "C-Opus"       # the configured default, not the "B" in the request

@@ -248,7 +248,7 @@ def build_prompt(state: PipelineState, chunks_text: str) -> str:
 
 # Every example below is a placeholder in angle brackets, never a sentence that
 # could be copied into a post.
-_CITATION_RULES = """---
+CITATION_RULES = """---
 CITATION RULES (mandatory):
 Every sentence of the post ends with exactly one marker that says where its content comes from:
 - [[S2]]: source S2 states it. Use the id of the source that states it.
@@ -320,7 +320,7 @@ CITED_PROMPT = (
     "STYLE RULES (mandatory):\n"
     "{style_rules}\n"
     "---\n\n"
-    + _CITATION_RULES + "\n\n"
+    + CITATION_RULES + "\n\n"
     "{event_rule}"
     + _VISUALS + "\n\n"
     "{output_format}\n\n"

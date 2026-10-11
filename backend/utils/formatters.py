@@ -133,13 +133,14 @@ def count_words(text: str) -> int:
 # (2026-10-09): 419 output tokens for a 225-word post, citation markers and
 # EVENT line included, so about 1.9. One sample: hence the margin.
 TOKENS_PER_WORD_CLAUDE_4 = 1.9
-# Claude 4.7 tokenizer (the 5.5 models): measured on six Claude Opus 5.5 drafts
-# in the step 7 smoke (2026-10-10): 1.94 to 2.36 output tokens per word,
-# thinking excluded, mean 2.18. The constant is the largest seen, rounded up:
-# the margin below is for a draft that runs long, not for a draft that
-# tokenizes heavily. (The same smoke measured 1.35 to 1.71, mean 1.50, on
-# twelve Sonnet 4.6 drafts, so the Claude 4 figure above is on the safe side.)
-TOKENS_PER_WORD_CLAUDE_4_7 = 2.4
+# Claude 4.7 tokenizer (the 5.5 models): measured on the 40 Claude Opus 5.5
+# drafts of ablation "full" (2026-10-10; B-Opus and C-Opus, 20 goldens each):
+# 2.18 output tokens per word of the marked draft on average, thinking
+# excluded, and at most 2.50. The constant is the largest seen: the margin
+# below is for a draft that runs long, not for one that tokenizes heavily.
+# (The same ablation measured 1.52 on average and at most 1.70 on 20 Sonnet 4.6
+# drafts, so the Claude 4 figure above is on the safe side.)
+TOKENS_PER_WORD_CLAUDE_4_7 = 2.5
 TOKENS_PER_WORD = {TOKENIZER_CLAUDE_4: TOKENS_PER_WORD_CLAUDE_4, TOKENIZER_CLAUDE_4_7: TOKENS_PER_WORD_CLAUDE_4_7}
 # Room above the target's ceiling, so a draft that runs somewhat long is
 # finished and then trimmed, rather than cut off mid-sentence.

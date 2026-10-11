@@ -286,27 +286,51 @@ def build_sources_block(chunks: list[dict], profile: dict) -> SourcesBlock:
     for position, chunk in enumerate(chunks):
         sid = source_id(position)
         frame = chunk_frame(chunk, profile)
-        source_type = chunk_field(chunk, "source_type")
-        if not source_type:
-            logger.debug("sources block: %s has no source_type; shown as %r", sid, UNKNOWN_SOURCE_TYPE)
         index[sid] = {
             "position": position,
             "chunk_id": chunk.get("id") or chunk.get("chunk_id") or None,
             "frame": frame,
             "authorship": authorship(frame),
         }
-        attributes = {
-            "id": sid,
-            "kind": FRAMES[frame].label,
-            "type": source_type or UNKNOWN_SOURCE_TYPE,
-            "tags": ", ".join(sorted(chunk_tags(chunk))) or "none",
-        }
-        rendered = " ".join(f'{name}="{_attribute(value)}"' for name, value in attributes.items())
-        lines += [f"<source {rendered}>",
-                  _source_body(chunk_field(chunk, "text") or chunk_field(chunk, "content")),
-                  "</source>"]
+        lines += _source_lines(sid, chunk, frame)
     lines.append("</sources>")
     return SourcesBlock("\n".join(lines), index)
+
+
+def _source_lines(sid: str, chunk: dict, frame: str) -> list[str]:
+    """One <source> element of the sources block."""
+    source_type = chunk_field(chunk, "source_type")
+    if not source_type:
+        logger.debug("sources block: %s has no source_type; shown as %r", sid, UNKNOWN_SOURCE_TYPE)
+    attributes = {
+        "id": sid,
+        "kind": FRAMES[frame].label,
+        "type": source_type or UNKNOWN_SOURCE_TYPE,
+        "tags": ", ".join(sorted(chunk_tags(chunk))) or "none",
+    }
+    rendered = " ".join(f'{name}="{_attribute(value)}"' for name, value in attributes.items())
+    return [f"<source {rendered}>",
+            _source_body(chunk_field(chunk, "text") or chunk_field(chunk, "content")),
+            "</source>"]
+
+
+def sources_block_from_index(source_index: dict[str, dict], chunks: list[dict]) -> str:
+    """The sources block of a finished run, rebuilt from what its trace stored:
+    each id in the stored index, with the frame the index recorded, around the
+    stored chunk at the position the index recorded. Ids and frames are never
+    worked out again from the chunks' order or the profile, so the block names
+    every source exactly as the post's citations do. An entry whose position is
+    outside `chunks` raises ValueError: the trace does not hold that source."""
+    if not source_index:
+        return NO_CHUNKS_BLOCK
+    lines = ["<sources>"]
+    for sid, entry in sorted(source_index.items(), key=lambda item: item[1]["position"]):
+        position = entry["position"]
+        if not 0 <= position < len(chunks):
+            raise ValueError(f"source index entry {sid} points at chunk {position}, and the trace stores {len(chunks)}")
+        lines += _source_lines(sid, chunks[position], entry["frame"])
+    lines.append("</sources>")
+    return "\n".join(lines)
 
 
 def frame_rules(chunks: list[dict], profile: dict) -> str:

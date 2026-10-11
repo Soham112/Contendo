@@ -50,8 +50,14 @@ export interface ClosestSource {
 }
 
 export interface GenerateResponse {
-  /** "low_coverage": the knowledge base doesn't cover the topic; post is "". */
-  status?: "ok" | "low_coverage";
+  /**
+   * "low_coverage": the knowledge base doesn't cover the topic; post is "".
+   * "draft_truncated" / "draft_refused": nothing was written; post is "" and
+   * `message` says why. Read it with generateOutcome() (lib/generate-outcome.ts).
+   */
+  status?: "ok" | "low_coverage" | "draft_truncated" | "draft_refused";
+  /** Why there is no post, for the statuses that have none. */
+  message?: string;
   post: string;
   score: number;
   score_feedback: string[];

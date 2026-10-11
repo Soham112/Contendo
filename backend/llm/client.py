@@ -36,14 +36,13 @@ MAX_NON_STREAMING_OUTPUT_TOKENS = 16_000
 
 # Room added to a call's max_tokens on a model that thinks by default: thinking
 # counts against max_tokens, so a budget sized for the answer alone can be used
-# up before any text is written. Measured on Claude Opus 5.5 drafts at effort
-# "medium" (2026-10-10; the step 7 smoke's six goldens and three probe runs of
-# pm-05, concise and standard LinkedIn posts): 711 to 1,499 thinking tokens,
-# median 831. The allowance is twice the largest seen, because no long-form
-# draft was in the sample and a draft cut off by its budget is a lost post,
-# while allowance that is not used costs nothing. Re-measure on the full
-# ablation (evals ablation.md, "Draft budget").
-THINKING_ALLOWANCE_TOKENS = 3_000
+# up before any text is written. Measured on the 40 Claude Opus 5.5 drafts of
+# ablation "full" (2026-10-10; B-Opus and C-Opus, 20 goldens each, effort
+# "medium", LinkedIn posts and Medium articles at every length the goldens
+# use): at most 1,740 thinking tokens in a draft, median about 1,050. The
+# allowance is twice the largest seen, rounded up to the hundred: a draft cut
+# off by its budget is a lost post, while allowance that is not used costs nothing.
+THINKING_ALLOWANCE_TOKENS = 3_500
 
 REFUSAL = "refusal"   # stop_reason of a reply a safety classifier declined
 
