@@ -107,21 +107,24 @@ class PipelineState(TypedDict, total=False):
     #   {max_tokens, output_tokens}; the run then returns no post.
     # draft_refused: set only when the model declined to write the draft
     #   (stop_reason "refusal"), {category}; the run then returns no post.
-    # trim_result: set only when the post was over its maximum and the trim ran,
-    #   {outcome: trimmed | trim_failed, reason, max_words, words_before,
-    #    words_after, ranking, deleted, kept_ranked}: the model's ranking of
-    #    expendable sentences, those deleted, and those ranked but not needed.
-    #    Each is [{index, span, text}]: index is the sentence's position among
-    #    the post's sentences, span the position of the span it was in
-    #    (agents.trim_agent.trim_node).
+    # compress_result: set only when the post was over its maximum and the
+    #   compress step ran, {outcome: compressed | still_over | compress_failed,
+    #    reason, model, stop_reason, max_words, words_before, words_after,
+    #    accepted: [{sentence, before, after, words_before, words_after}],
+    #    rejected: [{sentence, reason, text}], input_tokens, output_tokens,
+    #    answer, format_failures} (agents.compress_agent.compress_node).
+    # trim_result: no longer set. It is what the trim by deletion recorded
+    #   (agents.trim_agent, unused, removed on chore/remove-pipeline-a) and is
+    #   still in traces written before fix/shorten-not-trim.
     draft_truncated: dict[str, Any]
     draft_refused: dict[str, Any]
     draft_empty: dict[str, Any]  # completed reply with no usable post; reason=empty_output
+    compress_result: dict[str, Any]
     trim_result: dict[str, Any]
     # The deterministic checks (pipeline.checks), each {issues: [{type, span,
     # text, sources, detail}], counts: {type: n}}. checks_before_trim is on the
     # finalised draft; checks_final is on the post that is returned (the same
-    # result when no trim ran). After a redraft (variant B) both are the
+    # result when the compress step did not run). After a redraft (variant B) both are the
     # redraft's; the first draft's checks are then in review["first"]["checks"].
     checks_before_trim: dict[str, Any]
     checks_final: dict[str, Any]

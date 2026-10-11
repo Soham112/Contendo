@@ -1,6 +1,6 @@
 """Pipeline A's length gate: word_count_enforcer_node asks Haiku to rewrite the
-post shorter or longer. The single-writer trim (variants B and C), which only
-deletes sentences, is agents/trim_agent.py.
+post shorter or longer. What the single-writer variants do with an over-length
+post (shorten sentences, delete none) is agents/compress_agent.py.
 """
 
 import logging

@@ -1,4 +1,10 @@
-"""The single-writer trim (variants B and C): bring an over-length post under its
+"""UNUSED, removed on chore/remove-pipeline-a. No pipeline variant runs this
+since fix/shorten-not-trim (2026-10-10): deleting ranked sentences reversed a
+post's meaning in production (trace fb714878-24d2-43ba-a518-887e1fc149a8), and
+agents/compress_agent.py, which shortens sentences and deletes none, replaced
+it. Kept only so the removal is one change; tests/test_trim.py still covers it.
+
+The single-writer trim (variants B and C): bring an over-length post under its
 maximum by deleting whole sentences.
 
 One Haiku call ranks the sentences the post could lose, most expendable first.

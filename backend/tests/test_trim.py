@@ -1,4 +1,8 @@
-"""Trim by deletion (variants B and C): whole sentences are deleted, chosen by
+"""agents/trim_agent.py is UNUSED (no variant runs it since fix/shorten-not-trim;
+removed on chore/remove-pipeline-a). These tests cover the module on its own,
+and utils.citations.delete_spans, which variant B's code fixes still use.
+
+Trim by deletion: whole sentences are deleted, chosen by
 one Haiku call and removed in code. Nothing is rewritten and nothing is ever
 lengthened; an answer that cannot be used leaves the post untrimmed."""
 
@@ -66,10 +70,10 @@ def _trim_state(count=12, words_each=10, max_words=100):
 
 def _trim(claude, state, *replies):
     from agents.trim_agent import trim_node
-    from pipeline.finalise import finalise_trimmed_node
+    from pipeline.finalise import refinalise_node
 
     claude.queue(*replies)
-    return finalise_trimmed_node(trim_node(state))
+    return refinalise_node(trim_node(state))
 
 
 def test_trim_deletes_the_chosen_spans_and_the_post_is_measured_again(claude):

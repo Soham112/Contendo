@@ -15,8 +15,8 @@ NO_SPECIFICS_MODE_ENABLED = False
 #
 # Which post-draft pipeline run_pipeline uses:
 #   A  the former pipeline: draft → critic → humanizer → audit → enforcer
-#   B  single writer:    draft → checks → at most one redraft → trim
-#   C  draft only:       draft → trim
+#   B  single writer:    draft → checks → at most one redraft → compress
+#   C  draft only:       draft → compress
 #   B-Opus, C-Opus  B's and C's pipelines with another draft model
 #           (llm.models.VARIANT_ROLE_MODELS)
 # The default is C-Opus (decided 2026-10-10 from the pre-registered ablation

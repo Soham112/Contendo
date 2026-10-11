@@ -7,7 +7,7 @@ Order, after the first review found acting issues:
 1. Fixes made in code (code_fix_node), with no model:
    - not_in_sources on a whole sentence (no unsupported_part, or one that is
      the whole sentence): the sentence is deleted, by the same code that
-     deletes sentences for the trim;
+     deleted the trim's sentences (utils.citations.delete_spans);
    - wrong_citation: the sentence's marker is replaced with the place the
      review found (its supported_by); its words do not change.
    The post is then finalised and checked again, in code. A deletion can
@@ -39,7 +39,7 @@ Order, after the first review found acting issues:
    nothing is drafted again.
 
 Sentences are the post's spans cut by utils.sentences.split_spans, the same
-numbering the review and the trim use. After step 1 the post's spans are its
+numbering the review and the compress step use. After step 1 the post's spans are its
 sentences; a check issue is placed on the sentence its span became.
 
 state["review"]["fixes"]:
@@ -71,17 +71,13 @@ from pipeline.checks import REQUEST, run_checks
 from pipeline.finalise import finalise_marked, settle
 from pipeline.redraft import REDRAFT_RULES, issue_entries, split_issues
 from pipeline.state import PipelineState
-from utils.citations import Span, delete_spans, marker, replace_span
+from utils.citations import Span, delete_spans, marked as _marked, replace_span
 from utils.draft_output import parse_fixes
 from utils.formatters import STORY_ARCHETYPES
 from utils.sentences import split_spans
 from utils.wording import same_sentence
 
 logger = logging.getLogger(__name__)
-
-
-def _marked(sentence: Span) -> str:
-    return f"{sentence.text} {marker(sentence)}".rstrip()
 
 
 def _units(state: PipelineState) -> list[tuple[int, Span]]:

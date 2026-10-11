@@ -11,7 +11,7 @@ A_NODE_ORDER = [
     "predictability_audit", "word_count_enforcer", "fact_checker",
 ]
 # Variant C, and variant B with quality="draft" (pipeline/single_writer.py):
-# structure → cited draft → strip → finalise → checks, then trim → finalise →
+# structure → cited draft → strip → finalise → checks, then compress → finalise →
 # checks again only when the post is over its maximum.
 SINGLE_WRITER_NODE_ORDER = ["load_profile", "retrieval", "structure", "cited_draft", "strip", "finalise", "checks"]
 # Variant B: the first draft is reviewed. With nothing to act on, it ends there.
@@ -65,8 +65,8 @@ def stub_nodes(monkeypatch):
         monkeypatch.setattr(single_writer, "checks_node", stub("checks", lambda s: s.update(
             checks_before_trim=NO_ISSUES, checks_final=NO_ISSUES)))
         monkeypatch.setattr(single_writer, "recheck_node", stub("recheck"))
-        monkeypatch.setattr(single_writer, "trim_node", stub("trim"))
-        monkeypatch.setattr(single_writer, "finalise_trimmed_node", stub("finalise_trimmed"))
+        monkeypatch.setattr(single_writer, "compress_node", stub("compress"))
+        monkeypatch.setattr(single_writer, "refinalise_node", stub("finalise_compressed"))
         monkeypatch.setattr(single_writer, "truncated_node", stub("truncated", lambda s: s.update(final_post="")))
         # decide_node and outcome_node are not stubbed: they are code, and decide what runs.
         monkeypatch.setattr(single_writer, "review_node", stub("review", lambda s: s.update(
@@ -261,15 +261,15 @@ def test_variant_b_reviews_the_draft_and_stops_when_nothing_acts(run_graph, qual
 
 
 @pytest.mark.parametrize("variant,quality", DRAFT_ONLY)
-def test_an_over_length_post_goes_through_trim_and_is_finalised_again(run_graph, variant, quality):
+def test_an_over_length_post_goes_through_compress_and_is_finalised_again(run_graph, variant, quality):
     visited, _ = run_graph(scores=[], variant=variant, finalise_length="over_length")(quality)
 
-    assert visited == [*SINGLE_WRITER_NODE_ORDER, "trim", "finalise_trimmed", "recheck"]
+    assert visited == [*SINGLE_WRITER_NODE_ORDER, "compress", "finalise_compressed", "recheck"]
 
 
 @pytest.mark.parametrize("variant,quality", DRAFT_ONLY)
 @pytest.mark.parametrize("length", ["ok", "under_length", "no_target"])
-def test_a_post_that_is_not_over_length_is_never_trimmed(run_graph, variant, quality, length):
+def test_a_post_that_is_not_over_length_is_never_compressed(run_graph, variant, quality, length):
     visited, _ = run_graph(scores=[], variant=variant, finalise_length=length)(quality)
 
     assert visited == SINGLE_WRITER_NODE_ORDER
@@ -297,8 +297,9 @@ def test_a_run_takes_the_targeted_path_or_the_full_redraft_never_both_and_never_
     assert not writers & _reachable_from("targeted_fix")
     assert not writers & _reachable_from("redraft")
     assert {"targeted_fix", "redraft", "review_fixed"} <= _reachable_from("code_fix")      # code_fix chooses one
-    assert {"review_fixed", "trim", "outcome"} <= _reachable_from("targeted_fix")
-    assert {"review_redraft", "review_fixed", "trim", "outcome"} <= _reachable_from("redraft")
+    assert {"review_fixed", "compress", "outcome"} <= _reachable_from("targeted_fix")
+    assert {"review_redraft", "review_fixed", "compress", "outcome"} <= _reachable_from("redraft")
+    assert not writers & _reachable_from("compress")            # compress is one call and leads to no other
 
 
 @pytest.mark.parametrize("quality", ["draft", "standard", "polished"])

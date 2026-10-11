@@ -11,7 +11,7 @@ import pytest
 
 from tests.length_fixtures import KB_USER, _clean, _outputs, _run
 from tests.review_fixtures import answer_pipeline, enveloped, fixes_reply
-from tests.test_checks import _lines, _post
+from tests.test_checks import SHORT_LINE, _lines, _post
 from tests.test_generation_trace import STANDARD_RUN, seeded_kb  # noqa: F401  (shared fixture)
 
 SOURCED = "pgvector makes retrieval fast. [[S1]]"
@@ -101,7 +101,7 @@ def test_sentence_level_issues_take_the_targeted_path_and_never_a_redraft(claude
 
 def test_a_post_still_over_length_after_the_code_fixes_takes_the_full_redraft(claude, fake_db, seeded_kb):
     over = f"{_post(36)}\n\nNo marker on this line."                 # 365 words against 250-350, and an uncited line
-    answer_pipeline(claude, [over, _post(36)], trim=json.dumps({"ranking": [10]}))
+    answer_pipeline(claude, [over, _post(36)], compress=fixes_reply({n: SHORT_LINE for n in (10, 11, 12, 13)}))
 
     result = _run("B")
 
@@ -110,8 +110,8 @@ def test_a_post_still_over_length_after_the_code_fixes_takes_the_full_redraft(cl
     # The one redraft gets every remaining problem, the sentence-level one included.
     assert _types(record["redraft"]["entries"]) == ["uncited_span", "over_length"]
     events = _events(fake_db)
-    assert events.count("redraft") == 1 and "targeted_fix" not in events and events[-2:] == ["redraft", "trim"]
-    assert _outputs(fake_db)["final_validation"]["words"] == 350 and _review(result) == ("fixed", [])
+    assert events.count("redraft") == 1 and "targeted_fix" not in events and events[-2:] == ["redraft", "compress"]
+    assert _outputs(fake_db)["final_validation"]["words"] == 348 and _review(result) == ("fixed", [])
 
 
 def test_over_length_that_the_code_deletions_fix_needs_no_model(claude, fake_db, seeded_kb):
@@ -123,7 +123,7 @@ def test_over_length_that_the_code_deletions_fix_needs_no_model(claude, fake_db,
     assert _types(outputs["review"]["first"]["acting"]) == ["over_length", "not_in_sources"]
     assert outputs["review"]["fixes"]["route"] == "none" and outputs["final_validation"]["words"] == 350
     # A deletion in the middle of the post asks nothing of a model: its neighbours are left as they are.
-    assert {"redraft", "targeted_fix", "trim"} & set(_events(fake_db)) == set()
+    assert {"redraft", "targeted_fix", "compress"} & set(_events(fake_db)) == set()
     assert _review(result) == ("fixed", [])
 
 
@@ -136,7 +136,7 @@ def test_placeholder_lines_do_not_make_a_post_over_length(claude, fake_db, seede
     outputs = _outputs(fake_db)
     assert (outputs["final_validation"]["words"], outputs["final_validation"]["length"]) == (340, "ok")
     assert outputs["review"]["first"]["acting"] == [] and diagram in result["post"]
-    assert {"redraft", "targeted_fix", "trim"} & set(_events(fake_db)) == set()
+    assert {"redraft", "targeted_fix", "compress"} & set(_events(fake_db)) == set()
 
 
 def test_issues_that_remain_are_reported_and_there_is_never_a_second_fix(claude, fake_db, seeded_kb):

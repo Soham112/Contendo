@@ -140,6 +140,23 @@ def test_the_report_gives_route_rates_outcomes_removed_content_and_the_labels():
     assert "UNRELIABLE: 7 of 10 audited findings judged correct" in report
 
 
+def test_the_report_counts_compress_outcomes_and_reads_older_records_without_one():
+    counters = {"count_words": lambda t: len(t.split()), "prose_word_count": lambda t: len(t.split())}
+    def record(**outputs):
+        return ablation.post_record({"final_post": "One two three four five six.", "length_target": TARGET, **outputs}, [], counters)
+    compressed = record(compress_result={"outcome": "compressed", "reason": None, "accepted": [{}, {}], "rejected": [{}]})
+    failed = record(compress_result={"outcome": "compress_failed", "reason": "truncated", "accepted": [], "rejected": []})
+    older = record(trim_result={"outcome": "trim_failed", "reason": "still_over"})
+    del older["compress"]                                   # as a run before fix/shorten-not-trim kept it
+
+    assert compressed["compress"] == {"outcome": "compressed", "reason": None, "accepted": 2, "rejected": 1}
+    assert record()["compress"] is None and compressed["trim"] is None
+    rows = [_row(f"g{n}", r) for n, r in enumerate([compressed, failed, older, record()], 1)]
+    report = ablation.build_ablation("t", [_variant("C-Opus", rows)])
+
+    assert "| C-Opus | 1 run, 1 failed (still_over 1) | 2 run (compress_failed 1, compressed 1) |" in report
+
+
 def test_the_instrument_counts_the_last_line_per_post_and_never_a_review_that_did_not_happen():
     record = _reviewed(None, "clean")
     lines = [

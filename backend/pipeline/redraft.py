@@ -26,9 +26,9 @@ The record this builds, with pipeline/fixes.py, is state["review"]:
     redraft_truncated  {max_tokens, output_tokens}: only when the full redraft
                was cut off; the post as the code fixes left it is then returned
     second     {checks, acting, recorded}: the issues after the fixes or the
-               redraft, before any trim
+               redraft, before the compress step
     removed    content taken out because nothing states it: [{kind, text, how, by}]
-    remaining  acting issues on the post that is returned (after any trim)
+    remaining  acting issues on the post that is returned (after any compress)
     unreviewed sentences of the returned post with no valid review record
     outcome    clean | fixed | issues_remain | not_reviewed
 
@@ -265,24 +265,24 @@ def outcome_node(state: PipelineState) -> PipelineState:
     Does nothing when no review ran (quality="draft"). The returned post's
     review is the last one that ran: the second, whenever anything acted. The
     remaining issues are then the final checks' acting issues plus that
-    review's acting issues whose sentence the trim did not delete. The post is
-    not_reviewed when a sentence still in it has no valid review record.
+    review's acting issues. The post is not_reviewed when a sentence has no
+    valid review record. The compress step deletes no sentence, so every
+    sentence the review numbered is still in the post, at the same number; a
+    sentence compress shortened keeps the record of its longer wording and is
+    not reviewed again (compress_result.accepted lists them).
     """
     record = state.get("review")
     if record is None:
         return state
     second_review = state.get("review_second")
     review = second_review or state["review_first"]
-    # The trim numbers sentences as the review does (utils.sentences.split_spans).
-    deleted = {entry["index"] for entry in (state.get("trim_result") or {}).get("deleted", [])}
     remaining: list[dict] = []
     if second_review is not None:
         acting, recorded = split_issues(state["checks_before_trim"], second_review)
         record["second"] = {"checks": state["checks_before_trim"], "acting": acting, "recorded": recorded}
         final_acting, _ = split_issues(state["checks_final"], {"issues": []})
-        remaining = [*final_acting,
-                     *(issue for issue in acting if issue["origin"] == "review" and issue["sentence"] not in deleted)]
-    unreviewed = [position for position in review["unreviewed"] if position not in deleted]
+        remaining = [*final_acting, *(issue for issue in acting if issue["origin"] == "review")]
+    unreviewed = list(review["unreviewed"])
     if unreviewed:
         outcome = "not_reviewed"
     elif "fixes" not in record:

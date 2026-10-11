@@ -338,6 +338,11 @@ def marker(span: Span) -> str:
     return f"[[{VIEW}]]" if span.basis == "view" else ""
 
 
+def marked(span: Span) -> str:
+    """A span's text with its marker after it, as the drafter is shown a sentence."""
+    return f"{span.text} {marker(span)}".rstrip()
+
+
 def with_markers(text: str, spans: Sequence[Span]) -> str:
     """A clean post with each span's marker written after it again: what
     strip_citations(…) reads back as the same text and spans."""

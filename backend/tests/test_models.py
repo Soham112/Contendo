@@ -9,8 +9,8 @@ from anthropic.types import Message, OutputTokensDetails, RefusalStopDetails, Te
 from pydantic import BaseModel
 
 from llm.models import HAIKU_4_5, HAIKU_5_5, OPUS_5_5, SONNET_4_6, SONNET_5_5
-from tests.length_fixtures import KB_USER, _outputs, _post, _run
-from tests.review_fixtures import answer_pipeline, enveloped
+from tests.length_fixtures import KB_USER, _outputs, _post, _run, _shorter
+from tests.review_fixtures import answer_pipeline, enveloped, is_compress_prompt
 from tests.test_generation_trace import STANDARD_RUN, seeded_kb  # noqa: F401  (shared fixture)
 
 CLEAN = "pgvector makes retrieval fast. [[S1]]\n\nThat is most of the argument. [[V]]"
@@ -71,19 +71,24 @@ def test_variant_tables_agree_and_every_model_has_a_price():
 @pytest.mark.parametrize("variant,drafter", [("B", SONNET_4_6), ("C", SONNET_4_6), ("B-Opus", OPUS_5_5),
                                              ("C-Opus", OPUS_5_5)])
 def test_each_call_of_a_run_uses_its_role_model(claude, fake_db, seeded_kb, variant, drafter):
-    over = _post(36)                       # 360 words: over the standard maximum, so the trim runs too
-    answer_pipeline(claude, [over, over], trim='{"ranking": [36, 35, 34, 33, 32, 31, 30]}')
+    over = _post(36)                       # 360 words: over the standard maximum, so the compress step runs too
+    answer_pipeline(claude, [over, over], compress=_shorter([30, 31, 32, 33]))
 
     result = _run(variant)
 
     assert result["status"] == "ok"
     called = _models_called(claude)
     assert called["drafter"] == {drafter}
-    assert called["choose_post_type"] == called["rank_sentences_to_delete"] == {HAIKU_4_5}
+    assert called["choose_post_type"] == {HAIKU_4_5}
+    # The compress call is a drafter call: the draft's model, and the draft's effort where it has one.
+    [compress] = [call for call in claude.calls if is_compress_prompt(call["messages"][-1]["content"])]
+    [draft] = [call for call in claude.calls if "tools" not in call][:1]
+    assert compress["model"] == drafter and compress.get("output_config") == draft.get("output_config")
+    assert compress["max_tokens"] == draft["max_tokens"]
     if variant in ("B", "B-Opus"):
         assert called["record_review"] == {SONNET_4_6}
     else:
-        assert "record_review" not in called            # C and C-Opus draft and trim, nothing else
+        assert "record_review" not in called            # C and C-Opus draft and compress, nothing else
     outputs = _outputs(fake_db)
     assert outputs["variant"] == variant
     assert outputs["models"] == {"draft": drafter, "review": SONNET_4_6, "small": HAIKU_4_5}

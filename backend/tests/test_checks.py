@@ -10,6 +10,7 @@ from tests.conftest import ARCHETYPE_GENERAL
 from tests.checks_fixtures import PRICING, SURVEY
 from tests.generation_fixtures import ARTICLE, OWN, PROFILE, enveloped, make_state
 from tests.length_fixtures import DRAFT_ONLY, _outputs, _run
+from tests.review_fixtures import fixes_reply
 from tests.test_generation_trace import STANDARD_RUN, seeded_kb  # noqa: F401  (shared fixture)
 
 STORY_KEY = "before_after"
@@ -23,6 +24,9 @@ def _lines(count: int) -> list[str]:
 
 def _post(count: int) -> str:
     return "\n\n".join(_lines(count))
+
+
+SHORT_LINE = "Plain word word word word word word. [[V]]"       # a line of _lines() in seven words instead of ten
 
 
 def _check(marked: str, chunks=(PRICING, SURVEY), archetype="general", **overrides) -> dict:
@@ -71,18 +75,19 @@ def test_well_formed_markers_and_ordinary_brackets_are_not_malformed():
     assert _of(result, "citation_malformed") == []
 
 
-def test_after_a_trim_only_markers_still_in_the_post_are_reported(claude):
-    from agents.trim_agent import trim_node
+def test_after_a_compress_only_markers_still_in_the_post_are_reported(claude):
+    from agents.compress_agent import compress_node
     from pipeline.checks import checks_node, recheck_node
-    from pipeline.finalise import finalise_draft_node, finalise_trimmed_node
+    from pipeline.finalise import finalise_draft_node, refinalise_node
 
     marked = "A bad one. [[S1 and S2]]\n\nA stray one. [S1]\n\n" + _post(12)
     state = make_state([OWN], archetype="general", current_draft=marked, source_index={},
                        length_target={"min_words": 0, "max_words": 120, "may_expand": False, "basis": "thin_sources"})
     state = checks_node(finalise_draft_node(state))
-    claude.queue(json.dumps({"ranking": [5]}))
-    state = recheck_node(finalise_trimmed_node(trim_node(state)))
+    claude.queue(fixes_reply({n: SHORT_LINE for n in (5, 6, 7)}))     # 127 words against 120
+    state = recheck_node(refinalise_node(compress_node(state)))
 
+    assert state["compress_result"]["outcome"] == "compressed"
     assert [i["detail"]["kind"] for i in _of(state["checks_before_trim"], "citation_malformed")] == ["malformed", "single_brackets"]
     assert [(i["detail"]["kind"], i["text"]) for i in _of(state["checks_final"], "citation_malformed")] == [("single_brackets", "[S1]")]
 
@@ -380,13 +385,14 @@ def test_checks_are_recorded_and_add_no_call_and_change_no_post(claude, fake_db,
 
 
 @pytest.mark.parametrize("variant,quality", DRAFT_ONLY)
-def test_checks_run_again_on_the_trimmed_post(claude, fake_db, seeded_kb, variant, quality):
-    claude.queue(ARCHETYPE_GENERAL, enveloped(_post(36)), json.dumps({"ranking": [10]}))      # 360 words, trimmed to 350
+def test_checks_run_again_on_the_compressed_post(claude, fake_db, seeded_kb, variant, quality):
+    claude.queue(ARCHETYPE_GENERAL, enveloped(_post(36)),
+                 fixes_reply({n: SHORT_LINE for n in (7, 8, 9, 10)}))                          # 360 words, compressed to 348
 
     _run(variant, quality=quality)
 
     outputs = _outputs(fake_db)
-    assert len(claude.calls) == 3                                  # structure, draft, trim
+    assert len(claude.calls) == 3                                  # structure, draft, compress
     assert outputs["checks_before_trim"]["counts"] == {"over_length": 1}
     assert outputs["checks_final"] == {"issues": [], "counts": {}}
 

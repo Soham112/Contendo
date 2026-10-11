@@ -35,7 +35,7 @@ class ModelSpec:
       it is not (a 400), a structured call sends tool_choice "auto" and says in
       the prompt to call the tool (llm.client.complete_structured).
     default_effort: the API's own effort level when none is sent. Only the
-      drafter sends one (DRAFT_EFFORT, below).
+      drafter's calls send one (DRAFT_EFFORT, below).
     """
     tokenizer: str
     thinks: bool
@@ -60,9 +60,9 @@ MODELS: dict[str, ModelSpec] = {
 # ── Roles (single-writer pipeline, variants B and C) ──────────────────────────
 #
 # Pipeline A does not use roles: its agents keep llm.client.SONNET and HAIKU.
-DRAFT_MODEL = SONNET_4_6     # the draft, the targeted fix and the full redraft
+DRAFT_MODEL = SONNET_4_6     # the draft, the targeted fix, the full redraft and the compress step
 REVIEW_MODEL = SONNET_4_6    # the structured review
-SMALL_MODEL = HAIKU_4_5      # the structure choice and the trim
+SMALL_MODEL = HAIKU_4_5      # the structure choice
 
 ROLE_MODELS: dict[str, str] = {"draft": DRAFT_MODEL, "review": REVIEW_MODEL, "small": SMALL_MODEL}
 
