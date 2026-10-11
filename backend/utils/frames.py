@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from utils.citations import escape_markers, source_id
+from utils.prompt_data import escape_data_text
 
 logger = logging.getLogger(__name__)
 
@@ -246,11 +247,6 @@ SOURCES_ARE_DATA_RULE = (
 # the source is: the type is part of how a source may be written about.
 UNKNOWN_SOURCE_TYPE = "unknown"
 
-# An opening or closing <source> / <sources> tag, whatever its case or spacing.
-# These are this block's own delimiters; the match says nothing about meaning.
-_SOURCES_TAG = re.compile(r"<(?=\s*/?\s*sources?\b)", re.IGNORECASE)
-
-
 @dataclass(frozen=True)
 class SourcesBlock:
     text: str                          # the block as shown to the model
@@ -260,12 +256,6 @@ class SourcesBlock:
 def _attribute(value: str) -> str:
     """A value safe inside a double-quoted attribute of this block."""
     return escape_markers(value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;"))
-
-
-def _source_body(text: str) -> str:
-    """A source's text with this block's delimiters and citation markers made
-    inert, so no source can close the block, open a new source or carry a citation."""
-    return escape_markers(_SOURCES_TAG.sub("&lt;", text))
 
 
 def build_sources_block(chunks: list[dict], profile: dict) -> SourcesBlock:
@@ -310,7 +300,7 @@ def _source_lines(sid: str, chunk: dict, frame: str) -> list[str]:
     }
     rendered = " ".join(f'{name}="{_attribute(value)}"' for name, value in attributes.items())
     return [f"<source {rendered}>",
-            _source_body(chunk_field(chunk, "text") or chunk_field(chunk, "content")),
+            escape_data_text(chunk_field(chunk, "text") or chunk_field(chunk, "content")),
             "</source>"]
 
 

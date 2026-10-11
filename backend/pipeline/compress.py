@@ -12,6 +12,7 @@ as it was and the reason is recorded:
     marker_failure      it holds marker-like text that is not a valid marker
     not_one_sentence    it is more than one sentence, or more than one cited
                         piece: sentences are never merged or added
+    changes_sentence_boundaries  the spliced post changes sentence count or positions
     marker_missing      it has no marker and its sentence has one
     marker_wrong        its marker is not exactly its sentence's
     list_marker_lost    its sentence begins with a list marker ("- ", "* ", "1. ")
@@ -38,7 +39,7 @@ from pipeline.finalise import finalise_marked
 from utils.citations import Span, marked, marker
 from utils.draft_output import Fix
 from utils.formatters import count_words
-from utils.sentences import list_marker, split_spans
+from utils.sentences import list_marker, sentence_offsets, split_spans
 from utils.specifics import extract_specifics
 
 
@@ -50,6 +51,10 @@ class Compressed:
     rejected: tuple[dict, ...]     # {sentence, reason, text}; text is what the model gave
 
 
+# STOPGAP: structural checks (length, marker, specifics, list marker, sentence
+# boundaries) do not verify meaning: stance can change or a name/event can be added.
+# Proper fix: semantic verification of each replacement against its original,
+# as part of eval/faithfulness-judge.
 def _usable(original: Span, given: str | None) -> Span | str:
     """The replacement as a span of its own text (offsets from 0), or why it
     cannot be used. Its punctuation is normalised as finalise() would, so what
@@ -71,6 +76,9 @@ def _usable(original: Span, given: str | None) -> Span | str:
         return "list_marker_lost"
     if count_words(replacement.text) >= count_words(original.text):
         return "not_shorter"
+    # STOPGAP: money keys omit currency identity, so equal amounts in different
+    # currencies compare equal (the extractor also labels its currency stopgap).
+    # Proper fix: structured money extraction (amount + currency) in planned specifics work.
     known = {specific.key for specific in extract_specifics(original.text)}
     new = [specific.text for specific in extract_specifics(replacement.text) if specific.key not in known]
     if new:
@@ -100,6 +108,38 @@ def _splice(text: str, spans: Sequence[Span], units: Sequence[tuple[int, Span]],
                            for position, (start, end) in sorted(bounds.items()))
 
 
+def _same_boundaries(text: str, units: Sequence[tuple[int, Span]],
+                     edits: dict[int, Span], candidate: str) -> bool:
+    """Re-segment the whole post, including across citation-span boundaries.
+
+    The candidate must have exactly the original sentence sequence, substituting
+    each edited unit at its original position. List prefixes are excluded by the
+    shared splitter; punctuationless items therefore remain valid sentences.
+    """
+    expected = []
+    matched: set[int] = set()
+    for start, end in sentence_offsets(text):
+        overlaps = [index for index in edits
+                    if units[index][1].start < end and start < units[index][1].end]
+        if not overlaps:
+            expected.append(text[start:end])
+            continue
+        if len(overlaps) != 1:
+            return False
+        index = overlaps[0]
+        original, replacement = units[index][1], edits[index]
+        if index in matched or not original.start <= start < end <= original.end:
+            return False
+        offsets = sentence_offsets(replacement.text)
+        if len(offsets) != 1:
+            return False
+        begin, finish = offsets[0]
+        expected.append(replacement.text[begin:finish])
+        matched.add(index)
+    actual = [candidate[start:end] for start, end in sentence_offsets(candidate)]
+    return matched == set(edits) and actual == expected
+
+
 def apply_replacements(text: str, spans: Sequence[Span], fixes: Sequence[Fix]) -> Compressed:
     """Validate each replacement against its sentence and splice in the ones
     that pass (see the module docstring for the rules)."""
@@ -123,7 +163,12 @@ def apply_replacements(text: str, spans: Sequence[Span], fixes: Sequence[Fix]) -
         if isinstance(replacement, str):
             rejected.append({"sentence": number, "reason": replacement, "text": shown})
             continue
-        edits[number - 1] = replacement
+        proposed = {**edits, number - 1: replacement}
+        candidate, _ = _splice(text, spans, units, proposed)
+        if not _same_boundaries(text, units, proposed, candidate):
+            rejected.append({"sentence": number, "reason": "changes_sentence_boundaries", "text": shown})
+            continue
+        edits = proposed
         accepted.append({"sentence": number, "before": marked(original), "after": marked(replacement),
                          "words_before": count_words(original.text), "words_after": count_words(replacement.text)})
     new_text, new_spans = _splice(text, spans, units, edits) if edits else (text, tuple(spans))

@@ -79,9 +79,9 @@ def test_an_over_length_post_makes_exactly_one_call_that_shows_sources_sentences
     [call] = claude.calls                                         # one call, and no second one
     assert call["model"] == SONNET_4_6 and "tools" not in call
     prompt = call["messages"][-1]["content"]
-    assert f'<sources>\n<source id="S1"' in prompt and OWN["text"] in prompt and SOURCES_ARE_DATA_RULE in prompt
+    assert f'<sources>\n<source id="S1"' in prompt and OWN["text"] in prompt and SOURCES_ARE_DATA_RULE in call["system"]
     numbered = prompt[prompt.index("<post_sentences>") + 17:prompt.index("</post_sentences>")].strip().splitlines()
-    assert numbered == [f"{n}. ({count_words(text)} words) {text} {'[[S1]]' if text == FACT else '[[V]]'}"
+    assert numbered == [f'{n}. ({count_words(text)} words) "{text}" {"[[S1]]" if text == FACT else "[[V]]"}'
                         for n, text in enumerate(SENTENCES, 1)]
     assert f"The post is {WORDS} words long. Its limit is {WORDS - 8} words, so at least 8 words have to go." in prompt
     assert state["compress_result"]["outcome"] == "compressed"

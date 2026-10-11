@@ -58,9 +58,9 @@ def fixes_reply(replace: dict | None = None, delete=()) -> str:
 
 def is_compress_prompt(prompt: str) -> bool:
     """Whether a drafter-model request is the compress call (by its prompt's first line)."""
-    from agents.compress_prompt import COMPRESS_PROMPT
+    from agents.compress_prompt import COMPRESS_DATA
 
-    return prompt.startswith(COMPRESS_PROMPT.split("\n", 1)[0])
+    return prompt.startswith(COMPRESS_DATA.split("\n", 1)[0])
 
 
 def answer_pipeline(claude, drafts, reviews=(), compress=None, fixes=None, structure=ARCHETYPE_GENERAL) -> list[str]:

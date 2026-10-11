@@ -9,7 +9,9 @@ and a whole-post rewrite re-generates text nobody asked to change.
 
 One call to the run's draft model, at the draft's effort and budget, returns
 shorter replacements for the sentences it chooses. Code decides which may be
-used and splices them (pipeline/compress.py). There is never a second call:
+used and splices them (pipeline/compress.py). One logical compress call per post;
+identical transport retries per the shared client policy are allowed; never a
+second compression of the same post:
 whatever happens is recorded in state["compress_result"] and the run goes on.
 """
 
@@ -17,9 +19,9 @@ import logging
 
 import anthropic
 
-from agents.compress_prompt import build_compress_prompt
+from agents.compress_prompt import COMPRESS_PROMPT, build_compress_prompt
 from agents.draft_agent import _draft_budget, _effort, _usage_metadata
-from llm.client import REFUSAL, complete, message_text
+from llm.client import REFUSAL, StructuredOutputError, complete, message_text
 from llm.models import model_for
 from pipeline.compress import apply_replacements
 from pipeline.state import PipelineState
@@ -64,7 +66,7 @@ def compress_node(state: PipelineState) -> PipelineState:
                                  exactly as it was; reason says why: "refused",
                                  "truncated", "empty_output",
                                  "malformed_output: ...", "no_replacements",
-                                 "api_error: ..."
+                                 "api_error: ...", "response_invalid"
       accepted   [{sentence, before, after, words_before, words_after}]
       rejected   [{sentence, reason, text}]   (reasons: pipeline/compress.py)
       words_before, words_after, max_words    prose words, as the length check counts
@@ -88,12 +90,15 @@ def compress_node(state: PipelineState) -> PipelineState:
         message = complete(
             model=model,
             max_tokens=_draft_budget(state, model),
+            system=COMPRESS_PROMPT,
             messages=[{"role": "user", "content": prompt}],
             user_id=state["user_id"],
             event_type="compress",
             usage_metadata=_usage_metadata(state),
             **_effort(model),
         )
+    except StructuredOutputError:
+        result["reason"] = "response_invalid"
     except anthropic.APIError as exc:
         result["reason"] = f"api_error: {type(exc).__name__}"
     else:
