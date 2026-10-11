@@ -117,6 +117,8 @@ def parse_draft_output(text: str, *, story: bool) -> DraftOutput:
     else:
         failures += [{"kind": "text_outside_tags", "text": piece} for piece in leftover]
     failures += [{"kind": "event_repeated", "text": extra.strip()} for extra in events[1:]]
+    if not body.strip():
+        failures.append({"kind": "empty_output", "text": ""})
     status, source, quote, line = _event(events, story)
     return DraftOutput(status, source, quote, line, body.strip("\r\n"), tuple(failures))
 

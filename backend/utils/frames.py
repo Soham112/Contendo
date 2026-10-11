@@ -259,7 +259,7 @@ class SourcesBlock:
 
 def _attribute(value: str) -> str:
     """A value safe inside a double-quoted attribute of this block."""
-    return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+    return escape_markers(value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;"))
 
 
 def _source_body(text: str) -> str:
@@ -345,8 +345,9 @@ def frame_rules(chunks: list[dict], profile: dict) -> str:
 # ── Perspective ───────────────────────────────────────────────────────────────
 
 # STOPGAP: reaction/generalisation restrictions are prompt-only.
-# Proper fix: citation-based drafting plus semantic verification of attribution
-# and relationships at every output boundary (planned in feat/single-writer).
+# Proper fix: an independent faithfulness judge for attribution and relationships,
+# plus feat/citations-ui to expose sentence evidence and checks to the author.
+# C-Opus records deterministic checks only; citations alone do not verify meaning.
 # Added to every perspective.
 _NO_GENERALISING = (
     "\nDon't make claims about what most people, most founders or most teams do unless a source says so; "

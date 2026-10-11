@@ -151,8 +151,9 @@ SYSTEM_PROMPT = (
 )
 
 # STOPGAP: prompt-only relationship checks cannot prove source attribution.
-# Proper fix: citation-based drafting plus semantic verification of attribution
-# and relationships at every output boundary (planned in feat/single-writer).
+# Proper fix: an independent faithfulness judge for attribution and relationships,
+# plus feat/citations-ui to expose sentence evidence and checks to the author.
+# C-Opus records deterministic checks only; citations alone do not verify meaning.
 _CROSS_SOURCE_RULE = """CROSS-SOURCE RULE:
 Each chunk above is a separate source. Never link facts from different sources as
 cause and effect, sequence or result unless one source states that link. Facts

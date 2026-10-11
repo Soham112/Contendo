@@ -129,6 +129,8 @@ def strip_draft_node(state: PipelineState) -> PipelineState:
         }
     if output.failed:
         logger.warning("strip: event %s", output.status)
+    if any(f["kind"] == "empty_output" for f in output.format_failures):
+        state["draft_empty"] = {"reason": "empty_output"}
     state["current_draft"] = output.body
     return state
 
@@ -150,6 +152,8 @@ def finalise_draft_node(state: PipelineState) -> PipelineState:
     ]
     if stripped.failures:
         logger.warning("finalise: %d marker failure(s) in the draft", len(stripped.failures))
+    if not finalised.text.strip():
+        state["draft_empty"] = {"reason": "empty_output"}
     state["current_draft"] = state["final_post"] = finalised.text
     state["final_validation"] = finalised.record
     return state
@@ -168,6 +172,8 @@ def finalise_trimmed_node(state: PipelineState) -> PipelineState:
     if finalised.text != before:
         logger.warning("finalise: normalising changed the trimmed post; span offsets are stale")
         record = {**record, "spans_stale": True}
+    if not finalised.text.strip():
+        state["draft_empty"] = {"reason": "empty_output"}
     state["current_draft"] = state["final_post"] = finalised.text
     state["final_validation"] = record
     return state
@@ -190,7 +196,7 @@ def truncated_node(state: PipelineState) -> PipelineState:
 
 
 def route_after_cited_draft(state: PipelineState) -> str:
-    return "truncated" if state.get("draft_truncated") or state.get("draft_refused") else "strip"
+    return "truncated" if state.get("draft_truncated") or state.get("draft_refused") or state.get("draft_empty") else "strip"
 
 
 def route_to_trim(state: PipelineState) -> str:

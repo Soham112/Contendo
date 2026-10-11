@@ -14,12 +14,12 @@ it("low coverage carries the closest sources and whether an opinion post may be 
     .toEqual({ kind: "low_coverage", closestSources: [], noSpecificsEnabled: false });
 });
 
-it.each(["draft_truncated", "draft_refused"])("%s shows the backend's message and never a post", (status) => {
+it.each(["draft_truncated", "draft_refused", "draft_empty"])("%s shows the backend's message and never a post", (status) => {
   expect(generateOutcome({ status, post: "", message: "The backend's own words." }))
     .toEqual({ kind: "no_post", status, message: "The backend's own words." });
 });
 
-it.each(["draft_truncated", "draft_refused"])("%s without a message still says what happened", (status) => {
+it.each(["draft_truncated", "draft_refused", "draft_empty"])("%s without a message still says what happened", (status) => {
   const outcome = generateOutcome({ status, post: "" });
   expect(outcome).toEqual({ kind: "no_post", status, message: NO_POST_MESSAGES[status] });
   expect(NO_POST_MESSAGES[status].length).toBeGreaterThan(20);

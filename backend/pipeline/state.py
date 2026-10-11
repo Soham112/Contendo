@@ -116,6 +116,7 @@ class PipelineState(TypedDict, total=False):
     #    (agents.trim_agent.trim_node).
     draft_truncated: dict[str, Any]
     draft_refused: dict[str, Any]
+    draft_empty: dict[str, Any]  # completed reply with no usable post; reason=empty_output
     trim_result: dict[str, Any]
     # The deterministic checks (pipeline.checks), each {issues: [{type, span,
     # text, sources, detail}], counts: {type: n}}. checks_before_trim is on the

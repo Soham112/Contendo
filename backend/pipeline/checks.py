@@ -264,7 +264,7 @@ def run_passage_checks(text: str, spans: list[dict], marker_failures: list[dict]
     uncited prose), specifics against the cited sources, specifics in a view,
     and banned text. {issues, counts}, as run_checks returns.
 
-    The post-level checks are not run: the event, mixed authorship and length
+    The post-level checks are not run: the event and length
     are properties of a whole draft. request is what [[R]] may cite: the
     topic, the context and the author's instruction."""
     texts = _source_texts(source_index, chunks)
@@ -274,6 +274,7 @@ def run_passage_checks(text: str, spans: list[dict], marker_failures: list[dict]
         *uncited_span(spans),
         *specific_not_in_cited_source(spans, texts, request),
         *view_contains_specific(spans, texts, request),
+        *mixed_authorship_span(spans, source_index),
         *banned_text(text, spans, profile, first_post=False),
     ]
     counts = {kind: sum(1 for issue in issues if issue["type"] == kind) for kind in ISSUE_TYPES}

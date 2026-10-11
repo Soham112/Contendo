@@ -23,6 +23,8 @@ export type GenerateOutcome =
 
 /** Shown when the backend sent no message of its own for that status. */
 export const NO_POST_MESSAGES: Record<string, string> = {
+  draft_empty:
+    "The model returned no post. Generate again, or try a different topic or wording.",
   draft_truncated:
     "The draft was cut off before it was finished, so there is no post to show. Generate again, or choose a shorter length.",
   draft_refused:
@@ -46,4 +48,11 @@ export function generateOutcome(data: GenerateOutcomeInput): GenerateOutcome {
   if (status === "ok" && (data.post ?? "").trim() !== "") return { kind: "post" };
   const message = (data.message ?? "").trim() || NO_POST_MESSAGES[status] || NO_POST_FALLBACK;
   return { kind: "no_post", status, message };
+}
+
+/** Explanation used when onboarding cannot proceed to its draft screen. */
+export function generateErrorMessage(outcome: Exclude<GenerateOutcome, { kind: "post" }>): string {
+  return outcome.kind === "no_post"
+    ? outcome.message
+    : "Your memory doesn't cover this topic yet. Add a source about it, then generate again.";
 }

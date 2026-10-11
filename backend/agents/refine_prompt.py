@@ -86,10 +86,12 @@ Write the section again with those problems fixed.
 
 def build_refine_cited_prompt(*, profile_context: str, words_to_avoid: list[str], sources_block: str, topic: str,
                               context: str, full_post: str, selected_text: str, instruction: str,
-                              previous: str = "", problems: list[dict] | None = None) -> str:
+                              previous: str = "", problems: list[dict] | None = None, empty_retry: bool = False) -> str:
     """The prompt for one attempt. previous and problems (pipeline.redraft
     issue entries for the checks' findings on it) are given on the retry."""
     retry = _RETRY.format(previous=previous, problems=format_problems(problems)) if problems else ""
+    if empty_retry:
+        retry += "\nYour previous reply contained no rewrite or note. Return the rewritten section or the requested note."
     return REFINE_CITED_PROMPT.format(
         profile_context=profile_context,
         sources_block=sources_block,

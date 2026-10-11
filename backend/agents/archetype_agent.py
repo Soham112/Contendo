@@ -15,6 +15,7 @@ topic and every source, names the event (agents/draft_prompt.py).
 """
 
 import logging
+from uuid import uuid4
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -24,7 +25,7 @@ from llm.models import model_for
 from pipeline.state import PipelineState
 from utils.formatters import ARCHETYPES, GENERAL_ARCHETYPE, STORY_ARCHETYPES
 from utils.sentences import event_quote_failure, quote_is_in_note  # noqa: F401  (quote_is_in_note is re-exported)
-from utils.frames import chunk_field, chunk_tags, is_self_authored
+from utils.frames import SOURCES_ARE_DATA_RULE, build_sources_block, chunk_field, chunk_tags, is_self_authored
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +118,7 @@ def _offer(state: PipelineState) -> tuple[list[dict], list[dict], list[str], lis
 
 
 def _ask(state: PipelineState, schema, own: list[dict], external: list[dict],
-         allowed: list[str], story_rule: str, model: str):
+         allowed: list[str], story_rule: str, model: str, material: str | None = None):
     """The one call both choices make, to the model given (pipeline A: HAIKU;
     single writer: the run's small model); raises what complete_structured raises."""
     return complete_structured(
@@ -130,7 +131,7 @@ def _ask(state: PipelineState, schema, own: list[dict], external: list[dict],
             topic=state.get("topic", ""),
             context=(state.get("context") or "").strip() or "none",
             format=state.get("format", ""),
-            material=_material(own, external),
+            material=_material(own, external) if material is None else material,
             options="\n".join(f"- {key}: {ARCHETYPES[key].fits}" for key in allowed),
             story_rule=story_rule,
         )}],
@@ -191,23 +192,28 @@ def choose_structure(state: PipelineState) -> dict[str, Any]:
     answer outside the allowed set, gets General Post and says why.
     """
     own, external, allowed, story_keys = _offer(state)
+    model = model_for(state, "small")
+    request_id = str(uuid4())
+    chunks = [] if state.get("perspective") == "opinion" else (state.get("retrieval_bundle") or {}).get("chunks", [])
+    material = SOURCES_ARE_DATA_RULE + "\n" + build_sources_block(chunks, state.get("profile") or {}).text
     decision: dict[str, Any] = {
         "archetype": GENERAL_ARCHETYPE, "chosen": None, "allowed": allowed,
         "downgraded_from": None, "reason": None,
     }
 
     def fall_back(reason: str, chosen: str | None) -> dict[str, Any]:
-        logger.warning("structure: %s (model chose %r); using %r", reason, chosen, GENERAL_ARCHETYPE)
+        logger.warning("structure: category=%s model=%s request_id=%s", reason, model, request_id)
         return {**decision, "chosen": chosen, "downgraded_from": chosen, "reason": reason}
 
     try:
         choice = _ask(state, StructureChoice, own, external, allowed,
                       _STRUCTURE_STORY_RULE.format(story_keys=", ".join(story_keys)) if story_keys else "",
-                      model_for(state, "small"))
+                      model, material=material)
     except TruncatedStructuredOutputError:
         return fall_back("truncated", None)
     except Exception as exc:
-        return fall_back(f"inference failed: {exc}", None)
+        request_id = getattr(exc, "request_id", None) or request_id
+        return fall_back(f"inference failed: {type(exc).__name__}", None)
 
     chosen = choice.archetype.lower().strip()
     if chosen not in allowed:

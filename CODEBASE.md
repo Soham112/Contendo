@@ -7,6 +7,8 @@
 
 ## 1. FILE REGISTRY
 
+Review-fix additions: `backend/agents/refine_cited_agent.py` owns cited refinement and its retry/trace outcomes; `backend/migrations/006_add_usage_model.sql` adds persisted model IDs; `backend/tests/test_single_writer_failures.py` and `test_structure_usage_safety.py` cover failure contracts and trust boundaries; `frontend/app/first-post/page.test.tsx` exercises the page generation flow; `frontend/vitest.config.mts` resolves Next aliases and transforms JSX for that test.
+
 | File | Description |
 |------|-------------|
 | `README.md` | Project overview, architecture diagram, setup instructions |
@@ -574,6 +576,7 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
 ---
 
 ### POST /generate
+**Completed empty output:** `status: "draft_empty"`, `post: ""`, and an actionable `message`. An empty envelope, a completed reply with no text, or text that becomes empty after citation removal records `node_outputs.draft_empty = {reason: "empty_output"}`. Onboarding and Create show the message instead of saving/showing a blank draft.
 **Request body:**
 ```json
 {
@@ -782,6 +785,7 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
 ---
 
 ### POST /refine-selection
+**Single-writer path:** `agents/refine_cited_agent.py` uses the exact stored draft model, rejecting missing/unknown model IDs. Passage checks include mixed authorship. Blank replies retry once, then return `reverted` with a message; each blank attempt records `reason: "empty_output"`. Note-only replies intentionally keep the selection and show the note. Historical/A posts keep the existing prompt and Sonnet model, but read typed text blocks and explicitly revert refusals/truncations.
 **Auth:** `Depends(get_user_id_dep)`
 **Request body:**
 ```json
@@ -805,7 +809,7 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
 }
 ```
 **Errors:** 400 for an empty `selected_text` / `instruction` / `full_post`, a `full_post` over 30,000 characters, an `instruction` over 2,000 characters, or a `selected_text` longer than `full_post`; 422 for a malformed `trace_id` or `post_id` or a missing field; 503 when Anthropic is overloaded; generic 500 otherwise (exception logged, never returned).
-**Missing sources:** HTTP 409 with `detail={code: "refine_sources_missing", reason: "no_identifier" | "trace_not_found" | "structured_chunks_missing", message: "This post has no saved source tracking. Regenerate it to refine with sources."}`. Reason codes are logged; no model call or legacy source-string fallback occurs. Operational lookup exceptions remain HTTP 500: only the exception category is logged, and the UI shows “Something went wrong. Please try again.” rather than the regenerate message.
+**Missing sources:** HTTP 409 with `detail={code: "refine_sources_missing", reason: "no_identifier" | "trace_not_found" | "structured_chunks_missing" | "source_index_does_not_match_chunks" | "draft_model_missing" | "draft_model_unknown", message: "This post has no saved source tracking. Regenerate it to refine with sources."}`. Reason codes are logged; no model call or legacy source-string fallback occurs. Operational lookup exceptions remain HTTP 500: only the exception category is logged, and the UI shows “Something went wrong. Please try again.” rather than the regenerate message.
 
 **Notes:** Rewrites only the `selected_text`. `full_post` is context only — never rewritten. `trace_id` and `post_id` are both optional; either locates the post's generation trace (the caller's own only). One Claude Sonnet call (`max_tokens=500`), or two when the specifics guard asks for a retry. On `status: "reverted"` nothing changed and the frontend shows `message`. See "Selection refine is grounded in the post's sources" in section 5.
 
@@ -918,6 +922,9 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
 ---
 
 ## 4. DATA SCHEMAS
+
+### Usage events: exact model tracking
+`usage_events.model` is nullable `text`, added by `backend/migrations/006_add_usage_model.sql`. New events persist the exact provider model ID and are priced only by `llm/pricing.py`. Historical rows stay NULL; no model is guessed. Apply the migration before deploying the logger. The code expects this column and has no pre-migration fallback.
 
 ### profile data (full structure)
 
@@ -1196,6 +1203,8 @@ CREATE INDEX idx_user_events_timestamp ON user_events(timestamp);
 ---
 
 ## 6. WHAT IS NOT BUILT YET
+
+First after this merge: `fix/retrieval-failure-status`, to distinguish retrieval outages from low coverage and remove topic/source excerpts from logs. This branch adds labels only.
 
 ### `feat/archetype-set` follow-up notes
 

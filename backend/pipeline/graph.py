@@ -73,6 +73,10 @@ DRAFT_TRUNCATED_MESSAGE = (
     "Generate again, or choose a shorter length."
 )
 
+DRAFT_EMPTY_MESSAGE = (
+    "The model returned no post. Generate again, or try a different topic or wording."
+)
+
 DRAFT_REFUSED_MESSAGE = (
     "The model declined to write this post, so there is no post to show. "
     "Try a different topic or wording."
@@ -223,7 +227,8 @@ def run_pipeline(
     gate stops it before drafting, or status "draft_truncated" (empty post,
     message) when a single-writer draft was cut off at its output limit, or
     status "draft_refused" (empty post, message) when the draft model declined
-    to write it. no_specifics=True skips the gate; it raises
+    to write it, or "draft_empty" when a completed reply contains no usable
+    post (recorded as empty_output). no_specifics=True skips the gate; it raises
     ValueError while config.features.NO_SPECIFICS_MODE_ENABLED is off.
 
     Under variant B an "ok" result carries review: {outcome, issues: [{type,
@@ -231,14 +236,13 @@ def run_pipeline(
     (pipeline.redraft); it is None when no review ran (A, C, and B with
     quality="draft"). Only variant A scores a post.
 
-    STOPGAP: nothing reads `review` or the "draft_truncated" status yet: the
-    Create page shows the post as if neither existed, and selection refine
-    still rewrites a single-writer post with pipeline A's own writer and
-    checks. Proper fix: the frontend ReviewNotice and the refine alignment,
-    step 9 of docs/plans/single-writer.md.
+    STOPGAP: variant B's review summary is not shown by the frontend.
+    Proper fix: feat/citations-ui exposes per-sentence citations and recorded
+    check/review results; the author decides what to change. Refine alignment
+    and explicit no-post statuses are implemented here.
 
     variant: which pipeline to run (config.features.PIPELINE_VARIANTS). None
-    uses the configured one (PIPELINE_VARIANT, default A); evals pass it to
+    uses the configured one (PIPELINE_VARIANT, default C-Opus); evals pass it to
     compare variants. An unknown variant raises PipelineConfigError.
 
     models: evals only. Role models that replace the variant's own
@@ -304,12 +308,13 @@ def run_pipeline(
             "trace_id": trace_id,
         }
 
-    if result.get("draft_truncated") or result.get("draft_refused"):
+    if result.get("draft_truncated") or result.get("draft_refused") or result.get("draft_empty"):
         refused = bool(result.get("draft_refused"))
+        empty = bool(result.get("draft_empty"))
         return {
-            "status": "draft_refused" if refused else "draft_truncated",
+            "status": "draft_refused" if refused else "draft_empty" if empty else "draft_truncated",
             "post": "",
-            "message": DRAFT_REFUSED_MESSAGE if refused else DRAFT_TRUNCATED_MESSAGE,
+            "message": DRAFT_REFUSED_MESSAGE if refused else DRAFT_EMPTY_MESSAGE if empty else DRAFT_TRUNCATED_MESSAGE,
             "score": 0,
             "score_feedback": [],
             "iterations": 0,

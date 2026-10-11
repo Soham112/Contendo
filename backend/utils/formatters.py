@@ -284,6 +284,9 @@ def get_archetype(archetype: str) -> Archetype:
 # words_to_avoid (the profile's list, comma-separated).
 # The wording is the humanizer's, unchanged, because pipeline A's prompts must
 # not change on feat/single-writer; reword it for a writer when A is removed.
+# STOPGAP: these phrase examples are shared with frozen pipeline A.
+# Proper fix: replace them with a description-based style block when A is
+# removed on chore/remove-pipeline-a; do not change A's snapshot here.
 STYLE_RULES = """AI writing patterns to eliminate:
 - Sentences that start with "In today's..." or "It's important to note..."
 - Overuse of transition words: "Furthermore", "Moreover", "Additionally", "In conclusion"

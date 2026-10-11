@@ -6,7 +6,7 @@ import supabase from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Sparkles } from 'lucide-react'
 import { useApi } from '@/lib/api'
-import { generateOutcome } from '@/lib/generate-outcome'
+import { generateErrorMessage as outcomeErrorMessage, generateOutcome } from '@/lib/generate-outcome'
 import { useTracking } from '@/lib/useTracking'
 import {
   ROLE_OPTIONS,
@@ -1125,7 +1125,7 @@ function FirstPostContent() {
       const outcome = generateOutcome(data)
       if (outcome.kind !== 'post') {
         // Nothing was written (cut off, declined, or not covered): show why.
-        setGenerateErrorMessage(outcome.kind === 'no_post' ? outcome.message : '')
+        setGenerateErrorMessage(outcomeErrorMessage(outcome))
         setFlowState('error')
         return
       }

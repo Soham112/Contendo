@@ -338,6 +338,8 @@ def retrieval_node(state: PipelineState) -> PipelineState:
     bundle: dict = {"chunks": [], "source_contexts": {}, "topic_contexts": []}
     raw_results: list[dict] = []
     try:
+        # STOPGAP: topic excerpts are logged. Proper fix: fix/retrieval-failure-status
+        # replaces content logging with request IDs, categories and counts.
         logger.info(f"Hybrid retrieval used for user {user_id}, topic: {topic[:50]}")
         raw_results = query_similar_hybrid(query, user_id=user_id, n_results=8)
         chunks = [r for r in raw_results if _is_relevant(r)]
@@ -365,6 +367,9 @@ def retrieval_node(state: PipelineState) -> PipelineState:
             chunks = [r for r in raw_results if _is_relevant(r)]
             bundle = {"chunks": chunks, "source_contexts": {}, "topic_contexts": []}
         except Exception:
+            # STOPGAP: a failed fallback query becomes empty results and low coverage.
+            # Proper fix: fix/retrieval-failure-status records retrieval errors and
+            # returns an explicit failure instead of treating memory as empty.
             raw_results = []
             bundle = {"chunks": [], "source_contexts": {}, "topic_contexts": []}
         state["retrieval_bundle"] = bundle
@@ -398,6 +403,8 @@ def retrieval_node(state: PipelineState) -> PipelineState:
         state["coverage_gate"]["top_bm25_norm"], user_id,
     )
 
+    # STOPGAP: source excerpts are logged. Proper fix: fix/retrieval-failure-status
+    # removes source content from logs and records only request IDs/counts.
     # Debug: print a sample so attribution labels can be verified at runtime.
     if retrieved_texts:
         print(f"[retrieval_node] {len(retrieved_texts)} chunks retrieved. Sample: {retrieved_texts[0][:120]!r}")

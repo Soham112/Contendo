@@ -61,6 +61,7 @@ async def log_usage_event(
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "estimated_cost_usd": float(cost),
+            "model": model,
             "metadata": metadata or {},
         }
         await _insert_event(payload)
