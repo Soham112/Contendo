@@ -8,7 +8,7 @@ class StartupConfigError(RuntimeError):
 
 
 def validate_environment() -> None:
-    required = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "ANTHROPIC_API_KEY"]
+    required = ["ENVIRONMENT", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "ANTHROPIC_API_KEY"]
     production = os.environ.get("ENVIRONMENT", "").strip().lower() == "production"
     billing = ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_PRICE_ID_PRO"]
     if production:
@@ -27,3 +27,9 @@ def validate_environment() -> None:
                 or url.query or url.fragment or url.username or url.password
                 or (production and url.scheme != "https")):
             raise StartupConfigError("FRONTEND_ORIGIN must be an origin such as https://www.contendoai.com, without a path.")
+    if production or any(os.environ.get(key, "").strip() for key in billing):
+        from billing.stripe_gateway import config
+        try:
+            config()
+        except ValueError as exc:
+            raise StartupConfigError("STRIPE_TRIAL_DAYS must be a valid integer.") from exc

@@ -55,3 +55,50 @@ def test_database_failure_returns_actionable_response_with_cors(client, monkeypa
     assert response.headers['access-control-allow-origin'] == 'https://contendo-six.vercel.app'
     assert 'Please try again' in response.json()['detail']
     assert 'PGRST205' not in response.text
+
+
+def test_zernio_requires_its_secrets_without_disclosing_configured_values(monkeypatch):
+    monkeypatch.setenv('PUBLISHING_PROVIDER', 'zernio')
+    monkeypatch.setenv('FRONTEND_ORIGIN', 'https://www.contendoai.com')
+    monkeypatch.setenv('ZERNIO_API_KEY', 'private-key-never-print')
+    with pytest.raises(StartupConfigError) as error:
+        validate_environment()
+    assert 'ZERNIO_WEBHOOK_SECRET' in str(error.value)
+    assert 'private-key-never-print' not in str(error.value)
+
+
+def test_production_rejects_insecure_frontend_origin(monkeypatch):
+    monkeypatch.setenv('ENVIRONMENT', 'production')
+    monkeypatch.setenv('FRONTEND_ORIGIN', 'http://www.contendoai.com')
+    monkeypatch.setenv('PUBLISHING_PROVIDER', 'zernio')
+    for key in ('STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'STRIPE_PRICE_ID_PRO',
+                'ZERNIO_API_KEY', 'ZERNIO_WEBHOOK_SECRET'):
+        monkeypatch.setenv(key, 'test-value')
+    with pytest.raises(StartupConfigError, match='FRONTEND_ORIGIN'):
+        validate_environment()
+
+
+def test_valid_production_config(monkeypatch):
+    monkeypatch.setenv('ENVIRONMENT', 'production')
+    monkeypatch.setenv('FRONTEND_ORIGIN', 'https://www.contendoai.com')
+    monkeypatch.setenv('PUBLISHING_PROVIDER', 'zernio')
+    for key in ('STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'STRIPE_PRICE_ID_PRO',
+                'ZERNIO_API_KEY', 'ZERNIO_WEBHOOK_SECRET'):
+        monkeypatch.setenv(key, 'test-value')
+    validate_environment()
+
+
+@pytest.mark.parametrize('trial', ['seven', '1.5'])
+def test_invalid_stripe_trial_aborts_startup(monkeypatch, trial):
+    monkeypatch.setenv('FRONTEND_ORIGIN', 'https://www.contendoai.com')
+    for key in ('STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'STRIPE_PRICE_ID_PRO'):
+        monkeypatch.setenv(key, 'test-value')
+    monkeypatch.setenv('STRIPE_TRIAL_DAYS', trial)
+    with pytest.raises(StartupConfigError, match='STRIPE_TRIAL_DAYS'):
+        validate_environment()
+
+
+def test_environment_must_be_explicit_so_production_checks_cannot_be_skipped(monkeypatch):
+    monkeypatch.delenv('ENVIRONMENT', raising=False)
+    with pytest.raises(StartupConfigError, match='ENVIRONMENT'):
+        validate_environment()

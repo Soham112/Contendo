@@ -48,11 +48,11 @@ export default function ScheduledPage() {
     setError("");
     try {
       await api.cancelPublishJob(job.id);
+      await load();
     } catch (e) {
       setError(requestErrorMessage(e, "cancel this post"));
     } finally {
       setBusy("");
-      load();
     }
   }
 

@@ -7,7 +7,7 @@ import type { Account } from "@/lib/account";
 /**
  * The signed-in user's account (segment, niche, whether to ask the segment
  * question). `loaded` turns true once the answer is known, or known to be
- * unavailable: callers must not guess a segment before then.
+ * unavailable: callers must check `error` and never guess a segment on failure.
  */
 export function useAccount(enabled: boolean) {
   const api = useApi();

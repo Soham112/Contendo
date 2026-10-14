@@ -5,7 +5,7 @@ export class RequestError extends Error {
 
 export function requestErrorMessage(error: unknown, action: string): string {
   if (error instanceof RequestError && error.status === 401) return "Your session has expired. Please sign in again.";
-  if (error instanceof RequestError && error.status === 429) return "You've reached your generation limit. Check Plan and billing for your allowance.";
+  if (error instanceof RequestError && (error.status === 429 || error.status === 402)) return "You've reached your generation limit. Check Plan and billing for your allowance.";
   if (error instanceof TypeError) return `We couldn't connect to Contendo to ${action}. Check your connection and try again. If this continues, contact contendoai@gmail.com.`;
   return `We couldn't ${action} right now. Please try again shortly. If this continues, contact contendoai@gmail.com.`;
 }

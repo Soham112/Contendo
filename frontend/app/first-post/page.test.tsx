@@ -1,3 +1,4 @@
+import { AuthSessionMissingError } from '@supabase/supabase-js';
 import type { ReactElement, ReactNode } from 'react';
 import { beforeEach, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({states: [] as unknown[], refs: [] as {current: unknown}[], deps: [] as unknown[][],
@@ -88,4 +89,12 @@ it('brief offers optional takes with story and clears a stale take when topic ch
 it('brief rejects whitespace-only story',()=>{
   const onGenerate=vi.fn();const tree=IndividualBrief({brief:{topic:'Launch',story:'   ',format:'linkedin post'},onChange:vi.fn(),onGenerate,onSuggest:vi.fn(),takes:[],suggesting:false,busy:false});
   find(tree,'form')!.props.onSubmit({preventDefault:vi.fn()});expect(onGenerate).not.toHaveBeenCalled();
+});
+
+it('signed-out entry redirects to sign-in rather than showing an account failure', async () => {
+  h.getUser.mockResolvedValue({data: {user: null}, error: new AuthSessionMissingError()});
+  const tree = await load();
+  expect(h.replace).toHaveBeenCalledWith('/sign-in?redirect_url=%2Ffirst-post');
+  expect(find(tree, RetryNotice)).toBeUndefined();
+  expect(h.api.getAccount).not.toHaveBeenCalled();
 });

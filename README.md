@@ -225,7 +225,7 @@ The same setting enables a pre-commit secret check: a commit is blocked if a sta
 
 ## Onboarding, billing and publishing
 
-These three features need migrations `007` to `009` (run in order in the Supabase SQL editor) and the settings below. Without the Stripe or publishing settings the server still starts: generation works, and the billing and publishing endpoints answer 503.
+These features need migrations `007` through `012` (run in order in the Supabase SQL editor) and the settings below. Production startup requires Supabase, Anthropic, `FRONTEND_ORIGIN`, Stripe and a real publishing provider. Missing configuration or required schema blocks startup with a clear error. Local development can explicitly leave billing and publishing disabled.
 
 **Backend environment variables** (add them to `backend/.env`; the same lines belong in `backend/.env.example`):
 
@@ -485,7 +485,7 @@ Copy `backend/.env.example` to `backend/.env` and fill in the Anthropic and Supa
 | `SUPADATA_API_KEY` | Supadata key for YouTube transcript fetch |
 | `DATA_DIR` | `/data` |
 | `ENVIRONMENT` | `production` (the server refuses to start if `ALLOW_DEV_AUTH=1` is also set) |
-| `FRONTEND_ORIGIN` | `https://your-app.vercel.app` (exact Vercel URL) |
+| `FRONTEND_ORIGIN` | `https://www.contendoai.com` (public frontend origin) |
 
 Before deploying code that needs a new table or column, run the matching file from `backend/migrations/` in the Supabase SQL editor (see **Database migrations** above).
 
@@ -586,3 +586,36 @@ Two files exist at the project root specifically for developer and AI-assistant 
 **`PROMPTS.md`** — the single source of truth for every agent's behaviour. It contains each agent's system prompt verbatim, the variables injected into each prompt, and the scorer's full rubric. When any prompt needs tuning, update `PROMPTS.md` first, then update the corresponding agent file to match. These two must never be out of sync.
 
 **`DESIGN.md`** — the Editorial Atelier design system specification. Defines the full colour palette (Material Design tokens), typography rules (Noto Serif headlines + Inter body), the No-Line Rule, surface hierarchy, elevation model, and component specs for buttons, inputs, and cards. Mandatory reading before any frontend UI/UX change.
+
+### Production recovery and short onboarding (2026-10-14)
+
+The supplied Railway incident log reports `PGRST205` for `public.accounts` and `public.subscriptions`: the new routes are running but their schema is missing from the connected database/schema cache. This is not evidence of a missing Stripe Python dependency; the server is already handling account and billing requests. The custom-domain CORS preflight was subsequently verified as successful.
+
+Deployment order (do not run the baseline dump on an existing production database):
+
+1. In the Supabase SQL editor for the project selected by Railway `SUPABASE_URL`, verify existing tables/indexes/functions and apply outstanding migrations `007`–`012` in order. Also apply `006` if `usage_events.model` is absent. `010` intentionally rejects duplicate live platform accounts; resolve those explicitly. `012` preserves legacy hierarchy columns/rows, adds the current columns and user-scoped upsert indexes; duplicate identities fail rather than being deleted. Run `NOTIFY pgrst, 'reload schema';` after changes.
+2. Railway: `ENVIRONMENT=production`; valid `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`; `FRONTEND_ORIGIN=https://www.contendoai.com`; `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_PRO` (optional integer `STRIPE_TRIAL_DAYS`); `PUBLISHING_PROVIDER=zernio`, `ZERNIO_API_KEY`, `ZERNIO_WEBHOOK_SECRET`. Never use the fake provider in production. These are required for this launch deployment and are checked before serving requests; startup also probes required table columns with no customer rows returned.
+3. Redeploy the backend from the intended branch/commit. Check logs for completed startup and `/health`; startup errors name missing variables or the failing schema probe. No startup check charges Stripe/Zernio/LLM usage.
+4. Vercel: production `NEXT_PUBLIC_API_URL=https://contendo-production.up.railway.app`, `NEXT_PUBLIC_SITE_URL=https://www.contendoai.com`, and the Supabase project's public URL/anon key. Rebuild/redeploy the frontend. Keep the custom-domain redirects and Supabase auth callback allowlist consistent with `www.contendoai.com`.
+5. Fresh account: Business → niche → business profile → first draft (4 screens); Individual → topic/format/story with optional takes → first draft (3 screens). Confirm account failures show Retry, Schedule loads, and Plan/billing shows the quota. Test Stripe checkout and a real approved Zernio publish separately before launch.
+
+Work/role, resume and the five-question voice exercise are optional at `/settings/personalization`. They never gate signup or workspace access. The workspace offers voice questions after three saved posts. Existing answers are preserved. Onboarding events are persisted to `user_events` with `event_type=onboarding_step`, `metadata.step`, `metadata.outcome` and `metadata.segment`; stories and business text are not included in events. Server operations record generation outcomes; client events are acknowledged only after storage, and failed progress logging offers Retry.
+
+Read-only production SQL checks:
+
+```sql
+SELECT name, to_regclass('public.' || name) AS present
+FROM unnest(ARRAY['accounts','connected_accounts','publish_jobs','subscriptions',
+                  'stripe_events','generation_usage','publish_approvals']) AS name;
+SELECT indexname FROM pg_indexes WHERE schemaname='public'
+  AND indexname IN ('connected_accounts_one_per_platform', 'source_nodes_user_source', 'topic_nodes_user_topic');
+SELECT tgname FROM pg_trigger WHERE NOT tgisinternal
+  AND tgname IN ('freeze_publish_approval','require_publish_approval');
+SELECT routine_name FROM information_schema.routines WHERE routine_schema='public'
+  AND routine_name IN ('reserve_generation','release_generation','claim_publish_jobs');
+SELECT table_name, column_name FROM information_schema.columns WHERE table_schema='public'
+  AND table_name IN ('accounts','publish_jobs','source_nodes','topic_nodes','usage_events')
+ORDER BY table_name, ordinal_position;
+```
+
+There is no production migration ledger; inspect the actual objects before choosing outstanding files, especially migration `011`, which is not safe to rerun blindly.

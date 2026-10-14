@@ -7,7 +7,7 @@ export default function PersonalizationPrompt() {
   const [offered, setOffered] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
-    const check = () => api.getPersonalization().then(result => setOffered(result.offer_voice)).catch(failure => {
+    const check = () => api.getPersonalization().then(result => { setOffered(result.offer_voice); setError(''); }).catch(failure => {
       console.error('[personalization] Could not check optional prompt', failure);
       setError('We couldn’t check your personalization options. You can open them in Settings.');
     });

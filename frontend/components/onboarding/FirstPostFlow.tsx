@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { isAuthSessionMissingError } from '@supabase/supabase-js';
 import supabase from '@/lib/supabase';
 import { useApi, type GenerateResponse } from '@/lib/api';
 import { resolveNicheParam, type Account, type NicheOptions, type Segment, type SegmentAnswer } from '@/lib/account';
@@ -51,7 +52,7 @@ export default function FirstPostFlow() {
       setTrackingError(true);
     } finally { flushing.current = false; }
   }
-  function track(step: OnboardingStep, outcome: StepOutcome, segment = account?.segment || undefined) {
+  function track(step: OnboardingStep, outcome: StepOutcome, segment = selectedSegment || account?.segment || undefined) {
     pendingEvents.current.push([step, outcome, segment]);
     void flushEvents();
   }
@@ -62,7 +63,7 @@ export default function FirstPostFlow() {
     async function load() {
       try {
         const { data: { user }, error: authError } = await supabase.auth.getUser();
-        if (authError) throw authError;
+        if (authError && !isAuthSessionMissingError(authError)) throw authError;
         if (!user) { router.replace('/sign-in?redirect_url=' + encodeURIComponent('/first-post' + (params.toString() ? '?' + params.toString() : ''))); return; }
         const [nextAccount, nextOptions] = await Promise.all([api.getAccount(), api.getNicheOptions()]);
         if (cancelled) return;
@@ -130,7 +131,7 @@ export default function FirstPostFlow() {
   async function suggest() {
     setSuggesting(true); setError(''); track('takes', 'started');
     try { setTakes((await api.suggestTakes(brief)).takes); }
-    catch (failure) { setError(requestErrorMessage(failure, 'suggest takes. You can also generate without a suggested take')); }
+    catch (failure) { setError(requestErrorMessage(failure, 'suggest takes') + ' You can also generate without a suggested take.'); }
     finally { setSuggesting(false); }
   }
 

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { isLegalPath } from "@/lib/legal";
+import { isAuthSessionMissingError } from "@supabase/supabase-js";
 import supabase from "@/lib/supabase";
 import { requireResponse } from "@/lib/request-errors";
 import { useApi } from "@/lib/api";
@@ -34,7 +35,8 @@ export function useProfileCheck() {
       setIsSignedIn(!!session);
       setIsLoaded(true);
     });
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    supabase.auth.getUser().then(({ data: { user }, error: authError }) => {
+      if (authError && !isAuthSessionMissingError(authError)) throw authError;
       setIsSignedIn(!!user);
       setIsLoaded(true);
 
@@ -59,9 +61,9 @@ export function useProfileCheck() {
           }
         });
       }
-    });
+    }).catch(() => { setError("We couldn’t check your sign-in. Please try again."); setLoading(false); });
     return () => subscription.unsubscribe();
-  }, []);
+  }, [attempt]);
 
   // Fetch profile once auth state is known
   useEffect(() => {
