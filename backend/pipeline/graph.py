@@ -7,6 +7,7 @@ from config import features
 from llm.client import trace_calls
 from llm.models import role_models
 from pipeline.state import PipelineState
+from pipeline.grounding import enforce_grounding
 from pipeline.trace import build_trace_row
 from pipeline.finalise import validation_record
 from pipeline.redraft import review_summary
@@ -288,7 +289,7 @@ def run_pipeline(
     }
 
     with trace_calls() as calls:
-        result = PIPELINES[variant].invoke(initial_state)
+        result = enforce_grounding(PIPELINES[variant].invoke(initial_state))
 
     # The trace is diagnostic only: a failed write must never fail generation.
     trace_id: str | None = None
@@ -336,7 +337,7 @@ def run_pipeline(
         }
 
     return {
-        "status": "ok",
+        "status": "needs_review" if (result.get("grounding") or {}).get("outcome") == "needs_review" else "ok",
         "post": result.get("final_post", result.get("current_draft", "")),
         "score": result.get("score", 0),
         "score_feedback": result.get("score_feedback", []),
@@ -346,5 +347,6 @@ def run_pipeline(
         "retrieval_confidence": result.get("retrieval_confidence", "medium"),
         "trace_id": trace_id,
         "fact_check_job": fact_check_job,
+        "grounding": result.get("grounding"),
         "review": review_summary(result),
     }

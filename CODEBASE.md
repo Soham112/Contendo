@@ -1340,3 +1340,9 @@ The full standard eval (`evals/baselines/2026-10-08-standard.md`) chose `before_
 - Tag filtering in Library (can't filter stored chunks by tag in the UI — only source-type filter exists)
 - Bulk clear memory (individual sources can be deleted via the Library delete button, but there is no "clear all" option)
 - Multi-format regeneration (regenerate always uses same format/tone)
+
+### Publish launch: final grounding (2026-10-13)
+
+All generation variants now pass through `pipeline/grounding.py:enforce_grounding` after their last text edit and before saving the trace or responding. `agents/grounding_agent.py` supplies the semantic review and source-only repair calls. Every sentence needs one valid review record; unsupported modifiers, prices, names, events and relationships act. At most two repairs, each followed by a complete re-check. The final text, updated citations, deterministic checks and repair history are recorded. Unresolved claims or expected provider/validation failures return `status=needs_review` and `grounding={outcome,flags,attempts,repairs,error?}`; they never become a clean review. Unexpected exceptions propagate. `/generate` counts these returned drafts against quota and displays their flags in `GroundingNotice.tsx`. Source and post data are JSON-serialized under fixed system instructions. This adds one review on clean posts, up to three reviews and two repairs on failing posts; real usage is logged as `grounding_check` and `grounding_repair` with exact model ids.
+
+New regression tests: `backend/tests/test_grounding.py` exercises the actual final boundary for every variant, unsupported “young couple” and invented price corrections, bounded failures, incomplete coverage, provider failure and supported controls. Legacy generator tests stub this separate final boundary; these integration tests queue every new model response explicitly.

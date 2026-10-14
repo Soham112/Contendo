@@ -16,7 +16,7 @@ import UpgradeScreen from "@/components/billing/UpgradeScreen";
  * choice creates a job on the backend, which validates it again and sends it
  * from a worker; this panel only previews the platform rules.
  */
-export default function PublishPanel({ content, postId }: { content: string; postId: number | null }) {
+export default function PublishPanel({ content, postId }: { content: string; postId: number | null; traceId?: string | null }) {
   const api = useApi();
   const [open, setOpen] = useState(false);
   const [accounts, setAccounts] = useState<ConnectedAccount[] | null>(null);

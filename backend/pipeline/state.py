@@ -3,6 +3,7 @@ from typing_extensions import TypedDict
 
 
 class PipelineState(TypedDict, total=False):
+    grounding: dict[str, Any]  # verified | needs_review, final flags and bounded repair attempts
     # Inputs
     topic: str
     format: str

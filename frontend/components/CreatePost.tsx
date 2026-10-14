@@ -10,6 +10,7 @@ import { generateOutcome } from "@/lib/generate-outcome";
 import { LowCoverageNotice, OpinionPostLabel } from "@/components/LowCoverageNotice";
 import { useTracking } from "@/lib/useTracking";
 import BusinessPostFields, { useBusinessPost } from "@/components/create/BusinessPostFields";
+import GroundingNotice, { type Grounding } from "@/components/GroundingNotice";
 import PublishPanel from "@/components/publishing/PublishPanel";
 import UpgradeScreen from "@/components/billing/UpgradeScreen";
 import QuotaLine from "@/components/billing/QuotaLine";
@@ -85,7 +86,8 @@ const LENGTH_META: Record<Format, Record<Length, string>> = {
 };
 
 interface GenerateResult {
-  status?: "ok" | "low_coverage" | "draft_truncated" | "draft_refused";
+  grounding?: Grounding | null;
+  status?: "ok" | "low_coverage" | "draft_truncated" | "draft_refused" | "needs_review";
   message?: string;
   post: string;
   score: number;
@@ -2044,7 +2046,8 @@ export default function CreatePost() {
                 {/* END canvas card */}
 
                 <div style={{ width: "100%", marginTop: 20 }}>
-                  <PublishPanel content={editedPost} postId={currentPostId} />
+                  <GroundingNotice grounding={result?.grounding} />
+                  <PublishPanel content={editedPost} postId={currentPostId} traceId={currentTraceIdRef.current} />
                 </div>
 
                 {/* Below-canvas content — single-column only */}
