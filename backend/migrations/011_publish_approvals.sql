@@ -45,7 +45,7 @@ BEGIN
        OR approval.post_id IS DISTINCT FROM NEW.post_id
        OR jsonb_array_length(approval.accepted_flag_ids) <> jsonb_array_length(approval.flags)
        OR EXISTS (SELECT 1 FROM jsonb_array_elements(approval.flags) flag
-                  WHERE NOT approval.accepted_flag_ids ? (flag->>'id')) THEN
+                  WHERE NOT (approval.accepted_flag_ids ? (flag->>'id'))) THEN
         RAISE EXCEPTION 'Publishing requires approval of this exact text and all claim flags';
     END IF;
     RETURN NEW;

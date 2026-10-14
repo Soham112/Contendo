@@ -25,7 +25,7 @@ from agents.critic_agent import critic_node
 from agents.humanizer_agent import humanizer_node
 from agents.predictability_audit_agent import predictability_audit_node
 from agents.word_count_enforcer_agent import word_count_enforcer_node
-from agents.fact_check_agent import fact_check_node, log_fact_check
+from agents.fact_check_agent import fact_check_node
 from agents.scorer_agent import scorer_node
 
 logger = logging.getLogger(__name__)
@@ -290,6 +290,9 @@ def run_pipeline(
 
     with trace_calls() as calls:
         result = enforce_grounding(PIPELINES[variant].invoke(initial_state))
+        # The final synchronous gate supersedes A's retired normal-mode record.
+        if (result.get("fact_check") or {}).get("mode") == "log_only":
+            result.pop("fact_check")
 
     # The trace is diagnostic only: a failed write must never fail generation.
     trace_id: str | None = None
@@ -297,12 +300,6 @@ def run_pipeline(
         trace_id = save_generation_trace(build_trace_row(result, calls))
     except Exception:
         logger.exception("generation trace write failed for user %s", user_id)
-
-    # Log-only fact check (normal mode, see fact_check_agent.enforced): the caller
-    # runs this after responding (/generate: BackgroundTasks; evals: after timing).
-    fact_check_job = None
-    if trace_id and (result.get("fact_check") or {}).get("mode") == "log_only":
-        fact_check_job = lambda: log_fact_check(result, trace_id)  # noqa: E731
 
     gate = result.get("coverage_gate") or {}
     if gate.get("decision") == "low_coverage":
@@ -346,7 +343,10 @@ def run_pipeline(
         "scored": variant == "A" and quality == "polished" and not result.get("score_error"),
         "retrieval_confidence": result.get("retrieval_confidence", "medium"),
         "trace_id": trace_id,
-        "fact_check_job": fact_check_job,
+        "fact_check_job": None,
         "grounding": result.get("grounding"),
-        "review": review_summary(result),
+        "review": ({"outcome": "issues_remain", "removed": [], "issues": [
+            {"type": "unsupported_claim", "sentence_text": flag.get("sentence") or result.get("final_post", "")}
+            for flag in result["grounding"]["flags"]
+        ]} if (result.get("grounding") or {}).get("outcome") == "needs_review" else review_summary(result)),
     }

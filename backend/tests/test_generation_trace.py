@@ -391,24 +391,13 @@ def test_enforcer_retry_is_recorded_with_its_own_event_type(claude, fake_db, see
 
 # --- Log-only fact check (normal mode; enforcement off by default) ---------------
 
-def test_normal_mode_fact_check_is_deferred_and_never_changes_the_post(claude, fake_db, seeded_kb):
+def test_normal_mode_uses_final_grounding_instead_of_a_background_only_check(claude, fake_db, seeded_kb):
     claude.queue(*STANDARD_RUN)
     result = _run()
-    calls_in_pipeline = len(claude.calls)
-
     trace = _only_trace(fake_db)
-    assert trace["node_outputs"]["fact_check"] == {"mode": "log_only", "flagged": [], "rewrites": [], "outcome": "pending"}
-    assert callable(result["fact_check_job"])
-
-    # The job: one Haiku call, flags written to the trace, post untouched.
-    claude.queue('{"flagged": [{"i": 1, "type": "statistic", "why": "not in sources"}]}')
-    result["fact_check_job"]()
-    assert len(claude.calls) == calls_in_pipeline + 1
-    assert claude.calls[-1]["model"] == "claude-haiku-4-5-20251001"
-    fc = _only_trace(fake_db)["node_outputs"]["fact_check"]
-    assert fc["mode"] == "log_only" and fc["outcome"] == "logged"
-    assert fc["flagged"][0]["type"] == "statistic"
-    assert _only_trace(fake_db)["node_outputs"]["final_post"] == result["post"]
+    assert result["fact_check_job"] is None
+    assert trace["node_outputs"]["fact_check"] == {}
+    assert trace["node_outputs"]["grounding"]["outcome"] == "verified"
 
 
 def test_no_specifics_mode_enforces_in_the_pipeline_and_returns_no_job(claude, fake_db, seeded_kb, no_specifics_on):
@@ -435,10 +424,10 @@ def test_log_only_job_writes_only_to_the_callers_trace_and_records_errors(claude
     assert "fact_check" not in rows["t-b"]["node_outputs"]
 
 
-def test_generate_endpoint_runs_the_log_only_fact_check_after_responding(client, claude, fake_db, seeded_kb, auth_headers,
+def test_generate_endpoint_returns_final_grounding_without_a_background_only_check(client, claude, fake_db, seeded_kb, auth_headers,
                                                                          monkeypatch):
     monkeypatch.setenv("PIPELINE_VARIANT", "A")     # the rollback switch: /generate runs pipeline A again
-    claude.queue(*STANDARD_RUN, '{"flagged": []}')
+    claude.queue(*STANDARD_RUN)
     resp = client.post(
         "/generate",
         json={"topic": "pgvector retrieval", "format": "linkedin post", "tone": "casual"},
@@ -447,4 +436,5 @@ def test_generate_endpoint_runs_the_log_only_fact_check_after_responding(client,
     assert resp.status_code == 200
     assert "fact_check_job" not in resp.json()
     fc = _only_trace(fake_db)["node_outputs"]["fact_check"]
-    assert fc == {"mode": "log_only", "flagged": [], "rewrites": [], "outcome": "logged"}
+    assert fc == {}
+    assert resp.json()["grounding"]["outcome"] == "verified"

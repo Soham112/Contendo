@@ -68,6 +68,11 @@ class FakeQuery:
         self._filters.append(lambda r: r.get(col) == val)
         return self
 
+    def is_(self, col, val):
+        expected = None if val == "null" else val
+        self._filters.append(lambda r: r.get(col) is expected)
+        return self
+
     def neq(self, col, val):
         self._filters.append(lambda r: r.get(col) != val)
         return self

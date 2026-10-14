@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PaywallError } from "@/lib/commerce-api";
+import type { Paywall } from "@/lib/billing";
 import { useApi } from "@/lib/api";
 import { allFlagsAccepted, type ContentReview, type MediaRef } from "@/lib/publishing";
 
-export default function ApprovalReview({ content, postId, traceId, media, onApproved }: {
+export default function ApprovalReview({ content, postId, traceId, media, onApproved, onPaywall }: {
   content: string; postId: number | null; traceId?: string | null; media: MediaRef[];
   onApproved: (review: ContentReview) => void;
+  onPaywall?: (paywall: Paywall) => void;
 }) {
   const api = useApi();
   const [review, setReview] = useState<ContentReview | null>(null);
@@ -14,11 +17,15 @@ export default function ApprovalReview({ content, postId, traceId, media, onAppr
   const [read, setRead] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  function fail(error: unknown) {
+    if (error instanceof PaywallError && onPaywall) onPaywall(error.paywall);
+    else setError(error instanceof Error ? error.message : "Couldn't check this text. Try again.");
+  }
   useEffect(() => {
     let active = true;
     api.reviewPublishText({ content, post_id: postId, trace_id: traceId, media })
       .then((value) => { if (active) setReview(value); })
-      .catch((e: Error) => { if (active) setError(e.message); });
+      .catch((e: Error) => { if (active) fail(e); });
     return () => { active = false; };
     // The parent keys this component by the exact text, trace, post and media.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -33,7 +40,7 @@ export default function ApprovalReview({ content, postId, traceId, media, onAppr
       setReview(approved);
       onApproved(approved);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't approve this text. Try again.");
+      fail(e);
     } finally { setBusy(false); }
   }
 

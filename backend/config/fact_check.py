@@ -1,7 +1,8 @@
-"""Fact check settings (agents/fact_check_agent.py)."""
+"""Legacy A checker settings. All live generation now ends with mandatory
+synchronous grounding (pipeline.grounding); no log-only job is scheduled.
+"""
 
-# Normal-mode posts: False = log-only (the check runs in the background after
-# /generate responds and writes its flags to the trace; the post is never
-# changed). True = enforce in the pipeline like no-specifics mode (rewrite,
+# The retained A node: False = retired log-only record, discarded at the
+# generation boundary. True = enforce before the final grounding gate (rewrite,
 # re-check, remove). No-specifics mode is always enforced.
 FACT_CHECK_ENFORCE_NORMAL_MODE = False

@@ -8,6 +8,7 @@ threadpool and a slow provider call never blocks the server.
 import logging
 import os
 from datetime import datetime
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
@@ -157,7 +158,7 @@ class MediaRef(BaseModel):
 class ReviewRequest(BaseModel):
     content: str = Field(min_length=1, max_length=70_000)
     post_id: int | None = None
-    trace_id: str | None = None
+    trace_id: UUID | None = None
     media: list[MediaRef] = Field(default_factory=list, max_length=10)
 
 
@@ -175,21 +176,21 @@ def review_final_text(req: ReviewRequest, user_id: str = Depends(get_user_id_dep
     gates.require_publishing(user_id)
     if req.post_id is not None and not post_owned_by(req.post_id, user_id):
         raise HTTPException(status_code=404, detail="Post not found")
-    return _review_view(approval.review_text(user_id, req.content, [item.model_dump() for item in req.media], req.post_id, req.trace_id))
+    return _review_view(approval.review_text(user_id, req.content, [item.model_dump() for item in req.media], req.post_id, str(req.trace_id) if req.trace_id else None))
 
 
 @router.post("/publishing/reviews/{review_id}/approve")
-def approve_final_text(review_id: str, req: ApproveRequest, user_id: str = Depends(get_user_id_dep)) -> dict:
+def approve_final_text(review_id: UUID, req: ApproveRequest, user_id: str = Depends(get_user_id_dep)) -> dict:
     gates.require_publishing(user_id)
     try:
-        return _review_view(approval.approve_text(user_id, review_id, req.content, req.accepted_flag_ids))
+        return _review_view(approval.approve_text(user_id, str(review_id), req.content, req.accepted_flag_ids))
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
 
 
 class CreateJobRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    approval_id: str | None = None
+    approval_id: UUID | None = None
     content: str = Field(max_length=70_000)
     account_ids: list[str] = Field(max_length=20)
     post_id: int | None = None
@@ -212,7 +213,7 @@ def create_job(req: CreateJobRequest, user_id: str = Depends(get_user_id_dep)) -
             user_id, provider,
             content=req.content, account_ids=req.account_ids, post_id=req.post_id,
             media=[item.model_dump() for item in req.media],
-            when=req.when, scheduled_at=req.scheduled_at, tz_name=req.timezone, approval_id=req.approval_id,
+            when=req.when, scheduled_at=req.scheduled_at, tz_name=req.timezone, approval_id=str(req.approval_id) if req.approval_id else None,
         )
     except service.PublishRequestError as error:
         raise HTTPException(status_code=422, detail={"code": "cannot_publish", "problems": error.problems})

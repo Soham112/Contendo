@@ -2,7 +2,7 @@ import logging
 from uuid import UUID
 
 from anthropic import APIStatusError, InternalServerError
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
@@ -179,7 +179,6 @@ def _release_generation(user_id: str, period: str) -> None:
 @router.post("/generate", response_model=GenerateResponse)
 async def generate(
     req: GenerateRequest,
-    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_user_id_dep),
 ) -> GenerateResponse:
     if not req.topic.strip():
@@ -239,10 +238,6 @@ async def generate(
     finally:
         if result is None or result.get("status", "ok") not in ("ok", "needs_review"):
             _release_generation(user_id, period)
-
-    # Log-only fact check: runs after the response is sent, adds no latency.
-    if result.get("fact_check_job"):
-        background_tasks.add_task(result["fact_check_job"])
 
     return GenerateResponse(
         status=result.get("status", "ok"),

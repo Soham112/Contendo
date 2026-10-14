@@ -85,3 +85,5 @@ docs/**/*.key
 docs/**/*.p12
 docs/**/*.log
 docs/**/*.local.*
+
+docs/**/.DS_Store

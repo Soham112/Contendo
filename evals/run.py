@@ -12,8 +12,7 @@ calls and cost from the trace, the post, its sources, and what the ablation
 report reads (ablation.post_record). A golden whose trace was not saved
 (trace_id None) or whose run raised is logged and skipped.
 
-With --ablation NAME the run belongs to that ablation: its measured cost (the
-background fact check included) is added to the ablation's spend ledger after
+With --ablation NAME the run belongs to that ablation: its measured cost (final grounding and repairs included) is added to the ablation's spend ledger after
 every golden, and the run stops before the next golden once the cap is reached
 (spend.py; exit code 4).
 """
@@ -177,8 +176,6 @@ def main(argv: list[str] | None = None) -> int:
                         variant=variant, models=overrides or None,
                     )
                     row["seconds"] = round(time.perf_counter() - start, 1)
-                    if result.get("fact_check_job"):  # log-only fact check, outside the timing (as in /generate)
-                        result["fact_check_job"]()
                     row["trace_id"] = result.get("trace_id")
                     if result.get("status") == "low_coverage":
                         row["status"] = "gated"
@@ -192,9 +189,10 @@ def main(argv: list[str] | None = None) -> int:
                                  .select("llm_calls,node_outputs,retrieved,profile_snapshot")
                                  .eq("id", row["trace_id"]).eq("user_id", user_id).execute().data or [{}])[0]
                         # "ok", or a single-writer run that returned no post: draft_truncated, draft_refused.
-                        row["status"] = result.get("status", "ok")
+                        row["generation_status"] = result.get("status", "ok")
+                        row["status"] = ablation.generation_run_status(result)
                         row.update(trace_fields(trace))
-                        # Background (log-only) fact check, as written to the trace by fact_check_job.
+                        # Historical A metadata; new final grounding is in record.grounding.
                         fc = (trace.get("node_outputs") or {}).get("fact_check") or {}
                         row["fact_check"] = {
                             "mode": fc.get("mode"), "outcome": fc.get("outcome"),
@@ -204,7 +202,7 @@ def main(argv: list[str] | None = None) -> int:
                         row["score"] = result.get("score")
                         row["retrieval_confidence"] = result.get("retrieval_confidence")
                         ok += row["status"] == "ok"
-                        print(f"  {g['id']}: {row['status']} in {row['seconds']}s, {row['pipeline']['calls']} Claude calls, "
+                        print(f"  {g['id']}: {row['generation_status']} in {row['seconds']}s, {row['pipeline']['calls']} Claude calls, "
                               f"${row['pipeline']['cost_usd']:.4f}")
             except Exception as exc:  # one failing golden must not stop the run
                 row["seconds"] = round(time.perf_counter() - start, 1)

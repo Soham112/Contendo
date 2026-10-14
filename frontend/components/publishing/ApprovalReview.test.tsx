@@ -19,14 +19,16 @@ vi.mock("react", async () => {
 });
 vi.mock("@/lib/api", () => ({ useApi: () => harness.api }));
 import ApprovalReview from "./ApprovalReview";
+import { PaywallError } from "@/lib/commerce-api";
 
 const checked = { id: "r", content: "A young couple paid $900,000.", media: [], post_id: null, approved_at: null,
   flags: [{ id: "age", text: "young", sentence: "", reason: "age not stated" },
     { id: "price", text: "$900,000", sentence: "", reason: "price not stated" }] };
 const onApproved = vi.fn();
+const onPaywall = vi.fn();
 function render() {
   harness.cursor = 0;
-  return ApprovalReview({ content: checked.content, postId: null, media: [], onApproved });
+  return ApprovalReview({ content: checked.content, postId: null, media: [], onApproved, onPaywall });
 }
 function elements(node: ReactNode): ReactElement[] {
   if (Array.isArray(node)) return node.flatMap(elements);
@@ -61,4 +63,14 @@ it("shows the final text and requires every flag plus explicit reading before ap
   await button(tree).props.onClick();
   expect(harness.api.approvePublishText).toHaveBeenCalledWith("r", checked.content, ["age", "price"]);
   expect(onApproved).toHaveBeenCalledWith(expect.objectContaining({ content: checked.content, approved_at: "2026-10-13" }));
+});
+
+
+it("opens the existing upgrade flow when checking text requires Pro", async () => {
+  const paywall = { code: "upgrade_required" as const, message: "Publishing requires Pro.", entitlements: null };
+  harness.api.reviewPublishText.mockRejectedValue(new PaywallError(paywall));
+  render(); harness.effects[0]();
+  await Promise.resolve(); await Promise.resolve();
+  expect(onPaywall).toHaveBeenCalledWith(paywall);
+  expect(harness.api.approvePublishText).not.toHaveBeenCalled();
 });

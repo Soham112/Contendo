@@ -230,3 +230,11 @@ def test_sdk_base_url_and_auth_token_are_removed(env_file):
     assert "ANTHROPIC_BASE_URL" not in environ
     assert "ANTHROPIC_AUTH_TOKEN" not in environ
     assert environ["ANTHROPIC_API_KEY"] == FAKE_ANTHROPIC_KEY
+
+
+def test_evals_remove_billing_credentials_and_disable_publishing(env_file):
+    environ = {key: "must-not-reach-an-integration" for key in guard.INTEGRATION_ENV_REMOVED}
+    guard.bootstrap(env_file=env_file(), environ=environ, modules={}, sys_path=[])
+    assert all(key not in environ for key in guard.INTEGRATION_ENV_REMOVED)
+    assert environ["PUBLISHING_PROVIDER"] == ""
+    assert environ["ZERNIO_API_KEY"] == environ["ZERNIO_WEBHOOK_SECRET"] == ""

@@ -22,5 +22,5 @@ def get_review(user_id: str, review_id: str | None) -> dict | None:
 def approve(user_id: str, review_id: str, content: str, accepted: list[str]) -> dict | None:
     rows = (supabase.table("publish_approvals").update({
         "accepted_flag_ids": accepted, "approved_at": datetime.now(timezone.utc).isoformat(),
-    }).eq("user_id", user_id).eq("id", review_id).eq("content", content).execute()).data or []
+    }).eq("user_id", user_id).eq("id", review_id).eq("content", content).is_("approved_at", "null").execute()).data or []
     return rows[0] if rows else None

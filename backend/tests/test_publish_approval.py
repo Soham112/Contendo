@@ -44,22 +44,22 @@ def test_unresolved_flags_cannot_be_approved(client, a_headers, pro):
 
 def test_every_cached_claim_needs_its_own_acceptance(client, a_headers, pro, fake_db):
     fake_db.tables["generation_traces"] = [{
-        "id": "trace", "user_id": "user-a", "node_outputs": {"final_post": CONTENT,
+        "id": "b813726c-b834-4d4a-bdea-57808d130bb8", "user_id": "user-a", "node_outputs": {"final_post": CONTENT,
         "grounding": {"outcome": "needs_review", "flags": [
             {"id": "age", "text": "young", "reason": "age absent", "sentence": CONTENT},
             {"id": "price", "text": "$900,000", "reason": "price absent", "sentence": CONTENT}]}}}]
-    checked = client.post("/publishing/reviews", headers=a_headers, json={"content": CONTENT, "trace_id": "trace"}).json()
+    checked = client.post("/publishing/reviews", headers=a_headers, json={"content": CONTENT, "trace_id": "b813726c-b834-4d4a-bdea-57808d130bb8"}).json()
     assert approve(client, a_headers, checked, ["age"]).status_code == 409
     assert approve(client, a_headers, checked, ["age", "price"]).status_code == 200
 
 
 def test_editing_flagged_text_rechecks_sources_before_approval(client, a_headers, pro, fake_db, claude):
-    fake_db.tables["generation_traces"] = [{"id": "trace", "user_id": "user-a", "topic": "Just sold",
+    fake_db.tables["generation_traces"] = [{"id": "b813726c-b834-4d4a-bdea-57808d130bb8", "user_id": "user-a", "topic": "Just sold",
         "retrieved": [{"text": "We sold the home to a couple.", "source_type": "personal_note", "memory_context": "work"}],
         "node_outputs": {"final_post": CONTENT}}]
     claude.queue(json.dumps({"sentences": [{"sentence": 1, "unsupported": []}]}))
     corrected = "We sold the home to a couple."
-    checked = client.post("/publishing/reviews", headers=a_headers, json={"content": corrected, "trace_id": "trace"}).json()
+    checked = client.post("/publishing/reviews", headers=a_headers, json={"content": corrected, "trace_id": "b813726c-b834-4d4a-bdea-57808d130bb8"}).json()
     assert checked["flags"] == []
     assert approve(client, a_headers, checked, []).status_code == 200
     assert len(claude.calls) == 1
@@ -107,3 +107,19 @@ def test_auto_publish_option_is_not_accepted(client, a_headers, pro):
     account = connect(client, a_headers)
     response = client.post("/publishing/jobs", headers=a_headers, json=body(account, auto_publish=True))
     assert response.status_code == 422
+
+
+def test_approval_is_idempotent_and_content_changes_require_new_review(client, a_headers, pro):
+    checked = review(client, a_headers)
+    first = approve(client, a_headers, checked)
+    second = approve(client, a_headers, checked)
+    assert first.status_code == second.status_code == 200
+    assert first.json()["approved_at"] == second.json()["approved_at"]
+    changed = client.post(f"/publishing/reviews/{checked['id']}/approve", headers=a_headers,
+                         json={"content": "Changed text.", "accepted_flag_ids": []})
+    assert changed.status_code == 409
+
+
+def test_malformed_approval_id_is_rejected_before_database_access(client, a_headers, pro):
+    account = connect(client, a_headers)
+    assert client.post("/publishing/jobs", headers=a_headers, json=body(account, approval_id="not-a-uuid")).status_code == 422

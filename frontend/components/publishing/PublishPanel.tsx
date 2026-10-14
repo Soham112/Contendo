@@ -258,7 +258,7 @@ export default function PublishPanel({ content, postId, traceId }: { content: st
           )}
 
           <ApprovalReview key={JSON.stringify([content, postId, traceId, media])}
-            content={content} postId={postId} traceId={traceId} media={media} onApproved={setApproved} />
+            content={content} postId={postId} traceId={traceId} media={media} onApproved={setApproved} onPaywall={setPaywall} />
           <button
             type="button"
             disabled={!!busy || chosen.length === 0 || !approvalId}

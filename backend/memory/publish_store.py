@@ -65,6 +65,12 @@ def sync_accounts(user_id: str, provider: str, current: list[ConnectedAccount]) 
     active = [account for account in current if account.status != AccountStatus.DISCONNECTED]
     if len({account.platform for account in active}) != len(active):
         raise AccountLimitError("Connect only one account per platform. Remove the extra account at your publishing provider and reconnect.")
+    # Release stale platform slots before upserting replacement references, so
+    # the unique per-platform index also permits legitimate reconnects.
+    active_refs = {account.ref for account in active}
+    for row in list_accounts(user_id, provider):
+        if row["provider_account_ref"] not in active_refs:
+            mark_account(user_id, row["id"], AccountStatus.DISCONNECTED)
     now = _now()
     for account in current:
         supabase.table("connected_accounts").upsert({
@@ -76,10 +82,6 @@ def sync_accounts(user_id: str, provider: str, current: list[ConnectedAccount]) 
             "status": account.status.value,
             "updated_at": now,
         }, on_conflict="user_id,provider,provider_account_ref").execute()
-    listed = {account.ref for account in current}
-    for row in list_accounts(user_id, provider):
-        if row["provider_account_ref"] not in listed:
-            mark_account(user_id, row["id"], AccountStatus.DISCONNECTED)
     return list_accounts(user_id, provider)
 
 

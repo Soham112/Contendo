@@ -51,6 +51,10 @@ BACKEND_ENV_KEYS = (
     "FRONTEND_ORIGIN",
     "LOG_LEVEL",
     "PIPELINE_VARIANT",
+    "PUBLISHING_PROVIDER",
+    "ZERNIO_API_KEY",
+    "ZERNIO_WEBHOOK_SECRET",
+    "STRIPE_TRIAL_DAYS",
     "SUPABASE_JWT_SECRET",
     "SUPABASE_SERVICE_ROLE_KEY",
     "SUPABASE_URL",
@@ -63,6 +67,8 @@ BACKEND_ENV_KEYS = (
 # Read by the Anthropic SDK itself, not the backend. Removed so requests go to
 # api.anthropic.com with the key from evals/.env and nothing else.
 SDK_ENV_REMOVED = ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN")
+# Integration credentials read through config dictionaries must not leak into evals.
+INTEGRATION_ENV_REMOVED = ("STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_PRICE_ID_PRO")
 
 # DeepEval settings: no telemetry, and never let it auto-load a .env file.
 DEEPEVAL_ENV = {
@@ -199,6 +205,10 @@ def build_backend_env(values: Mapping[str, str], data_dir: str) -> dict[str, str
         "DATA_DIR": data_dir,
         "LOG_LEVEL": values.get("LOG_LEVEL") or "WARNING",
         "PIPELINE_VARIANT": values.get("PIPELINE_VARIANT") or "",
+        "PUBLISHING_PROVIDER": "",
+        "ZERNIO_API_KEY": "",
+        "ZERNIO_WEBHOOK_SECRET": "",
+        "STRIPE_TRIAL_DAYS": "0",
         "FRONTEND_ORIGIN": "",
         "SUPADATA_API_KEY": "",
         "TAVILY_API_KEY": "",
@@ -329,11 +339,11 @@ def bootstrap(
 
     disable_dotenv()
     environ.update(backend_env)
-    for key in SDK_ENV_REMOVED:
+    for key in (*SDK_ENV_REMOVED, *INTEGRATION_ENV_REMOVED):
         environ.pop(key, None)
     check_dotenv_disabled()
     check_environ(environ, backend_env)
-    if any(key in environ for key in SDK_ENV_REMOVED):
+    if any(key in environ for key in (*SDK_ENV_REMOVED, *INTEGRATION_ENV_REMOVED)):
         raise EnvGuardError(f"could not clear {', '.join(SDK_ENV_REMOVED)} from the environment")
 
     backend = str(BACKEND_DIR)
