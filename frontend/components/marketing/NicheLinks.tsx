@@ -8,14 +8,14 @@ export default function NicheLinks() {
       <p className="label-caps text-on-surface" style={{ fontSize: "0.72rem" }}>
         Contendo for
       </p>
-      <div className="mt-3 flex flex-col gap-2.5">
-        <Link href="/privacy-policy" className="text-secondary hover:text-on-surface text-sm">Privacy policy</Link>
-        <Link href="/terms-of-service" className="text-secondary hover:text-on-surface text-sm">Terms of service</Link>
+      <div className="mt-2 flex flex-col">
+        <Link href="/privacy-policy" className="inline-flex min-h-11 items-center text-secondary hover:text-on-surface text-sm">Privacy policy</Link>
+        <Link href="/terms-of-service" className="inline-flex min-h-11 items-center text-secondary hover:text-on-surface text-sm">Terms of service</Link>
         {NICHE_PAGES.map((page) => (
           <Link
             key={page.slug}
             href={`/${page.slug}`}
-            className="text-secondary hover:text-on-surface transition-colors"
+            className="inline-flex min-h-11 items-center text-secondary hover:text-on-surface transition-colors"
             style={{ fontSize: "0.9rem" }}
           >
             {page.linkLabel}

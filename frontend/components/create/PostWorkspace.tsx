@@ -1,6 +1,8 @@
 "use client";
 
 import type { FormEvent, MouseEvent, ReactNode, RefObject } from "react";
+import { motion } from "motion/react";
+import { transition } from "@/components/ui/motion";
 import GroundingNotice, { type Grounding } from "@/components/GroundingNotice";
 import { OpinionPostLabel } from "@/components/LowCoverageNotice";
 import PostPreviewPanel from "@/components/preview/PostPreviewPanel";
@@ -18,7 +20,7 @@ import { DraftHeading, DragHandle, PostMetaBar, SplitHeading } from "./PostChrom
  * its innerHTML is never lost.
  */
 export default function PostWorkspace({
-  splitActive, splitRatio, isWide, containerRef, onDragStart, topic, tone, onStartOver, actions,
+  splitActive, splitRatio, isWide, containerRef, onDragStart, topic, tone, onStartOver, actions, mobileActions,
   editorRef, opinionMode, hinted, onEditorFocus, onEditorInput, onEditorSelect,
   text, grounding, postId, traceId, format, postStats, saveStatus, analysisOpen, analysisRef, analysisPanel, visualsPanel,
 }: {
@@ -30,8 +32,10 @@ export default function PostWorkspace({
   topic: string;
   tone: string;
   onStartOver: () => void;
-  /** The action buttons, placed by layout. */
+  /** The action buttons as a column (desktop rail). */
   actions: ReactNode;
+  /** The same actions as a row, for phones and tablets. */
+  mobileActions: ReactNode;
   editorRef: RefObject<HTMLDivElement>;
   opinionMode: boolean;
   /** Whether the editor has been focused once (hides the "Click to edit" label). */
@@ -52,7 +56,10 @@ export default function PostWorkspace({
   visualsPanel: ReactNode;
 }) {
   return (
-        <div
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={transition.slow}
           ref={containerRef}
           style={{
             display: "flex",
@@ -142,7 +149,7 @@ export default function PostWorkspace({
                     background: "#ffffff",
                     boxShadow: "0px 4px 20px rgba(47,51,51,0.04), 0px 12px 40px rgba(47,51,51,0.06)",
                     overflow: "hidden",
-                    minHeight: "85vh",
+                    minHeight: isWide ? "85vh" : undefined,
                   }}
                 >
                   {/* Scroll / padding area — same element type, only className changes */}
@@ -159,7 +166,7 @@ export default function PostWorkspace({
                           aria-hidden="true"
                           style={{
                             pointerEvents: "none",
-                            color: "rgba(119,124,123,0.6)",
+                            color: "#5b605f",
                             fontSize: "0.75rem",
                             letterSpacing: "0.05rem",
                             textTransform: "uppercase",
@@ -177,17 +184,21 @@ export default function PostWorkspace({
                         suppressContentEditableWarning
                         role="textbox"
                         aria-multiline="true"
+                        aria-label="Your post"
                         onFocus={onEditorFocus}
                         onInput={onEditorInput}
                         onMouseUp={onEditorSelect}
                         onKeyUp={onEditorSelect}
                         className="manuscript-editor outline-none text-[15.5px] leading-[1.9] text-on-surface whitespace-pre-wrap"
-                        style={{ fontFamily: "inherit", minHeight: splitActive ? "52vh" : "78vh" }}
+                        style={{ fontFamily: "inherit", minHeight: splitActive ? "52vh" : isWide ? "78vh" : "30vh" }}
                       />
                     </div>
                   </div>
                 </div>
                 {/* END canvas card */}
+
+                {/* Phones and tablets: the actions as a row right under the post (after the card, so its index holds). */}
+                {!splitActive && <div className="lg:hidden mt-4 w-full">{mobileActions}</div>}
 
                 <div style={{ width: "100%", marginTop: 20 }}>
                   <GroundingNotice grounding={grounding} />
@@ -200,17 +211,13 @@ export default function PostWorkspace({
                 {/* Below-canvas content — single-column only */}
                 {!splitActive && (
                   <>
-                    <div className="lg:hidden" style={{ width: "100%", marginTop: 20 }}>
-                      {actions}
-                    </div>
-
-                    {/* Footer — word count centered, last-edited right */}
-                    <div style={{ width: "100%", display: "flex", justifyContent: "center", marginTop: "1.5rem", position: "relative" }}>
-                      <span style={{ fontSize: 11, color: "rgba(91,96,95,0.4)", letterSpacing: "0.05em" }}>
+                    {/* Footer: word count centred, save status on the right (stacked on phones) */}
+                    <div className="mt-6 flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-1 sm:relative sm:justify-center">
+                      <span style={{ fontSize: 12, color: "#5b605f", letterSpacing: "0.03em" }}>
                         {postStats.wordCount} words · ~{postStats.readingTime} min read
                         {format === "thread" && ` · ~${postStats.tweetCount} tweets`}
                       </span>
-                      <span style={{ position: "absolute", right: 0, fontSize: 10, color: "rgba(91,96,95,0.3)", fontStyle: "italic" }}>
+                      <span className="sm:absolute sm:right-0" style={{ fontSize: 12, color: "#5b605f", fontStyle: "italic" }}>
                         {saveStatus}
                       </span>
                     </div>
@@ -245,7 +252,7 @@ export default function PostWorkspace({
               <>
                 <div className="xl:hidden">{actions}</div>
                 <PostMetaBar stats={postStats} format={format} />
-                <p className="text-xs text-outline-variant shrink-0 mt-2">
+                <p className="text-xs text-on-surface-variant shrink-0 mt-2">
                   {saveStatus}
                 </p>
               </>
@@ -270,6 +277,6 @@ export default function PostWorkspace({
               {analysisPanel}
             </div>
           )}
-        </div>
+        </motion.div>
   );
 }

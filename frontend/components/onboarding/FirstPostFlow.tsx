@@ -13,8 +13,15 @@ import SegmentQuestion from './SegmentQuestion';
 import BusinessSetup from './BusinessSetup';
 import IndividualBrief from './IndividualBrief';
 import FirstDraft from './FirstDraft';
+import { motion } from 'motion/react';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/card';
+import { riseIn, transition } from '@/components/ui/motion';
+import { ErrorState, ProgressSteps } from '@/components/ui/states';
 
 type Screen = 'segment' | 'business' | 'individual' | 'generating' | 'draft';
+// What happens while the first post is written, in the order the pipeline does it.
+const FIRST_POST_STEPS = ['Reading what you told us', 'Drafting it in your voice', 'Checking it against your details', 'Polishing the wording'];
 export default function FirstPostFlow() {
   const api = useApi();
   const router = useRouter();
@@ -138,14 +145,24 @@ export default function FirstPostFlow() {
   }
 
   if (loadError) return <RetryNotice message={loadError} onRetry={() => setAttempt(value => value + 1)} />;
-  if (!loaded || !options) return <p className="text-secondary">Loading your setup…</p>;
+  if (!loaded || !options) return (
+    <div role="status" aria-label="Loading your setup" className="flex flex-col gap-4">
+      <Skeleton className="mx-auto h-7 w-3/4" /><Skeleton className="mx-auto h-4 w-1/2" />
+      <div className="mt-4 grid gap-4 sm:grid-cols-2"><Skeleton className="h-28 rounded-2xl" /><Skeleton className="h-28 rounded-2xl" /></div>
+    </div>
+  );
   return <>
-    {trackingError && <div role="alert" className="mb-5 text-tertiary">We couldn’t save your setup progress. <button className="underline" onClick={flushEvents}>Retry saving progress</button></div>}
-    {error && screen !== 'business' && <p role="alert" className="mb-5 text-error">{error}</p>}
-    {screen === 'segment' && <SegmentQuestion onChoose={choose} onSkip={() => { void choose('individual', true); }} busy={busy} />}
+    {trackingError && <div role="alert" className="mb-5 flex flex-wrap items-center gap-2 text-tertiary">We couldn’t save your setup progress. <Button variant="tertiary" size="sm" onClick={flushEvents}>Try again</Button></div>}
+    {error && screen !== 'business' && <div className="mb-5"><ErrorState message={error} /></div>}
+    {/* The business form stays mounted while hidden, so its answers survive a failed generation. */}
     {selectedSegment === 'business' && <div hidden={screen !== 'business'}><BusinessSetup options={options} initialNiche={account?.business_niche || resolveNicheParam(params.get('niche'), options)} prefill={account?.business_profile || undefined} busy={busy} error={error} onBack={() => { setScreen('segment'); track('segment', 'started'); }} onSubmit={business} onStep={(step, outcome) => track(step, outcome, 'business')} /></div>}
+    {/* Each other step fades and rises in (keyed, so a new step mounts fresh). */}
+    <motion.div key={screen} initial={riseIn.initial} animate={riseIn.animate} transition={transition.base}>
+    {screen === 'segment' && <SegmentQuestion onChoose={choose} onSkip={() => { void choose('individual', true); }} busy={busy} />}
+
     {screen === 'individual' && <IndividualBrief brief={brief} onChange={value => { if (value.topic !== brief.topic || value.story !== brief.story) setTakes([]); setBrief(value); }} takes={takes} suggesting={suggesting} busy={busy} onSuggest={suggest} onGenerate={() => { track('individual_brief', 'completed'); if (!brief.take) track('takes', 'skipped'); void generate(brief); }} />}
-    {screen === 'generating' && <div role="status"><h1 className="font-headline text-2xl">Writing your first post…</h1><p className="mt-3 text-secondary">We’re drafting and checking it against what you told us. This may take a minute.</p></div>}
+    {screen === 'generating' && <ProgressSteps title="Writing your first post" steps={FIRST_POST_STEPS} stepMs={6000} />}
     {screen === 'draft' && draft && <FirstDraft draft={draft} topic={brief.topic} format={brief.format} tone={account?.business_profile?.tone || 'casual'} saveError={saveError} onRetrySave={() => void saveDraft()} />}
+    </motion.div>
   </>;
 }

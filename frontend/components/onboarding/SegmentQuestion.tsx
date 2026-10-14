@@ -1,6 +1,7 @@
 "use client";
 
 import type { Segment } from "@/lib/account";
+import { Button } from "@/components/ui/button";
 
 const CHOICES: { segment: Segment; title: string; detail: string }[] = [
   {
@@ -19,31 +20,38 @@ const CHOICES: { segment: Segment; title: string; detail: string }[] = [
 export default function SegmentQuestion({
   onChoose,
   onSkip,
-  busy = false,
+    busy = false,
   error = "",
+  showHeading = true,
 }: {
   onChoose: (segment: Segment) => void;
   onSkip: () => void;
   busy?: boolean;
   error?: string;
+  /** False inside a dialog that already shows the question as its title. */
+  showHeading?: boolean;
 }) {
   return (
     <div className="w-full">
-      <h1 className="font-headline text-[1.5rem] sm:text-[1.75rem] leading-snug text-on-surface text-center">
-        Who are you creating content for?
-      </h1>
-      <p className="mt-3 text-[0.9375rem] leading-relaxed text-secondary text-center">
-        It decides what we ask you next and the kinds of post we suggest.
-      </p>
+      {showHeading && (
+        <>
+          <h1 className="font-headline text-[1.5rem] sm:text-[1.75rem] leading-snug text-on-surface text-center">
+            Who are you creating content for?
+          </h1>
+          <p className="mt-3 text-[0.9375rem] leading-relaxed text-secondary text-center">
+            It decides what we ask you next and the kinds of post we suggest.
+          </p>
+        </>
+      )}
 
-      <div className="mt-8 grid gap-4 sm:grid-cols-2">
+      <div className={`${showHeading ? "mt-8" : ""} grid gap-4 sm:grid-cols-2`}>
         {CHOICES.map((choice) => (
           <button
             key={choice.segment}
             type="button"
             disabled={busy}
             onClick={() => onChoose(choice.segment)}
-            className="text-left rounded-lg bg-surface-container-low hover:bg-surface-container-highest px-5 py-5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex flex-col items-start justify-start text-left rounded-2xl border border-outline-variant bg-surface-container-lowest hover:bg-surface-container-low hover:border-outline px-5 py-5 transition-colors duration-150 ease-out disabled:cursor-wait focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
           >
             <span className="block font-headline text-[1.125rem] text-on-surface">{choice.title}</span>
             <span className="mt-2 block text-[0.875rem] leading-relaxed text-secondary">{choice.detail}</span>
@@ -58,14 +66,9 @@ export default function SegmentQuestion({
       )}
 
       <div className="mt-7 text-center">
-        <button
-          type="button"
-          disabled={busy}
-          onClick={onSkip}
-          className="text-[0.875rem] text-secondary underline decoration-tertiary-fixed-dim underline-offset-4 hover:text-on-surface disabled:opacity-50"
-        >
+        <Button variant="tertiary" size="sm" disabled={busy} onClick={onSkip}>
           Skip for now
-        </button>
+        </Button>
       </div>
     </div>
   );

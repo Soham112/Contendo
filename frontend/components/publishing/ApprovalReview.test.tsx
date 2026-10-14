@@ -19,6 +19,7 @@ vi.mock("react", async () => {
 });
 vi.mock("@/lib/api", () => ({ useApi: () => harness.api }));
 import ApprovalReview from "./ApprovalReview";
+import { Button } from "@/components/ui/button";
 import { PaywallError } from "@/lib/commerce-api";
 
 const checked = { id: "r", content: "A young couple paid $900,000.", media: [], post_id: null, approved_at: null,
@@ -36,7 +37,7 @@ function elements(node: ReactNode): ReactElement[] {
   const element = node as ReactElement;
   return [element, ...elements(element.props.children)];
 }
-function button(tree: ReactNode) { return elements(tree).find((el) => el.type === "button")!; }
+function button(tree: ReactNode) { return elements(tree).find((el) => el.type === Button)!; }
 function inputs(tree: ReactNode) { return elements(tree).filter((el) => el.type === "input"); }
 
 beforeEach(() => {

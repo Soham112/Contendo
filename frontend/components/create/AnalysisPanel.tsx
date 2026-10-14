@@ -1,8 +1,9 @@
 "use client";
 
 import type { GenerateResult } from "./config";
+import { Button } from "@/components/ui/button";
 
-/** The post's authscore, metric rows and focus points; or a prompt to run the analysis. */
+/** The post's authenticity score, metric rows and focus points; or a prompt to run the analysis. */
 export default function AnalysisPanel({ result, scoreLoading, onClose, onRunAnalysis }: {
   result: GenerateResult | null;
   scoreLoading: boolean;
@@ -27,19 +28,15 @@ export default function AnalysisPanel({ result, scoreLoading, onClose, onRunAnal
         <span className="label-caps text-secondary" style={{ fontSize: "0.6rem", letterSpacing: "0.1em" }}>
           ANALYSIS &amp; IMPACT
         </span>
-        <button
-          onClick={onClose}
-          className="text-outline hover:text-on-surface transition-colors text-xl leading-none"
-          aria-label="Close analysis"
-        >
+        <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close analysis" className="-mr-2 text-xl">
           ×
-        </button>
+        </Button>
       </div>
 
       {scoreLoading ? (
         <div className="flex flex-col items-center justify-center py-16 gap-3">
           <div className="w-5 h-5 rounded-full border-2 border-surface-container-high border-t-primary animate-spin" />
-          <p className="text-xs text-outline">Scoring post…</p>
+          <p className="text-xs text-on-surface-variant">Scoring post…</p>
         </div>
       ) : result?.scored ? (
         <>
@@ -68,10 +65,10 @@ export default function AnalysisPanel({ result, scoreLoading, onClose, onRunAnal
                 x="65" y="79"
                 textAnchor="middle"
                 fontSize="8.5" fontWeight="500"
-                letterSpacing="0.09em" fill="#777c7b"
+                letterSpacing="0.09em" fill="#5b605f"
                 style={{ fontFamily: "var(--font-body), system-ui, sans-serif" }}
               >
-                AUTHSCORE
+                AUTHENTICITY
               </text>
             </svg>
           </div>
@@ -86,7 +83,7 @@ export default function AnalysisPanel({ result, scoreLoading, onClose, onRunAnal
             </p>
           ) : (
             <p
-              className="text-outline-variant text-center mb-6 px-3 leading-relaxed"
+              className="text-on-surface-variant text-center mb-6 px-3 leading-relaxed"
               style={{ fontSize: 13 }}
             >
               Your narrative voice analysis will appear here.
@@ -105,7 +102,7 @@ export default function AnalysisPanel({ result, scoreLoading, onClose, onRunAnal
               <div key={label}>
                 <div className="flex items-center justify-between mb-1.5">
                   <span
-                    className="label-caps text-outline"
+                    className="label-caps text-on-surface-variant"
                     style={{ fontSize: "0.58rem", letterSpacing: "0.09em" }}
                   >
                     {label}
@@ -176,16 +173,13 @@ export default function AnalysisPanel({ result, scoreLoading, onClose, onRunAnal
               letterSpacing="0.09em" fill="#aeb3b2"
               style={{ fontFamily: "var(--font-body), system-ui, sans-serif" }}
             >
-              AUTHSCORE
+              AUTHENTICITY
             </text>
           </svg>
-          <p className="text-xs text-outline text-center">Run analysis to see your authscore.</p>
-          <button
-            onClick={() => { if (!result?.scored && !scoreLoading) onRunAnalysis(); }}
-            className="btn-primary text-white text-xs font-medium rounded-lg px-5 py-2 hover:opacity-90 transition-opacity"
-          >
-            Run Analysis
-          </button>
+          <p className="text-xs text-on-surface-variant text-center">Run the analysis to see how much this sounds like you.</p>
+          <Button size="sm" onClick={() => { if (!result?.scored && !scoreLoading) onRunAnalysis(); }}>
+            Run analysis
+          </Button>
 
           {/* Placeholder metric rows */}
           <div className="w-full space-y-4 mt-2">
@@ -193,12 +187,12 @@ export default function AnalysisPanel({ result, scoreLoading, onClose, onRunAnal
               <div key={label}>
                 <div className="flex items-center justify-between mb-1.5">
                   <span
-                    className="label-caps text-outline-variant"
+                    className="label-caps text-on-surface-variant"
                     style={{ fontSize: "0.58rem", letterSpacing: "0.09em" }}
                   >
                     {label}
                   </span>
-                  <span className="text-xs text-outline-variant">—</span>
+                  <span className="text-xs text-on-surface-variant">—</span>
                 </div>
                 <div className="h-1 rounded-full bg-surface-container-high" />
               </div>

@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 export default function LegalDocument({ title, children }: { title: string; children: ReactNode }) {
   return <div className="min-h-screen bg-background font-sans text-on-surface">
     <header className="mx-auto max-w-4xl px-5 py-7 sm:px-9">
-      <Link href="/" className="font-headline text-xl italic">Contendo</Link>
+      <Link href="/" className="inline-flex min-h-11 items-center font-headline text-xl italic">Contendo</Link>
     </header>
     <main className="mx-auto max-w-4xl px-5 pb-20 pt-10 sm:px-9">
       <h1 className="font-headline text-4xl leading-tight">{title}</h1>
@@ -14,8 +14,8 @@ export default function LegalDocument({ title, children }: { title: string; chil
       </div>
     </main>
     <footer className="bg-surface-container-low px-5 py-8">
-      <nav aria-label="Legal" className="mx-auto flex max-w-4xl flex-wrap gap-6 text-sm text-secondary">
-        <Link href="/">Contendo</Link><Link href="/privacy-policy">Privacy policy</Link><Link href="/terms-of-service">Terms of service</Link>
+      <nav aria-label="Legal" className="mx-auto flex max-w-4xl flex-wrap gap-x-6 text-sm text-secondary">
+        <Link href="/" className="inline-flex min-h-11 items-center hover:text-on-surface">Contendo</Link><Link href="/privacy-policy" className="inline-flex min-h-11 items-center hover:text-on-surface">Privacy policy</Link><Link href="/terms-of-service" className="inline-flex min-h-11 items-center hover:text-on-surface">Terms of service</Link>
       </nav>
     </footer>
   </div>;

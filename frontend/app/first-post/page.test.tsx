@@ -22,6 +22,8 @@ import BusinessSetup from '@/components/onboarding/BusinessSetup';
 import IndividualBrief from '@/components/onboarding/IndividualBrief';
 import FirstDraft from '@/components/onboarding/FirstDraft';
 import RetryNotice from '@/components/RetryNotice';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/field';
 function render() {h.cursor=0; h.rc=0; h.ec=0; return FirstPostFlow();}
 function find(node:ReactNode,type:unknown):ReactElement|undefined {
   if(Array.isArray(node)) return node.map(n=>find(n,type)).find(Boolean);
@@ -62,7 +64,7 @@ it('individual generation preserves unsupported flags through workspace handoff'
   expect(h.api.generateFirstPost).toHaveBeenCalledWith(expect.objectContaining({story:'I fixed a bug.'}));
   const draft=find(tree,FirstDraft)!;expect(draft.props.draft.grounding).toEqual(grounding);
   const draftTree=FirstDraft(draft.props);expect(text(draftTree)).toContain('Age is not in your sources.');
-  find(draftTree,'button')!.props.onClick();expect(JSON.parse(h.storage.get('contentOS_last_grounding')!)).toEqual(grounding);
+  find(draftTree,Button)!.props.onClick();expect(JSON.parse(h.storage.get('contentOS_last_grounding')!)).toEqual(grounding);
   expect(h.push).toHaveBeenCalledWith('/create');
 });
 it.each(['draft_empty','draft_refused','draft_truncated','low_coverage'])('does not save an empty %s result',async status=>{
@@ -83,7 +85,7 @@ it('brief offers optional takes with story and clears a stale take when topic ch
   const onChange=vi.fn(),onGenerate=vi.fn();const tree=IndividualBrief({brief:{topic:'Launch',story:'I fixed a bug.',format:'linkedin post',take:'Delay was right'},
     onChange,onGenerate,onSuggest:vi.fn(),takes:['Delay was right'],suggesting:false,busy:false});
   expect(text(tree)).toContain('One sentence about it');expect(text(tree)).toContain('Suggest a take (optional)');
-  find(tree,'input')!.props.onChange({target:{value:'New topic'}});expect(onChange).toHaveBeenCalledWith(expect.objectContaining({topic:'New topic',take:''}));
+  find(tree,Input)!.props.onChange({target:{value:'New topic'}});expect(onChange).toHaveBeenCalledWith(expect.objectContaining({topic:'New topic',take:''}));
   find(tree,'form')!.props.onSubmit({preventDefault:vi.fn()});expect(onGenerate).toHaveBeenCalledOnce();
 });
 it('brief rejects whitespace-only story',()=>{

@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useApi } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogActions } from "@/components/ui/dialog";
+import { FieldMessage, Label, Textarea } from "@/components/ui/field";
 
 interface FeedbackModalProps {
   open: boolean;
@@ -13,6 +16,7 @@ export default function FeedbackModal({ open, onClose }: FeedbackModalProps) {
   const [message, setMessage] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
   const pathname = usePathname();
   const api = useApi();
 
@@ -22,88 +26,59 @@ export default function FeedbackModal({ open, onClose }: FeedbackModalProps) {
       setMessage("");
       setSubmitted(false);
       setLoading(false);
+      setFailed(false);
     }
   }, [open]);
 
   const handleSubmit = async () => {
     if (!message.trim() || loading) return;
     setLoading(true);
+    setFailed(false);
     try {
-      await api.submitFeedback(message.trim(), pathname ?? "/");
-    } catch {
-      // best-effort — don't surface errors to the user
-    } finally {
-      setLoading(false);
+      const res = await api.submitFeedback(message.trim(), pathname ?? "/");
+      if (!res.ok) throw new Error("not sent");
       setSubmitted(true);
       setTimeout(onClose, 2000);
+    } catch {
+      setFailed(true);
+    } finally {
+      setLoading(false);
     }
   };
 
-  if (!open) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: "rgba(0, 0, 0, 0.3)" }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <Dialog
+      open={open}
+      onOpenChange={(next) => { if (!next) onClose(); }}
+      title="Send feedback"
+      description="What's working, what isn't, or what you'd like to see."
     >
-      <div
-        className="bg-background flex flex-col w-[90%]"
-        style={{
-          maxWidth: 420,
-          borderRadius: 16,
-          padding: 24,
-          boxShadow:
-            "0px 4px 20px rgba(47, 51, 51, 0.04), 0px 12px 40px rgba(47, 51, 51, 0.06)",
-        }}
-      >
-        <h2
-          className="font-headline text-on-surface mb-1"
-          style={{ fontSize: 18, fontWeight: 400 }}
-        >
-          Send feedback
-        </h2>
-        <p className="text-secondary mb-4" style={{ fontSize: 13 }}>
-          What&rsquo;s working, what isn&rsquo;t, or what you&rsquo;d like to
-          see.
-        </p>
-
-        {submitted ? (
-          <p
-            className="text-secondary text-center py-6"
-            style={{ fontSize: 14 }}
-          >
-            Thanks &mdash; feedback received.
-          </p>
-        ) : (
-          <>
-            <textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Share your thoughts..."
-              className="input-editorial w-full mb-4 px-3 py-2.5 text-on-surface placeholder:text-outline-variant text-sm"
-              style={{ minHeight: 120, resize: "vertical" }}
-            />
-            <div className="flex items-center justify-end gap-2">
-              <button
-                onClick={onClose}
-                className="text-secondary hover:text-on-surface transition-colors px-4 py-2 rounded-lg text-sm"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={!message.trim() || loading}
-                className="btn-primary text-white text-sm rounded-lg px-4 py-2 hover:opacity-90 transition-opacity disabled:opacity-40"
-              >
-                {loading ? "Sending…" : "Submit"}
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
+      {submitted ? (
+        <p role="status" className="py-4 text-center text-[0.9375rem] text-on-surface">Thanks, we got your feedback.</p>
+      ) : (
+        <>
+          <Label htmlFor="feedback-message">Your feedback</Label>
+          <Textarea
+            id="feedback-message"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Share your thoughts..."
+            className="min-h-[120px] resize-y"
+            aria-describedby={failed ? "feedback-error" : undefined}
+          />
+          {failed && (
+            <FieldMessage id="feedback-error" error>
+              We couldn&apos;t send that. Check your connection and try again.
+            </FieldMessage>
+          )}
+          <DialogActions>
+            <Button variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button onClick={handleSubmit} loading={loading} disabled={!message.trim()} disabledReason="Write something to send">
+              {failed ? "Try again" : "Send"}
+            </Button>
+          </DialogActions>
+        </>
+      )}
+    </Dialog>
   );
 }

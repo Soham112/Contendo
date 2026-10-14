@@ -7,6 +7,9 @@ import { PaywallError } from "@/lib/commerce-api";
 import type { Paywall } from "@/lib/billing";
 import type { ConnectedAccount, PlatformRules } from "@/lib/publishing";
 import UpgradeScreen from "@/components/billing/UpgradeScreen";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/card";
+import { EmptyState, ErrorState } from "@/components/ui/states";
 
 const STATUS: Record<ConnectedAccount["status"], { text: string; tone: string }> = {
   connected: { text: "Connected", tone: "text-primary" },
@@ -23,16 +26,18 @@ function Accounts() {
   const [platforms, setPlatforms] = useState<PlatformRules[]>([]);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  // A failed first load: shown instead of the lists, never as "no accounts".
+  const [loadError, setLoadError] = useState("");
   const [paywall, setPaywall] = useState<Paywall | null>(null);
 
   const load = useCallback(async () => {
+    setLoadError("");
     try {
       const [loadedAccounts, loadedPlatforms] = await Promise.all([api.getConnectedAccounts(), api.getPlatformRules()]);
       setAccounts(loadedAccounts);
       setPlatforms(loadedPlatforms);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't load your accounts.");
-      setAccounts([]);
+      setLoadError(e instanceof Error ? e.message : "We couldn't load your accounts. Please try again.");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -65,7 +70,14 @@ function Accounts() {
       await load();
     });
 
-  if (accounts === null) return <p className="text-secondary text-[0.9375rem]">Loading…</p>;
+  if (accounts === null && loadError) return <ErrorState message={loadError} onRetry={load} />;
+  if (accounts === null) return (
+    <div role="status" aria-label="Loading your accounts" className="flex flex-col gap-3">
+      <Skeleton className="h-3 w-28" />
+      <Skeleton className="h-16 w-full rounded-2xl" />
+      <Skeleton className="h-16 w-full rounded-2xl" />
+    </div>
+  );
 
   return (
     <div className="flex flex-col gap-8">
@@ -80,17 +92,17 @@ function Accounts() {
         </p>
       )}
       {error && (
-        <p role="alert" className="text-[0.9375rem] text-error">
-          {error}
-        </p>
+        <ErrorState message={error} />
       )}
 
       <section>
         <h2 className="label-caps text-secondary">Your accounts</h2>
         {accounts.length === 0 ? (
-          <p className="mt-3 text-[0.9375rem] text-secondary">
-            No accounts yet. Connect one below and your posts can be published for you.
-          </p>
+          <EmptyState
+            className="mt-3"
+            title="No accounts connected yet"
+            body="Connect one below and Contendo can publish your posts for you."
+          />
         ) : (
           <ul className="mt-3 flex flex-col gap-3">
             {accounts.map((account) => (
@@ -107,23 +119,13 @@ function Accounts() {
                 </div>
                 <div className="flex gap-4 shrink-0">
                   {account.status === "needs_reconnect" && (
-                    <button
-                      type="button"
-                      disabled={!!busy}
-                      onClick={() => connect(account.platform)}
-                      className="btn-primary text-white rounded-md px-4 py-2.5 text-[0.875rem] font-medium disabled:opacity-50"
-                    >
+                    <Button size="sm" disabled={!!busy} onClick={() => connect(account.platform)}>
                       Reconnect
-                    </button>
+                    </Button>
                   )}
-                  <button
-                    type="button"
-                    disabled={!!busy}
-                    onClick={() => disconnect(account)}
-                    className="py-2.5 text-[0.875rem] text-secondary hover:text-on-surface disabled:opacity-50"
-                  >
-                    {busy === `disconnect:${account.id}` ? "Disconnecting…" : "Disconnect"}
-                  </button>
+                  <Button variant="secondary" size="sm" disabled={!!busy && busy !== `disconnect:${account.id}`} loading={busy === `disconnect:${account.id}`} onClick={() => disconnect(account)}>
+                    Disconnect
+                  </Button>
                 </div>
               </li>
             ))}
@@ -135,15 +137,17 @@ function Accounts() {
         <h2 className="label-caps text-secondary">Connect an account</h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           {platforms.map((platform) => (
-            <button
+            <Button
               key={platform.platform}
-              type="button"
-              disabled={!!busy}
+              variant="secondary"
+              size="lg"
+              className="justify-start bg-surface-container-lowest"
+              disabled={!!busy && busy !== `connect:${platform.platform}`}
+              loading={busy === `connect:${platform.platform}`}
               onClick={() => connect(platform.platform)}
-              className="rounded-lg bg-surface-container-low hover:bg-surface-container-highest px-4 py-4 text-left text-[0.9375rem] text-on-surface transition-colors disabled:opacity-50"
             >
-              {busy === `connect:${platform.platform}` ? "Opening…" : `Connect ${platform.label}`}
-            </button>
+              Connect {platform.label}
+            </Button>
           ))}
         </div>
         <p className="mt-4 text-[0.875rem] leading-relaxed text-secondary">
@@ -161,7 +165,7 @@ export default function AccountsPage() {
     <div className="max-w-[40rem] mx-auto">
       <h1 className="font-headline text-[2rem] sm:text-[2.5rem] text-on-surface leading-tight">Connected accounts</h1>
       <div className="mt-8">
-        <Suspense fallback={<p className="text-secondary text-[0.9375rem]">Loading…</p>}>
+        <Suspense fallback={<Skeleton className="h-16 w-full rounded-2xl" />}>
           <Accounts />
         </Suspense>
       </div>

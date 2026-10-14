@@ -12,6 +12,8 @@ vi.mock('next/link',()=>({default:({children}:{children:ReactNode})=>children}))
 import ScheduledPage from '@/app/scheduled/page';
 import PersonalizationPrompt from './PersonalizationPrompt';
 import RetryNotice from '@/components/RetryNotice';
+import {Button} from '@/components/ui/button';
+import {EmptyState} from '@/components/ui/states';
 function render(component:()=>ReactNode){h.cursor=0;return component();}
 function find(node:ReactNode,type:unknown):ReactElement|undefined{
   if(Array.isArray(node))return node.map(n=>find(n,type)).find(Boolean);
@@ -34,16 +36,16 @@ beforeEach(()=>{vi.clearAllMocks();h.states=[];h.cursor=0;h.effects=[];
 it('scheduled failure offers retry without claiming an empty schedule',async()=>{
   h.api.getPublishJobs.mockRejectedValueOnce(new TypeError('Failed to fetch'));
   const tree=await mount(ScheduledPage),notice=find(tree,RetryNotice)!;
-  expect(notice.props.message).toContain('Check your connection');expect(text(tree)).not.toContain('Nothing here yet');
-  await notice.props.onRetry();expect(text(render(ScheduledPage))).toContain('Nothing here yet');
+  expect(notice.props.message).toContain('Check your connection');expect(find(tree,EmptyState)).toBeUndefined();
+  await notice.props.onRetry();expect(find(render(ScheduledPage),EmptyState)!.props.title).toBe('Nothing here yet');
 });
 it('failed cancellation retains the scheduled post and offers an actionable error',async()=>{
   h.api.getPublishJobs.mockResolvedValue([{id:'job-1',status:'scheduled',content:'Keep this post',results:[],scheduled_at:'2026-10-15T10:00:00Z'}]);
   h.api.cancelPublishJob.mockRejectedValue(new TypeError('Failed to fetch'));
-  const tree=await mount(ScheduledPage);await find(tree,'button')!.props.onClick();
+  const tree=await mount(ScheduledPage);await find(tree,Button)!.props.onClick();
   const after=render(ScheduledPage);expect(text(after)).toContain('Keep this post');
   expect(find(after,RetryNotice)!.props.message).toContain('cancel this post');
-  expect(find(after,'button')!.props.disabled).toBe(false);
+  expect(find(after,Button)!.props.loading).toBe(false);
 });
 it('new users are not shown an unsolicited voice questionnaire',async()=>{
   expect(await mount(PersonalizationPrompt)).toBeNull();

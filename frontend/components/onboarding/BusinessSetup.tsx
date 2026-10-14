@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
+import { motion } from "motion/react";
 import {
   EMPTY_BUSINESS_PROFILE,
   businessFormErrors,
@@ -10,8 +11,12 @@ import {
   type NicheOptions,
   type SegmentAnswer,
 } from "@/lib/account";
+import { Button } from "@/components/ui/button";
+import { riseIn, transition } from "@/components/ui/motion";
+import { ErrorState } from "@/components/ui/states";
+import { chipClass } from "@/components/ui/chip";
 
-const FIELD = "input-editorial w-full px-3 py-2.5 text-[1rem] text-on-surface placeholder:text-outline";
+const FIELD = "w-full min-h-11 rounded-t-md bg-surface-container-low px-3 py-2.5 text-[1rem] text-on-surface placeholder:text-placeholder border-0 border-b-[1.5px] border-outline focus:outline-none focus:border-b-2 focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/30 aria-[invalid=true]:border-error";
 
 function Field({
   id,
@@ -26,16 +31,20 @@ function Field({
   error?: string;
   children: React.ReactNode;
 }) {
+    // The control gets the hint and error as its description, and is marked invalid with an error.
+  const described = [hint && `${id}-hint`, error && `${id}-error`].filter(Boolean).join(" ") || undefined;
+  const control = React.isValidElement(children)
+    ? React.cloneElement(children as React.ReactElement<Record<string, unknown>>, { "aria-describedby": described, "aria-invalid": error ? true : undefined })
+    : children;
   return (
     <div>
       <label htmlFor={id} className="label-caps text-secondary">
         {label}
       </label>
-      {hint && <p className="mt-1 text-[0.8125rem] text-secondary">{hint}</p>}
-      <div className="mt-2">{children}</div>
-
+      {hint && <p id={`${id}-hint`} className="mt-1 text-[0.8125rem] text-secondary">{hint}</p>}
+      <div className="mt-2">{control}</div>
       {error && (
-        <p role="alert" className="mt-1.5 text-[0.8125rem] text-error">
+        <p id={`${id}-error`} role="alert" className="mt-1.5 text-[0.8125rem] text-error">
           {error}
         </p>
       )}
@@ -111,6 +120,8 @@ export default function BusinessSetup({
         </p>
       </div>
 
+      {/* Each stage fades and rises in. */}
+      <motion.div key={stage} initial={riseIn.initial} animate={riseIn.animate} transition={transition.base} className="flex flex-col gap-7">
       {stage === "niche" && <fieldset>
         <legend className="label-caps text-secondary">What kind of business?</legend>
         <div className="mt-3 flex flex-wrap gap-2">
@@ -122,11 +133,7 @@ export default function BusinessSetup({
                 type="button"
                 aria-pressed={selected}
                 onClick={() => setNiche(option.key)}
-                className={`rounded-full px-4 py-2.5 text-[0.9375rem] transition-colors ${
-                  selected
-                    ? "bg-primary-container text-on-primary-fixed outline outline-1 outline-primary"
-                    : "bg-surface-container-low text-on-surface hover:bg-surface-container-highest"
-                }`}
+                className={chipClass(selected)}
               >
                 {option.label}
               </button>
@@ -221,10 +228,10 @@ export default function BusinessSetup({
           {options.tones.map((tone) => (
             <label
               key={tone.key}
-              className={`flex items-center gap-3 rounded-lg px-4 py-3 text-[0.9375rem] cursor-pointer transition-colors ${
+              className={`flex min-h-11 items-center gap-3 rounded-xl border px-4 py-3 text-[0.9375rem] cursor-pointer transition-colors duration-150 ease-out has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary ${
                 profile.tone === tone.key
-                  ? "bg-primary-container text-on-primary-fixed"
-                  : "bg-surface-container-low text-on-surface hover:bg-surface-container-highest"
+                  ? "border-primary bg-primary-container text-on-primary-fixed"
+                  : "border-outline bg-surface-container-lowest text-on-surface hover:bg-surface-container-low"
               }`}
             >
               <input
@@ -233,7 +240,7 @@ export default function BusinessSetup({
                 value={tone.key}
                 checked={profile.tone === tone.key}
                 onChange={() => set("tone", tone.key)}
-                className="accent-primary"
+                className="h-5 w-5 accent-primary"
               />
               {tone.label}
             </label>
@@ -253,31 +260,22 @@ export default function BusinessSetup({
           onChange={(e) => set("tone_notes", e.target.value)}
         />
       </fieldset>
-
       </>}
+      </motion.div>
 
-      {error && (
-        <p role="alert" className="text-[0.875rem] text-error">
-          {error}
-        </p>
-      )}
+      {error && <ErrorState message={error} />}
 
       <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
-        <button
-          type="button"
+        <Button
+          variant="secondary"
           onClick={() => { if (stage === "profile") { setStage("niche"); onStep("niche", "started"); } else onBack(); }}
           disabled={busy}
-          className="text-[0.875rem] text-secondary hover:text-on-surface py-2 disabled:opacity-50"
         >
           Back
-        </button>
-        <button
-          type="submit"
-          disabled={busy}
-          className="btn-primary text-white px-6 py-3 rounded-md text-[0.9375rem] font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {busy ? "Building your first post…" : stage === "niche" ? "Continue" : "Generate my first post"}
-        </button>
+        </Button>
+        <Button type="submit" size="lg" loading={busy}>
+          {stage === "niche" ? "Continue" : "Create my first post"}
+        </Button>
       </div>
     </form>
   );

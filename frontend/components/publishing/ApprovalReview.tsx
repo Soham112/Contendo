@@ -5,6 +5,7 @@ import { PaywallError } from "@/lib/commerce-api";
 import type { Paywall } from "@/lib/billing";
 import { useApi } from "@/lib/api";
 import { allFlagsAccepted, type ContentReview, type MediaRef } from "@/lib/publishing";
+import { Button } from "@/components/ui/button";
 
 export default function ApprovalReview({ content, postId, traceId, media, onApproved, onPaywall }: {
   content: string; postId: number | null; traceId?: string | null; media: MediaRef[];
@@ -44,29 +45,31 @@ export default function ApprovalReview({ content, postId, traceId, media, onAppr
     } finally { setBusy(false); }
   }
 
-  return <section aria-label="Review and approve final text" className="mt-6 rounded-lg bg-surface-container-lowest p-5">
+  const flagsDone = !!review && allFlagsAccepted(review, accepted);
+  const reason = !read ? "Confirm you've read the text" : !flagsDone ? "Accept or fix each flagged detail" : undefined;
+  return <section aria-label="Review and approve final text" className="mt-6 rounded-2xl bg-surface-container-lowest p-5">
     <h4 className="font-headline text-lg">Read the final text</h4>
     <p className="mt-3 whitespace-pre-wrap text-base leading-relaxed">{content}</p>
-    {!review && !error && <p role="status" className="mt-4 text-sm text-secondary">Checking claims against your sources…</p>}
+    {!review && !error && <p role="status" className="mt-4 text-sm text-on-surface-variant">Checking the details against your sources…</p>}
     {review && <>
       {review.flags.length > 0 && <div className="mt-5">
-        <p className="text-sm text-tertiary">Edit the post to correct these details, or accept each claim after checking it yourself.</p>
-        {review.flags.map((flag) => <label key={flag.id} className="mt-4 flex items-start gap-3 text-sm">
-          <input type="checkbox" checked={accepted.includes(flag.id)} disabled={!!review.approved_at}
+        <p className="text-sm text-tertiary">Edit the post to correct these details, or accept each one after checking it yourself.</p>
+        {review.flags.map((flag) => <label key={flag.id} className="mt-3 flex min-h-11 cursor-pointer items-start gap-3 rounded-lg py-2 text-sm">
+          <input type="checkbox" className="mt-0.5 h-5 w-5 shrink-0 accent-primary" checked={accepted.includes(flag.id)} disabled={!!review.approved_at}
             onChange={(e) => setAccepted((prev) => e.target.checked ? [...prev, flag.id] : prev.filter((id) => id !== flag.id))} />
           <span>{flag.text && <strong className="block">{flag.text}</strong>}{flag.reason}
-            <span className="mt-1 block">I have checked and accept this flagged claim.</span></span>
+            <span className="mt-1 block text-on-surface-variant">I have checked this and it is correct.</span></span>
         </label>)}
       </div>}
-      <label className="mt-5 flex items-start gap-3 text-sm">
-        <input type="checkbox" checked={read} disabled={!!review.approved_at} onChange={(e) => setRead(e.target.checked)} />
+      <label className="mt-4 flex min-h-11 cursor-pointer items-start gap-3 py-2 text-sm">
+        <input type="checkbox" className="mt-0.5 h-5 w-5 shrink-0 accent-primary" checked={read} disabled={!!review.approved_at} onChange={(e) => setRead(e.target.checked)} />
         I have read and approve this exact text for publishing.
       </label>
-      <button type="button" onClick={approve}
-        disabled={busy || !!review.approved_at || !read || !allFlagsAccepted(review, accepted)}
-        className="mt-4 btn-primary rounded-md px-5 py-2.5 text-sm text-white disabled:opacity-50">
-        {review.approved_at ? "Text approved" : busy ? "Approving…" : "Approve this text"}
-      </button>
+      <Button className="mt-4" onClick={approve} loading={busy}
+        disabled={!!review.approved_at || !read || !flagsDone}
+        disabledReason={review.approved_at ? undefined : reason}>
+        {review.approved_at ? "Text approved" : "Approve this text"}
+      </Button>
     </>}
     {error && <p role="alert" className="mt-4 text-sm text-error">{error}</p>}
   </section>;

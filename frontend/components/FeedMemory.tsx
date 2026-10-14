@@ -6,6 +6,10 @@ import { useToast } from "@/components/ui/ToastProvider";
 import { useApi, type MemoryContext } from "@/lib/api";
 import { useTracking } from "@/lib/useTracking";
 import ExtensionInstallModal from "@/components/ExtensionInstallModal";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/states";
+import { chipClass } from "@/components/ui/chip";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -30,7 +34,7 @@ const ALL_TABS: { id: SourceType; label: string; description: string; localOnly?
   {
     id: "file",
     label: "File",
-    description: "Upload a PDF, DOCX, or TXT file. Text will be extracted and added to your knowledge base.",
+    description: "Upload a PDF, DOCX, or TXT file. Its text is added to your library.",
   },
   {
     id: "youtube",
@@ -41,7 +45,7 @@ const ALL_TABS: { id: SourceType; label: string; description: string; localOnly?
   {
     id: "image",
     label: "Image",
-    description: "Upload a screenshot, diagram, or whiteboard photo. Claude will extract the knowledge.",
+    description: "Upload a screenshot, diagram, or whiteboard photo. Contendo reads the text and ideas in it.",
   },
   {
     id: "note",
@@ -52,7 +56,7 @@ const ALL_TABS: { id: SourceType; label: string; description: string; localOnly?
     id: "obsidian",
     label: "Obsidian",
     description:
-      "Connect your Obsidian vault. All notes will be chunked, embedded, and added to your knowledge base.",
+      "Connect your Obsidian vault. All your notes are added to your library.",
   },
 ];
 
@@ -660,7 +664,16 @@ export default function FeedMemory() {
     }
   };
 
-  const currentTab = TABS.find((t) => t.id === activeTab)!;
+    const currentTab = TABS.find((t) => t.id === activeTab)!;
+
+  // What the active tab still needs before it can be added, said on the button.
+  const missingInput =
+    (activeTab === "article" || activeTab === "note") && !content.trim() ? "Paste some text to continue" :
+    activeTab === "url" && !urlInput.trim() ? "Add a link to continue" :
+    activeTab === "file" && !uploadedFile ? "Choose a file to continue" :
+    activeTab === "image" && !imageFile ? "Choose an image to continue" :
+    activeTab === "youtube" && !ytUrl.trim() && !ytManualText ? "Add a YouTube link or transcript" :
+    undefined;
   const effectiveObsidianMode: "local" | "zip" = isLocalBackend ? obsidianMode : "zip";
 
   const inputLabel =
@@ -677,9 +690,9 @@ export default function FeedMemory() {
 
         {/* Header */}
         <div>
-          <h1 className="font-headline text-4xl text-on-surface leading-tight">Feed Memory</h1>
+          <h1 className="font-headline text-4xl text-on-surface leading-tight">Feed memory</h1>
           <p className="mt-2 text-secondary text-[15px] leading-relaxed">
-            Transform raw fragments into editorial wisdom. Select a medium to store your inspiration.
+            Add something for Contendo to write from: an article, a link, a file, a video, an image or a note.
           </p>
         </div>
 
@@ -693,10 +706,10 @@ export default function FeedMemory() {
               setIsExtensionModalOpen(true);
             }
           }}
-          className="hidden md:flex w-full rounded-xl bg-surface-container-low px-4 py-2.5 items-center gap-2 cursor-pointer hover:bg-surface-container transition-colors text-secondary"
+          className="hidden md:flex w-full min-h-11 rounded-xl bg-surface-container-low px-4 items-center gap-2 cursor-pointer hover:bg-surface-container transition-colors text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         >
           <Puzzle size={16} className="shrink-0" />
-          <span className="text-[13px] font-normal truncate">Install Chrome Extension</span>
+          <span className="text-[0.875rem] font-normal truncate">Install the Chrome extension</span>
         </div>
 
         {/* Tab selector */}
@@ -706,13 +719,10 @@ export default function FeedMemory() {
               key={tab.id}
               ref={(el) => { tabButtonRefs.current[idx] = el; }}
               onClick={() => handleTabChange(tab.id)}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-[12.5px] font-medium tracking-wide transition-all duration-150 ${
-                activeTab === tab.id
-                  ? "btn-primary text-white shadow-card"
-                  : "bg-surface-container text-secondary hover:bg-surface-container-high hover:text-on-surface"
-              }`}
+              aria-pressed={activeTab === tab.id}
+              className={chipClass(activeTab === tab.id)}
             >
-              <span className={activeTab === tab.id ? "text-white/80" : "text-outline"}>
+              <span className={activeTab === tab.id ? "text-white/80" : "text-on-surface-variant"}>
                 {SOURCE_ICONS[tab.id]}
               </span>
               {tab.label}
@@ -726,13 +736,10 @@ export default function FeedMemory() {
               key={tab.id}
               ref={(el) => { mobileTabButtonRefs.current[idx] = el; }}
               onClick={() => handleTabChange(tab.id)}
-              className={`shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-full text-[12px] font-medium tracking-wide transition-all duration-150 ${
-                activeTab === tab.id
-                  ? "btn-primary text-white shadow-card"
-                  : "bg-surface-container text-secondary"
-              }`}
+              aria-pressed={activeTab === tab.id}
+              className={chipClass(activeTab === tab.id)}
             >
-              <span className={activeTab === tab.id ? "text-white/80" : "text-outline"}>
+              <span className={activeTab === tab.id ? "text-white/80" : "text-on-surface-variant"}>
                 {SOURCE_ICONS[tab.id]}
               </span>
               {tab.label}
@@ -751,22 +758,18 @@ export default function FeedMemory() {
                 {isLocalBackend && (
                   <div className="flex gap-2">
                     <button
+                      type="button"
+                      aria-pressed={obsidianMode === "local"}
                       onClick={() => setObsidianMode("local")}
-                      className={`px-4 py-2 rounded-full text-[12.5px] font-medium label-caps transition-all ${
-                        obsidianMode === "local"
-                          ? "bg-primary text-white"
-                          : "border border-ghost-border text-secondary hover:text-on-surface"
-                      }`}
+                      className={chipClass(obsidianMode === "local")}
                     >
                       Local path
                     </button>
                     <button
+                      type="button"
+                      aria-pressed={obsidianMode === "zip"}
                       onClick={() => setObsidianMode("zip")}
-                      className={`px-4 py-2 rounded-full text-[12.5px] font-medium label-caps transition-all ${
-                        obsidianMode === "zip"
-                          ? "bg-primary text-white"
-                          : "border border-ghost-border text-secondary hover:text-on-surface"
-                      }`}
+                      className={chipClass(obsidianMode === "zip")}
                     >
                       Upload zip
                     </button>
@@ -802,7 +805,7 @@ export default function FeedMemory() {
                               </span>
                             ))}
                             {obsidianResult.all_tags.length > 10 && (
-                              <span className="text-xs text-outline self-center">+{obsidianResult.all_tags.length - 10} more</span>
+                              <span className="text-xs text-on-surface-variant self-center">+{obsidianResult.all_tags.length - 10} more</span>
                             )}
                           </div>
                         )}
@@ -814,16 +817,16 @@ export default function FeedMemory() {
                     ) : (
                       <>
                         <div className="space-y-2">
-                          <label className="label-caps text-secondary">Vault folder path</label>
-                          <input
+                          <label htmlFor="feed-field-0" className="label-caps text-secondary">Vault folder path</label>
+                          <input id="feed-field-0"
                             type="text"
                             value={vaultPath}
                             onChange={(e) => { setVaultPath(e.target.value); setVaultPreview(null); setObsidianPhase("input"); }}
                             onKeyDown={(e) => { if (e.key === "Enter" && obsidianPhase === "input") handleVaultPreview(); }}
                             placeholder="/Users/yourname/Documents/ObsidianVault"
-                            className="w-full bg-surface-container-low px-4 py-3 text-[15px] text-on-surface placeholder:text-outline rounded-lg border-0 border-b-2 border-outline-variant focus:outline-none focus:border-primary transition-colors"
+                            className="w-full bg-surface-container-low px-4 py-3 text-[15px] text-on-surface placeholder:text-placeholder rounded-lg border-0 border-b-2 border-outline-variant focus:outline-none focus:border-primary transition-colors"
                           />
-                          <p className="text-xs text-outline">
+                          <p className="text-xs text-on-surface-variant">
                             Open Obsidian → Settings → About to find your vault path.
                           </p>
                         </div>
@@ -833,11 +836,11 @@ export default function FeedMemory() {
                             <p className="text-sm text-secondary">
                               {vaultPreview.total_files} notes · {vaultPreview.total_words.toLocaleString()} words
                             </p>
-                            <p className="text-xs text-outline">
+                            <p className="text-xs text-on-surface-variant">
                               ~{vaultPreview.estimated_chunks} chunks to store
                             </p>
                             {vaultPreview.skipped_files > 0 && (
-                              <p className="text-xs text-outline">{vaultPreview.skipped_files} short notes will be skipped</p>
+                              <p className="text-xs text-on-surface-variant">{vaultPreview.skipped_files} short notes will be skipped</p>
                             )}
                             {vaultPreview.total_files > 500 && (
                               <p className="text-xs text-secondary mt-2">Large vault — ingestion may take 2–3 minutes. Do not close this tab.</p>
@@ -876,7 +879,7 @@ export default function FeedMemory() {
                               </span>
                             ))}
                             {obsidianResult.all_tags.length > 10 && (
-                              <span className="text-xs text-outline self-center">+{obsidianResult.all_tags.length - 10} more</span>
+                              <span className="text-xs text-on-surface-variant self-center">+{obsidianResult.all_tags.length - 10} more</span>
                             )}
                           </div>
                         )}
@@ -892,34 +895,35 @@ export default function FeedMemory() {
                           <p className="text-sm text-secondary">
                             {zipPreview.total_files} notes · {zipPreview.total_words.toLocaleString()} words
                           </p>
-                          <p className="text-xs text-outline">
+                          <p className="text-xs text-on-surface-variant">
                             ~{zipPreview.estimated_chunks} chunks to store
                           </p>
                           {zipPreview.skipped_files > 0 && (
-                            <p className="text-xs text-outline">{zipPreview.skipped_files} short notes will be skipped</p>
+                            <p className="text-xs text-on-surface-variant">{zipPreview.skipped_files} short notes will be skipped</p>
                           )}
                         </div>
                       </div>
                     ) : (
                       <div className="space-y-2">
-                        <label className="label-caps text-secondary">Vault zip file</label>
-                        <div
+                        <label htmlFor="feed-field-1" className="label-caps text-secondary">Vault zip file</label>
+                        <button
+                  type="button"
                           onDragOver={handleZipDragOver}
                           onDragLeave={handleZipDragLeave}
                           onDrop={handleZipDrop}
                           onClick={() => docFileInputRef.current?.click()}
-                          className={`rounded-lg border-2 border-dashed p-10 text-center cursor-pointer transition-colors ${
+                          className={`block w-full rounded-lg border-2 border-dashed p-10 text-center cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                             zipIsDragging
                               ? "border-primary bg-surface-container"
                               : "border-ghost-border bg-surface-container-low hover:border-primary/30"
                           }`}
                         >
-                          <p className="text-[15px] text-secondary">
+                          <span className="block text-[15px] text-secondary">
                             Drop your vault.zip here or click to browse
-                          </p>
-                          <p className="text-xs text-outline mt-1">Max 50 MB</p>
-                        </div>
-                        <input
+                          </span>
+                          <span className="block text-xs text-on-surface-variant mt-1">Max 50 MB</span>
+                        </button>
+                        <input id="feed-field-1"
                           ref={docFileInputRef}
                           type="file"
                           accept=".zip"
@@ -938,24 +942,25 @@ export default function FeedMemory() {
             ) : activeTab === "url" ? (
               /* ── URL ── */
               <div className="space-y-2">
-                <label className="label-caps text-secondary">{inputLabel}</label>
-                <input
+                <label htmlFor="feed-field-2" className="label-caps text-secondary">{inputLabel}</label>
+                <input id="feed-field-2"
                   type="url"
                   value={urlInput}
                   onChange={(e) => setUrlInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
                   placeholder="https://example.com/article"
-                  className="w-full bg-surface-container-low px-4 py-3 text-[15px] text-on-surface placeholder:text-outline rounded-lg border-0 border-b-2 border-outline-variant focus:outline-none focus:border-primary transition-colors"
+                  className="w-full bg-surface-container-low px-4 py-3 text-[15px] text-on-surface placeholder:text-placeholder rounded-lg border-0 border-b-2 border-outline-variant focus:outline-none focus:border-primary transition-colors"
                 />
               </div>
 
             ) : activeTab === "image" ? (
               /* ── Image ── */
               <div className="space-y-4">
-                <label className="label-caps text-secondary">{inputLabel}</label>
-                <div
+                <label htmlFor="feed-field-3" className="label-caps text-secondary">{inputLabel}</label>
+                <button
+                  type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className={`rounded-xl border-2 border-dashed p-10 text-center cursor-pointer transition-colors ${
+                  className={`block w-full rounded-xl border-2 border-dashed p-10 text-center cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                     imagePreview
                       ? "border-outline-variant"
                       : isDragging
@@ -966,14 +971,14 @@ export default function FeedMemory() {
                   {imagePreview ? (
                     <img src={imagePreview} alt="Preview" className="max-h-56 mx-auto rounded-lg object-contain" />
                   ) : (
-                    <div className="space-y-1">
-                      <p className="text-[15px] text-secondary">Click to upload</p>
-                      <p className="text-xs text-outline">PNG, JPG, or WEBP</p>
-                    </div>
+                    <span className="block space-y-1">
+                      <span className="block text-[15px] text-secondary">Click to upload</span>
+                      <span className="block text-xs text-on-surface-variant">PNG, JPG, or WEBP</span>
+                    </span>
                   )}
-                </div>
-                <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={handleImageChange} className="hidden" />
-                {imageFile && <p className="text-xs text-outline">{imageFile.name}</p>}
+                </button>
+                <input id="feed-field-3" ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={handleImageChange} className="hidden" />
+                {imageFile && <p className="text-xs text-on-surface-variant">{imageFile.name}</p>}
               </div>
 
             ) : activeTab === "file" ? (
@@ -981,24 +986,25 @@ export default function FeedMemory() {
               <div className="space-y-4">
                 <label className="label-caps text-secondary">{inputLabel}</label>
                 {!uploadedFile ? (
-                  <div
+                  <button
+                  type="button"
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
                     onClick={() => docFileInputRef.current?.click()}
-                    className={`rounded-xl border-2 border-dashed p-10 text-center cursor-pointer transition-colors ${
+                    className={`block w-full rounded-xl border-2 border-dashed p-10 text-center cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                       isDragging
                         ? "border-primary bg-primary-container/20"
                         : "border-outline-variant hover:border-primary"
                     }`}
                   >
-                    <div className="space-y-1">
-                      <p className="text-[15px] text-secondary">
+                    <span className="block space-y-1">
+                      <span className="block text-[15px] text-secondary">
                         {isDragging ? "Drop file here" : "Click or drag a file here"}
-                      </p>
-                      <p className="text-xs text-outline">PDF, DOCX, or TXT · max 10 MB</p>
-                    </div>
-                  </div>
+                      </span>
+                      <span className="block text-xs text-on-surface-variant">PDF, DOCX, or TXT · max 10 MB</span>
+                    </span>
+                  </button>
                 ) : (
                   <div className="rounded-xl bg-surface-container-low px-5 py-4 flex items-center justify-between gap-4">
                     <div className="flex items-center gap-3 min-w-0">
@@ -1006,14 +1012,16 @@ export default function FeedMemory() {
                         {FILE_TYPE_LABELS[uploadedFile.type] ?? uploadedFile.name.split(".").pop()?.toUpperCase() ?? "FILE"}
                       </span>
                       <span className="text-sm text-on-surface truncate">{uploadedFile.name}</span>
-                      <span className="text-xs text-outline shrink-0">{formatBytes(uploadedFile.size)}</span>
+                      <span className="text-xs text-on-surface-variant shrink-0">{formatBytes(uploadedFile.size)}</span>
                     </div>
-                    <button
+                    <Button
+                      variant="tertiary"
+                      size="sm"
+                      className="shrink-0"
                       onClick={() => { setUploadedFile(null); if (docFileInputRef.current) docFileInputRef.current.value = ""; }}
-                      className="text-xs text-outline hover:text-error shrink-0 transition-colors"
                     >
                       Remove
-                    </button>
+                    </Button>
                   </div>
                 )}
                 <input ref={docFileInputRef} type="file" accept=".pdf,.docx,.txt" onChange={handleDocFileChange} className="hidden" />
@@ -1025,8 +1033,8 @@ export default function FeedMemory() {
 
                 {/* PATH A — URL, fetched on submit */}
                 <div className="space-y-2">
-                  <label className="label-caps text-secondary">YOUTUBE URL</label>
-                  <input
+                  <label htmlFor="feed-field-4" className="label-caps text-secondary">YOUTUBE URL</label>
+                  <input id="feed-field-4"
                     type="url"
                     value={ytUrl}
                     onChange={(e) => {
@@ -1034,7 +1042,7 @@ export default function FeedMemory() {
                       setYtFetchError("");
                     }}
                     placeholder="Paste a YouTube URL..."
-                    className="w-full bg-surface-container-low px-4 py-3 text-[15px] text-on-surface placeholder:text-outline rounded-lg border-0 border-b-2 border-outline-variant focus:outline-none focus:border-primary transition-colors"
+                    className="w-full bg-surface-container-low px-4 py-3 text-[15px] text-on-surface placeholder:text-placeholder rounded-lg border-0 border-b-2 border-outline-variant focus:outline-none focus:border-primary transition-colors"
                   />
                   {ytFetchError && (
                     <p className="text-sm text-error">{ytFetchError}</p>
@@ -1043,13 +1051,13 @@ export default function FeedMemory() {
 
                 {/* OR separator — text only, no line (No-Line Rule) */}
                 <div className="text-center">
-                  <span className="label-caps text-outline">or</span>
+                  <span className="label-caps text-on-surface-variant">or</span>
                 </div>
 
                 {/* PATH B — Manual paste */}
                 <div className="space-y-2">
-                  <label className="label-caps text-secondary">PASTE TRANSCRIPT</label>
-                  <textarea
+                  <label htmlFor="feed-field-5" className="label-caps text-secondary">PASTE TRANSCRIPT</label>
+                  <textarea id="feed-field-5"
                     value={ytManualText}
                     onChange={(e) => {
                       const val = e.target.value;
@@ -1060,7 +1068,7 @@ export default function FeedMemory() {
                     }}
                     placeholder="Already have the transcript? Paste it here..."
                     rows={6}
-                    className="w-full bg-surface-container-low px-4 py-3 text-[15px] text-on-surface placeholder:text-outline rounded-lg border-0 border-b-2 border-outline-variant focus:outline-none focus:border-primary resize-none transition-colors leading-relaxed"
+                    className="w-full bg-surface-container-low px-4 py-3 text-[15px] text-on-surface placeholder:text-placeholder rounded-lg border-0 border-b-2 border-outline-variant focus:outline-none focus:border-primary resize-none transition-colors leading-relaxed"
                   />
                 </div>
 
@@ -1069,18 +1077,18 @@ export default function FeedMemory() {
             ) : (
               /* ── Article / Note ── */
               <div className="space-y-2 w-full max-md:!w-full max-md:!max-w-none max-md:mx-0">
-                <label className="label-caps text-secondary">{inputLabel}</label>
-                <textarea
+                <label htmlFor="feed-field-6" className="label-caps text-secondary">{inputLabel}</label>
+                <textarea id="feed-field-6"
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
                   onBlur={(e) => handleContextBlur(e.target.value)}
                   placeholder={
                     activeTab === "note"
                       ? "Write your thoughts, ideas, or observations..."
-                      : "Paste your article or thoughts here. We'll automatically structure it for your editorial needs..."
+                      : "Paste an article, a post or your own notes here..."
                   }
                   rows={10}
-                  className="w-full max-md:w-full max-md:!w-full box-border bg-surface-container-low px-4 py-3 text-[15px] text-on-surface placeholder:text-outline rounded-lg border-0 border-b-2 border-outline-variant focus:outline-none focus:border-primary resize-none transition-colors leading-relaxed"
+                  className="w-full max-md:w-full max-md:!w-full box-border bg-surface-container-low px-4 py-3 text-[15px] text-on-surface placeholder:text-placeholder rounded-lg border-0 border-b-2 border-outline-variant focus:outline-none focus:border-primary resize-none transition-colors leading-relaxed"
                 />
               </div>
             )}
@@ -1089,12 +1097,12 @@ export default function FeedMemory() {
             {(activeTab === "article" || activeTab === "note" || activeTab === "youtube") && (
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <label className="label-caps text-secondary">CONTEXT</label>
+                  <p id="feed-context-label" className="label-caps text-secondary">Where this comes from</p>
                   {contextSuggesting && (
-                    <span className="text-[10px] text-outline animate-pulse">suggesting…</span>
+                    <span className="text-[10px] text-on-surface-variant animate-pulse">suggesting…</span>
                   )}
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div role="group" aria-labelledby="feed-context-label" className="flex flex-wrap gap-2">
                   {(
                     [
                       { value: "work" as MemoryContext, label: "Work" },
@@ -1106,18 +1114,15 @@ export default function FeedMemory() {
                     <button
                       key={value}
                       type="button"
+                      aria-pressed={memoryContext === value}
                       onClick={() => setMemoryContext(memoryContext === value ? null : value)}
-                      className={`px-3.5 py-1.5 rounded-full text-[12px] font-medium transition-all duration-150 ${
-                        memoryContext === value
-                          ? "btn-primary text-white shadow-card"
-                          : "bg-surface-container text-secondary hover:bg-surface-container-high hover:text-on-surface"
-                      }`}
+                      className={chipClass(memoryContext === value)}
                     >
                       {label}
                     </button>
                   ))}
                 </div>
-                <p className="text-[11px] text-outline">
+                <p className="text-[11px] text-on-surface-variant">
                   Tag the origin so your posts know what you lived vs what you learned.
                 </p>
               </div>
@@ -1125,121 +1130,98 @@ export default function FeedMemory() {
 
             {/* Error */}
             {error && (
-              <div>
-                <p className="text-sm text-error">{error}</p>
-                {activeTab === "url" && (
-                  <p className="text-xs text-outline mt-1">You can paste the text manually in the Article tab instead.</p>
-                )}
-              </div>
+              <ErrorState message={activeTab === "url" ? `${error} You can paste the text in the Article tab instead.` : error} />
             )}
           </div>
 
           {/* Card footer / action bar */}
           <div className="px-8 py-5 bg-surface-container-low flex items-center justify-between gap-4">
-            <div className="flex items-center gap-4 text-outline">
-              <button className="hover:text-secondary transition-colors" title="Format options">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path d="M3 4h10M3 8h7M3 12h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-              </button>
-              <button className="hover:text-secondary transition-colors" title="Translate">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path d="M2 4h7M5.5 2v2M4 4c.5 2.5 2.5 5 4 5.5M7 4c-.5 2 .5 4 2 5.5M9 8l5 6M11.5 8l-2.5 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </button>
-              <button className="hover:text-secondary transition-colors" title="AI assist">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path d="M8 2l1.5 3.5L13 7l-3.5 1.5L8 12l-1.5-3.5L3 7l3.5-1.5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-                </svg>
-              </button>
-            </div>
+            <span />
 
             {activeTab === "obsidian" ? (
               effectiveObsidianMode === "local" ? (
                 // Local path flow buttons
                 obsidianPhase === "done" ? (
-                  <button
+                  <Button
+                    variant="secondary"
                     onClick={() => { setObsidianPhase("input"); setVaultPreview(null); setObsidianResult(null); setVaultPath(""); setError(""); }}
-                    className="px-6 py-2.5 rounded-lg bg-surface-container text-secondary text-[13px] font-medium hover:bg-surface-container-high transition-colors"
                   >
                     Add another vault
-                  </button>
+                  </Button>
                 ) : obsidianPhase === "ingesting" ? null : obsidianPhase === "preview" ? (
                   <div className="flex gap-3">
-                    <button
+                    <Button
+                      variant="secondary"
                       onClick={() => { setObsidianPhase("input"); setVaultPreview(null); setError(""); }}
                       disabled={loading}
-                      className="px-4 py-2.5 rounded-lg bg-surface-container text-secondary text-[13px] font-medium hover:bg-surface-container-high disabled:opacity-50 transition-colors"
                     >
                       Cancel
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       onClick={handleVaultIngest}
-                      disabled={loading}
-                      className="btn-primary px-6 py-2.5 rounded-lg text-white text-[13px] font-semibold uppercase tracking-widest shadow-card hover:opacity-90 disabled:opacity-50 transition-all"
+                      loading={loading}
                     >
                       Ingest all notes
-                    </button>
+                    </Button>
                   </div>
                 ) : (
-                  <button
+                  <Button
                     onClick={handleVaultPreview}
-                    disabled={loading}
-                    className="btn-primary px-6 py-2.5 rounded-lg text-white text-[13px] font-semibold uppercase tracking-widest shadow-card hover:opacity-90 disabled:opacity-50 transition-all"
+                    loading={loading}
                   >
                     {loading ? "Scanning vault…" : "Preview vault"}
-                  </button>
+                  </Button>
                 )
               ) : (
                 // Zip upload flow buttons
                 obsidianPhase === "done" ? (
-                  <button
+                  <Button
+                    variant="secondary"
                     onClick={() => resetObsidianZip()}
-                    className="px-6 py-2.5 rounded-lg bg-surface-container text-secondary text-[13px] font-medium hover:bg-surface-container-high transition-colors"
                   >
                     Upload another vault
-                  </button>
+                  </Button>
                 ) : obsidianPhase === "ingesting" ? null : zipPreview && obsidianPhase === "preview" ? (
                   <div className="flex gap-3">
-                    <button
+                    <Button
+                      variant="secondary"
                       onClick={() => resetObsidianZip()}
                       disabled={loading}
-                      className="px-4 py-2.5 rounded-lg bg-surface-container text-secondary text-[13px] font-medium hover:bg-surface-container-high disabled:opacity-50 transition-colors"
                     >
                       Choose different file
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       onClick={handleZipIngest}
-                      disabled={loading}
-                      className="btn-primary px-6 py-2.5 rounded-lg text-white text-[13px] font-semibold uppercase tracking-widest shadow-card hover:opacity-90 disabled:opacity-50 transition-all"
+                      loading={loading}
                     >
                       Ingest vault
-                    </button>
+                    </Button>
                   </div>
                 ) : null
               )
             ) : (
-              <button
+              <Button
                 onClick={handleSubmit}
-                disabled={loading || (activeTab === "youtube" && !ytUrl.trim() && !ytManualText)}
-                className="btn-primary px-7 py-2.5 rounded-lg text-white text-[13px] font-semibold uppercase tracking-widest shadow-card hover:opacity-90 disabled:opacity-50 active:scale-95 transition-all"
+                loading={loading}
+                disabled={!!missingInput}
+                disabledReason={missingInput}
               >
                 {loading
                   ? activeTab === "url"
-                    ? (() => { try { return `Scraping ${new URL(urlInput).hostname}…`; } catch { return "Scraping…"; } })()
+                    ? (() => { try { return `Reading ${new URL(urlInput).hostname}…`; } catch { return "Reading the page…"; } })()
                     : activeTab === "file" && uploadedFile
                     ? `Processing ${uploadedFile.name}…`
                     : activeTab === "youtube" && ytFetching
                     ? "Fetching transcript…"
-                    : "Processing…"
-                  : "Feed into Memory"}
-              </button>
+                    : "Adding…"
+                  : "Add to library"}
+              </Button>
             )}
           </div>
         </div>
 
         {/* Tab description */}
-        <p className="text-xs text-outline -mt-3 px-1">{currentTab.description}</p>
+        <p className="text-xs text-on-surface-variant -mt-3 px-1">{currentTab.description}</p>
 
         {/* ── Success / duplicate result card ── */}
         {result && (
@@ -1251,8 +1233,8 @@ export default function FeedMemory() {
                 </svg>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[15px] font-medium text-on-surface">Already in your knowledge base</p>
-                <p className="text-sm text-secondary mt-0.5">{result.chunks_stored} chunk{result.chunks_stored !== 1 ? "s" : ""} already stored</p>
+                <p className="text-[15px] font-medium text-on-surface">Already in your library</p>
+                <p className="text-sm text-secondary mt-0.5">You added this before, so there was nothing new to save.</p>
                 {result.tags.length > 0 && (
                   <div className="mt-3 flex flex-wrap gap-1.5">
                     {result.tags.map((tag) => (
@@ -1270,15 +1252,15 @@ export default function FeedMemory() {
                 </svg>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[15px] font-semibold text-on-surface">Knowledge Ingested</p>
+                <p className="text-[15px] font-semibold text-on-surface">Added to your library</p>
                 {result.title ? (
-                  <p className="text-sm text-secondary mt-0.5">"{result.title}" has been successfully distilled and added to your Library.</p>
+                  <p className="text-sm text-secondary mt-0.5">&ldquo;{result.title}&rdquo; is in your library. Contendo can now write from it.</p>
                 ) : (
-                  <p className="text-sm text-secondary mt-0.5">Your content has been successfully distilled and added to your Library.</p>
+                  <p className="text-sm text-secondary mt-0.5">It&apos;s in your library. Contendo can now write from it.</p>
                 )}
                 <div className="mt-4 flex items-start gap-8">
                   <div>
-                    <p className="label-caps text-outline mb-1">Extracted Concepts</p>
+                    <p className="label-caps text-on-surface-variant mb-1">Topics</p>
                     {result.tags.length > 0 ? (
                       <div className="flex flex-wrap gap-1.5 mt-2">
                         {result.tags.map((tag) => (
@@ -1286,16 +1268,16 @@ export default function FeedMemory() {
                         ))}
                       </div>
                     ) : (
-                      <p className="text-sm text-outline">No tags extracted</p>
+                      <p className="text-sm text-on-surface-variant">No topics found</p>
                     )}
                   </div>
                   <div className="shrink-0 text-center">
-                    <p className="label-caps text-outline mb-1">Stored Chunks</p>
+                    <p className="label-caps text-on-surface-variant mb-1">Passages</p>
                     <p className="text-3xl font-headline text-on-surface">{result.chunks_stored}</p>
                   </div>
                   {result.word_count != null && (
                     <div className="shrink-0 text-center">
-                      <p className="label-caps text-outline mb-1">Words</p>
+                      <p className="label-caps text-on-surface-variant mb-1">Words</p>
                       <p className="text-3xl font-headline text-on-surface">{result.word_count.toLocaleString()}</p>
                     </div>
                   )}
@@ -1311,7 +1293,7 @@ export default function FeedMemory() {
 
         {/* Recent Memory stats card */}
         <div className="bg-surface-container-lowest rounded-2xl shadow-card p-6">
-          <h3 className="font-headline text-xl text-on-surface mb-4">Recent Memory</h3>
+          <h2 className="font-headline text-xl text-on-surface mb-4">Your library</h2>
           {stats ? (
             <div className="space-y-3">
               {stats.tags.slice(0, 3).map((tag, i) => (
@@ -1326,18 +1308,18 @@ export default function FeedMemory() {
                   </div>
                   <div className="min-w-0">
                     <p className="text-[13px] font-medium text-on-surface capitalize truncate">{tag}</p>
-                    <p className="text-[11px] text-outline">In your library</p>
+                    <p className="text-[11px] text-on-surface-variant">In your library</p>
                   </div>
                 </div>
               ))}
               {stats.tags.length === 0 && (
-                <p className="text-sm text-outline text-center py-4">No memory yet — add your first source above.</p>
+                <p className="text-sm text-on-surface-variant text-center py-4">Nothing here yet. Add your first source.</p>
               )}
               <div className="pt-2 flex items-center justify-between">
-                <span className="text-[12px] text-outline">{stats.total_chunks} total chunks</span>
-                <a href="/library" className="text-[12px] text-primary font-medium hover:underline uppercase tracking-wide">
-                  View Full Library
-                </a>
+                <span className="text-[0.8125rem] text-on-surface-variant">{stats.total_chunks} passages</span>
+                <Link href="/library" className="inline-flex min-h-11 items-center text-[0.8125rem] text-primary font-medium underline-offset-4 hover:underline">
+                  Open library
+                </Link>
               </div>
             </div>
           ) : (
@@ -1358,16 +1340,16 @@ export default function FeedMemory() {
         {/* Writer's Block CTA */}
         <div className="bg-tertiary rounded-2xl p-6 text-on-tertiary relative overflow-hidden">
           <div className="relative z-10 space-y-3">
-            <p className="font-headline text-xl text-white">Writer&apos;s Block?</p>
-            <p className="text-sm text-white/80 leading-relaxed">
-              Use your stored memories to generate a unique editorial angle for your next project.
+            <p className="font-headline text-xl text-white">Not sure what to write?</p>
+            <p className="text-sm text-white/90 leading-relaxed">
+              Get post ideas drawn from what you&apos;ve added.
             </p>
-            <a
+            <Link
               href="/ideas"
-              className="inline-block mt-1 px-4 py-2 rounded-lg border border-white/30 text-white text-[12px] font-semibold uppercase tracking-widest hover:bg-white/10 transition-colors"
+              className="inline-flex min-h-11 items-center mt-1 px-4 rounded-md border border-white/60 text-white text-[0.875rem] font-medium hover:bg-white/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
-              Generate Idea
-            </a>
+              Get ideas
+            </Link>
           </div>
           <div className="absolute -right-6 -bottom-6 opacity-10">
             <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
@@ -1376,14 +1358,7 @@ export default function FeedMemory() {
           </div>
         </div>
 
-        {/* Decorative pen card */}
-        <div className="rounded-2xl overflow-hidden bg-surface-container h-40 flex items-center justify-center">
-          <svg width="48" height="48" viewBox="0 0 48 48" fill="none" opacity="0.3">
-            <path d="M8 40L14 26 36 4 44 12 22 34z" stroke="#58614f" strokeWidth="2.5" strokeLinejoin="round"/>
-            <path d="M8 40l6-4 4 6-10-2z" fill="#58614f"/>
-            <path d="M36 4l4 4-6 6-4-4 6-6z" fill="#81543c"/>
-          </svg>
-        </div>
+        
       </div>
 
       {/* ── Tooltip tour ─────────────────────────────────────────────────── */}
@@ -1392,10 +1367,13 @@ export default function FeedMemory() {
           style={{
             position: "fixed",
             top: tooltipPos.top,
-            left: tooltipPos.left,
+            // Centred under its tab, but kept 16px inside the screen edges.
+            left: `clamp(156px, ${tooltipPos.left}px, calc(100vw - 156px))`,
             transform: "translateX(-50%)",
             zIndex: 9999,
           }}
+          role="dialog"
+          aria-label={`Tour: ${TOUR_STEPS[tourStep].label}`}
         >
           {/* Upward caret */}
           <div
@@ -1417,7 +1395,7 @@ export default function FeedMemory() {
               background: "#3a4a35",
               borderRadius: 12,
               padding: "16px 20px",
-              width: 280,
+              width: "min(280px, calc(100vw - 32px))",
               boxShadow: "0px 8px 24px rgba(0,0,0,0.28)",
               color: "#ffffff",
             }}
@@ -1427,7 +1405,7 @@ export default function FeedMemory() {
               <p style={{ fontSize: 14, fontWeight: 600, color: "#ffffff" }}>
                 {TOUR_STEPS[tourStep].label}
               </p>
-              <p style={{ fontSize: 11, color: "rgba(255,255,255,0.55)" }}>
+              <p style={{ fontSize: 12, color: "rgba(255,255,255,0.8)" }}>
                 {tourStep + 1} of {TOUR_STEPS.length}
               </p>
             </div>
@@ -1438,18 +1416,12 @@ export default function FeedMemory() {
               {TOUR_STEPS[tourStep].description}
             </p>
             {/* Bottom row: Skip + Next/Done */}
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 16, marginTop: 16 }}>
-              <button
-                onClick={dismissTour}
-                style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
-              >
+            <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, marginTop: 12 }}>
+              <button type="button" onClick={dismissTour} className="min-h-11 px-2 text-[0.8125rem] text-white/85 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white rounded-md">
                 Skip tour
               </button>
-              <button
-                onClick={advanceTour}
-                style={{ fontSize: 12, color: "#3a4a35", background: "#ffffff", padding: "6px 16px", borderRadius: 99, border: "none", cursor: "pointer", fontWeight: 500 }}
-              >
-                {tourStep < TOUR_STEPS.length - 1 ? "Next →" : "Done"}
+              <button type="button" onClick={advanceTour} className="min-h-11 rounded-full bg-white px-4 text-[0.8125rem] font-medium text-[#3a4a35] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#3a4a35]">
+                {tourStep < TOUR_STEPS.length - 1 ? "Next" : "Done"}
               </button>
             </div>
           </div>

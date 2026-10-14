@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useApi } from "@/lib/api";
+import { Textarea } from "@/components/ui/field";
 import type { PillarOption } from "@/lib/account";
+import { chipClass } from "@/components/ui/chip";
 
 export interface BusinessPost {
   /** The user's niche pillars; empty for individuals and niches without any. */
@@ -57,10 +59,8 @@ export default function BusinessPostFields({ business }: { business: BusinessPos
 
   return (
     <div>
-      <p className="label-caps text-secondary mb-2.5" style={{ fontSize: "0.62rem", letterSpacing: "0.09em" }}>
-        KIND OF POST
-      </p>
-      <div className="flex flex-wrap gap-2">
+      <p id="kind-of-post" className="label-caps mb-2.5 text-on-surface-variant">Kind of post</p>
+      <div role="group" aria-labelledby="kind-of-post" className="flex flex-wrap gap-2">
         {business.pillars.map((pillar) => {
           const selected = pillar.key === business.pillar;
           return (
@@ -69,11 +69,7 @@ export default function BusinessPostFields({ business }: { business: BusinessPos
               type="button"
               aria-pressed={selected}
               onClick={() => business.setPillar(selected ? null : pillar.key)}
-              className={`rounded-full px-3.5 py-2 text-[13px] transition-colors ${
-                selected
-                  ? "bg-primary-container text-on-primary-fixed outline outline-1 outline-primary"
-                  : "bg-surface-container-low text-on-surface hover:bg-surface-container-highest"
-              }`}
+              className={chipClass(selected)}
             >
               {pillar.label}
             </button>
@@ -83,17 +79,17 @@ export default function BusinessPostFields({ business }: { business: BusinessPos
 
       {chosen && (
         <div className="mt-4">
-          <label htmlFor="pillar-details" className="block text-[13px] text-secondary leading-relaxed">
+          <label htmlFor="pillar-details" className="block text-[0.875rem] text-on-surface-variant leading-relaxed">
             {chosen.about} Give us the details: we only write what you tell us, and we save it to your memory for
             later posts.
           </label>
-          <textarea
+          <Textarea
             id="pillar-details"
             rows={4}
             maxLength={4000}
             value={business.details}
             onChange={(e) => business.setDetails(e.target.value)}
-            className="input-editorial mt-2 w-full px-3 py-2.5 text-[15px] leading-relaxed text-on-surface"
+            className="mt-2"
           />
         </div>
       )}

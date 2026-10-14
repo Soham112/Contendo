@@ -6,6 +6,10 @@ import { ROLE_OPTIONS } from '@/lib/first-post-constants';
 import { requestErrorMessage, requireResponse } from '@/lib/request-errors';
 import RetryNotice from '@/components/RetryNotice';
 import OnboardingIntercept from '@/components/OnboardingIntercept';
+import { Button } from '@/components/ui/button';
+import { Card, Skeleton } from '@/components/ui/card';
+import { Input, Label } from '@/components/ui/field';
+import { ErrorState } from '@/components/ui/states';
 
 export default function Personalization() {
   const api = useApi();
@@ -51,21 +55,41 @@ export default function Personalization() {
     finally { setBusy(false); }
   }
   if (!profile && error) return <RetryNotice message={error} onRetry={() => setAttempt(value => value + 1)} />;
-  if (!profile) return <p>Loading your profile…</p>;
+  if (!profile) return (
+    <div role="status" aria-label="Loading your profile" className="max-w-xl mx-auto flex flex-col gap-4">
+      <Skeleton className="h-8 w-3/4" /><Skeleton className="h-4 w-1/2" /><Skeleton className="mt-4 h-11 w-full" /><Skeleton className="h-11 w-full" />
+    </div>
+  );
   return <div className="max-w-xl mx-auto flex flex-col gap-6">
-    <h1 className="font-headline text-3xl text-on-surface">Make your posts sound more like you</h1>
-    <p className="text-secondary">Everything here is optional. Your existing answers stay saved.</p>
-    <label className="flex flex-col gap-2 text-secondary">What best describes your work?
-      <input className="input-editorial p-3" list="work-options" value={role} onChange={e => setRole(e.target.value)} />
+    <div>
+      <h1 className="font-headline text-3xl text-on-surface">Make your posts sound more like you</h1>
+      <p className="mt-2 text-secondary">Everything here is optional. Your existing answers stay saved.</p>
+    </div>
+    <div>
+      <Label htmlFor="work-role">What best describes your work?</Label>
+      <Input id="work-role" list="work-options" value={role} onChange={e => setRole(e.target.value)} />
       <datalist id="work-options">{ROLE_OPTIONS.map(option => <option key={option.key} value={option.label} />)}</datalist>
-    </label>
-    <label className="flex flex-col gap-2 text-secondary">Resume (optional PDF)
-      <input type="file" accept="application/pdf" onChange={e => setFile(e.target.files?.[0] || null)} />
-    </label>
-    {error && <p role="alert" className="text-error">{error}</p>}
+    </div>
+    <div>
+      <Label htmlFor="work-resume">Resume <span className="normal-case font-normal">(optional, PDF)</span></Label>
+      <input
+        id="work-resume"
+        type="file"
+        accept="application/pdf"
+        onChange={e => setFile(e.target.files?.[0] || null)}
+        className="block w-full text-[0.875rem] text-on-surface-variant file:mr-3 file:min-h-11 file:cursor-pointer file:rounded-md file:border file:border-outline-variant file:bg-transparent file:px-4 file:text-[0.875rem] file:font-medium file:text-on-surface hover:file:bg-surface-container-high"
+      />
+    </div>
+    {error && <ErrorState message={error} />}
     {saved && <p role="status" className="text-primary">Your details are saved.</p>}
-    <button onClick={save} disabled={busy} className="btn-primary rounded-md px-5 py-3 text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save details'}</button>
-    <div className="rounded-lg bg-surface-container-low p-5"><h2 className="font-headline text-xl">Your writing voice</h2><p className="mt-2 text-secondary">Five optional questions about how you like to write.</p><button onClick={() => { setVoice(true); void api.recordOnboardingStep('enhancement', 'started').catch(failure => { console.error(failure); setError('We couldn’t save your progress. Please try again.'); }); }} className="mt-3 text-primary underline">Start voice questions</button></div>
+    <Button onClick={save} loading={busy} className="w-full sm:w-fit">Save details</Button>
+    <Card tone="low">
+      <h2 className="font-headline text-xl">Your writing voice</h2>
+      <p className="mt-2 text-secondary">Five optional questions about how you like to write.</p>
+      <Button variant="secondary" className="mt-4" onClick={() => { setVoice(true); void api.recordOnboardingStep('enhancement', 'started').catch(failure => { console.error(failure); setError('We couldn’t save your progress. Please try again.'); }); }}>
+        Start voice questions
+      </Button>
+    </Card>
     {voice && <OnboardingIntercept destination="/settings/personalization" onComplete={() => setVoice(false)} />}
   </div>;
 }

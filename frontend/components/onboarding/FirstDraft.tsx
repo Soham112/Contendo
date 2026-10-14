@@ -3,6 +3,10 @@ import Link from 'next/link';
 import GroundingNotice from '@/components/GroundingNotice';
 import type { GenerateResponse } from '@/lib/api';
 import { useRouter } from 'next/navigation';
+import { motion } from 'motion/react';
+import { Button } from '@/components/ui/button';
+import { riseIn, transition } from '@/components/ui/motion';
+import { ErrorState } from '@/components/ui/states';
 export default function FirstDraft({ draft, topic, format, tone, saveError, onRetrySave }: {
   draft: GenerateResponse; topic: string; format: string; tone: string; saveError: string; onRetrySave: () => void;
 }) {
@@ -16,16 +20,16 @@ export default function FirstDraft({ draft, topic, format, tone, saveError, onRe
     Object.entries(values).forEach(([key, value]) => sessionStorage.setItem('contentOS_last_' + key, value));
     router.push('/create');
   }
-  return <div className="flex flex-col gap-6">
+  return <motion.div {...riseIn} transition={transition.slow} className="flex flex-col gap-6">
     <h1 className="font-headline text-[1.75rem] text-on-surface">Your first post</h1>
     <div className="whitespace-pre-wrap text-on-surface leading-relaxed">{draft.post}</div>
     <GroundingNotice grounding={draft.grounding} />
-    {saveError && <div role="alert"><p className="text-error">{saveError}</p><button onClick={onRetrySave} className="text-primary underline">Retry saving</button></div>}
-    <button onClick={workspace} className="btn-primary rounded-md px-5 py-3 text-white">Edit in workspace</button>
-    <div className="rounded-lg bg-surface-container-low p-5">
+    {saveError && <ErrorState message={saveError} onRetry={onRetrySave} />}
+    <Button size="lg" onClick={workspace} className="w-full sm:w-fit">Edit in workspace</Button>
+    <div className="rounded-2xl bg-surface-container-low p-5">
       <p className="font-headline text-lg">Make your posts sound more like you</p>
       <p className="mt-2 text-sm text-secondary">Optional: add your work, upload a resume or describe your voice. Your draft is ready either way.</p>
-      <Link href="/settings/personalization" className="mt-3 inline-block text-primary underline">Personalize my posts</Link>
+      <Link href="/settings/personalization" className="mt-2 inline-flex min-h-11 items-center text-primary underline underline-offset-4">Personalize my posts</Link>
     </div>
-  </div>;
+  </motion.div>;
 }

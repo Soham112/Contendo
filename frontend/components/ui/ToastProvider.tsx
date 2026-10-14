@@ -1,6 +1,15 @@
 "use client";
 
-import React, { createContext, useContext, useState, useCallback, ReactNode } from "react";
+// App-wide toasts: `const { showToast } = useToast(); showToast("Saved", "success")`.
+// Built on Radix Toast (announced to screen readers, F8 jumps to them,
+// swipe to dismiss) and animated with Motion.
+
+import React, { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import * as ToastPrimitive from "@radix-ui/react-toast";
+import { AnimatePresence, motion } from "motion/react";
+import { AlertCircle, CheckCircle2, Info, X } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { transition } from "./motion";
 
 export type ToastType = "success" | "error" | "info";
 
@@ -15,6 +24,14 @@ interface ToastContextType {
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
+const DURATION_MS = 4000;
+
+const ICONS = { success: CheckCircle2, error: AlertCircle, info: Info };
+const STYLES: Record<ToastType, string> = {
+  success: "bg-primary text-white",
+  error: "bg-error text-white",
+  info: "bg-on-surface text-surface-container-lowest",
+};
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -22,48 +39,44 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const showToast = useCallback((message: string, type: ToastType = "info") => {
     const id = Math.random().toString(36).substring(2, 9);
     setToasts((prev) => [...prev, { id, message, type }]);
-
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4000); // 4 seconds
   }, []);
+  const remove = (id: string) => setToasts((prev) => prev.filter((t) => t.id !== id));
 
   return (
     <ToastContext.Provider value={{ showToast }}>
-      {children}
-      <div className="fixed bottom-6 right-6 z-[100] flex flex-col gap-3 pointer-events-none">
-        {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            style={{ animation: "toast-slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards" }}
-            className={`shadow-float rounded-xl px-4 py-3.5 flex items-center gap-3 pointer-events-auto ${
-              toast.type === "error"
-                ? "bg-score-red text-white"
-                : toast.type === "success"
-                ? "bg-score-green text-white"
-                : "bg-text-primary text-card"
-            }`}
-          >
-            {/* SVG Icons based on type */}
-            {toast.type === "error" && (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-                <circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line>
-              </svg>
-            )}
-            {toast.type === "success" && (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline>
-              </svg>
-            )}
-            {toast.type === "info" && (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-                <circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line>
-              </svg>
-            )}
-            <p className="text-[14px] font-medium leading-snug pr-2">{toast.message}</p>
-          </div>
-        ))}
-      </div>
+      <ToastPrimitive.Provider duration={DURATION_MS} swipeDirection="right">
+        {children}
+        <AnimatePresence initial={false}>
+          {toasts.map((toast) => {
+            const Icon = ICONS[toast.type];
+            return (
+              <ToastPrimitive.Root
+                key={toast.id}
+                asChild
+                forceMount
+                type={toast.type === "error" ? "foreground" : "background"}
+                onOpenChange={(open) => { if (!open) remove(toast.id); }}
+              >
+                <motion.li
+                  layout
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, x: 24 }}
+                  transition={transition.base}
+                  className={cn("pointer-events-auto flex items-center gap-3 rounded-xl px-4 py-3 shadow-float", STYLES[toast.type])}
+                >
+                  <Icon size={18} aria-hidden="true" className="shrink-0" />
+                  <ToastPrimitive.Description className="flex-1 text-[0.875rem] font-medium leading-snug">{toast.message}</ToastPrimitive.Description>
+                  <ToastPrimitive.Close aria-label="Dismiss" className="-mr-1 grid h-8 w-8 shrink-0 place-items-center rounded-md opacity-80 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+                    <X size={16} aria-hidden="true" />
+                  </ToastPrimitive.Close>
+                </motion.li>
+              </ToastPrimitive.Root>
+            );
+          })}
+        </AnimatePresence>
+        <ToastPrimitive.Viewport className="pointer-events-none fixed bottom-4 right-4 left-4 z-[400] flex flex-col items-stretch gap-3 outline-none sm:left-auto sm:bottom-6 sm:right-6 sm:w-[24rem]" />
+      </ToastPrimitive.Provider>
     </ToastContext.Provider>
   );
 }

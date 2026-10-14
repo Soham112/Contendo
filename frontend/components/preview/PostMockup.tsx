@@ -70,6 +70,8 @@ function PostBody({ platform, text, device, colors, overflowAt, expanded, onExpa
           type="button"
           onClick={onExpand}
           aria-expanded={false}
+          // A larger invisible hit area than the text, for fingers.
+          className="after:absolute after:-inset-3 after:content-['']"
           style={{
             ...font, position: "absolute", right: 0, bottom: 0, color: colors.muted, cursor: "pointer",
             paddingLeft: 24, background: `linear-gradient(to right, transparent, ${colors.card} 20px)`,

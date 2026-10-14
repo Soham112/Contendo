@@ -6,56 +6,26 @@
 import { useState, type MouseEvent } from "react";
 import type { PostStats } from "@/lib/post-text";
 import type { Format } from "./config";
+import { Button } from "@/components/ui/button";
 
+/** The page's breadcrumb bar (desktop only). */
 export function WorkspaceBar() {
   return (
-      <div
-        style={{ borderBottom: "0.5px solid #dfe3e2", height: "52px" }}
-        className="hidden md:flex items-center justify-between px-8 bg-background shrink-0"
-      >
-        {/* Breadcrumb */}
-        <div className="flex items-center gap-1.5">
-          <span
-            className="label-caps text-outline"
-            style={{ fontSize: "0.62rem", letterSpacing: "0.1em" }}
-          >
-            WORKSPACE
-          </span>
-          <span className="text-outline-variant mx-1 text-xs select-none">›</span>
-          <span
-            className="label-caps text-on-surface"
-            style={{ fontSize: "0.62rem", letterSpacing: "0.1em" }}
-          >
-            NEW CREATION
-          </span>
-        </div>
-
-        {/* Right controls */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 rounded-lg border border-surface-container-high bg-surface-container-lowest px-3 py-1.5">
-            <svg
-              width="12" height="12" viewBox="0 0 24 24"
-              fill="none" stroke="currentColor" strokeWidth="2"
-              className="text-outline-variant shrink-0"
-            >
-              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-            </svg>
-            <input
-              placeholder="Search atelier..."
-              className="text-xs text-on-surface bg-transparent outline-none w-32 placeholder:text-outline-variant"
-            />
-          </div>
-          <button className="text-outline hover:text-on-surface transition-colors">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-            </svg>
-          </button>
-          <div className="w-7 h-7 rounded-full bg-primary-container flex items-center justify-center shrink-0">
-            <span className="text-[11px] font-semibold text-on-primary-container select-none">S</span>
-          </div>
-        </div>
-      </div>
+    <nav
+      aria-label="Breadcrumb"
+      style={{ borderBottom: "0.5px solid #dfe3e2", height: "52px" }}
+      className="hidden md:flex items-center px-8 bg-background shrink-0"
+    >
+      <ol className="flex items-center gap-1.5">
+        <li className="label-caps text-on-surface-variant" style={{ fontSize: "0.62rem", letterSpacing: "0.1em" }}>
+          Workspace
+        </li>
+        <li aria-hidden="true" className="text-on-surface-variant mx-1 text-xs select-none">›</li>
+        <li aria-current="page" className="label-caps text-on-surface" style={{ fontSize: "0.62rem", letterSpacing: "0.1em" }}>
+          New post
+        </li>
+      </ol>
+    </nav>
   );
 }
 
@@ -83,7 +53,7 @@ export function SplitHeading({ topic, tone }: { topic: string; tone: string }) {
                     alignItems: "center",
                     gap: 6,
                     fontSize: 11,
-                    color: "#777c7b",
+                    color: "#5b605f",
                     background: "#edeeed",
                     borderRadius: 20,
                     padding: "3px 11px",
@@ -91,14 +61,12 @@ export function SplitHeading({ topic, tone }: { topic: string; tone: string }) {
                   }}
                 >
                   <span style={{ color: "#58614f", fontSize: 10 }}>●</span>
-                  AI Refined:{" "}
-                  <span
+                  Tone:{" "}<span
                     className="capitalize"
                     style={{ fontWeight: 500, color: "#2f3333", marginLeft: 2 }}
                   >
                     {tone}
-                  </span>{" "}
-                  Tone
+                  </span>
                 </span>
               </div>
   );
@@ -115,20 +83,15 @@ export function DraftHeading({ topic, tone, onStartOver }: { topic: string; tone
                   <h1 style={{ fontFamily: "var(--font-headline), serif", fontSize: "2rem", fontWeight: 300, color: "#2f3333", lineHeight: 1.2, margin: "0 0 0.5rem" }}>
                     {topic || "The Manuscript"}
                   </h1>
-                  <p className="text-xs text-outline">Select any passage to refine it in place.</p>
+                  <p className="text-xs text-on-surface-variant">Select any passage to refine it in place.</p>
                   <div style={{ width: "100%", display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, marginTop: 16, marginBottom: 8 }}>
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "#777c7b", background: "rgba(237,238,237,0.8)", borderRadius: 999, padding: "6px 12px", lineHeight: 1.6, backdropFilter: "blur(18px)" }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "#5b605f", background: "rgba(237,238,237,0.8)", borderRadius: 999, padding: "6px 12px", lineHeight: 1.6, backdropFilter: "blur(18px)" }}>
                       <span style={{ color: "#58614f", fontSize: 10 }}>●</span>
-                      AI Refined:{" "}
-                      <span className="capitalize" style={{ fontWeight: 500, color: "#2f3333", marginLeft: 2 }}>{tone}</span>{" "}
-                      Tone
+                      Tone:{" "}<span className="capitalize" style={{ fontWeight: 500, color: "#2f3333", marginLeft: 2 }}>{tone}</span>
                     </span>
-                    <button
-                      onClick={onStartOver}
-                      className="text-xs text-outline hover:text-secondary transition-colors"
-                    >
-                      ← Start over
-                    </button>
+                    <Button variant="tertiary" size="sm" onClick={onStartOver}>
+                      Start over
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -137,7 +100,7 @@ export function DraftHeading({ topic, tone, onStartOver }: { topic: string; tone
 
 export function PostMetaBar({ stats: postStats, format }: { stats: PostStats; format: Format }) {
   return (
-    <div className="mt-4 flex flex-wrap items-center gap-2 text-[12px] text-outline-variant">
+    <div className="mt-4 flex flex-wrap items-center gap-2 text-[12px] text-on-surface-variant">
       <span className="rounded-full bg-surface-container-low px-3 py-1">
         {postStats.wordCount} words
       </span>

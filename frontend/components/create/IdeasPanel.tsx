@@ -1,6 +1,7 @@
 "use client";
 
 import { FORMAT_BADGE, type Suggestion } from "./config";
+import { Button } from "@/components/ui/button";
 
 /** Post ideas drawn from the user's memory, each with a "Use this" button. */
 export default function IdeasPanel({ loading, suggestions, focus, selectedIndex, onRefresh, onDismiss, onUse }: {
@@ -23,7 +24,7 @@ export default function IdeasPanel({ loading, suggestions, focus, selectedIndex,
                         : `${suggestions.length} idea${suggestions.length !== 1 ? "s" : ""} from your memory`}
                     </p>
                     {!loading && (
-                      <p className="text-xs text-outline mt-0.5">
+                      <p className="text-xs text-on-surface-variant mt-0.5">
                         {focus.trim()
                           ? `Focused on: ${focus.trim()}`
                           : "Ideas drawn from your full knowledge base"}
@@ -32,28 +33,24 @@ export default function IdeasPanel({ loading, suggestions, focus, selectedIndex,
                   </div>
                   <div className="flex items-center gap-3">
                     {!loading && (
-                      <button
+                      <Button variant="secondary" size="sm"
                         onClick={onRefresh}
-                        className="text-xs text-secondary hover:text-on-surface border border-surface-container-high rounded-lg px-2.5 py-1 transition-colors"
                       >
                         Refresh
-                      </button>
+                      </Button>
                     )}
-                    <button
-                      onClick={onDismiss}
-                      className="text-outline hover:text-on-surface transition-colors text-xl leading-none"
-                    >
+                    <Button variant="ghost" size="icon" onClick={onDismiss} aria-label="Close ideas" className="text-xl">
                       ×
-                    </button>
+                    </Button>
                   </div>
                 </div>
 
                 {loading && (
-                  <div className="px-5 py-6 text-sm text-outline">Thinking…</div>
+                  <div className="px-5 py-6 text-sm text-on-surface-variant">Thinking…</div>
                 )}
 
                 {!loading && suggestions.length === 0 && (
-                  <div className="px-5 py-6 text-sm text-outline">
+                  <div className="px-5 py-6 text-sm text-on-surface-variant">
                     No suggestions returned. Try adding more content to your memory first.
                   </div>
                 )}
@@ -75,22 +72,21 @@ export default function IdeasPanel({ loading, suggestions, focus, selectedIndex,
                             <p className="text-sm font-medium text-on-surface leading-snug">{s.title}</p>
                           </div>
                           <div className="mt-1 flex items-center gap-2">
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-surface-container-low border border-surface-container-high text-outline">
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-surface-container-low border border-surface-container-high text-on-surface-variant">
                               {FORMAT_BADGE[s.format] ?? s.format}
                             </span>
                           </div>
-                          <p className="mt-1 text-xs text-outline leading-relaxed">{s.angle}</p>
+                          <p className="mt-1 text-xs text-on-surface-variant leading-relaxed">{s.angle}</p>
                         </div>
-                        <button
+                        <Button
+                          variant={selectedIndex === i ? "secondary" : "primary"}
+                          size="sm"
                           onClick={() => onUse(s, i)}
-                          className={`text-xs whitespace-nowrap rounded-lg px-3 py-1.5 transition-colors border flex-shrink-0 ${
-                            selectedIndex === i
-                              ? "border-surface-container-high bg-surface-container-lowest text-outline"
-                              : "border-surface-container-high bg-surface-container-lowest text-secondary hover:bg-surface-container-low"
-                          }`}
+                          aria-pressed={selectedIndex === i}
+                          className="shrink-0"
                         >
                           {selectedIndex === i ? "Selected" : "Use this"}
-                        </button>
+                        </Button>
                       </div>
                     ))}
                   </div>

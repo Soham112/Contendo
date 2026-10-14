@@ -5,6 +5,8 @@ import DiagramView from "@/components/DiagramView";
 import type { useApi } from "@/lib/api";
 import { svgToPngDataURL } from "@/lib/svg";
 import type { Visual } from "./config";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/field";
 
 // ─── DiagramBlock ─────────────────────────────────────────────────────────────
 
@@ -20,7 +22,6 @@ export function DiagramBlock({ visual, api, onActiveVersionChange }: DiagramBloc
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [refinementError, setRefinementError] = useState("");
-  const [inputFocused, setInputFocused] = useState(false);
 
   if (!visual.svg_code) {
     return (
@@ -111,68 +112,36 @@ export function DiagramBlock({ visual, api, onActiveVersionChange }: DiagramBloc
         {versions.length > 1 && (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {versions.map((_, idx) => (
-              <button
+              <Button
                 key={idx}
+                variant="secondary"
+                size="sm"
+                aria-pressed={idx === activeVersion}
+                aria-label={`Version ${idx + 1}`}
                 onClick={() => handleVersionClick(idx)}
-                style={{
-                  padding: "4px 12px",
-                  borderRadius: 999,
-                  fontSize: "0.72rem",
-                  border: idx === activeVersion ? "1px solid #58614f" : "none",
-                  background: idx === activeVersion ? "#eef0eb" : "#e8e9e8",
-                  color: idx === activeVersion ? "#58614f" : "#645e57",
-                  cursor: "pointer",
-                  fontFamily: "var(--font-body), sans-serif",
-                  fontWeight: idx === activeVersion ? 500 : 400,
-                }}
+                className={idx === activeVersion ? "bg-primary-container text-on-primary-fixed hover:bg-primary-container" : "bg-surface-container-high"}
               >
                 v{idx + 1}
-              </button>
+              </Button>
             ))}
           </div>
         )}
 
         {/* Refinement input row */}
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <input
+          <label htmlFor={`diagram-change-${visual.position}`} className="sr-only">What to change in this diagram</label>
+          <Input
+            id={`diagram-change-${visual.position}`}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") handleUpdate(); }}
-            onFocus={() => setInputFocused(true)}
-            onBlur={() => setInputFocused(false)}
             placeholder="Describe what to change…"
             disabled={isLoading}
-            style={{
-              flex: 1,
-              background: "#f3f4f3",
-              border: "none",
-              borderBottom: inputFocused ? "1.5px solid #58614f" : "1.5px solid #aeb3b2",
-              padding: "6px 0",
-              fontSize: "0.85rem",
-              color: "#2f3333",
-              outline: "none",
-              fontFamily: "var(--font-body), sans-serif",
-              transition: "border-color 0.15s",
-            }}
+            className="flex-1 bg-surface-container-lowest text-[0.875rem]"
           />
-          <button
-            onClick={handleUpdate}
-            disabled={isLoading || !inputValue.trim()}
-            style={{
-              background: "linear-gradient(135deg, #58614f, #4c5543)",
-              color: "#ffffff",
-              border: "none",
-              borderRadius: "0.75rem",
-              padding: "6px 16px",
-              fontSize: "0.8rem",
-              cursor: isLoading || !inputValue.trim() ? "not-allowed" : "pointer",
-              opacity: isLoading || !inputValue.trim() ? 0.5 : 1,
-              fontFamily: "var(--font-body), sans-serif",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {isLoading ? "Updating…" : "Update →"}
-          </button>
+          <Button onClick={handleUpdate} loading={isLoading} disabled={!inputValue.trim()} size="sm">
+            Update
+          </Button>
         </div>
 
         {refinementError && (
@@ -185,24 +154,25 @@ export function DiagramBlock({ visual, api, onActiveVersionChange }: DiagramBloc
   );
 }
 
-export function DiagramCard({ visual }: { visual: Visual }) {
+/** A finished diagram with an "Open as PNG" button. */
+export function DiagramCard({ svg, description }: { svg: string; description: string }) {
   const [pngState, setPngState] = useState<"idle" | "opened" | "blocked">("idle");
   const [fallbackDataURL, setFallbackDataURL] = useState<string | null>(null);
 
-  if (!visual.svg_code) {
+  if (!svg) {
     return (
       <div className="rounded-xl border border-error-container bg-error-container/20 px-5 py-4">
         <p className="text-sm font-medium text-error">
-          Diagram generation failed — try regenerating the post
+          We couldn't draw this diagram. Write the post again to try once more.
         </p>
-        <p className="text-xs text-error opacity-70 mt-1">{visual.description}</p>
+        <p className="text-xs text-on-surface mt-1">{description}</p>
       </div>
     );
   }
 
   const handleOpen = async () => {
     try {
-      const dataURL = await svgToPngDataURL(visual.svg_code!);
+      const dataURL = await svgToPngDataURL(svg);
       const win = window.open();
       if (win) {
         win.document.write(
@@ -227,30 +197,27 @@ export function DiagramCard({ visual }: { visual: Visual }) {
       <div className="px-5 py-3 border-b border-surface-container-high">
         <p className="text-sm font-medium text-secondary">
           Diagram —{" "}
-          <span className="font-normal text-outline">
-            {visual.description.length > 60
-              ? visual.description.slice(0, 60) + "…"
-              : visual.description}
+          <span className="font-normal text-on-surface-variant">
+            {description.length > 60
+              ? description.slice(0, 60) + "…"
+              : description}
           </span>
         </p>
       </div>
-      <DiagramView className="p-4 overflow-x-auto" svg={visual.svg_code} description={visual.description} />
+      <DiagramView className="p-4 overflow-x-auto" svg={svg} description={description} />
       <div className="px-5 py-3 border-t border-surface-container-high space-y-2">
         <div className="flex items-center gap-3">
-          <button
-            onClick={handleOpen}
-            className="text-xs border border-surface-container-high rounded-lg px-3 py-1.5 text-secondary hover:border-outline-variant hover:text-on-surface transition-colors"
-          >
+          <Button variant="secondary" size="sm" onClick={handleOpen}>
             Open as PNG
-          </button>
+          </Button>
           {pngState === "opened" && (
-            <span className="text-xs text-outline">
-              PNG opened in new tab — right-click and <strong>Save Image</strong>
+            <span className="text-xs text-on-surface-variant">
+              The PNG opened in a new tab. Right-click it and <strong>Save Image</strong>
             </span>
           )}
           {pngState === "blocked" && (
-            <span className="text-xs text-outline">
-              Popup blocked — right-click the image below and <strong>Save Image</strong>
+            <span className="text-xs text-on-surface-variant">
+              Your browser blocked the new tab. Right-click the image below and <strong>Save Image</strong>
             </span>
           )}
         </div>
@@ -266,10 +233,10 @@ export function DiagramCard({ visual }: { visual: Visual }) {
 export function ImageReminderCard({ visual }: { visual: Visual }) {
   return (
     <div className="rounded-xl border-2 border-dashed border-outline-variant bg-surface-container px-5 py-4 space-y-1">
-      <p className="label-caps text-outline-variant">
+      <p className="label-caps text-on-surface-variant">
         Add your own visual
       </p>
-      <p className="text-sm text-outline leading-relaxed">{visual.reminder_text}</p>
+      <p className="text-sm text-on-surface-variant leading-relaxed">{visual.reminder_text}</p>
     </div>
   );
 }
@@ -308,38 +275,12 @@ export function VisualsPanel({ entered, visuals, loading, api, onRegenerate, onC
                             VISUALS
                           </p>
                           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                            <button
-                              onClick={onRegenerate}
-                              disabled={loading}
-                              style={{
-                                fontSize: "0.78rem",
-                                color: "#645e57",
-                                background: "#f3f4f3",
-                                border: "none",
-                                borderRadius: "0.5rem",
-                                padding: "4px 12px",
-                                cursor: loading ? "not-allowed" : "pointer",
-                                opacity: loading ? 0.5 : 1,
-                                fontFamily: "var(--font-body), sans-serif",
-                              }}
-                            >
-                              {loading ? "Scanning…" : "Regenerate"}
-                            </button>
-                            <button
-                              onClick={onClose}
-                              style={{
-                                background: "none",
-                                border: "none",
-                                cursor: "pointer",
-                                color: "#aeb3b2",
-                                fontSize: "1.1rem",
-                                lineHeight: 1,
-                                padding: "2px 4px",
-                              }}
-                              aria-label="Close visuals panel"
-                            >
+                            <Button variant="secondary" size="sm" onClick={onRegenerate} loading={loading}>
+                              {loading ? "Looking for visuals…" : "Regenerate"}
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close visuals panel" className="text-xl">
                               ×
-                            </button>
+                            </Button>
                           </div>
                         </div>
 
@@ -355,7 +296,7 @@ export function VisualsPanel({ entered, visuals, loading, api, onRegenerate, onC
                           >
                             <div className="w-8 h-8 rounded-full border-2 border-surface-container-high border-t-primary animate-spin" />
                             <p style={{ fontSize: "0.85rem", color: "#645e57", fontFamily: "var(--font-body), sans-serif" }}>
-                              Scanning post for visual opportunities…
+                              Looking for places a visual would help…
                             </p>
                           </div>
                         )}
@@ -369,7 +310,7 @@ export function VisualsPanel({ entered, visuals, loading, api, onRegenerate, onC
                             }}
                           >
                             <p style={{ fontSize: "0.85rem", color: "#645e57", fontFamily: "var(--font-body), sans-serif" }}>
-                              No visual placeholders found in post.
+                              This post has no spots marked for a diagram or image. Write it again to get suggestions.
                             </p>
                           </div>
                         )}

@@ -4,9 +4,12 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useApi } from "@/lib/api";
-import DiagramView from "@/components/DiagramView";
-import { svgToPngDataURL } from "@/lib/svg";
 import { useToast } from "@/components/ui/ToastProvider";
+import { Button } from "@/components/ui/button";
+import { Card, Skeleton } from "@/components/ui/card";
+import { EmptyState, ErrorState } from "@/components/ui/states";
+import MarkPublishedDialog from "@/components/history/MarkPublishedDialog";
+import { DiagramCard } from "@/components/create/VisualCards";
 
 const SS_POST = "contentOS_last_post";
 const SS_SCORE = "contentOS_last_score";
@@ -47,12 +50,6 @@ interface Post {
   published_content: string | null;
 }
 
-const PLATFORMS = [
-  { id: "linkedin", label: "LinkedIn" },
-  { id: "twitter", label: "X" },
-  { id: "medium", label: "Medium" },
-  { id: "other", label: "Other" },
-];
 
 const FORMAT_LABELS: Record<string, string> = {
   "linkedin post": "LinkedIn",
@@ -67,7 +64,7 @@ const TONE_LABELS: Record<string, string> = {
 };
 
 function scorePillColors(score: number | null): string {
-  if (score === null) return "bg-surface border-border text-text-muted";
+  if (score === null) return "bg-surface border-border text-on-surface-variant";
   if (score >= 80) return "bg-score-green-bg border-score-green text-score-green";
   return "bg-surface border-border text-text-secondary";
 }
@@ -78,70 +75,6 @@ function scorePillSelectedColors(score: number | null): string {
   return "bg-text-primary border-text-primary text-card";
 }
 
-function DiagramCard({ diagram }: { diagram: Diagram }) {
-  const [pngState, setPngState] = useState<"idle" | "opened" | "blocked">("idle");
-  const [fallbackDataURL, setFallbackDataURL] = useState<string | null>(null);
-
-  const handleOpen = async () => {
-    try {
-      const dataURL = await svgToPngDataURL(diagram.svg_code);
-      const win = window.open();
-      if (win) {
-        win.document.write(
-          `<html><body style="margin:0;background:#faf9f7;display:flex;justify-content:center;padding:24px">` +
-          `<img src="${dataURL}" style="max-width:100%;border-radius:8px" />` +
-          `</body></html>`
-        );
-        win.document.close();
-        setPngState("opened");
-        setTimeout(() => setPngState("idle"), 5000);
-      } else {
-        setFallbackDataURL(dataURL);
-        setPngState("blocked");
-      }
-    } catch {
-      // conversion failed
-    }
-  };
-
-  return (
-    <div className="rounded-lg border border-border bg-card overflow-hidden">
-      <div className="px-4 py-2.5 border-b border-border-subtle">
-        <p className="text-xs font-medium text-text-secondary">
-          Diagram —{" "}
-          <span className="font-normal text-text-muted">
-            {diagram.description.length > 80
-              ? diagram.description.slice(0, 80) + "…"
-              : diagram.description}
-          </span>
-        </p>
-      </div>
-      <DiagramView className="p-4 overflow-x-auto" svg={diagram.svg_code} description={diagram.description} />
-      <div className="px-4 py-2.5 border-t border-border-subtle space-y-2">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleOpen}
-            className="text-xs border border-border rounded-lg px-3 py-1.5 text-text-secondary hover:border-text-primary hover:text-text-primary transition-colors"
-          >
-            Open as PNG
-          </button>
-          {pngState === "opened" && (
-            <span className="text-xs text-text-muted">
-              Opened in new tab — right-click and <strong>Save Image</strong>
-            </span>
-          )}
-          {pngState === "blocked" && (
-            <span className="text-xs text-text-muted">Popup blocked — right-click below to save</span>
-          )}
-        </div>
-        {pngState === "blocked" && fallbackDataURL && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={fallbackDataURL} alt="diagram PNG" className="max-w-full rounded-lg border border-border" />
-        )}
-      </div>
-    </div>
-  );
-}
 
 function bestVersionIndex(versions: Version[]): number {
   let best = 0;
@@ -170,13 +103,12 @@ export default function PostDetailPage() {
 
   // Publish modal state
   const [publishModalOpen, setPublishModalOpen] = useState(false);
-  const [publishPlatform, setPublishPlatform] = useState("linkedin");
-  const [publishContent, setPublishContent] = useState("");
   const [publishSaving, setPublishSaving] = useState(false);
-  const [publishSuccessMsg, setPublishSuccessMsg] = useState("");
 
-  useEffect(() => {
+  const loadPost = () => {
     if (!postId) return;
+    setLoading(true);
+    setError("");
     api.getHistory()
       .then((r) => {
         if (!r.ok) throw new Error("Failed to load history");
@@ -184,21 +116,40 @@ export default function PostDetailPage() {
       })
       .then((data) => {
         const found: Post = (data.posts ?? []).find((p: Post) => p.id === Number(postId));
-        if (!found) { setError("Post not found."); return; }
+        if (!found) { setError("notfound"); return; }
         setPost(found);
         if (found.versions.length > 1) {
           setSelectedVersionIdx(bestVersionIndex(found.versions));
         }
       })
-      .catch(() => setError("Could not load post."))
+      .catch(() => setError("We couldn't load this post. Check your connection and try again."))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadPost();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [postId]);
 
-  if (loading) return <p className="text-sm text-text-muted">Loading...</p>;
+  const backLink = (
+    <Link href="/history" className="inline-flex min-h-11 items-center text-[0.875rem] text-on-surface-variant hover:text-on-surface">
+      ← History
+    </Link>
+  );
+  if (loading) return (
+    <div role="status" aria-label="Loading post" className="space-y-6">
+      {backLink}
+      <Skeleton className="h-7 w-2/3" />
+      <Skeleton className="h-4 w-40" />
+      <Skeleton className="h-64 w-full rounded-2xl" />
+    </div>
+  );
   if (error || !post) return (
-    <div>
-      <p className="text-sm text-score-red">{error || "Post not found."}</p>
-      <Link href="/history" className="text-xs text-text-secondary mt-2 inline-block">← Back to History</Link>
+    <div className="space-y-6">
+      {backLink}
+      {error === "notfound" || !error
+        ? <EmptyState title="This post isn't here" body="It may have been deleted." action={<Button asChild><Link href="/history">See all posts</Link></Button>} />
+        : <ErrorState message={error} onRetry={loadPost} />}
     </div>
   );
 
@@ -230,7 +181,7 @@ export default function PostDetailPage() {
         sessionStorage.setItem(SS_VISUALS, JSON.stringify([]));
         sessionStorage.setItem(SS_CURRENT_POST_ID, String(post.id));
       } catch { /* ignore */ }
-      setRestoredMsg(`v${data.version_number} restored — go to Create Post to edit`);
+      setRestoredMsg(`Version ${data.version_number} restored. Open it in the editor to keep working on it.`);
     } catch {
       setRestoredMsg("Restore failed. Please try again.");
     } finally {
@@ -266,24 +217,16 @@ export default function PostDetailPage() {
     router.push("/create");
   };
 
-  const handlePublishSave = async () => {
+  const handlePublishSave = async (publishPlatform: string, publishContent: string) => {
     setPublishSaving(true);
     try {
       const res = await api.markAsPublished(post.id, publishPlatform, publishContent || undefined);
       if (!res.ok) throw new Error("Failed");
       setPost((prev) => prev ? { ...prev, published_at: new Date().toISOString(), published_platform: publishPlatform, published_content: publishContent || null } : prev);
-      if (publishContent.trim()) {
-        setPublishSuccessMsg("Added to your writing samples — your voice model just got sharper.");
-        setTimeout(() => {
-          setPublishModalOpen(false);
-          setPublishSuccessMsg("");
-        }, 1500);
-      } else {
-        setPublishModalOpen(false);
-      }
-      showToast("Post marked as published", "success");
+      setPublishModalOpen(false);
+      showToast(publishContent.trim() ? "Marked as published. Contendo will learn your voice from this version." : "Marked as published", "success");
     } catch {
-      showToast("Failed to save — please try again", "error");
+      showToast("We couldn't save that. Please try again.", "error");
     } finally {
       setPublishSaving(false);
     }
@@ -297,36 +240,34 @@ export default function PostDetailPage() {
 
   return (
     <div className="space-y-7">
-      {/* Back link */}
-      <Link href="/history" className="text-xs text-text-muted hover:text-text-primary transition-colors">
-        ← History
-      </Link>
+      {backLink}
 
-      {/* Header */}
       <div>
-        <h1 className="text-xl font-semibold text-text-primary leading-snug">{post.topic}</h1>
+        <h1 className="font-headline text-[1.75rem] leading-snug text-on-surface">{post.topic}</h1>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <span className="text-xs px-2 py-0.5 rounded-full bg-stat border border-border text-text-muted">
-            {FORMAT_LABELS[post.format] ?? post.format}
-          </span>
-          <span className="text-xs px-2 py-0.5 rounded-full bg-stat border border-border text-text-muted">
-            {TONE_LABELS[post.tone] ?? post.tone}
-          </span>
-          <span className="text-xs text-text-hint">{date}</span>
+          <span className="text-[0.75rem] px-2.5 py-1 rounded-full bg-surface-container text-on-surface-variant">{FORMAT_LABELS[post.format] ?? post.format}</span>
+          <span className="text-[0.75rem] px-2.5 py-1 rounded-full bg-surface-container text-on-surface-variant">{TONE_LABELS[post.tone] ?? post.tone}</span>
+          <span className="text-[0.75rem] text-on-surface-variant">{date}</span>
+          {post.published_at && (
+            <span className="text-[0.75rem] px-2.5 py-1 rounded-full font-semibold bg-primary-container text-on-primary-fixed">
+              Published{post.published_platform ? ` · ${post.published_platform.charAt(0).toUpperCase() + post.published_platform.slice(1)}` : ""}
+            </span>
+          )}
         </div>
       </div>
 
-      {/* Version pills */}
       {hasVersions && (
-        <div className="flex flex-wrap gap-1.5">
+        <div role="group" aria-label="Versions" className="flex flex-wrap gap-2">
           {post.versions.map((v, i) => {
             const isSelected = i === selectedVersionIdx;
             const isBest = i === bestIdx;
             return (
               <button
                 key={v.id}
+                type="button"
+                aria-pressed={isSelected}
                 onClick={() => setSelectedVersionIdx(i)}
-                className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${
+                className={`min-h-11 sm:min-h-8 text-[0.75rem] px-3 rounded-full border font-medium transition-colors ${
                   isSelected ? scorePillSelectedColors(v.authenticity_score) : scorePillColors(v.authenticity_score)
                 }`}
               >
@@ -337,167 +278,50 @@ export default function PostDetailPage() {
         </div>
       )}
 
-      {/* Post content */}
-      <div className="rounded-lg border border-border bg-card px-6 py-5">
+      <Card>
         {hasVersions && (
-          <p className="text-xs text-text-muted mb-4">
-            v{post.versions[selectedVersionIdx].version_number} · {post.versions[selectedVersionIdx].version_type}
+          <p className="text-[0.75rem] text-on-surface-variant mb-4">
+            Version {post.versions[selectedVersionIdx].version_number} · {post.versions[selectedVersionIdx].version_type}
           </p>
         )}
-        <pre className="text-sm text-text-primary whitespace-pre-wrap leading-relaxed font-sans">
-          {activeContent}
-        </pre>
-      </div>
+        <p className="text-[0.9375rem] text-on-surface whitespace-pre-wrap leading-relaxed">{activeContent}</p>
+      </Card>
 
-      {/* Actions */}
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          onClick={handleCopy}
-          className="text-sm border border-border rounded-lg px-4 py-2 text-text-secondary hover:border-text-primary hover:text-text-primary transition-colors bg-card"
-        >
-          {copied ? "Copied!" : "Copy"}
-        </button>
-        <button
-          onClick={handleOpenInEditor}
-          className="text-sm border border-border rounded-lg px-4 py-2 text-text-secondary hover:border-text-primary hover:text-text-primary transition-colors bg-card flex items-center gap-1.5"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-          </svg>
-          Open in editor
-        </button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="secondary" onClick={handleCopy}>{copied ? "Copied" : "Copy"}</Button>
+        <Button variant="secondary" onClick={handleOpenInEditor}>Open in editor</Button>
         {hasVersions && (
-          <button
-            onClick={handleRestore}
-            disabled={restoring}
-            className="text-sm border border-border rounded-lg px-4 py-2 text-text-secondary hover:border-text-primary hover:text-text-primary transition-colors bg-card disabled:opacity-50"
-          >
-            {restoring ? "Restoring…" : `Restore v${post.versions[selectedVersionIdx].version_number} to Create Post`}
-          </button>
+          <Button variant="secondary" onClick={handleRestore} loading={restoring}>
+            Restore version {post.versions[selectedVersionIdx].version_number}
+          </Button>
         )}
-        {!post.published_at && (
-          <button
-            onClick={() => setPublishModalOpen(true)}
-            className="text-sm border border-border rounded-lg px-4 py-2 text-text-secondary hover:border-text-primary hover:text-text-primary transition-colors bg-card flex items-center gap-1.5"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="20 6 9 17 4 12"/>
-            </svg>
-            Mark as published
-          </button>
-        )}
-        {post.published_at && (
-          <span className="text-xs px-3 py-1.5 rounded-full font-semibold" style={{ background: "rgba(88,97,79,0.12)", color: "#58614f" }}>
-            Published{post.published_platform ? ` · ${post.published_platform.charAt(0).toUpperCase() + post.published_platform.slice(1)}` : ""}
-          </span>
-        )}
+        {!post.published_at && <Button variant="secondary" onClick={() => setPublishModalOpen(true)}>Mark as published</Button>}
         {!confirming && (
-          <button
-            onClick={() => setConfirming(true)}
-            className="text-sm text-text-hint hover:text-score-red transition-colors ml-auto"
-          >
+          <Button variant="tertiary" className="sm:ml-auto text-error decoration-error/40" onClick={() => setConfirming(true)}>
             Delete post
-          </button>
-        )}
-        {confirming && (
-          <div className="flex items-center gap-2 ml-auto">
-            <span className="text-xs text-text-muted">Delete permanently?</span>
-            <button
-              onClick={handleDelete}
-              disabled={deleting}
-              className="text-xs text-card bg-score-red hover:opacity-80 rounded-lg px-3 py-1.5 transition-opacity disabled:opacity-50"
-            >
-              {deleting ? "Deleting..." : "Yes, delete"}
-            </button>
-            <button
-              onClick={() => setConfirming(false)}
-              className="text-xs border border-border rounded-lg px-3 py-1.5 text-text-secondary hover:text-text-primary transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
+          </Button>
         )}
       </div>
 
-      {restoredMsg && (
-        <p className="text-xs text-text-secondary">{restoredMsg}</p>
-      )}
-
-      {/* Publish modal */}
-      {publishModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ background: "rgba(47,51,51,0.35)", backdropFilter: "blur(4px)" }}
-          onClick={(e) => { if (e.target === e.currentTarget && !publishSaving) setPublishModalOpen(false); }}
-        >
-          <div
-            className="bg-surface-container-lowest rounded-2xl px-8 py-7 w-full max-w-md mx-4"
-            style={{ boxShadow: "0px 4px 20px rgba(47,51,51,0.08), 0px 24px 60px rgba(47,51,51,0.12)" }}
-          >
-            {publishSuccessMsg ? (
-              <div className="flex items-center gap-3 py-2">
-                <span style={{ color: "#58614f", fontSize: 18 }}>✓</span>
-                <p className="text-[13px] text-on-surface">{publishSuccessMsg}</p>
-              </div>
-            ) : (
-              <>
-                <h2 className="font-headline text-[1.2rem] text-on-surface mb-1">Mark as published</h2>
-                <p className="text-[12px] text-outline mb-5">Record where this post went live.</p>
-
-                <p className="label-caps text-outline mb-2">Platform</p>
-                <div className="flex gap-2 flex-wrap mb-5">
-                  {PLATFORMS.map((p) => (
-                    <button
-                      key={p.id}
-                      onClick={() => setPublishPlatform(p.id)}
-                      className={`px-4 py-1.5 rounded-full text-[12px] font-semibold transition-all duration-150 ${
-                        publishPlatform === p.id ? "text-white" : "bg-surface-container text-secondary hover:bg-surface-container-high"
-                      }`}
-                      style={publishPlatform === p.id ? { background: "linear-gradient(135deg, #58614f, #4c5543)" } : {}}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-
-                <p className="label-caps text-outline mb-2">Final version <span className="normal-case font-normal">(optional)</span></p>
-                <textarea
-                  value={publishContent}
-                  onChange={(e) => setPublishContent(e.target.value)}
-                  rows={4}
-                  placeholder="Paste what you actually posted — your voice model will learn from it."
-                  className="input-editorial w-full px-0 py-2 text-sm text-on-surface placeholder:text-outline-variant focus:outline-none resize-none mb-5"
-                  style={{ borderBottom: "1px solid #dfe3e2" }}
-                />
-
-                <div className="flex items-center gap-3 justify-end">
-                  <button
-                    onClick={() => setPublishModalOpen(false)}
-                    className="px-4 py-2 text-[13px] text-secondary hover:text-on-surface transition-colors ghost-border rounded-xl"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handlePublishSave}
-                    disabled={publishSaving}
-                    className="btn-primary px-5 py-2 text-[13px] text-white rounded-xl font-semibold disabled:opacity-50 transition-opacity"
-                  >
-                    {publishSaving ? "Saving…" : "Save"}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+      {confirming && (
+        <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl bg-surface-container px-4 py-3">
+          <span className="flex-1 text-[0.875rem] text-on-surface">Delete this post and all its versions? This can&apos;t be undone.</span>
+          <Button variant="destructive" size="sm" onClick={handleDelete} loading={deleting}>Yes, delete</Button>
+          <Button variant="secondary" size="sm" onClick={() => setConfirming(false)}>Cancel</Button>
         </div>
       )}
 
-      {/* Diagrams */}
+      {restoredMsg && <p role="status" className="text-[0.875rem] text-on-surface-variant">{restoredMsg}</p>}
+
+      {publishModalOpen && (
+        <MarkPublishedDialog onSave={handlePublishSave} onClose={() => setPublishModalOpen(false)} saving={publishSaving} />
+      )}
+
       {activeDiagrams && activeDiagrams.length > 0 && (
         <div className="space-y-3">
-          <p className="text-xs font-medium uppercase tracking-widest text-text-hint">Diagrams</p>
+          <p className="label-caps text-on-surface-variant">Diagrams</p>
           {activeDiagrams.map((d) => (
-            <DiagramCard key={d.position} diagram={d} />
+            <DiagramCard key={d.position} svg={d.svg_code} description={d.description} />
           ))}
         </div>
       )}
