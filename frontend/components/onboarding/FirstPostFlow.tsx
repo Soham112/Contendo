@@ -67,11 +67,13 @@ export default function FirstPostFlow() {
         if (!user) { router.replace('/sign-in?redirect_url=' + encodeURIComponent('/first-post' + (params.toString() ? '?' + params.toString() : ''))); return; }
         const [nextAccount, nextOptions] = await Promise.all([api.getAccount(), api.getNicheOptions()]);
         if (cancelled) return;
-        setAccount(nextAccount); setSelectedSegment(nextAccount.segment); setOptions(nextOptions);
+        setAccount(nextAccount); setOptions(nextOptions);
         setBrief(prev => ({ ...prev, topic: params.get('topic') || sessionStorage.getItem('contendo_topic') || prev.topic }));
-        const nextScreen = nextAccount.ask_segment || !nextAccount.segment ? 'segment' : nextAccount.segment === 'business' ? 'business' : 'individual';
+        const requestedBusiness = params.get('segment') === 'business' || resolveNicheParam(params.get('niche'), nextOptions);
+        const nextScreen = requestedBusiness ? 'business' : nextAccount.ask_segment || !nextAccount.segment ? 'segment' : nextAccount.segment === 'business' ? 'business' : 'individual';
+        setSelectedSegment(nextScreen === 'business' ? 'business' : nextAccount.segment);
         setScreen(nextScreen); setLoaded(true);
-        track(nextScreen === 'business' ? 'niche' : nextScreen === 'individual' ? 'individual_brief' : 'segment', 'started', nextAccount.segment || undefined);
+        track(nextScreen === 'business' ? 'niche' : nextScreen === 'individual' ? 'individual_brief' : 'segment', 'started', nextScreen === 'business' ? 'business' : nextAccount.segment || undefined);
       } catch (failure) {
         if (!cancelled) setLoadError(requestErrorMessage(failure, 'load your account and setup options'));
       }

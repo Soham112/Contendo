@@ -3,7 +3,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { beforeEach, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({states: [] as unknown[], refs: [] as {current: unknown}[], deps: [] as unknown[][],
   cursor: 0, rc: 0, ec: 0, effects: [] as (() => unknown)[], getUser: vi.fn(), replace: vi.fn(), push: vi.fn(),
-  storage: new Map<string,string>(), api: {getAccount: vi.fn(), getNicheOptions: vi.fn(), saveSegment: vi.fn(),
+  search: '', storage: new Map<string,string>(), api: {getAccount: vi.fn(), getNicheOptions: vi.fn(), saveSegment: vi.fn(),
     generateFirstPost: vi.fn(), logPost: vi.fn(), recordOnboardingStep: vi.fn(), suggestTakes: vi.fn()}}));
 vi.mock('react', async () => ({...await vi.importActual<typeof import('react')>('react'),
   useState: (initial: unknown) => { const i = h.cursor++; if (!(i in h.states)) h.states[i] = initial;
@@ -12,7 +12,7 @@ vi.mock('react', async () => ({...await vi.importActual<typeof import('react')>(
   useEffect: (effect: () => unknown, deps: unknown[]) => {const i = h.ec++;
     if (!h.deps[i] || deps.some((v,j) => v !== h.deps[i][j])) {h.deps[i] = deps; h.effects.push(effect);}}
 }));
-vi.mock('next/navigation', () => ({useRouter: () => ({replace:h.replace,push:h.push}),useSearchParams:()=>new URLSearchParams()}));
+vi.mock('next/navigation', () => ({useRouter: () => ({replace:h.replace,push:h.push}),useSearchParams:()=>new URLSearchParams(h.search)}));
 vi.mock('@/lib/supabase', () => ({default:{auth:{getUser:h.getUser}}}));
 vi.mock('@/lib/api', () => ({useApi:()=>h.api}));
 vi.mock('next/link', () => ({default:({children}:{children:ReactNode})=>children}));
@@ -41,7 +41,7 @@ async function individual(){const tree=await load();await find(tree,SegmentQuest
   find(render(),IndividualBrief)!.props.onChange({topic:'Launch',story:'I fixed a bug.',format:'linkedin post',take:''});}
 async function generate(){find(render(),IndividualBrief)!.props.onGenerate();await flush();return render();}
 beforeEach(()=>{
-  vi.clearAllMocks();h.states=[];h.refs=[];h.deps=[];h.effects=[];h.storage.clear();
+  vi.clearAllMocks();h.states=[];h.refs=[];h.deps=[];h.effects=[];h.storage.clear();h.search='';
   vi.stubGlobal('sessionStorage',{getItem:(k:string)=>h.storage.get(k)??null,setItem:(k:string,v:string)=>h.storage.set(k,v)});
   h.getUser.mockResolvedValue({data:{user:{id:'new-user'}},error:null});
   h.api.getAccount.mockResolvedValue({segment:null,ask_segment:true});h.api.getNicheOptions.mockResolvedValue({niches:[]});
@@ -97,4 +97,19 @@ it('signed-out entry redirects to sign-in rather than showing an account failure
   expect(h.replace).toHaveBeenCalledWith('/sign-in?redirect_url=%2Ffirst-post');
   expect(find(tree, RetryNotice)).toBeUndefined();
   expect(h.api.getAccount).not.toHaveBeenCalled();
+});
+
+it('business handoff does not ask the segment question again', async () => {
+  h.search = 'segment=business';
+  const tree = await load();
+  expect(find(tree, BusinessSetup)).toBeDefined();
+  expect(find(tree, SegmentQuestion)).toBeUndefined();
+  expect(h.api.saveSegment).not.toHaveBeenCalled();
+});
+
+it('an unrecognized niche URL does not silently select a business', async () => {
+  h.search = 'niche=not-a-listed-niche';
+  const tree = await load();
+  expect(find(tree, SegmentQuestion)).toBeDefined();
+  expect(find(tree, BusinessSetup)).toBeUndefined();
 });
