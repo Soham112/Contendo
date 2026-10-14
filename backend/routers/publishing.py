@@ -88,6 +88,8 @@ def list_accounts(user_id: str = Depends(get_user_id_dep)) -> dict:
     provider = _provider()
     try:
         rows = service.refresh_accounts(user_id, provider)
+    except publish_store.AccountLimitError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from None
     except ProviderError as error:
         # Show what we last knew rather than nothing.
         logger.warning("GET /publishing/accounts: refresh failed: %s", error)
@@ -103,7 +105,9 @@ class ConnectRequest(BaseModel):
 def connect_account(req: ConnectRequest, user_id: str = Depends(get_user_id_dep)) -> dict:
     """A URL to send the user to, to connect one account on this platform."""
     provider = _provider()
-    gates.require_account_slot(user_id, len(publish_store.list_accounts(user_id, provider.name)))
+    gates.require_account_slot(user_id, sum(
+        row["platform"] == req.platform.value and row["status"] == "connected"
+        for row in publish_store.list_accounts(user_id, provider.name)))
     origin = os.environ.get("FRONTEND_ORIGIN", "").strip().rstrip("/")
     if not origin:
         logger.error("POST /publishing/connect: FRONTEND_ORIGIN is not set")

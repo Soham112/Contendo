@@ -3,7 +3,7 @@ import { formatAmount, formatPrice, quotaLine, readPaywall, type Entitlements } 
 
 const FREE: Entitlements = {
   plan: "free", subscription_status: null, generation_limit: 10, generations_used: 7, generations_remaining: 3,
-  can_generate: true, can_publish: false, publishing_paused: false, max_connected_accounts: 0,
+  can_generate: true, can_publish: false, publishing_paused: false, max_accounts_per_platform: 0,
   trial_end: null, current_period_end: null, cancel_at_period_end: false, period: "2026-10",
 };
 

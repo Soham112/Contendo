@@ -65,7 +65,7 @@ export default function UpgradeScreen({
         {!paymentFailed && plans && (
           <>
             <ul className="mt-6 flex flex-col gap-3 text-[0.9375rem] leading-relaxed text-on-surface">
-              <li>Connect up to {plans.pro.max_connected_accounts} social accounts.</li>
+              <li>Connect {plans.pro.max_accounts_per_platform} account per platform.</li>
               <li>Publish now, schedule for later, or add posts to a daily queue.</li>
               <li>{plans.pro.generations_per_month} posts a month, written in your voice.</li>
               <li>You approve every post before it goes out.</li>

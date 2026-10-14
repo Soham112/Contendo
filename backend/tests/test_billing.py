@@ -100,7 +100,7 @@ def test_a_new_user_is_on_the_free_plan(client, a_headers):
     assert body["plan"] == "free"
     assert body["generation_limit"] == 10 and body["generations_remaining"] == 10
     assert body["can_generate"] is True
-    assert body["can_publish"] is False and body["max_connected_accounts"] == 0
+    assert body["can_publish"] is False and body["max_accounts_per_platform"] == 0
 
 
 @pytest.mark.parametrize("status, plan, can_publish, paused", [
@@ -120,7 +120,7 @@ def test_entitlements_follow_the_subscription_status(fake_db, status, plan, can_
     make_pro(fake_db, status=status)
     entitlements = get_entitlements("user-a")
     assert (entitlements.plan, entitlements.can_publish, entitlements.publishing_paused) == (plan, can_publish, paused)
-    assert (entitlements.max_connected_accounts > 0) == (plan == "pro")
+    assert (entitlements.max_accounts_per_platform > 0) == (plan == "pro")
     assert entitlements.generation_limit == (300 if plan == "pro" else 10)
 
 
@@ -468,3 +468,11 @@ def test_the_plan_never_changes_from_the_browser(client, a_headers, stripe_state
     for method, path in [("post", "/billing/portal"), ("get", "/billing/entitlements")]:
         getattr(client, method)(path, headers=a_headers, params={"status": "active", "plan": "pro"})
     assert fake_db.tables["subscriptions"][0].get("status") is None
+
+
+def test_pro_has_300_posts_and_one_account_per_platform(fake_db):
+    from billing.entitlements import get_entitlements
+    make_pro(fake_db)
+    entitlements = get_entitlements("user-a")
+    assert entitlements.generation_limit == 300
+    assert entitlements.max_accounts_per_platform == 1

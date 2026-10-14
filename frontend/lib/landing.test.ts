@@ -9,7 +9,7 @@ import { canonicalUrl, pageMetadata, SITE_URL } from "./seo";
 const PLANS: Plans = {
   free: { generations_per_month: 10, publishing: false },
   pro: {
-    generations_per_month: 300, publishing: true, max_connected_accounts: 10,
+    generations_per_month: 300, publishing: true, max_accounts_per_platform: 1,
     price: { amount: 3900, currency: "usd", interval: "month", trial_days: 7 },
   },
 };

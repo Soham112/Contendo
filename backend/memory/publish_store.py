@@ -55,9 +55,16 @@ def list_accounts(user_id: str, provider: str) -> list[dict[str, Any]]:
     ).data or []
 
 
+class AccountLimitError(ValueError):
+    """Provider accounts exceed the one-account-per-platform entitlement."""
+
+
 def sync_accounts(user_id: str, provider: str, current: list[ConnectedAccount]) -> list[dict[str, Any]]:
     """Make our rows match what the provider reports: add new accounts, update
     names and statuses, and mark ones it no longer lists as disconnected."""
+    active = [account for account in current if account.status != AccountStatus.DISCONNECTED]
+    if len({account.platform for account in active}) != len(active):
+        raise AccountLimitError("Connect only one account per platform. Remove the extra account at your publishing provider and reconnect.")
     now = _now()
     for account in current:
         supabase.table("connected_accounts").upsert({

@@ -19,10 +19,9 @@ PLAN_FREE = "free"
 PLAN_PRO = "pro"
 
 FREE_GENERATIONS_PER_MONTH = 10
-# Proposed, not yet confirmed as pricing: high enough for daily posting on
-# several accounts, bounded so one account cannot run up unlimited model cost.
+# Pro includes 300 generated posts and one connected account per platform.
 PRO_GENERATIONS_PER_MONTH = 300
-PRO_MAX_CONNECTED_ACCOUNTS = 10
+PRO_MAX_ACCOUNTS_PER_PLATFORM = 1
 
 # Stripe subscription statuses.
 _PAID = frozenset({"trialing", "active"})
@@ -42,7 +41,7 @@ class Entitlements:
     can_publish: bool
     # True in Stripe's grace period: a pro user whose payment failed.
     publishing_paused: bool
-    max_connected_accounts: int
+    max_accounts_per_platform: int
     trial_end: str | None
     current_period_end: str | None
     cancel_at_period_end: bool
@@ -70,7 +69,7 @@ def get_entitlements(user_id: str) -> Entitlements:
         can_generate=used < limit,
         can_publish=paid,
         publishing_paused=grace,
-        max_connected_accounts=PRO_MAX_CONNECTED_ACCOUNTS if pro else 0,
+        max_accounts_per_platform=PRO_MAX_ACCOUNTS_PER_PLATFORM if pro else 0,
         trial_end=subscription.get("trial_end") if status == "trialing" else None,
         current_period_end=subscription.get("current_period_end") if pro else None,
         cancel_at_period_end=bool(subscription.get("cancel_at_period_end")) if pro else False,

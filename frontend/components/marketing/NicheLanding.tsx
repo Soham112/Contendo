@@ -140,7 +140,7 @@ export default function NicheLanding({ content, plans }: { content: NicheLanding
                 )}
                 <ul className="mt-4 flex flex-col gap-2.5 text-[1rem] leading-relaxed text-secondary">
                   <li>{plans.pro.generations_per_month} posts a month</li>
-                  <li>Connect up to {plans.pro.max_connected_accounts} social accounts</li>
+                  <li>Connect {plans.pro.max_accounts_per_platform} account per platform</li>
                   <li>Publish now, schedule, or queue a post a day</li>
                   <li>Cancel any time</li>
                 </ul>

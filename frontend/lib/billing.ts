@@ -12,7 +12,7 @@ export interface Entitlements {
   can_publish: boolean;
   /** A Pro user whose payment failed: publishing waits until it succeeds. */
   publishing_paused: boolean;
-  max_connected_accounts: number;
+  max_accounts_per_platform: number;
   trial_end: string | null;
   current_period_end: string | null;
   cancel_at_period_end: boolean;
@@ -32,7 +32,7 @@ export interface Plans {
   pro: {
     generations_per_month: number;
     publishing: boolean;
-    max_connected_accounts: number;
+    max_accounts_per_platform: number;
     /** null when the backend could not read the price: show no figure at all. */
     price: Price | null;
   };

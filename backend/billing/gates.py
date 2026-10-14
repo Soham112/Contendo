@@ -35,13 +35,13 @@ def require_publishing(user_id: str) -> Entitlements:
 
 
 def require_account_slot(user_id: str, connected: int) -> Entitlements:
-    """May this user connect one more account, given how many they have?"""
+    """May this user connect one more account, given how many they have on this platform?"""
     entitlements = get_entitlements(user_id)
     if not entitlements.can_publish:
         _refuse_publishing(entitlements)
-    if connected >= entitlements.max_connected_accounts:
+    if connected >= entitlements.max_accounts_per_platform:
         _refuse("upgrade_required",
-                f"Your plan includes {entitlements.max_connected_accounts} connected accounts. "
+                f"Your plan includes {entitlements.max_accounts_per_platform} account per platform. "
                 "Disconnect one to add another.", entitlements)
     return entitlements
 

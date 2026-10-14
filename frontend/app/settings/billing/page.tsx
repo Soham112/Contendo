@@ -130,7 +130,7 @@ function Billing() {
           <p className="label-caps text-secondary">Pro</p>
           {price && <p className="mt-2 font-headline text-[1.25rem] text-on-surface">{formatPrice(price)}</p>}
           <ul className="mt-4 flex flex-col gap-2.5 text-[0.9375rem] leading-relaxed text-on-surface">
-            <li>Connect up to {plans.pro.max_connected_accounts} social accounts.</li>
+            <li>Connect {plans.pro.max_accounts_per_platform} account per platform.</li>
             <li>Publish now, schedule for later, or add posts to a daily queue.</li>
             <li>{plans.pro.generations_per_month} posts a month.</li>
             <li>Cancel any time from this page.</li>

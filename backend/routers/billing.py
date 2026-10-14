@@ -49,7 +49,7 @@ def get_plans() -> dict:
         "pro": {
             "generations_per_month": plans.PRO_GENERATIONS_PER_MONTH,
             "publishing": True,
-            "max_connected_accounts": plans.PRO_MAX_CONNECTED_ACCOUNTS,
+            "max_accounts_per_platform": plans.PRO_MAX_ACCOUNTS_PER_PLATFORM,
             "price": _pro_price(),
         },
     }

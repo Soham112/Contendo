@@ -133,14 +133,12 @@ def test_a_past_due_user_is_told_publishing_is_paused(client, a_headers, fake_db
     assert resp.json()["detail"]["code"] == "payment_required"
 
 
-def test_the_account_limit_is_enforced(client, a_headers, pro, monkeypatch):
-    from billing import entitlements
-
-    monkeypatch.setattr(entitlements, "PRO_MAX_CONNECTED_ACCOUNTS", 1)
-    connect(client, a_headers)
-    resp = client.post("/publishing/connect", headers=a_headers, json={"platform": "facebook"})
+def test_the_account_limit_is_one_per_platform(client, a_headers, pro):
+    connect(client, a_headers, "linkedin")
+    resp = client.post("/publishing/connect", headers=a_headers, json={"platform": "linkedin"})
     assert resp.status_code == 402
     assert "Disconnect one" in resp.json()["detail"]["message"]
+    assert client.post("/publishing/connect", headers=a_headers, json={"platform": "facebook"}).status_code == 200
 
 
 def test_publishing_endpoints_require_a_token(client, provider):
