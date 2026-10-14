@@ -59,11 +59,6 @@ export const realEstate: NicheLandingContent = {
   ],
   faqs: [
     {
-      question: "Which platforms can Contendo post to?",
-      answer:
-        "Instagram, Facebook Pages, LinkedIn, Google Business Profile, TikTok, YouTube and X. You connect each account once by signing in on the platform itself. Instagram posts need an image, and TikTok and YouTube posts need a video, which you add when you publish.",
-    },
-    {
       question: "Will the posts sound like me?",
       answer:
         "That is the point of it. You tell Contendo how you like to sound, and it writes from your own notes and details rather than from a template. You can edit any post before it goes out, and you can change your tone settings at any time.",

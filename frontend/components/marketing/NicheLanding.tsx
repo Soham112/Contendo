@@ -1,3 +1,4 @@
+import { verifiedPlatformFaq } from "@/content/verified-platforms";
 import Image from "next/image";
 import Link from "next/link";
 import type { NicheLandingContent } from "@/content/niches";
@@ -18,7 +19,8 @@ const SECTION = "mx-auto w-full max-w-[68rem] px-4 sm:px-8";
 export default function NicheLanding({ content, plans }: { content: NicheLandingContent; plans: Plans | null }) {
   const cost = costFaq(plans);
   // One list feeds both the visible FAQ and its structured data.
-  const faqs = cost ? [...content.faqs, cost] : content.faqs;
+  const platforms = verifiedPlatformFaq();
+  const faqs = [...content.faqs, ...(platforms ? [platforms] : []), ...(cost ? [cost] : [])];
   const testimonials = publishableTestimonials(content.nicheKey);
   const href = startHref(content.nicheKey);
   const cta = ctaLabel(plans);
