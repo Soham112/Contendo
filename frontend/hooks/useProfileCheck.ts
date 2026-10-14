@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { isLegalPath } from "@/lib/legal";
 import supabase from "@/lib/supabase";
 import { useApi } from "@/lib/api";
 
@@ -66,7 +67,7 @@ export function useProfileCheck() {
       setLoading(false);
       return;
     }
-    if (SKIP_ROUTES.some((r) => pathname?.startsWith(r))) {
+    if (isLegalPath(pathname) || SKIP_ROUTES.some((r) => pathname?.startsWith(r))) {
       setLoading(false);
       return;
     }

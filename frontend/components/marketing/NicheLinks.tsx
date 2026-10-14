@@ -9,6 +9,8 @@ export default function NicheLinks() {
         Contendo for
       </p>
       <div className="mt-3 flex flex-col gap-2.5">
+        <Link href="/privacy-policy" className="text-secondary hover:text-on-surface text-sm">Privacy policy</Link>
+        <Link href="/terms-of-service" className="text-secondary hover:text-on-surface text-sm">Terms of service</Link>
         {NICHE_PAGES.map((page) => (
           <Link
             key={page.slug}

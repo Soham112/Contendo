@@ -3,7 +3,7 @@ import { NICHE_PAGES } from "@/content/niches";
 import { canonicalUrl } from "@/lib/seo";
 
 // The public pages. Pages behind sign-in are left out (and disallowed in robots.ts).
-const PUBLIC_PAGES = ["/", "/about"];
+const PUBLIC_PAGES = ["/", "/about", "/privacy-policy", "/terms-of-service"];
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const paths = [...PUBLIC_PAGES, ...NICHE_PAGES.map((page) => `/${page.slug}`)];

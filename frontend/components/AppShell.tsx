@@ -10,6 +10,7 @@ import SegmentPrompt from "@/components/onboarding/SegmentPrompt";
 import LoadingWordmark from "@/components/LoadingWordmark";
 import PageTransition from "@/components/PageTransition";
 import { useTracking } from "@/lib/useTracking";
+import { isLegalPath } from "@/lib/legal";
 import { isNichePath } from "@/content/niches";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -38,7 +39,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   // Niche landing pages are server-rendered marketing pages: no shell and no
   // entrance animation, so their content is visible before any script runs.
-  if (isNichePath(pathname)) {
+  if (isNichePath(pathname) || isLegalPath(pathname)) {
     return <>{children}</>;
   }
 
