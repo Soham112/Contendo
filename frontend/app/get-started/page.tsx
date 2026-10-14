@@ -45,7 +45,8 @@ function GetStarted() {
       return;
     }
     const res = await api.getProfile();
-    const hasProfile = res.ok ? Boolean((await res.json()).has_profile) : false;
+    if (!res.ok) throw new Error("We couldn’t load your profile. Please try again.");
+    const hasProfile = Boolean((await res.json()).has_profile);
     router.push(hasProfile ? "/create" : "/first-post");
   }
 

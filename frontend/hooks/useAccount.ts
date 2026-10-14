@@ -13,16 +13,20 @@ export function useAccount(enabled: boolean) {
   const api = useApi();
   const [account, setAccount] = useState<Account | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
+    setLoaded(false);
+    setError("");
     api
       .getAccount()
       .then((result) => {
         if (!cancelled) setAccount(result);
       })
-      .catch(() => {})
+      .catch(() => { if (!cancelled) setError("We couldn’t load your account. Please try again."); })
       .finally(() => {
         if (!cancelled) setLoaded(true);
       });
@@ -30,7 +34,7 @@ export function useAccount(enabled: boolean) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled]);
+  }, [enabled, attempt]);
 
-  return { account, loaded };
+  return { account, loaded, error, retry: () => setAttempt((value) => value + 1) };
 }

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
+import RetryNotice from "@/components/RetryNotice";
 import Sidebar from "@/components/Sidebar";
 import { useProfileCheck } from "@/hooks/useProfileCheck";
 import { useAccount } from "@/hooks/useAccount";
@@ -15,9 +16,9 @@ import { isNichePath } from "@/content/niches";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { loading, hasProfile } = useProfileCheck();
+  const { loading, hasProfile, error: profileError, retry: retryProfile } = useProfileCheck();
   // Who the user creates content for decides which onboarding prompt applies.
-  const { account, loaded: accountLoaded } = useAccount(hasProfile);
+  const { account, loaded: accountLoaded, error: accountError, retry: retryAccount } = useAccount(hasProfile);
   const { logEvent } = useTracking();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -58,6 +59,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   if (loading || !interceptChecked) {
     return <LoadingWordmark />;
   }
+
+  if (profileError || accountError) return <main className="max-w-xl mx-auto p-8"><RetryNotice message={profileError || accountError} onRetry={profileError ? retryProfile : retryAccount} /></main>;
 
   const showIntercept = hasProfile && !interceptDone && accountLoaded && account?.segment !== "business";
 

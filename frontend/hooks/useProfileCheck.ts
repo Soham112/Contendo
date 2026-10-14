@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { isLegalPath } from "@/lib/legal";
 import supabase from "@/lib/supabase";
+import { requireResponse } from "@/lib/request-errors";
 import { useApi } from "@/lib/api";
 
 // Extension ID from chrome://extensions (load unpacked → copy the ID).
@@ -16,6 +17,8 @@ export function useProfileCheck() {
   const [isSignedIn, setIsSignedIn] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
   const [hasProfile, setHasProfile] = useState(false);
   const [profileComplete, setProfileComplete] = useState(false);
   const [profile, setProfile] = useState<Record<string, unknown> | null>(null);
@@ -72,8 +75,11 @@ export function useProfileCheck() {
       return;
     }
 
+    setLoading(true);
+    setError("");
     api
       .getProfile()
+      .then(requireResponse)
       .then(async (res) => {
         if (res.ok) {
           const data = await res.json();
@@ -83,13 +89,14 @@ export function useProfileCheck() {
           if (!data.has_profile) {
             // New users answer the segment question first, unless they have
             // already answered or skipped it (the backend decides).
-            const account = await api.getAccount().catch(() => null);
+            const account = await api.getAccount();
             router.push(account?.ask_segment ? "/get-started" : "/first-post");
           }
         }
       })
+      .catch(() => setError("We couldn’t load your account to finish setup. Please try again."))
       .finally(() => setLoading(false));
-  }, [isLoaded, isSignedIn, pathname]);
+  }, [isLoaded, isSignedIn, pathname, attempt]);
 
-  return { loading, hasProfile, profileComplete, profile };
+  return { loading, hasProfile, profileComplete, profile, error, retry: () => setAttempt((value) => value + 1) };
 }

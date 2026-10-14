@@ -1,6 +1,7 @@
 // Billing and publishing endpoints. Spread into useApi() (lib/api.ts), which
 // supplies apiFetch with the user's token attached.
 
+import { RequestError } from "./request-errors";
 import { readPaywall, type Entitlements, type Paywall, type Plans } from "./billing";
 import type { ContentReview, ConnectedAccount, CreateJobRequest, MediaRef, PlatformRules, PublishJob } from "./publishing";
 
@@ -27,7 +28,7 @@ async function read<T>(res: Response, fallback: string): Promise<T> {
   if (paywall) throw new PaywallError(paywall);
   const detail = body?.detail;
   if (detail?.code === "cannot_publish" && Array.isArray(detail.problems)) throw new PublishProblems(detail.problems);
-  throw new Error(typeof detail === "string" ? detail : fallback);
+  throw new RequestError(res.status, typeof detail === "string" ? detail : fallback);
 }
 
 const JSON_HEADERS = { "Content-Type": "application/json" };

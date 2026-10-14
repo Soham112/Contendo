@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import RetryNotice from "@/components/RetryNotice";
+import { requestErrorMessage } from "@/lib/request-errors";
 import Link from "next/link";
 import { useApi } from "@/lib/api";
 import { formatWhen, statusLabel, type PublishJob } from "@/lib/publishing";
@@ -21,11 +23,11 @@ export default function ScheduledPage() {
   const [busy, setBusy] = useState("");
 
   const load = useCallback(async () => {
+    setError("");
     try {
       setJobs(await api.getPublishJobs());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't load your posts.");
-      setJobs((prev) => prev ?? []);
+      setError(requestErrorMessage(e, "load your scheduled posts"));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -47,7 +49,7 @@ export default function ScheduledPage() {
     try {
       await api.cancelPublishJob(job.id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't cancel this post.");
+      setError(requestErrorMessage(e, "cancel this post"));
     } finally {
       setBusy("");
       load();
@@ -64,12 +66,10 @@ export default function ScheduledPage() {
       </div>
 
       {error && (
-        <p role="alert" className="mt-6 text-[0.9375rem] text-error">
-          {error}
-        </p>
+        <div className="mt-6"><RetryNotice message={error} onRetry={load} /></div>
       )}
 
-      {jobs === null ? (
+      {jobs === null && error ? null : jobs === null ? (
         <p className="mt-8 text-[0.9375rem] text-secondary">Loading…</p>
       ) : jobs.length === 0 ? (
         <p className="mt-8 text-[0.9375rem] leading-relaxed text-secondary">

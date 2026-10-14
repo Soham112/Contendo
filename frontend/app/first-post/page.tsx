@@ -1,5 +1,7 @@
 'use client'
 
+import { requestErrorMessage } from '@/lib/request-errors'
+import RetryNotice from '@/components/RetryNotice'
 import GroundingNotice, { type Grounding } from '@/components/GroundingNotice'
 import { Suspense, useState, useEffect, useRef } from 'react'
 import type { User } from '@supabase/supabase-js'
@@ -351,7 +353,7 @@ function GenerateErrorScreen({ message, onGoToWorkspace }: { message?: string; o
       <Wordmark />
       <div className="mt-8 text-center max-w-[460px]">
         <h2 className="font-headline text-[1.7rem] text-[#2f3333] leading-tight mb-3">
-          Something went wrong.
+          We couldn’t finish your first post.
         </h2>
         <p className="text-[14px] text-[#645e57] mb-8 leading-relaxed">
           {message || "We couldn't generate your post."} You can try again from the workspace.
@@ -888,6 +890,8 @@ function FirstPostContent() {
   const [draftState, setDraftState] = useState<DraftState | null>(null)
   const [copied, setCopied] = useState(false)
   const [profileChecked, setProfileChecked] = useState(false)
+  const [accountCheckError, setAccountCheckError] = useState('')
+  const [checkAttempt, setCheckAttempt] = useState(0)
   const [prefillTopic, setPrefillTopic] = useState('')
   const [prefillApplied, setPrefillApplied] = useState(false)
 
@@ -959,6 +963,7 @@ function FirstPostContent() {
       setProfileChecked(true)
       return
     }
+    setAccountCheckError('')
     api.getProfile()
       .then(async (res) => {
         if (res.ok) {
@@ -968,10 +973,13 @@ function FirstPostContent() {
             return
           }
         }
+        if (!res.ok) throw new Error('Profile check failed')
+        const account = await api.getAccount()
+        if (account.ask_segment) { router.replace('/get-started'); return }
         setProfileChecked(true)
       })
-      .catch(() => setProfileChecked(true))
-  }, [isLoaded, isSignedIn])
+      .catch(() => setAccountCheckError('We couldn’t load your account to finish setup. Please try again.'))
+  }, [isLoaded, isSignedIn, checkAttempt])
 
   // ── Derived values ──────────────────────────────────────────────────────────
   const roleKey = (answers.role || 'other') as RoleKey
@@ -1143,6 +1151,7 @@ function FirstPostContent() {
       traceId = data.trace_id ?? null
     } catch (err) {
       console.error('[first-post] generate error:', err)
+      setGenerateErrorMessage(requestErrorMessage(err, 'generate your first post'))
       setFlowState('error')
       return
     }
@@ -1254,6 +1263,8 @@ function FirstPostContent() {
   }
 
   // ── Render guards ───────────────────────────────────────────────────────────
+  if (accountCheckError) return <main className="max-w-xl mx-auto p-8"><RetryNotice message={accountCheckError} onRetry={() => setCheckAttempt(value => value + 1)} /></main>
+
   if (!isLoaded || (isSignedIn && !profileChecked)) {
     return (
       <div className="min-h-screen bg-[#faf9f8] flex items-center justify-center">
