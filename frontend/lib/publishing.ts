@@ -51,6 +51,7 @@ export interface PublishJob {
 export type PublishWhen = "now" | "schedule" | "queue";
 
 export interface CreateJobRequest {
+  approval_id: string;
   content: string;
   account_ids: string[];
   post_id?: number | null;
@@ -118,4 +119,19 @@ export function formatWhen(iso: string | null, locale = "en-US", timeZone?: stri
   return new Date(iso).toLocaleString(locale, {
     weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone,
   });
+}
+
+export interface ContentReview {
+  post_id: number | null;
+  id: string;
+  content: string;
+  media: MediaRef[];
+  flags: import("@/components/GroundingNotice").ClaimFlag[];
+  approved_at: string | null;
+}
+
+export function allFlagsAccepted(review: ContentReview, accepted: readonly string[]): boolean {
+  const required = new Set(review.flags.map((flag) => flag.id));
+  const actual = new Set(accepted);
+  return actual.size === required.size && [...required].every((id) => actual.has(id));
 }

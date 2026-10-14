@@ -192,7 +192,7 @@ class FakeSupabase:
 
     # Tables whose primary key is a UUID in the real schema (gen_random_uuid()):
     # their ids are strings, so code that passes an id around as str matches.
-    _UUID_TABLES = {"generation_traces", "connected_accounts", "publish_jobs"}
+    _UUID_TABLES = {"generation_traces", "connected_accounts", "publish_jobs", "publish_approvals"}
 
     def next_id(self, table: str) -> int | str:
         if table in self._UUID_TABLES:

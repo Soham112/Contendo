@@ -1,5 +1,6 @@
 'use client'
 
+import GroundingNotice, { type Grounding } from '@/components/GroundingNotice'
 import { Suspense, useState, useEffect, useRef } from 'react'
 import type { User } from '@supabase/supabase-js'
 import supabase from '@/lib/supabase'
@@ -35,6 +36,8 @@ interface Answers {
 }
 
 interface DraftState {
+  grounding?: Grounding | null
+  traceId?: string | null
   post: string
   score: number
   archetype: string
@@ -366,6 +369,7 @@ function GenerateErrorScreen({ message, onGoToWorkspace }: { message?: string; o
 
 // ── Draft screen ──────────────────────────────────────────────────────────────
 function DraftScreen({
+  grounding,
   topic,
   format,
   post,
@@ -375,6 +379,7 @@ function DraftScreen({
   onFeedMemory,
   onCreate,
 }: {
+  grounding?: Grounding | null
   topic: string
   format: string
   post: string
@@ -407,6 +412,7 @@ function DraftScreen({
           {post}
         </div>
 
+        <GroundingNotice grounding={grounding} />
         {score > 0 && (
           <p className="mt-2 text-[12px] label-caps text-[#2f3333]/50">
             Authenticity score: {score}/100
@@ -1104,6 +1110,7 @@ function FirstPostContent() {
       return
     }
 
+    let grounding: Grounding | null = null
     let generatedPost = ''
     let score = 0
     let archetype = ''
@@ -1129,6 +1136,7 @@ function FirstPostContent() {
         setFlowState('error')
         return
       }
+      grounding = data.grounding ?? null
       generatedPost = data.post
       score = data.score || 0
       archetype = data.archetype || ''
@@ -1161,13 +1169,15 @@ function FirstPostContent() {
     }
 
     logEvent({ event_type: 'feature_complete', page_url: '/first-post', metadata: { step: 'draft_ready', archetype } })
-    setDraftState({ post: generatedPost, score, archetype, postId })
+    setDraftState({ post: generatedPost, score, archetype, postId, grounding, traceId })
     setFlowState('draft')
   }
 
   function persistDraftToSession() {
     if (!draftState) return
 
+    sessionStorage.setItem('contentOS_last_grounding', JSON.stringify(draftState.grounding ?? null))
+    sessionStorage.setItem('contentOS_last_trace_id', draftState.traceId ?? '')
     sessionStorage.setItem('contentOS_last_post', draftState.post)
     sessionStorage.setItem('contentOS_last_topic', answers.topic)
     sessionStorage.setItem('contentOS_last_format', answers.format)
@@ -1283,6 +1293,7 @@ function FirstPostContent() {
   if (flowState === 'draft' && draftState) {
     return (
       <DraftScreen
+        grounding={draftState.grounding}
         topic={answers.topic}
         format={answers.format}
         post={draftState.post}

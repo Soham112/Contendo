@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from memory import publish_store
 from publishing import rules
+from publishing.approval import matches_approval
 from publishing.provider import PublishingProvider
 from publishing.types import AccountStatus, EndUser, Platform
 
@@ -89,6 +90,7 @@ def create_job(
     when: str,                       # "now" | "schedule" | "queue"
     scheduled_at: datetime | None,   # for "schedule": timezone-aware
     tz_name: str,
+    approval_id: str | None = None,
 ) -> dict[str, Any]:
     """Validate against each target platform's rules and queue the job.
     Raises PublishRequestError with every problem found."""
@@ -124,7 +126,9 @@ def create_job(
 
     if problems:
         raise PublishRequestError(list(dict.fromkeys(problems)))
+    if not matches_approval(user_id, approval_id, content, media, post_id):
+        raise PublishRequestError(["Read and approve this exact text, resolving each claim flag, before publishing or scheduling."])
     return publish_store.create_job(
         user_id, provider=provider.name, content=content, account_ids=list(dict.fromkeys(account_ids)),
-        post_id=post_id, scheduled_at=run_at, media=media,
+        post_id=post_id, scheduled_at=run_at, media=media, approval_id=approval_id,
     )

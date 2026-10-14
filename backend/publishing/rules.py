@@ -80,6 +80,7 @@ _MESSAGES: dict[ErrorCode, str] = {
                                 "Update your payment method and this post will go out.",
     ErrorCode.SUBSCRIPTION_ENDED: "This post was cancelled because your plan ended. Your posts and accounts are still here.",
     ErrorCode.PROVIDER_UNAVAILABLE: "We couldn't reach {platform}. Nothing was posted. Try again in a few minutes.",
+    ErrorCode.APPROVAL_REQUIRED: "Read and approve this exact text before publishing or scheduling it.",
     ErrorCode.UNKNOWN: "This post couldn't be published. Try again, and contact us if it keeps happening.",
 }
 

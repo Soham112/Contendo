@@ -45,6 +45,7 @@ class ErrorCode(str, Enum):
     PAYMENT_REQUIRED = "payment_required"          # publishing is paused until the plan is paid
     SUBSCRIPTION_ENDED = "subscription_ended"      # cancelled because the plan ended
     PROVIDER_UNAVAILABLE = "provider_unavailable"  # we could not reach the publishing service
+    APPROVAL_REQUIRED = "approval_required"
     UNKNOWN = "unknown"
 
 

@@ -41,6 +41,17 @@ def connect(client, headers, platform="linkedin") -> dict:
 
 def publish(client, headers, account_ids, **overrides):
     body = {"content": "We are open on Sundays now.", "account_ids": account_ids, "when": "now", **overrides}
+    if body["content"].strip():
+        checked = client.post("/publishing/reviews", headers=headers, json={
+            "content": body["content"], "post_id": body.get("post_id"), "media": body.get("media", []),
+        })
+        if checked.status_code == 200:
+            review = checked.json()
+            approved = client.post(f"/publishing/reviews/{review['id']}/approve", headers=headers, json={
+                "content": body["content"], "accepted_flag_ids": [flag["id"] for flag in review["flags"]],
+            })
+            assert approved.status_code == 200
+            body["approval_id"] = review["id"]
     return client.post("/publishing/jobs", headers=headers, json=body)
 
 

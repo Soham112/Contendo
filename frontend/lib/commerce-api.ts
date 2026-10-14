@@ -2,7 +2,7 @@
 // supplies apiFetch with the user's token attached.
 
 import { readPaywall, type Entitlements, type Paywall, type Plans } from "./billing";
-import type { ConnectedAccount, CreateJobRequest, MediaRef, PlatformRules, PublishJob } from "./publishing";
+import type { ContentReview, ConnectedAccount, CreateJobRequest, MediaRef, PlatformRules, PublishJob } from "./publishing";
 
 type ApiFetch = (path: string, options?: RequestInit) => Promise<Response>;
 
@@ -71,6 +71,12 @@ export function commerceApi(apiFetch: ApiFetch) {
       form.append("file", file);
       return read(await apiFetch("/publishing/media", { method: "POST", body: form }), "Couldn't upload that file.");
     },
+
+    reviewPublishText: async (body: { content: string; post_id: number | null; trace_id?: string | null; media: MediaRef[] }): Promise<ContentReview> =>
+      read(await apiFetch("/publishing/reviews", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body) }), "Couldn't check this text. Try again."),
+
+    approvePublishText: async (id: string, content: string, accepted_flag_ids: string[]): Promise<ContentReview> =>
+      read(await apiFetch(`/publishing/reviews/${id}/approve`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ content, accepted_flag_ids }) }), "Couldn't approve this text. Review every flag and try again."),
 
     createPublishJob: async (body: CreateJobRequest): Promise<PublishJob> =>
       (await read<{ job: PublishJob }>(

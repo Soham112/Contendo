@@ -10,14 +10,14 @@ import os
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
 from auth.supabase_jwt import get_user_id_dep
 from billing import gates
 from memory import publish_store
 from memory.feedback_store import post_owned_by
-from publishing import rules, service
+from publishing import approval, rules, service
 from publishing.jobs import apply_status
 from publishing.provider import PublishingConfigError, PublishingProvider, get_provider
 from publishing.types import Platform, ProviderError
@@ -154,7 +154,42 @@ class MediaRef(BaseModel):
     kind: str = Field(pattern="^(image|video)$")
 
 
+class ReviewRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=70_000)
+    post_id: int | None = None
+    trace_id: str | None = None
+    media: list[MediaRef] = Field(default_factory=list, max_length=10)
+
+
+class ApproveRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=70_000)
+    accepted_flag_ids: list[str] = Field(default_factory=list, max_length=500)
+
+
+def _review_view(row: dict) -> dict:
+    return {key: row.get(key) for key in ("id", "content", "media", "post_id", "flags", "approved_at")}
+
+
+@router.post("/publishing/reviews")
+def review_final_text(req: ReviewRequest, user_id: str = Depends(get_user_id_dep)) -> dict:
+    gates.require_publishing(user_id)
+    if req.post_id is not None and not post_owned_by(req.post_id, user_id):
+        raise HTTPException(status_code=404, detail="Post not found")
+    return _review_view(approval.review_text(user_id, req.content, [item.model_dump() for item in req.media], req.post_id, req.trace_id))
+
+
+@router.post("/publishing/reviews/{review_id}/approve")
+def approve_final_text(review_id: str, req: ApproveRequest, user_id: str = Depends(get_user_id_dep)) -> dict:
+    gates.require_publishing(user_id)
+    try:
+        return _review_view(approval.approve_text(user_id, review_id, req.content, req.accepted_flag_ids))
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+
+
 class CreateJobRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    approval_id: str | None = None
     content: str = Field(max_length=70_000)
     account_ids: list[str] = Field(max_length=20)
     post_id: int | None = None
@@ -177,7 +212,7 @@ def create_job(req: CreateJobRequest, user_id: str = Depends(get_user_id_dep)) -
             user_id, provider,
             content=req.content, account_ids=req.account_ids, post_id=req.post_id,
             media=[item.model_dump() for item in req.media],
-            when=req.when, scheduled_at=req.scheduled_at, tz_name=req.timezone,
+            when=req.when, scheduled_at=req.scheduled_at, tz_name=req.timezone, approval_id=req.approval_id,
         )
     except service.PublishRequestError as error:
         raise HTTPException(status_code=422, detail={"code": "cannot_publish", "problems": error.problems})

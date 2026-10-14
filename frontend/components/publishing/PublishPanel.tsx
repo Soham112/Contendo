@@ -9,6 +9,8 @@ import {
   browserTimeZone, fit, formatWhen, localInputToIso,
   type ConnectedAccount, type MediaRef, type PlatformRules, type PublishWhen,
 } from "@/lib/publishing";
+import ApprovalReview from "./ApprovalReview";
+import type { ContentReview } from "@/lib/publishing";
 import UpgradeScreen from "@/components/billing/UpgradeScreen";
 
 /**
@@ -16,13 +18,15 @@ import UpgradeScreen from "@/components/billing/UpgradeScreen";
  * choice creates a job on the backend, which validates it again and sends it
  * from a worker; this panel only previews the platform rules.
  */
-export default function PublishPanel({ content, postId }: { content: string; postId: number | null; traceId?: string | null }) {
+export default function PublishPanel({ content, postId, traceId }: { content: string; postId: number | null; traceId?: string | null }) {
   const api = useApi();
+  const [approved, setApproved] = useState<ContentReview | null>(null);
   const [open, setOpen] = useState(false);
   const [accounts, setAccounts] = useState<ConnectedAccount[] | null>(null);
   const [rules, setRules] = useState<Record<string, PlatformRules>>({});
   const [chosen, setChosen] = useState<string[]>([]);
   const [media, setMedia] = useState<MediaRef[]>([]);
+  const approvalId = approved?.post_id === postId && approved.content === content && JSON.stringify(approved.media) === JSON.stringify(media) ? approved.id : null;
   const [when, setWhen] = useState<PublishWhen>("now");
   const [scheduleValue, setScheduleValue] = useState("");
   const [busy, setBusy] = useState("");
@@ -67,6 +71,7 @@ export default function PublishPanel({ content, postId }: { content: string; pos
   async function submit() {
     setProblems([]);
     setDone("");
+    if (!approvalId) { setProblems(["Read and approve the final text first."]); return; }
     const scheduledAt = when === "schedule" ? localInputToIso(scheduleValue) : null;
     if (when === "schedule" && !scheduledAt) {
       setProblems(["Choose a date and time."]);
@@ -75,7 +80,7 @@ export default function PublishPanel({ content, postId }: { content: string; pos
     setBusy("submit");
     try {
       const job = await api.createPublishJob({
-        content, post_id: postId, account_ids: chosen, media, when,
+        approval_id: approvalId, content, post_id: postId, account_ids: chosen, media, when,
         scheduled_at: scheduledAt, timezone: browserTimeZone(),
       });
       setDone(job.scheduled_at ? `Scheduled for ${formatWhen(job.scheduled_at)}.` : "On its way. It will be published in a moment.");
@@ -252,9 +257,11 @@ export default function PublishPanel({ content, postId }: { content: string; pos
             </p>
           )}
 
+          <ApprovalReview key={JSON.stringify([content, postId, traceId, media])}
+            content={content} postId={postId} traceId={traceId} media={media} onApproved={setApproved} />
           <button
             type="button"
-            disabled={!!busy || chosen.length === 0}
+            disabled={!!busy || chosen.length === 0 || !approvalId}
             onClick={submit}
             className="mt-5 btn-primary text-white rounded-md px-6 py-3 text-[0.9375rem] font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >

@@ -15,6 +15,7 @@ from typing import Any
 from billing.entitlements import get_entitlements
 from memory import publish_store
 from memory.feedback_store import mark_published
+from publishing.approval import matches_approval
 from publishing.provider import PublishingProvider
 from publishing.rules import label
 from publishing.types import (
@@ -114,6 +115,9 @@ def process_job(job: dict[str, Any], provider: PublishingProvider) -> None:
     user_id = job["user_id"]
     if not get_entitlements(user_id).can_publish:
         _pause(job)
+        return
+    if not matches_approval(user_id, job.get("approval_id"), job["content"], job.get("media") or [], job.get("post_id")):
+        _fail(job, ErrorCode.APPROVAL_REQUIRED)
         return
     provider_user_ref = publish_store.get_publishing_ref(user_id, provider.name)
     accounts = publish_store.list_accounts(user_id, provider.name)

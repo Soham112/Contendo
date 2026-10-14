@@ -108,6 +108,7 @@ def create_job(
     post_id: int | None,
     scheduled_at: datetime | None,
     media: list[dict[str, Any]] | None = None,
+    approval_id: str | None = None,
 ) -> dict[str, Any]:
     """A scheduled job. With no scheduled_at it is due now."""
     due = (scheduled_at or datetime.now(timezone.utc)).isoformat()
@@ -115,6 +116,7 @@ def create_job(
         "user_id": user_id,
         "provider": provider,
         "post_id": post_id,
+        "approval_id": approval_id,
         "content": content,
         "media": media or [],
         "account_ids": account_ids,

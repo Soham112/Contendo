@@ -44,3 +44,17 @@ describe("statusLabel", () => {
     expect(statusLabel({ status: "failed", error_code: "reconnect_required" })).toBe("Not published");
   });
 });
+
+import { allFlagsAccepted, type ContentReview } from "./publishing";
+
+describe("claim resolution before approval", () => {
+  const review: ContentReview = { id: "r", post_id: null, content: "A young couple paid $900,000.", media: [], approved_at: null,
+    flags: [{ id: "age", text: "young", sentence: "", reason: "age absent" },
+      { id: "price", text: "$900,000", sentence: "", reason: "price absent" }] };
+  it("requires each flag and rejects unknown ids", () => {
+    expect(allFlagsAccepted(review, [])).toBe(false);
+    expect(allFlagsAccepted(review, ["age"])).toBe(false);
+    expect(allFlagsAccepted(review, ["age", "price", "unknown"])).toBe(false);
+    expect(allFlagsAccepted(review, ["age", "price"])).toBe(true);
+  });
+});

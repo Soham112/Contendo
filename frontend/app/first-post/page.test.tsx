@@ -74,3 +74,16 @@ it.each([
   const text = screenText(renderContent());
   expect(text).toContain(message);
 });
+
+it("shows the returned draft and unsupported claim flags on onboarding", async () => {
+  const post = "We sold to a young couple.";
+  harness.api.generatePost.mockResolvedValue({ ok: true, json: async () => ({ status: "needs_review", post,
+    grounding: { outcome: "needs_review", repairs: 2,
+      flags: [{ id: "age", text: "young", sentence: post, reason: "Age is not in your sources." }] } }) });
+  harness.api.logPost.mockResolvedValue({ ok: true, json: async () => ({ post_id: 1 }) });
+  await findButton(renderContent())!.props.onClick();
+  const text = screenText(renderContent());
+  expect(text).toContain(post);
+  expect(text).toContain("Age is not in your sources.");
+  expect(text).not.toContain("Something went wrong.");
+});

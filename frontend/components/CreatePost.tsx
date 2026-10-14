@@ -837,6 +837,8 @@ export default function CreatePost() {
   useEffect(() => {
     if (!result) return;
     try {
+      sessionStorage.setItem("contentOS_last_grounding", JSON.stringify(result.grounding ?? null));
+      sessionStorage.setItem("contentOS_last_trace_id", currentTraceIdRef.current ?? "");
       sessionStorage.setItem(SS_POST, editedPost);
       sessionStorage.setItem(SS_RAW_POST, rawPostRef.current);
       sessionStorage.setItem(SS_SCORE, String(result.score));
@@ -938,6 +940,7 @@ export default function CreatePost() {
       // post canvas never renders.
       if (savedPost) {
         const restoredResult: GenerateResult = {
+          grounding: JSON.parse(sessionStorage.getItem("contentOS_last_grounding") ?? "null"),
           post: savedPost,
           score: Number(savedScore) || 0,
           score_feedback: (() => {
@@ -949,6 +952,7 @@ export default function CreatePost() {
           // user can still run analysis; true = previously scored, preserve that.
           scored: savedScored === "true",
         };
+        currentTraceIdRef.current = sessionStorage.getItem("contentOS_last_trace_id") || null;
         setResult(restoredResult);
         setEditedPost(savedPost);
         // Restore raw post (with placeholders) for /generate-visuals calls
