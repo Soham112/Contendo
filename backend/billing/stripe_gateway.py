@@ -31,8 +31,30 @@ class StripeConfig:
     frontend_origin: str
 
 
+# "1" turns billing off on purpose, e.g. before the Stripe account exists. The
+# app then runs on the free plan only: Checkout, the portal and the webhook
+# answer 503, and the upgrade screens say Pro can't be bought yet.
+DISABLED_ENV = "BILLING_DISABLED"
+
+
+def billing_disabled() -> bool:
+    """True only when BILLING_DISABLED is exactly "1"."""
+    return os.environ.get(DISABLED_ENV, "").strip() == "1"
+
+
+def checkout_available() -> bool:
+    """Whether a user can start Checkout: billing on and fully configured."""
+    try:
+        config()
+    except BillingConfigError:
+        return False
+    return True
+
+
 def config() -> StripeConfig:
     """Read on every call, like config.security.current()."""
+    if billing_disabled():
+        raise BillingConfigError(f"Billing is turned off ({DISABLED_ENV}=1).")
     values = {name: os.environ.get(name, "").strip()
               for name in ("STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_PRICE_ID_PRO", "FRONTEND_ORIGIN")}
     missing = [name for name, value in values.items() if not value]

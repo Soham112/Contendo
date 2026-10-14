@@ -1384,3 +1384,7 @@ Two fresh local Supabase Auth accounts completed actual browser Business/Individ
 ### Saved segment refresh (2026-10-14)
 
 AppShell persists across route changes. `useAccount` refetches on pathname changes and only exposes a snapshot resolved for that pathname, so an old unanswered account cannot reopen SegmentPrompt after the business form saves and returns to the workspace. `/get-started?segment=business` enters business setup directly; known niche links can preselect the business path, while unknown niche strings never choose a segment. The database remains the authority for whether the question is due.
+
+### Billing switched off (2026-10-14)
+
+`BILLING_DISABLED=1` (exactly "1") lets production start without Stripe settings; without it, missing Stripe settings still block startup, and setting it together with Stripe settings is refused. While it is on, `billing.stripe_gateway.config()` raises `BillingConfigError`, so Checkout, the portal and the webhook answer 503; `GET /billing/plans` returns `checkout_available: false`; everyone is on the free plan, so nobody can publish; the upgrade screen and the billing page say Pro can't be bought yet instead of offering a button.

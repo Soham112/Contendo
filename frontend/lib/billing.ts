@@ -36,7 +36,11 @@ export interface Plans {
     /** null when the backend could not read the price: show no figure at all. */
     price: Price | null;
   };
+  /** False while billing is off on the server (BILLING_DISABLED=1) or not set up: Pro cannot be bought yet. */
+  checkout_available: boolean;
 }
+
+export const PRO_NOT_AVAILABLE = "Pro isn't available to buy just yet. Everything on the free plan keeps working.";
 
 /** Why the backend refused with a 402, as the frontend reacts to it. */
 export type PaywallCode = "quota_exceeded" | "upgrade_required" | "payment_required";

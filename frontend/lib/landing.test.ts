@@ -12,6 +12,7 @@ const PLANS: Plans = {
     generations_per_month: 300, publishing: true, max_accounts_per_platform: 1,
     price: { amount: 3900, currency: "usd", interval: "month", trial_days: 7 },
   },
+  checkout_available: true,
 };
 
 describe("niche pages", () => {

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useApi } from "@/lib/api";
-import { formatPrice, type PaywallCode, type Plans } from "@/lib/billing";
+import { PRO_NOT_AVAILABLE, formatPrice, type PaywallCode, type Plans } from "@/lib/billing";
 
 const HEADLINES: Record<PaywallCode, string> = {
   quota_exceeded: "You've used this month's free posts",
@@ -35,6 +35,8 @@ export default function UpgradeScreen({
 
   const paymentFailed = code === "payment_required";
   const price = plans?.pro.price ?? null;
+  // Only a known "no": while the plans are loading the button stays, and the server still decides.
+  const canBuy = paymentFailed || plans?.checkout_available !== false;
 
   async function go() {
     setBusy(true);
@@ -79,6 +81,12 @@ export default function UpgradeScreen({
           </>
         )}
 
+        {!canBuy && (
+          <p role="status" className="mt-6 text-[0.9375rem] leading-relaxed text-on-surface">
+            {PRO_NOT_AVAILABLE}
+          </p>
+        )}
+
         {error && (
           <p role="alert" className="mt-5 text-[0.875rem] text-error">
             {error}
@@ -92,8 +100,9 @@ export default function UpgradeScreen({
             disabled={busy}
             className="px-5 py-3 text-[0.9375rem] text-secondary hover:text-on-surface disabled:opacity-50"
           >
-            Not now
+            {canBuy ? "Not now" : "Close"}
           </button>
+          {canBuy && (
           <button
             type="button"
             onClick={go}
@@ -108,6 +117,7 @@ export default function UpgradeScreen({
                   ? `Start ${price.trial_days}-day free trial`
                   : "Upgrade to Pro"}
           </button>
+          )}
         </div>
       </div>
     </div>

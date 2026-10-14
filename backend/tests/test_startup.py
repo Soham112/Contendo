@@ -102,3 +102,43 @@ def test_environment_must_be_explicit_so_production_checks_cannot_be_skipped(mon
     monkeypatch.delenv('ENVIRONMENT', raising=False)
     with pytest.raises(StartupConfigError, match='ENVIRONMENT'):
         validate_environment()
+
+
+def _production_without_stripe(monkeypatch):
+    monkeypatch.setenv('ENVIRONMENT', 'production')
+    monkeypatch.setenv('FRONTEND_ORIGIN', 'https://www.contendoai.com')
+    monkeypatch.setenv('PUBLISHING_PROVIDER', 'zernio')
+    monkeypatch.setenv('ZERNIO_API_KEY', 'zernio-key')
+    monkeypatch.setenv('ZERNIO_WEBHOOK_SECRET', 'zernio-secret')
+
+
+def test_production_starts_without_stripe_only_when_billing_is_turned_off(monkeypatch):
+    _production_without_stripe(monkeypatch)
+    with pytest.raises(StartupConfigError, match='STRIPE_SECRET_KEY'):
+        validate_environment()
+    monkeypatch.setenv('BILLING_DISABLED', '1')
+    validate_environment()
+
+
+@pytest.mark.parametrize('value', ['true', 'yes', '0', ' 1x'])
+def test_billing_disabled_must_be_exactly_1(monkeypatch, value):
+    _production_without_stripe(monkeypatch)
+    monkeypatch.setenv('BILLING_DISABLED', value)
+    with pytest.raises(StartupConfigError, match='STRIPE_SECRET_KEY'):
+        validate_environment()
+
+
+def test_billing_disabled_with_stripe_settings_is_refused(monkeypatch):
+    _production_without_stripe(monkeypatch)
+    monkeypatch.setenv('BILLING_DISABLED', '1')
+    monkeypatch.setenv('STRIPE_SECRET_KEY', 'sk_live_x')
+    with pytest.raises(StartupConfigError, match='remove one'):
+        validate_environment()
+
+
+def test_turning_billing_off_still_requires_publishing(monkeypatch):
+    monkeypatch.setenv('ENVIRONMENT', 'production')
+    monkeypatch.setenv('FRONTEND_ORIGIN', 'https://www.contendoai.com')
+    monkeypatch.setenv('BILLING_DISABLED', '1')
+    with pytest.raises(StartupConfigError, match='PUBLISHING_PROVIDER'):
+        validate_environment()

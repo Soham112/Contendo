@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useApi } from "@/lib/api";
-import { formatDay, formatPrice, quotaLine, type Plans } from "@/lib/billing";
+import { PRO_NOT_AVAILABLE, formatDay, formatPrice, quotaLine, type Plans } from "@/lib/billing";
 import { useEntitlements } from "@/hooks/useEntitlements";
 
 // After Checkout, Stripe's webhook reaches the backend a moment later. The page
@@ -108,6 +108,8 @@ function Billing() {
             >
               {busy ? "One moment…" : "Manage billing"}
             </button>
+          ) : plans?.checkout_available === false ? (
+            <p className="text-[0.9375rem] leading-relaxed text-secondary">{PRO_NOT_AVAILABLE}</p>
           ) : (
             <button
               type="button"

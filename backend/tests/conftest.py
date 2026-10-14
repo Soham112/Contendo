@@ -45,6 +45,7 @@ os.environ.update({
     "STRIPE_WEBHOOK_SECRET": "",
     "STRIPE_PRICE_ID_PRO": "",
     "STRIPE_TRIAL_DAYS": "",
+    "BILLING_DISABLED": "",
     "DATA_DIR": tempfile.mkdtemp(prefix="contendo-test-data-"),
 })
 

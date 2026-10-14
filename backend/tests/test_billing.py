@@ -476,3 +476,36 @@ def test_pro_has_300_posts_and_one_account_per_platform(fake_db):
     entitlements = get_entitlements("user-a")
     assert entitlements.generation_limit == 300
     assert entitlements.max_accounts_per_platform == 1
+
+
+# --- Billing turned off (BILLING_DISABLED=1) ---------------------------------------
+
+@pytest.fixture
+def billing_off(monkeypatch):
+    monkeypatch.setenv("BILLING_DISABLED", "1")
+
+
+def test_plans_say_checkout_is_unavailable_while_billing_is_off(client, production, billing_off, monkeypatch):
+    import routers.billing as route
+
+    monkeypatch.setattr(route, "_price_cache", None)
+    body = client.get("/billing/plans").json()
+    assert body["checkout_available"] is False
+    assert body["pro"]["price"] is None
+
+
+def test_plans_say_checkout_is_available_when_stripe_is_configured(client, production, stripe_state):
+    assert client.get("/billing/plans").json()["checkout_available"] is True
+
+
+def test_checkout_portal_and_webhook_are_503_while_billing_is_off(client, a_headers, billing_off, fake_db):
+    assert client.post("/billing/checkout", headers=a_headers).status_code == 503
+    assert fake_db.tables.get("subscriptions", []) == []  # no Stripe customer was created
+    fake_db.tables["subscriptions"] = [{"user_id": "user-a", "stripe_customer_id": "cus_user-a"}]
+    assert client.post("/billing/portal", headers=a_headers).status_code == 503
+    assert client.post("/billing/webhook", content=b"{}").status_code == 503
+
+
+def test_everyone_is_on_the_free_plan_while_billing_is_off(client, a_headers, billing_off):
+    body = client.get("/billing/entitlements", headers=a_headers).json()
+    assert (body["plan"], body["can_publish"], body["generation_limit"]) == ("free", False, 10)

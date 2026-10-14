@@ -235,6 +235,8 @@ STRIPE_SECRET_KEY=sk_test_...        # Stripe secret key
 STRIPE_WEBHOOK_SECRET=whsec_...      # signing secret of the webhook endpoint, or of `stripe listen`
 STRIPE_PRICE_ID_PRO=price_...        # the recurring Price of the Pro plan; the amount is read from Stripe
 STRIPE_TRIAL_DAYS=7                  # free-trial length in days (default 7)
+# BILLING_DISABLED=1                 # run without Stripe for now (even in production): free plan only,
+                                     # Pro can't be bought. Must be exactly 1; unset it once Stripe is set up.
 
 # Publishing. "fake" for local development (refused in production), "zernio" for real publishing.
 PUBLISHING_PROVIDER=fake
@@ -594,7 +596,7 @@ The supplied Railway incident log reports `PGRST205` for `public.accounts` and `
 Deployment order (do not run the baseline dump on an existing production database):
 
 1. In the Supabase SQL editor for the project selected by Railway `SUPABASE_URL`, verify existing tables/indexes/functions and apply outstanding migrations `007`–`012` in order. Also apply `006` if `usage_events.model` is absent. `010` intentionally rejects duplicate live platform accounts; resolve those explicitly. `012` preserves legacy hierarchy columns/rows, adds the current columns and user-scoped upsert indexes; duplicate identities fail rather than being deleted. Run `NOTIFY pgrst, 'reload schema';` after changes.
-2. Railway: `ENVIRONMENT=production`; valid `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`; `FRONTEND_ORIGIN=https://www.contendoai.com`; `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_PRO` (optional integer `STRIPE_TRIAL_DAYS`); `PUBLISHING_PROVIDER=zernio`, `ZERNIO_API_KEY`, `ZERNIO_WEBHOOK_SECRET`. Never use the fake provider in production. These are required for this launch deployment and are checked before serving requests; startup also probes required table columns with no customer rows returned.
+2. Railway: `ENVIRONMENT=production`; valid `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`; `FRONTEND_ORIGIN=https://www.contendoai.com`; `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_PRO` (optional integer `STRIPE_TRIAL_DAYS`), or `BILLING_DISABLED=1` to launch without Stripe (free plan only, nobody can buy Pro); `PUBLISHING_PROVIDER=zernio`, `ZERNIO_API_KEY`, `ZERNIO_WEBHOOK_SECRET`. Never use the fake provider in production. These are required for this launch deployment and are checked before serving requests; startup also probes required table columns with no customer rows returned.
 3. Redeploy the backend from the intended branch/commit. Check logs for completed startup and `/health`; startup errors name missing variables or the failing schema probe. No startup check charges Stripe/Zernio/LLM usage.
 4. Vercel: production `NEXT_PUBLIC_API_URL=https://contendo-production.up.railway.app`, `NEXT_PUBLIC_SITE_URL=https://www.contendoai.com`, and the Supabase project's public URL/anon key. Rebuild/redeploy the frontend. Keep the custom-domain redirects and Supabase auth callback allowlist consistent with `www.contendoai.com`.
 5. Fresh account: Business → niche → business profile → first draft (4 screens); Individual → topic/format/story with optional takes → first draft (3 screens). Confirm account failures show Retry, Schedule loads, and Plan/billing shows the quota. Test Stripe checkout and a real approved Zernio publish separately before launch.

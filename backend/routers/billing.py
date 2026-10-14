@@ -52,6 +52,8 @@ def get_plans() -> dict:
             "max_accounts_per_platform": plans.PRO_MAX_ACCOUNTS_PER_PLATFORM,
             "price": _pro_price(),
         },
+        # False while billing is off or not configured: Pro cannot be bought yet.
+        "checkout_available": stripe_gateway.checkout_available(),
     }
 
 
