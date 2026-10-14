@@ -142,7 +142,7 @@ def mark_published(
 # Post versions
 # ---------------------------------------------------------------------------
 
-def _post_owned_by(post_id: int, user_id: str) -> bool:
+def post_owned_by(post_id: int, user_id: str) -> bool:
     result = (
         supabase.table("posts")
         .select("id")
@@ -163,7 +163,7 @@ def add_version(
     user_id: str,
 ) -> int:
     """Insert a new version row for post_id. version_number is auto-incremented per post."""
-    if not _post_owned_by(post_id, user_id):
+    if not post_owned_by(post_id, user_id):
         return 0
     max_v = (
         supabase.table("post_versions")
@@ -187,7 +187,7 @@ def add_version(
 
 def get_versions(post_id: int, user_id: str) -> list[dict[str, Any]]:
     """Return all versions for a post ordered by version_number ascending."""
-    if not _post_owned_by(post_id, user_id):
+    if not post_owned_by(post_id, user_id):
         return []
     result = (
         supabase.table("post_versions")
@@ -201,7 +201,7 @@ def get_versions(post_id: int, user_id: str) -> list[dict[str, Any]]:
 
 def get_best_version(post_id: int, user_id: str) -> dict[str, Any] | None:
     """Return the version with the highest authenticity_score; latest version breaks ties."""
-    if not _post_owned_by(post_id, user_id):
+    if not post_owned_by(post_id, user_id):
         return None
     result = (
         supabase.table("post_versions")
@@ -244,7 +244,7 @@ def restore_version(post_id: int, version_id: int, user_id: str) -> bool:
 
 def update_latest_version_svg(post_id: int, svg_diagrams: str | None, user_id: str) -> bool:
     """Update svg_diagrams on the most recent version row without creating a new version."""
-    if not _post_owned_by(post_id, user_id):
+    if not post_owned_by(post_id, user_id):
         return False
     max_v = (
         supabase.table("post_versions")
