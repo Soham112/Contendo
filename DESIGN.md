@@ -88,3 +88,13 @@ We reject harsh, "drop-shadow-default" styles. Depth is organic and atmospheric.
 *   **DON'T** use 100% opaque black for text. Always use `on-surface` (#2f3333) to keep the contrast "warm."
 *   **DON'T** use sharp corners. Everything in this workspace should feel soft to the touch; adhere strictly to the `8-12px` (md to lg) roundedness scale.
 *   **DON'T** crowd the screen. If a feature isn't essential to the current task, hide it in a secondary surface layer.
+
+---
+
+## 7. Addenda (2026-10-13)
+
+Three points that refine the rules above. Everything else stands.
+
+*   **Primary call to action on public and upgrade screens:** on landing pages and the upgrade screen, the main button uses `tertiary` (Terracotta, `#81543c`) with `on-tertiary` text, as a flat fill. Inside the app, primary buttons stay Sage.
+*   **Texture and blur on public pages:** keep the grain overlay and `backdrop-blur` light or off on landing pages and upgrade screens. They cost paint time where first impressions and Core Web Vitals matter most.
+*   **Input boundaries:** a field's boundary must reach 3:1 contrast against what is around it (WCAG 1.4.11). Use `outline` (`#777c7b`) for the bottom border, not the 15% Ghost Border, which stays available for decorative edges only.

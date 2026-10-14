@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { isNichePath } from "@/content/niches";
 
 const PUBLIC_PATHS = [
   "/",
@@ -11,9 +12,13 @@ const PUBLIC_PATHS = [
   "/first-post",
   "/sso-callback",
   "/auth/callback",
+  "/sitemap.xml",
+  "/robots.txt",
 ];
 
 function isPublicRoute(pathname: string): boolean {
+  // Niche landing pages (content/niches) are public marketing pages.
+  if (isNichePath(pathname)) return true;
   return PUBLIC_PATHS.some(
     (p) => pathname === p || pathname.startsWith(p + "/")
   );
