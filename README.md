@@ -223,6 +223,55 @@ The same setting enables a pre-commit secret check: a commit is blocked if a sta
 
 ---
 
+## Onboarding, billing and publishing
+
+These three features need migrations `007` to `009` (run in order in the Supabase SQL editor) and the settings below. Without the Stripe or publishing settings the server still starts: generation works, and the billing and publishing endpoints answer 503.
+
+**Backend environment variables** (add them to `backend/.env`; the same lines belong in `backend/.env.example`):
+
+```bash
+# Billing (Stripe). Use test-mode keys locally.
+STRIPE_SECRET_KEY=sk_test_...        # Stripe secret key
+STRIPE_WEBHOOK_SECRET=whsec_...      # signing secret of the webhook endpoint, or of `stripe listen`
+STRIPE_PRICE_ID_PRO=price_...        # the recurring Price of the Pro plan; the amount is read from Stripe
+STRIPE_TRIAL_DAYS=7                  # free-trial length in days (default 7)
+
+# Publishing. "fake" for local development (refused in production), "zernio" for real publishing.
+PUBLISHING_PROVIDER=fake
+ZERNIO_API_KEY=                      # required when PUBLISHING_PROVIDER=zernio
+ZERNIO_WEBHOOK_SECRET=               # the secret set on the Zernio webhook endpoint
+
+# Already used for CORS; also where Stripe and the provider send users back to.
+FRONTEND_ORIGIN=http://localhost:3000
+```
+
+**Frontend environment variable** (in `frontend/.env.local`, and `frontend/.env.example`):
+
+```bash
+NEXT_PUBLIC_SITE_URL=http://localhost:3000   # the site's public address, for canonical URLs and the sitemap
+```
+
+**Testing Stripe locally.** Install the [Stripe CLI](https://docs.stripe.com/stripe-cli), then:
+
+```bash
+stripe login
+# Forward Stripe's events to the local backend. It prints a signing secret (whsec_...):
+# put it in STRIPE_WEBHOOK_SECRET and restart the backend.
+stripe listen --forward-to localhost:8000/billing/webhook
+```
+
+In another terminal, with the backend and frontend running:
+
+1. Create a test-mode Product with a monthly recurring Price in the Stripe dashboard and put its id in `STRIPE_PRICE_ID_PRO`.
+2. Open `/settings/billing` and start the trial. Pay with the test card `4242 4242 4242 4242`, any future date and any CVC.
+3. Watch `stripe listen`: `checkout.session.completed` and `customer.subscription.created` should each return 200, and `/settings/billing` should show Pro.
+4. To test a failed payment: `stripe trigger invoice.payment_failed` only creates unrelated test objects, so instead attach the card `4000 0000 0000 0341` to the customer and end the trial from the dashboard. Publishing pauses while the subscription is `past_due`.
+5. To test cancellation, cancel the subscription in the dashboard: pending scheduled posts are cancelled and the plan returns to Free.
+
+The plan shown in the app changes only when a webhook arrives. If `stripe listen` is not running, Checkout succeeds but the app stays on Free.
+
+**Testing publishing locally.** With `PUBLISHING_PROVIDER=fake`, "Connect" links an in-memory test account at once and published posts go nowhere. State is lost when the backend restarts. See `docs/publishing-roadmap.md` for switching on the real provider.
+
 ## Setup your profile
 
 The system writes in YOUR voice — but it needs to know who you are first.

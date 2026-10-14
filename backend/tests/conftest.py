@@ -37,6 +37,14 @@ os.environ.update({
     "PIPELINE_VARIANT": "",
     "SUPADATA_API_KEY": "",
     "FRONTEND_ORIGIN": "",
+    # Off unless a test turns them on, so a developer's backend/.env can't.
+    "PUBLISHING_PROVIDER": "",
+    "ZERNIO_API_KEY": "",
+    "ZERNIO_WEBHOOK_SECRET": "",
+    "STRIPE_SECRET_KEY": "",
+    "STRIPE_WEBHOOK_SECRET": "",
+    "STRIPE_PRICE_ID_PRO": "",
+    "STRIPE_TRIAL_DAYS": "",
     "DATA_DIR": tempfile.mkdtemp(prefix="contendo-test-data-"),
 })
 

@@ -145,7 +145,7 @@ Review-fix additions: `backend/agents/refine_cited_agent.py` owns cited refineme
 | `backend/memory/profile_store.py` | Per-user profile read/write backed by Supabase `profiles` table — `load_profile(user_id)` selects row and merges missing keys from `DEFAULT_PROFILE`; `save_profile(profile, user_id)` upserts `{"id": user_id, "data": profile}`; `profile_exists(user_id)` returns True if a row exists; `DEFAULT_PROFILE` includes bio, location, target_audience, opinions, writing_samples; `profile_to_context_string()` formats all fields for prompt injection; `save_writing_sample(user_id, sample, max_samples=10)` appends a new sample (case-insensitive dedup, oldest dropped when over limit) `profile_voice_context(profile)` is the voice-only rendering for the draft, critic and humanizer (no bio, topics of expertise or opinions); `profile_to_context_string` is the full profile for ideation and selection refine. Writing samples are shown under `WRITING_SAMPLES_RULE` ("These are examples of the author's style. Do not reuse any facts, numbers, names or events from them."). Both add one overriding line after the writing rules (`_STYLE_ONLY_RULE`) instead of the old per-rule regex qualifier. |
 | `backend/memory/hierarchy_store.py` | Supabase Postgres store for `source_nodes` and `topic_nodes` tables — `upsert_source_node`, `get_source_node`, `source_node_exists`, `get_sources_for_user`, `upsert_topic_node`, `get_topic_node`, `get_topics_for_user`, `find_matching_topic` (tag-overlap heuristic), `add_source_to_topic`; `init_db()` is a no-op; tags and child_source_ids stored as comma-separated TEXT |
 | `backend/memory/retrieval_stats_store.py` | Supabase Postgres store for `source_retrieval_stats` table — `init_retrieval_stats_db()` no-op; `increment_retrieval(user_id, source_title)` fetch-then-update (insert on first touch); `get_retrieval_counts(user_id)` returns `{source_title: count}` dict |
-| `backend/memory/feedback_store.py` | Supabase Postgres store for `posts` and `post_versions` tables — all functions accept `user_id`; `init_db()` is a no-op; `_post_owned_by()` validates ownership before version ops; `restore_version(post_id, version_id, user_id)` copies version content back to the post; `mark_published()` stamps `published_at` as UTC ISO; also exposes `increment_retrieval` and `get_retrieval_counts` for the `source_retrieval_stats` table |
+| `backend/memory/feedback_store.py` | Supabase Postgres store for `posts` and `post_versions` tables — all functions accept `user_id`; `init_db()` is a no-op; `post_owned_by()` validates ownership before version ops (also used by `routers/publishing.py`); `restore_version(post_id, version_id, user_id)` copies version content back to the post; `mark_published()` stamps `published_at` as UTC ISO; also exposes `increment_retrieval` and `get_retrieval_counts` for the `source_retrieval_stats` table |
 | `backend/tools/scraper_tool.py` | URL scraper using Jina Reader — `is_valid_url()`, `clean_scraped_text()`, `scrape_url()` |
 | `backend/tools/obsidian_tool.py` | Obsidian vault reader — `read_vault()` yields cleaned note dicts from a vault directory; `get_vault_stats()` accepts a path and returns stats (total_files, total_words, estimated_chunks, skipped_files, vault_name); `get_vault_stats_from_dir()` is the refactored core that both local and zip endpoints use; `extract_vault_from_zip(zip_bytes)` extracts a zip file to a temp directory, validates for path traversal attacks (rejects paths starting with `/` or containing `..`), and verifies .md files exist; `clean_obsidian_markdown()` strips wikilinks/frontmatter/Dataview/embeds |
 | `backend/tools/__init__.py` | Empty — tools directory retained for future use |
@@ -242,6 +242,45 @@ Review-fix additions: `backend/agents/refine_cited_agent.py` owns cited refineme
 | `evals/requirements.txt` | Eval-only extras (`deepeval`), installed into `backend/venv`; never added to `backend/requirements.txt` |
 
 ---
+
+### Onboarding, publishing, billing and landing pages (added 2026-10-13)
+
+| File | Description |
+|------|-------------|
+| `backend/config/niches.py` | The one list of segments, business niches (each with its content pillars: `key`, `label`, `about`, `needs`) and tones. The API validates against it and serves it (`GET /niches`); the pipeline reads pillars from it. Nothing else names a niche |
+| `backend/memory/account_store.py` | `accounts` table: `get_account`, `save_segment`, `mark_segment_skipped`, `should_ask_segment` (unanswered, and never skipped or skipped `SEGMENT_REASK_DAYS` = 7 days ago) |
+| `backend/routers/account.py` | `GET /niches` (public), `GET /account`, `PUT /account/segment`, `POST /account/segment/skip`. A business answer also creates a voice profile when the user has none, and saves the business profile to memory as a source through `ingest_content` |
+| `backend/utils/business_notes.py` | Pure helpers: `profile_note` (the business profile as note text; tone left out), `details_note` (per-post details), `find_pillar`, `business_context` (what the pipeline knows about a business: niche, tone, pillar; no facts) |
+| `backend/publishing/types.py` | Contendo's own publishing types: `Platform`, `AccountStatus`, `JobStatus`, `ErrorCode`, `ConnectedAccount`, `PostContent`, `MediaItem`, `PublishStatus`, `StatusUpdate`, `ProviderError(code, retryable)` |
+| `backend/publishing/provider.py` | `PublishingProvider` protocol and `get_provider()`, chosen by `PUBLISHING_PROVIDER` (`fake` or `zernio`; no default; `fake` is refused in production) |
+| `backend/publishing/fake.py` | In-memory provider for tests and local development; `fail_next_publish`, `set_account_status`, `set_status` script failures |
+| `backend/publishing/zernio.py` | Zernio adapter: one profile per user, connect URL, accounts, presigned media upload, publish with `Idempotency-Key`, status, cancel, HMAC-verified webhook. Written from the OpenAPI spec; not yet run against a live account |
+| `backend/publishing/rules.py` | Per-platform limits (`RULES`), `problems()` for server-side validation, `preview()` for the UI, and `user_message()`: the sentence shown for each `ErrorCode` |
+| `backend/publishing/service.py` | Request-time operations: `ensure_end_user`, `refresh_accounts`, `disconnect`, `next_queue_slot`, `create_job` (validates, then only writes the job) |
+| `backend/publishing/jobs.py` | One attempt at a job (`process_job`), `apply_status`, retries with exponential backoff (`MAX_ATTEMPTS` 5, 1/2/4/8 minutes), pausing while payment is failing, `confirm_job` |
+| `backend/publishing/worker.py` | The loop started in `main.py`'s lifespan: every 15 s claims due jobs and confirms quiet ones, in the threadpool |
+| `backend/memory/publish_store.py` | `connected_accounts` and `publish_jobs` tables, and the provider tenant reference on `accounts`. `claim_due_jobs` calls the `claim_publish_jobs` SQL function |
+| `backend/routers/publishing.py` | `/publishing/*` endpoints and the provider webhook. Handlers are sync functions, so FastAPI runs them in the threadpool |
+| `backend/billing/entitlements.py` | `get_entitlements(user_id)`: the one place a plan is read. Plan limits live here |
+| `backend/billing/gates.py` | Turns an entitlement refusal into a 402 with `{code, message, entitlements}` |
+| `backend/billing/stripe_gateway.py` | Every Stripe SDK call (customer, Checkout, portal, subscription and price fetch, signature check). Nothing else imports `stripe` |
+| `backend/billing/webhooks.py` | `handle_event`: idempotent, and always re-fetches the subscription from Stripe rather than trusting the event's payload |
+| `backend/memory/billing_store.py` | `subscriptions`, `stripe_events`, `generation_usage`; `reserve_generation` / `release_generation` call SQL functions |
+| `backend/routers/billing.py` | `/billing/*` endpoints and the Stripe webhook |
+| `backend/migrations/007_add_accounts.sql`, `008_add_publishing.sql`, `009_add_billing.sql` | The tables and SQL functions above. Each ends with a commented rollback block |
+| `frontend/app/get-started/page.tsx` | The segment question, then the business setup form. Reads `?niche=` and uses it only if `GET /niches` lists it |
+| `frontend/components/onboarding/` | `SegmentQuestion`, `BusinessSetup` (with a `prefill` prop: the extension point for website import and voice input), `SegmentPrompt` (the question for existing users, shown by `AppShell`) |
+| `frontend/components/create/BusinessPostFields.tsx` | Kind of post (pillar) and its details on the Create screen; `useBusinessPost()` |
+| `frontend/components/publishing/PublishPanel.tsx` | Publish now / Schedule / Add to queue for a generated post, with per-platform preview |
+| `frontend/components/billing/` | `UpgradeScreen` (shown on any 402 from a gate), `QuotaLine` |
+| `frontend/app/settings/accounts/page.tsx`, `frontend/app/settings/billing/page.tsx`, `frontend/app/scheduled/page.tsx` | Connected accounts; plan and billing; scheduled and published posts |
+| `frontend/lib/account.ts`, `billing.ts`, `publishing.ts`, `landing.ts`, `seo.ts`, `json-ld.ts` | Types and pure helpers, each with a vitest file |
+| `frontend/lib/account-api.ts`, `commerce-api.ts` | API functions spread into `useApi()` (kept out of `api.ts`, which is past the file-size limit) |
+| `frontend/content/niches/` | One content file per niche landing page, and the registry `index.ts`. Adding a page is adding a file and one line |
+| `frontend/content/testimonials.ts` | Testimonials data source. Ships empty; only entries with `permissionConfirmed: true` render |
+| `frontend/components/marketing/` | `NicheLanding` (the server-rendered template), `JsonLd`, `NicheLinks` |
+| `frontend/app/[niche]/page.tsx`, `frontend/app/sitemap.ts`, `frontend/app/robots.ts` | Niche landing route (only registered slugs exist), sitemap and robots |
+| `docs/publishing-provider-evaluation.md`, `docs/publishing-roadmap.md` | Provider comparison; the path to our own platform apps. Note: `docs/` is in `.gitignore` |
 
 ## 2. AGENT CONTRACTS
 
@@ -927,6 +966,41 @@ Prompt-level word count instructions ("Target length: 100–180 words") are advi
 
 ---
 
+### Account and onboarding
+
+- `GET /niches` (public): `{segments, other_niche, niches: [{key, label, pillars: [{key, label, about}]}], tones: [{key, label}]}`.
+- `GET /account`: `{segment, business_niche, business_niche_other, business_profile, ask_segment, memory_saved}`. `ask_segment` is decided by the server.
+- `PUT /account/segment`: `{segment: "business" | "individual", business_niche?, business_niche_other?, business_profile?}`. A business needs a listed niche (free text when `other`) and a profile: `business_name`, `service_area`, `services`, `tone` (a listed key), optional `website`, `differentiators`, `typical_customer`, `current_offers`, `tone_notes`. Invalid → 422, nothing saved. Response adds `memory_saved`: `false` means the answer is stored but the memory note failed.
+- `POST /account/segment/skip`: records "Skip for now"; the question returns after 7 days.
+
+### POST /generate additions
+
+- Request: `pillar` (a key of the user's niche; 400 otherwise) and `pillar_details` (up to 4,000 characters; needs `pillar`). Details are ingested as a `personal_note` with `memory_context: "work"` before the pipeline runs.
+- Quota: one generation is reserved before the pipeline and released if the result is not `"ok"` or the request fails. Out of quota → **402** `{detail: {code: "quota_exceeded", message, entitlements}}`.
+
+### Billing
+
+- `GET /billing/plans` (public): `{free: {generations_per_month, publishing}, pro: {generations_per_month, publishing, max_connected_accounts, price: {amount, currency, interval, trial_days} | null}}`. `price` is read from Stripe (cached 10 minutes) and is `null` when it cannot be.
+- `GET /billing/entitlements`: `{plan, subscription_status, generation_limit, generations_used, generations_remaining, can_generate, can_publish, publishing_paused, max_connected_accounts, trial_end, current_period_end, cancel_at_period_end, period}`.
+- `POST /billing/checkout` → `{url}` (Stripe Checkout, subscription mode, trial). 409 if already Pro. `POST /billing/portal` → `{url}`; 404 with no Stripe customer. 503 when Stripe is not configured.
+- `POST /billing/webhook` (public; Stripe signature over the raw body): 400 on a bad signature, 200 `{received, outcome: processed | duplicate | ignored}`, 500 when handling fails (the event is forgotten so the retry is processed).
+
+### Publishing
+
+All need a token. A plan refusal is **402** `{detail: {code: "upgrade_required" | "payment_required", message, entitlements}}`. 503 when `PUBLISHING_PROVIDER` is unset.
+
+- `GET /publishing/platforms`: `{platforms: [{platform, label, max_characters, media_required, max_images}]}`.
+- `GET /publishing/accounts`: `{accounts: [{id, platform, label, display_name, status}]}`, synced with the provider.
+- `POST /publishing/connect` `{platform}` → `{url}`. Needs a free account slot (402 otherwise).
+- `DELETE /publishing/accounts/{id}`: allowed on any plan.
+- `POST /publishing/media` (multipart `file`, image or video, 50 MB) → `{ref, kind}`.
+- `POST /publishing/jobs` `{content, account_ids, post_id?, media, when: "now" | "schedule" | "queue", scheduled_at?, timezone}` → `{job}`. Validated against each target platform's rules: 422 `{detail: {code: "cannot_publish", problems: [...]}}`. Never publishes in the request.
+- `GET /publishing/jobs` → `{jobs: [{id, post_id, content, account_ids, status, scheduled_at, published_at, created_at, results, message, error_code}]}`. `message` is a sentence the user can act on; the provider's own error text is never returned.
+- `POST /publishing/jobs/{id}/cancel`: 409 once the job is publishing or finished.
+- `POST /publishing/webhook` (public; the provider's signature): 400 on a bad signature.
+
+---
+
 ## 4. DATA SCHEMAS
 
 ### Usage events: exact model tracking
@@ -1089,6 +1163,12 @@ CREATE INDEX idx_user_events_timestamp ON user_events(timestamp);
 
 ---
 
+### accounts, connected_accounts, publish_jobs, subscriptions, stripe_events, generation_usage
+
+Defined, with column notes, in `backend/migrations/007_add_accounts.sql`, `008_add_publishing.sql` and `009_add_billing.sql`. All use `user_id TEXT` and have RLS enabled with no policies. Three SQL functions, callable only by the service role: `claim_publish_jobs(max_jobs, stale_minutes)` (`FOR UPDATE SKIP LOCKED`), `reserve_generation(p_user_id, p_period, max_count)` and `release_generation(p_user_id, p_period)`.
+
+---
+
 ## 5. KNOWN DECISIONS
 
 | Decision | Why |
@@ -1209,6 +1289,19 @@ CREATE INDEX idx_user_events_timestamp ON user_events(timestamp);
 
 ---
 
+### Onboarding, publishing and billing (2026-10-13)
+
+- **Business facts are sources, not profile.** A business's name, area, services and offers reach a post only through the "Business profile" note in the user's memory (`source_type: business_profile`, frame `BUSINESS_PROFILE`), so they are retrieved, cited and checked like any note. `state["business"]` carries only niche, tone and pillar. The coverage gate is unchanged.
+- **Niche guidance lives in one place:** `config/niches.py`. The draft prompt's BUSINESS POST block is filled from it; no agent names a niche.
+- **The publish queue is a Postgres table** polled by a loop in the web process, because the backend is one uvicorn worker with no Redis. Jobs survive restarts as rows; `FOR UPDATE SKIP LOCKED` stops two loops taking one job; each job's idempotency key is sent on every attempt.
+- **Scheduled posts are held by us and sent at their time** (`publishNow`), not handed to the provider's scheduler, so cancelling and pausing for a failed payment need no provider call.
+- **Subscription status is whatever Stripe says now.** Every subscription event triggers a fetch of that subscription, so late, repeated and out-of-order events converge. Nothing the browser sends changes a plan.
+- **`past_due` is the grace period:** generation limit and accounts kept, publishing paused, scheduled jobs held. `canceled`, `unpaid` and `incomplete_expired` end the plan and cancel pending jobs.
+- **The quota is reserved, then released,** so parallel requests cannot pass the limit and a request that makes no post costs nothing.
+- **Prices are never in the frontend.** They come from `GET /billing/plans`, which reads the Stripe Price.
+
+---
+
 ## 6. WHAT IS NOT BUILT YET
 
 First after this merge: `fix/retrieval-failure-status`, to distinguish retrieval outages from low coverage and remove topic/source excerpts from logs. This branch adds labels only.
@@ -1234,6 +1327,12 @@ The full standard eval (`evals/baselines/2026-10-08-standard.md`) chose `before_
 
 **Also in that branch (audit I1):** ingest labels any text that names an employer or project as the user's own work (`_crossref_experience_context` in `ingestion_agent.py`), so such an article arrives as self-authored and gets the `experience` perspective. Classify authorship properly, and ask "Is this your own writing/experience?" at upload for files. Plus audit items I2 (delete cascade), G3 and I3.
 
+- Website import and voice input for the business profile (extension point: `BusinessSetup`'s `prefill` prop and `utils.business_notes.profile_note`, which take the same fields whatever filled them)
+- Niche landing pages other than real estate; content pillars are defined for six niches, but only real estate has a page
+- Privacy policy and terms of service pages (the footer links to them; platform app reviews need them)
+- Idea suggestions (`/suggestions`) do not use niche pillars yet
+- A partly failed publish (some accounts published, some failed) is recorded as failed with per-account results; there is no one-click retry of only the failed accounts
+- Zernio adapter verification against a live account (see `docs/publishing-roadmap.md`)
 - Obsidian local-path ingestion does not work after cloud deployment — the vault path is a local filesystem path read by FastAPI. Off unless `ALLOW_LOCAL_PATH_INGEST=1` (HTTP 403) and hidden in the frontend when the API URL is not localhost. The zip upload routes cover deployed use.
 
 - Vercel and Railway/Render deployment config files

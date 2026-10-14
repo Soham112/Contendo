@@ -20,6 +20,7 @@ def _every_frame() -> set[str]:
                 for r in ("Junior analyst", "Analyst", "Principal engineer") for t in ([], ["statistics"])]
     chunks = [
         {"source_type": "consolidation"},
+        {"source_type": "business_profile", "memory_context": "work"},
         *[{"memory_context": m, "source_type": s, "tags": "statistics"}
           for m in ("work", "personal_project", "observation", "learning", None)
           for s in ("note", "article")],
@@ -33,7 +34,7 @@ def test_frame_list_is_exactly_what_the_code_can_produce():
     from utils.frames import FRAMES, SELF_FRAMES
 
     assert set(FRAMES) == _every_frame()
-    assert len(FRAMES) == 9
+    assert len(FRAMES) == 10
     assert SELF_FRAMES <= set(FRAMES)
     assert all(frame.label and frame.rule for frame in FRAMES.values())
 
