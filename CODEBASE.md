@@ -278,7 +278,8 @@ Review-fix additions: `backend/agents/refine_cited_agent.py` owns cited refineme
 | `frontend/lib/account-api.ts`, `commerce-api.ts` | API functions spread into `useApi()` (kept out of `api.ts`, which is past the file-size limit) |
 | `frontend/content/niches/` | One content file per niche landing page, and the registry `index.ts`. Adding a page is adding a file and one line |
 | `frontend/content/testimonials.ts` | Testimonials data source. Ships empty; only entries with `permissionConfirmed: true` render |
-| `frontend/components/marketing/` | `NicheLanding` (the server-rendered template), `JsonLd`, `NicheLinks` |
+| `frontend/content/home.ts` | Homepage SEO data (`HOME_SEO`), hero copy, FAQ (`homeFaqs()`, whose publishing answer follows `VERIFIED_PUBLISHING_PLATFORMS`) and the Organization `sameAs` list |
+| `frontend/components/marketing/` | `NicheLanding` (the server-rendered template), `Faq` (visible FAQ and its FAQPage JSON-LD from one list), `JsonLd`, `NicheLinks` |
 | `frontend/app/[niche]/page.tsx`, `frontend/app/sitemap.ts`, `frontend/app/robots.ts` | Niche landing route (only registered slugs exist), sitemap and robots |
 | `docs/publishing-provider-evaluation.md`, `docs/publishing-roadmap.md` | Provider comparison; the path to our own platform apps. Note: `docs/` is in `.gitignore` |
 
@@ -1388,3 +1389,7 @@ AppShell persists across route changes. `useAccount` refetches on pathname chang
 ### Billing switched off (2026-10-14)
 
 `BILLING_DISABLED=1` (exactly "1") lets production start without Stripe settings; without it, missing Stripe settings still block startup, and setting it together with Stripe settings is refused. While it is on, `billing.stripe_gateway.config()` raises `BillingConfigError`, so Checkout, the portal and the webhook answer 503; `GET /billing/plans` returns `checkout_available: false`; everyone is on the free plan, so nobody can publish; the upgrade screen and the billing page say Pro can't be bought yet instead of offering a button.
+
+### Homepage SEO (2026-10-13)
+
+Keyword pages keep a `PageSeo` record (title without suffix, description, path, `primaryKeyword`, optional social image) next to their copy; `pageMetadata()` in `lib/seo.ts` turns it into metadata and always writes the absolute title `<title> | Contendo` (Next's title template does not reach `app/page.tsx`, which shares the root layout's segment). `seoProblems(seo, onPageText)` checks the on-page rules structurally (keyword in slug, near the front of the title, in the description, H1, first paragraph and an image alt; title at most 60 characters with the suffix; description at most 155; 4 to 6 FAQs); `lib/seo.test.ts` runs it on every keyword page. The root layout sets site defaults only, never a canonical, so a page without its own metadata does not claim to be `/`. `app/page.tsx` is a server component that renders the welcome page with Organization and SoftwareApplication JSON-LD; `softwareJsonLd` lists the Pro offer only while `checkout_available` is true. AppShell renders `/` and `/welcome` without `PageTransition`, whose opacity 0 hid the homepage until hydration. The homepage testimonials were removed (no recorded permission); `DEFAULT_DESCRIPTION` and the homepage no longer claim publishing.

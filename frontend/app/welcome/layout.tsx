@@ -1,11 +1,9 @@
 import type { Metadata } from "next";
-import { DEFAULT_DESCRIPTION, pageMetadata } from "@/lib/seo";
+import { HOME_SEO } from "@/content/home";
+import { pageMetadata } from "@/lib/seo";
 
 // "/" and "/welcome" render the same page: both name "/" as canonical.
-export const metadata: Metadata = {
-  ...pageMetadata({ title: "Contendo: posts in your voice, published for you", description: DEFAULT_DESCRIPTION, path: "/" }),
-  title: { absolute: "Contendo: posts in your voice, published for you" },
-};
+export const metadata: Metadata = pageMetadata(HOME_SEO);
 
 export default function WelcomeLayout({
   children,

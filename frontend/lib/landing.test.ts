@@ -46,7 +46,7 @@ describe("niche pages", () => {
 
 describe("plans on the landing page", () => {
   it("takes every figure from the backend's plans", () => {
-    expect(ctaLabel(PLANS)).toBe("Start free — 10 posts");
+    expect(ctaLabel(PLANS)).toBe("Start free: 10 posts");
     const cost = costFaq(PLANS);
     expect(cost?.answer).toContain("10 posts a month");
     expect(cost?.answer).toContain("$39 a month");

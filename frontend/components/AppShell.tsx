@@ -29,15 +29,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
-  // Niche landing pages are server-rendered marketing pages: no shell and no
-  // entrance animation, so their content is visible before any script runs.
-  if (isNichePath(pathname) || isLegalPath(pathname)) {
+  // Marketing pages (home, niche and legal pages) are server-rendered: no shell
+  // and no entrance animation, so their content is visible before any script
+  // runs. The animation starts at opacity 0 and would hide them until hydration.
+  if (pathname === "/" || pathname === "/welcome" || isNichePath(pathname) || isLegalPath(pathname)) {
     return <>{children}</>;
   }
 
   if (
-    pathname === "/" ||
-    pathname === "/welcome" ||
     pathname === "/onboarding" ||
     pathname === "/first-post" ||
     pathname === "/get-started" ||

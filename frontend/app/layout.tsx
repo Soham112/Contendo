@@ -3,7 +3,7 @@ import { Inter, Noto_Serif } from "next/font/google";
 import "./globals.css";
 import AppShell from "@/components/AppShell";
 import { ToastProvider } from "@/components/ui/ToastProvider";
-import { DEFAULT_DESCRIPTION, SITE_NAME, SITE_URL, pageMetadata } from "@/lib/seo";
+import { DEFAULT_DESCRIPTION, DEFAULT_SOCIAL_IMAGE, SITE_NAME, SITE_URL, TITLE_SUFFIX } from "@/lib/seo";
 
 // Self-hosted at build time and swapped in when ready, so text paints at once
 // and no request to Google blocks rendering. Exposed as CSS variables that
@@ -14,11 +14,17 @@ const headline = Noto_Serif({
 });
 const body = Inter({ subsets: ["latin"], weight: ["300", "400", "500", "600"], display: "swap", variable: "--font-body" });
 
+// Site-wide defaults only. No canonical URL here: a page inherits it unless it
+// sets its own, and every page would then claim to be a copy of "/". Pages set
+// theirs through pageMetadata() in lib/seo.ts.
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  ...pageMetadata({ title: `${SITE_NAME}: posts in your voice, published for you`, description: DEFAULT_DESCRIPTION, path: "/" }),
-  // A page's own title is shown as "<title> | Contendo".
-  title: { default: `${SITE_NAME}: posts in your voice, published for you`, template: `%s | ${SITE_NAME}` },
+  // pageMetadata() writes each page's full title; the template covers pages
+  // that set a plain title without it.
+  title: { default: SITE_NAME, template: `%s${TITLE_SUFFIX}` },
+  description: DEFAULT_DESCRIPTION,
+  openGraph: { siteName: SITE_NAME, type: "website", images: [DEFAULT_SOCIAL_IMAGE] },
+  twitter: { card: "summary_large_image", images: [DEFAULT_SOCIAL_IMAGE.url] },
   icons: { icon: "/favicon.png" },
 };
 

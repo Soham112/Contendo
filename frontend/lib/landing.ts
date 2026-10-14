@@ -19,9 +19,9 @@ export async function fetchPlans(): Promise<Plans | null> {
   }
 }
 
-/** "Start free — 10 posts", or "Start free" when the allowance is unknown. */
+/** "Start free: 10 posts", or "Start free" when the allowance is unknown. */
 export function ctaLabel(plans: Plans | null): string {
-  return plans ? `Start free — ${plans.free.generations_per_month} posts` : "Start free";
+  return plans ? `Start free: ${plans.free.generations_per_month} posts` : "Start free";
 }
 
 /** The "what does it cost" question, answered from the plans. null when they are unknown. */

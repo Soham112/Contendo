@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import supabase from "@/lib/supabase";
 import { QuillIcon } from "@/components/ContendoLogo";
+import Faq from "@/components/marketing/Faq";
 import NicheLinks from "@/components/marketing/NicheLinks";
+import { HOME_FAQ_HEADING, HOME_HERO, homeFaqs } from "@/content/home";
 
 const MOOD_GRADIENTS = [
   { label: "Analytical",   from: "#3a4a35", to: "#58614f", img: "/mood-analytical.png" },
@@ -23,7 +25,7 @@ function TopNav({ isSignedIn, authLoaded }: { isSignedIn: boolean; authLoaded: b
     <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-md">
       <div className="max-w-[1200px] mx-auto px-5 sm:px-8 py-4 flex items-center justify-between relative">
         <Link
-          href="/welcome"
+          href="/"
           className="flex items-center gap-2.5 font-headline italic text-on-surface text-xl tracking-tight"
         >
           <QuillIcon size={22} />
@@ -127,24 +129,32 @@ export default function WelcomePage() {
             {/* Illustration */}
             <img
               src="/images/landing-hero.png"
-              alt="Person riding pen upward"
+              alt={HOME_HERO.imageAlt}
               className="w-full object-contain mb-4"
               style={{ maxWidth: "400px", height: "auto" }}
             />
 
             {/* Tagline */}
             <h1
-              className="font-headline font-normal leading-[1.1] tracking-tight text-on-surface text-5xl mb-2"
+              className="font-headline font-normal leading-[1.1] tracking-tight text-on-surface text-center text-4xl sm:text-5xl mb-3"
             >
-              Write like yourself. At scale.
+              {HOME_HERO.headline}
             </h1>
 
-            {/* Subtitle */}
+            {/* Tagline */}
             <p
-              className="font-sans text-lg text-secondary/70 text-center mx-auto mb-6"
+              className="font-sans text-lg text-secondary/70 text-center mx-auto mb-3"
               style={{ maxWidth: "600px" }}
             >
-              Your thoughts, written in your voice.
+              {HOME_HERO.tagline}
+            </p>
+
+            {/* Intro */}
+            <p
+              className="font-sans text-base leading-relaxed text-secondary text-center mx-auto mb-6"
+              style={{ maxWidth: "520px" }}
+            >
+              {HOME_HERO.intro}
             </p>
 
             {/* CTA */}
@@ -241,7 +251,7 @@ export default function WelcomePage() {
                   style={{ fontSize: "1.15rem", color: "#2f3333", lineHeight: 1.8 }}
                 >
                   You open LinkedIn. Stare at the blank box.
-                  <br />You have things to say — but turning expertise
+                  <br />You have things to say, but turning expertise
                   <br />into a post takes two hours of editing,
                   <br />rewriting, second-guessing.
                   <br />So you close the tab. Again.
@@ -273,7 +283,7 @@ export default function WelcomePage() {
                 >
                   You type a topic. Contendo pulls from what
                   <br />you&apos;ve actually read and thought about.
-                  <br />A draft comes back in your voice —
+                  <br />A draft comes back in your voice:
                   <br />specific, grounded, not generic.
                   <br />You edit two lines. You post.
                 </p>
@@ -296,7 +306,7 @@ export default function WelcomePage() {
               className="text-secondary text-center mx-auto mb-14"
               style={{ fontSize: "1rem", lineHeight: 1.7, maxWidth: "480px" }}
             >
-              Contendo works from your actual knowledge — not from what it was trained on.
+              Contendo works from your actual knowledge, not from what it was trained on.
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -314,7 +324,7 @@ export default function WelcomePage() {
                 {
                   num: "03",
                   title: "Your opinions",
-                  body: "Tell it what you actually believe. It injects your real takes into every draft — not hedged, not balanced, not generic.",
+                  body: "Tell it what you actually believe. It injects your real takes into every draft: not hedged, not balanced, not generic.",
                 },
               ].map((card) => (
                 <div
@@ -347,7 +357,7 @@ export default function WelcomePage() {
             <div className="rounded-2xl overflow-hidden shadow-[0px_4px_20px_rgba(47,51,51,0.04),0px_12px_40px_rgba(47,51,51,0.06)]">
               <img
                 src="/desk-atelier.png"
-                alt="A quiet writer's desk — monitor, lamp, pencils, coffee"
+                alt="A quiet writer's desk with a monitor, lamp, pencils and coffee"
                 className="w-full h-full object-cover"
                 style={{ display: "block", borderRadius: "1rem" }}
               />
@@ -431,7 +441,7 @@ export default function WelcomePage() {
                 <div>
                   <p className="font-headline text-[1.55rem] mb-2">Refinement, Not Replacement</p>
                   <p className="text-[13px] text-secondary leading-relaxed max-w-[540px]">
-                    The AI acts as your editor — it checks tonal consistency against your voice
+                    The AI acts as your editor. It checks tonal consistency against your voice
                     profile and scores how well the draft resonates with your intended audience.
                     Every suggestion is grounded in your own writing, not a template.
                   </p>
@@ -482,7 +492,7 @@ export default function WelcomePage() {
                   Write in any register.
                 </h2>
                 <p className="text-[13px] text-secondary">
-                  From analytical deep-dives to punchy contrarian takes — Contendo adapts
+                  From analytical deep-dives to punchy contrarian takes, Contendo adapts
                   to the voice the post needs.
                 </p>
               </div>
@@ -514,81 +524,8 @@ export default function WelcomePage() {
           </div>
         </section>
 
-        {/* ── Testimonials ──────────────────────────────────────────────────── */}
-        <section className="px-5 sm:px-8 py-24 bg-background">
-          <div className="max-w-[1080px] mx-auto">
-            <h2
-              className="font-headline text-center mb-3"
-              style={{ fontSize: "1.8rem", color: "#2f3333" }}
-            >
-              Used by people who know what they&apos;re talking about.
-            </h2>
-            <p
-              className="text-secondary text-center mx-auto mb-14"
-              style={{ fontSize: "0.95rem", lineHeight: 1.6, maxWidth: "540px" }}
-            >
-              Not influencers. Researchers, engineers, and designers
-              who had things to say and kept procrastinating.
-            </p>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {[
-                {
-                  quote:
-                    "I do serious AI research but I've always procrastinated on LinkedIn. Contendo pulls from my actual papers and thinking — the posts come out sounding like me, not like a press release.",
-                  name: "Subho Majumdar",
-                  role: "AI Faculty · IIM Bangalore",
-                },
-                {
-                  quote:
-                    "I had months of notes and project work sitting unused. Being able to feed all of it in and get posts that reflect how I actually think about data — that's what got me posting consistently.",
-                  name: "Sejal Jagtap",
-                  role: "MS Data Science · Duke University",
-                },
-                {
-                  quote:
-                    "As a designer I'm particular about voice and detail. What surprised me was how specific the output was — it picked up on my actual opinions, not just generic design advice.",
-                  name: "Riddhi Chaudhari",
-                  role: "Product Designer · Ex-Dell",
-                },
-              ].map((t) => (
-                <div
-                  key={t.name}
-                  className="rounded-2xl"
-                  style={{
-                    background: "#ffffff",
-                    padding: "36px",
-                    boxShadow:
-                      "0px 4px 20px rgba(47,51,51,0.04), 0px 12px 40px rgba(47,51,51,0.06)",
-                  }}
-                >
-                  <p
-                    className="font-headline italic mb-6"
-                    style={{ fontSize: "1.05rem", color: "#2f3333", lineHeight: 1.8 }}
-                  >
-                    &ldquo;{t.quote}&rdquo;
-                  </p>
-                  <p
-                    className="font-semibold"
-                    style={{ fontSize: "0.9rem", color: "#2f3333" }}
-                  >
-                    {t.name}
-                  </p>
-                  <p
-                    className="mt-1 text-secondary"
-                    style={{
-                      fontSize: "0.75rem",
-                      letterSpacing: "0.04rem",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    {t.role}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
+        {/* ── FAQ ─────────────────────────────────────────────────────────────── */}
+        <Faq id="faq" heading={HOME_FAQ_HEADING} faqs={homeFaqs()} className="bg-surface-container-low" />
 
         {/* ── Pull quote ────────────────────────────────────────────────────── */}
         <section className="px-5 sm:px-8 py-20 text-center">
@@ -598,7 +535,7 @@ export default function WelcomePage() {
               style={{ fontSize: "clamp(1.4rem, 3vw, 2rem)", color: "#2f3333", lineHeight: 1.6 }}
             >
               Most AI content sounds like AI wrote it.
-              <br />Contendo sounds like you — because it starts
+              <br />Contendo sounds like you, because it starts
               <br />from what you actually know.
             </p>
           </div>
@@ -641,7 +578,7 @@ export default function WelcomePage() {
             {/* Brand */}
             <div className="shrink-0">
               <Link
-                href="/welcome"
+                href="/"
                 className="font-headline italic text-on-surface"
                 style={{ fontSize: "1.1rem" }}
               >
