@@ -9,10 +9,11 @@ import { costFaq, ctaLabel, startHref } from "@/lib/landing";
 import { canonicalUrl } from "@/lib/seo";
 import JsonLd from "@/components/marketing/JsonLd";
 import NicheLinks from "@/components/marketing/NicheLinks";
+import { buttonVariants } from "@/components/ui/button-variants";
 
 // The primary call to action on public pages is terracotta (DESIGN.md note).
-const CTA =
-  "inline-block rounded-md bg-tertiary hover:bg-tertiary-dim text-on-tertiary px-7 py-3.5 text-[1rem] font-medium transition-colors";
+// The primary call to action on public pages is terracotta (DESIGN.md addendum): the shared "cta" button.
+const CTA = buttonVariants({ variant: "cta", size: "lg" });
 const SECTION = "mx-auto w-full max-w-[68rem] px-4 sm:px-8";
 
 /** A niche landing page, rendered on the server from one content file and the backend's plans. */
@@ -32,10 +33,10 @@ export default function NicheLanding({ content, plans }: { content: NicheLanding
       <JsonLd data={faqJsonLd(faqs)} />
 
       <header className={`${SECTION} py-5 flex items-center justify-between`}>
-        <Link href="/" className="font-headline italic text-[1.25rem] text-on-surface">
+        <Link href="/" className="inline-flex min-h-11 items-center font-headline italic text-[1.25rem] text-on-surface">
           Contendo
         </Link>
-        <Link href="/sign-in" className="text-[0.9375rem] text-secondary hover:text-on-surface py-2">
+        <Link href="/sign-in" className="inline-flex min-h-11 items-center text-[0.9375rem] text-secondary hover:text-on-surface">
           Sign in
         </Link>
       </header>
@@ -180,7 +181,7 @@ export default function NicheLanding({ content, plans }: { content: NicheLanding
       <footer className="bg-surface-container-low py-12">
         <div className={`${SECTION} flex flex-col gap-10 sm:flex-row sm:justify-between`}>
           <div>
-            <Link href="/" className="font-headline italic text-[1.1rem]">
+            <Link href="/" className="inline-flex min-h-11 items-center font-headline italic text-[1.1rem]">
               Contendo
             </Link>
             <p className="mt-2 text-[0.875rem] text-secondary">Your posts, written in your voice and published for you.</p>

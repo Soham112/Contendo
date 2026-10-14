@@ -21,11 +21,13 @@ const actionBtnStyle = (disabled?: boolean): CSSProperties => ({
 
 /** The column of post actions: regenerate, analyse, visuals and the copy buttons. */
 export default function PostActionButtons({
-  compact, loading, visualsLoading, visualsVisible, hasVisuals, copiedLinkedIn, copiedMedium,
+  compact, row = false, loading, visualsLoading, visualsVisible, hasVisuals, copiedLinkedIn, copiedMedium,
   onRegenerate, onAnalyse, onShowVisuals, onHideVisuals, onGenerateVisuals, onCopyLinkedIn, onCopyMedium,
 }: {
   /** Split view: smaller, borderless buttons. */
   compact: boolean;
+  /** A horizontal row (phones and tablets) instead of a column. */
+  row?: boolean;
   loading: boolean;
   visualsLoading: boolean;
   visualsVisible: boolean;
@@ -43,7 +45,7 @@ export default function PostActionButtons({
   const iconSize = compact ? 16 : 22;
   const btnGap = compact ? 16 : 32;
   const btnLabelStyle: CSSProperties = {
-    fontSize: compact ? 7 : 9,
+    fontSize: compact ? 10 : 11,
     letterSpacing: "0.08em",
     textTransform: "uppercase",
     color: "#5b605f",
@@ -51,7 +53,13 @@ export default function PostActionButtons({
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: btnGap, alignItems: "center" }}>
+    <div
+      role="toolbar"
+      aria-label="Post actions"
+      style={row
+        ? { display: "flex", flexDirection: "row", gap: 8, overflowX: "auto", paddingBottom: 4 }
+        : { display: "flex", flexDirection: "column", gap: btnGap, alignItems: "center" }}
+    >
       <button
         onClick={onRegenerate}
         disabled={loading}

@@ -1,5 +1,7 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
+
 /** Offered on arrival when this tab has an unfinished draft: continue it or start fresh. */
 export default function ResumeDraftPrompt({ topic, score, onContinue, onStartFresh }: {
   topic: string;
@@ -59,20 +61,12 @@ export default function ResumeDraftPrompt({ topic, score, onContinue, onStartFre
 
                   {/* Actions */}
                   <div className="flex flex-col gap-3" style={{ alignItems: "center" }}>
-                    <button
-                      className="btn-primary"
-                      style={{ width: "100%", maxWidth: 320 }}
-                      onClick={onContinue}
-                    >
+                    <Button className="w-full max-w-[320px]" onClick={onContinue}>
                       Continue editing
-                    </button>
-                    <button
-                      className="ghost-border"
-                      style={{ width: "100%", maxWidth: 320 }}
-                      onClick={onStartFresh}
-                    >
+                    </Button>
+                    <Button variant="secondary" className="w-full max-w-[320px]" onClick={onStartFresh}>
                       Start fresh
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </div>

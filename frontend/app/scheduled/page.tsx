@@ -6,6 +6,8 @@ import { requestErrorMessage } from "@/lib/request-errors";
 import Link from "next/link";
 import { useApi } from "@/lib/api";
 import { formatWhen, statusLabel, type PublishJob } from "@/lib/publishing";
+import { Button } from "@/components/ui/button";
+import { EmptyState, ListSkeleton } from "@/components/ui/states";
 
 const TONE: Record<string, string> = {
   Published: "text-primary",
@@ -60,7 +62,7 @@ export default function ScheduledPage() {
     <div className="max-w-[44rem] mx-auto">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <h1 className="font-headline text-[2rem] sm:text-[2.5rem] text-on-surface leading-tight">Scheduled and published</h1>
-        <Link href="/settings/accounts" className="text-[0.875rem] text-primary underline underline-offset-4">
+        <Link href="/settings/accounts" className="inline-flex min-h-11 items-center text-[0.875rem] text-primary underline underline-offset-4">
           Connected accounts
         </Link>
       </div>
@@ -70,18 +72,21 @@ export default function ScheduledPage() {
       )}
 
       {jobs === null && error ? null : jobs === null ? (
-        <p className="mt-8 text-[0.9375rem] text-secondary">Loading…</p>
+        <ListSkeleton rows={3} className="mt-8" />
       ) : jobs.length === 0 ? (
-        <p className="mt-8 text-[0.9375rem] leading-relaxed text-secondary">
-          Nothing here yet. Write a post, then choose Publish to send it now, schedule it, or add it to your queue.
-        </p>
+        <EmptyState
+          className="mt-8"
+          title="Nothing here yet"
+          body="Write a post, then choose Publish to send it now, schedule it, or add it to your queue."
+          action={<Button asChild><Link href="/create">Write a post</Link></Button>}
+        />
       ) : (
         <ul className="mt-8 flex flex-col gap-4">
           {jobs.map((job) => {
             const label = statusLabel(job);
             const when = job.published_at ?? job.scheduled_at;
             return (
-              <li key={job.id} className="rounded-lg bg-surface-container-lowest px-4 py-4 sm:px-5">
+              <li key={job.id} className="rounded-2xl bg-surface-container-lowest px-4 py-4 sm:px-5">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                   <p className={`text-[0.9375rem] font-medium ${TONE[label] ?? "text-on-surface"}`}>{label}</p>
                   <p className="text-[0.8125rem] text-secondary">{when ? formatWhen(when) : "As soon as possible"}</p>
@@ -113,7 +118,7 @@ export default function ScheduledPage() {
                           href={result.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-primary underline underline-offset-4"
+                          className="inline-flex min-h-11 items-center text-primary underline underline-offset-4"
                         >
                           View post
                         </a>
@@ -121,14 +126,9 @@ export default function ScheduledPage() {
                   </p>
                 )}
                 {job.status === "scheduled" && (
-                  <button
-                    type="button"
-                    disabled={busy === job.id}
-                    onClick={() => cancel(job)}
-                    className="mt-3 py-1.5 text-[0.875rem] text-secondary underline underline-offset-4 hover:text-on-surface disabled:opacity-50"
-                  >
-                    {busy === job.id ? "Cancelling…" : "Cancel"}
-                  </button>
+                  <Button variant="tertiary" size="sm" className="mt-2" loading={busy === job.id} onClick={() => cancel(job)}>
+                    Cancel
+                  </Button>
                 )}
               </li>
             );

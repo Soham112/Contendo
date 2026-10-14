@@ -5,6 +5,13 @@ import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useApi } from "@/lib/api";
 import type { ClusterItem, ClusterSourceItem } from "@/lib/api";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/card";
+import { Input, Label } from "@/components/ui/field";
+import { Select } from "@/components/ui/select";
+import { EmptyState, ErrorState } from "@/components/ui/states";
+import { chipClass } from "@/components/ui/chip";
 
 interface Source {
   source_title: string;
@@ -126,7 +133,7 @@ function SourceCard({
   const { showToast } = useToast();
 
   const typeLabel = TYPE_LABELS[source.source_type] ?? source.source_type;
-  const typeColor = TYPE_COLORS[source.source_type] ?? "bg-surface-container-low border-surface-container-high text-outline";
+  const typeColor = TYPE_COLORS[source.source_type] ?? "bg-surface-container-low border-surface-container-high text-on-surface-variant";
   const handleDelete = async () => {
     setDeleting(true);
     setDeleteError("");
@@ -162,70 +169,49 @@ function SourceCard({
           {getSourceIcon(source.source_type)}
         </div>
 
-        {/* Hover action row */}
-        <div className="absolute inset-0 bg-on-surface/10 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-end justify-center gap-2 pb-3">
-          {/* Sparkle */}
-          <button className="w-8 h-8 rounded-full bg-surface-container-lowest/90 flex items-center justify-center shadow-card hover:bg-surface-container-low transition-colors">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-secondary">
-              <path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5z"/>
-            </svg>
-          </button>
-          {/* Upload */}
-          <button className="w-8 h-8 rounded-full bg-surface-container-lowest/90 flex items-center justify-center shadow-card hover:bg-surface-container-low transition-colors">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-secondary">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-              <polyline points="17 8 12 3 7 8"/>
-              <line x1="12" y1="3" x2="12" y2="15"/>
-            </svg>
-          </button>
-          {/* Arrow forward */}
-          <button className="w-8 h-8 rounded-full bg-surface-container-lowest/90 flex items-center justify-center shadow-card hover:bg-surface-container-low transition-colors">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-secondary">
-              <line x1="5" y1="12" x2="19" y2="12"/>
-              <polyline points="12 5 19 12 12 19"/>
-            </svg>
-          </button>
-          {/* Trash */}
-          <button
-            onClick={() => setConfirming(true)}
-            className="w-8 h-8 rounded-full bg-surface-container-lowest/90 flex items-center justify-center shadow-card hover:bg-error/10 transition-colors"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-error">
-              <polyline points="3 6 5 6 21 6"/>
-              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-              <path d="M10 11v6M14 11v6"/>
-              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
-            </svg>
-          </button>
-        </div>
+        {/* Remove: always visible, so touch and keyboard users can reach it */}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setConfirming(true)}
+          aria-label={`Remove ${source.source_title || "this source"}`}
+          className="absolute top-2 right-2 bg-surface-container-lowest/90 text-error hover:bg-surface-container-lowest hover:text-error"
+        >
+          <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+            <path d="M10 11v6M14 11v6"/>
+            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+          </svg>
+        </Button>
       </div>
 
       {/* Card body */}
       <div className="px-4 py-3.5 flex flex-col gap-2 flex-1">
         {/* Date + chunk count */}
         <div className="flex items-center justify-between">
-          <span className="text-[11px] text-outline-variant">{formatDate(source.ingested_at)}</span>
-          <span className="flex items-center gap-1 text-[11px] text-outline">
+          <span className="text-[11px] text-on-surface-variant">{formatDate(source.ingested_at)}</span>
+          <span className="flex items-center gap-1 text-[11px] text-on-surface-variant">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="2" y="7" width="20" height="14" rx="2"/>
               <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
               <line x1="12" y1="12" x2="12" y2="16"/>
               <line x1="10" y1="14" x2="14" y2="14"/>
             </svg>
-            {source.chunk_count} Chunks
+            {source.chunk_count} {source.chunk_count === 1 ? "passage" : "passages"}
           </span>
         </div>
 
         {/* Retrieval count */}
         {source.retrieval_count === 0 ? (
-          <span className="text-[11px]" style={{ color: "var(--color-outline-variant)" }}>Never used in a post</span>
+          <span className="text-[11px] text-on-surface-variant">Not used in a post yet</span>
         ) : source.retrieval_count >= 5 ? (
           <span className="flex items-center gap-1 text-[11px]" style={{ color: "#58614f" }}>
             <span style={{ fontSize: "8px", lineHeight: 1 }}>●</span>
             Used {source.retrieval_count} times
           </span>
         ) : (
-          <span className="text-[11px] text-outline">
+          <span className="text-[11px] text-on-surface-variant">
             Used {source.retrieval_count} time{source.retrieval_count === 1 ? "" : "s"}
           </span>
         )}
@@ -239,7 +225,7 @@ function SourceCard({
         {source.tags.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-auto pt-1">
             {source.tags.slice(0, 3).map((tag) => (
-              <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-full border border-surface-container-high text-outline bg-surface-container">
+              <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-full border border-surface-container-high text-on-surface-variant bg-surface-container">
                 {tag}
               </span>
             ))}
@@ -249,25 +235,17 @@ function SourceCard({
 
       {/* Delete confirm overlay */}
       {confirming && (
-        <div className="absolute inset-0 bg-surface-container-lowest/95 flex flex-col items-center justify-center gap-3 rounded-2xl p-4 text-center">
-          <p className="text-sm font-medium text-on-surface">Remove from memory?</p>
-          <p className="text-xs text-outline leading-relaxed">{source.source_title}</p>
+        <div role="alert" className="absolute inset-0 bg-surface-container-lowest/95 flex flex-col items-center justify-center gap-3 rounded-2xl p-4 text-center">
+          <p className="text-sm font-medium text-on-surface">Remove this from your library?</p>
+          <p className="text-xs text-on-surface-variant leading-relaxed">{source.source_title}</p>
           {deleteError && <p className="text-xs text-error">{deleteError}</p>}
           <div className="flex gap-2">
-            <button
-              onClick={handleDelete}
-              disabled={deleting}
-              className="text-xs text-white bg-error rounded-lg px-3 py-1.5 font-medium hover:opacity-80 disabled:opacity-50 transition-opacity"
-            >
-              {deleting ? "Removing…" : "Yes, remove"}
-            </button>
-            <button
-              onClick={() => { setConfirming(false); setDeleteError(""); }}
-              disabled={deleting}
-              className="text-xs text-secondary border border-surface-container-high rounded-lg px-3 py-1.5 hover:text-on-surface transition-colors"
-            >
+            <Button variant="destructive" size="sm" onClick={handleDelete} loading={deleting}>
+              Yes, remove
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => { setConfirming(false); setDeleteError(""); }} disabled={deleting}>
               Cancel
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -279,16 +257,17 @@ function AddSourceCard({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="bg-surface-container-lowest rounded-2xl shadow-card hover:shadow-card-hover transition-all duration-200 flex flex-col items-center justify-center gap-2 min-h-[260px] border border-dashed border-outline-variant/30 hover:border-outline-variant/60 group"
+      type="button"
+      className="bg-surface-container-lowest rounded-2xl hover:bg-surface-container-low transition-colors duration-150 flex flex-col items-center justify-center gap-2 min-h-[200px] px-4 py-8 border border-dashed border-outline hover:border-primary group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
     >
       <div className="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center group-hover:bg-surface-container-high transition-colors">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-outline group-hover:text-secondary transition-colors">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-on-surface-variant group-hover:text-secondary transition-colors">
           <line x1="12" y1="5" x2="12" y2="19"/>
           <line x1="5" y1="12" x2="19" y2="12"/>
         </svg>
       </div>
-      <p className="text-sm font-medium text-secondary group-hover:text-on-surface transition-colors">Add New Source</p>
-      <p className="text-xs text-outline-variant">Link, File, or Media</p>
+      <p className="text-sm font-medium text-on-surface">Add a source</p>
+      <p className="text-xs text-on-surface-variant">A link, a file or a note</p>
     </button>
   );
 }
@@ -373,9 +352,9 @@ function TopicMapView({
 
   if (loading) {
     return (
-      <div className="space-y-4">
+      <div role="status" aria-label="Loading your topics" className="space-y-4">
         {[...Array(4)].map((_, i) => (
-          <div key={i} className="h-16 rounded-lg bg-surface-container-low animate-pulse" />
+          <Skeleton key={i} className="h-16 w-full" />
         ))}
       </div>
     );
@@ -383,10 +362,11 @@ function TopicMapView({
 
   if (clusters.length === 0 && unclustered.length === 0) {
     return (
-      <div className="rounded-2xl bg-surface-container-lowest shadow-card px-6 py-12 text-center">
-        <p className="text-outline text-sm">No topic clusters yet.</p>
-        <p className="text-outline-variant text-xs mt-1">Add more sources — clusters form when tags appear in 2 or more sources.</p>
-      </div>
+      <EmptyState
+        title="No topics yet"
+        body="Topics appear once two or more sources share a tag. Add a few more sources to see them."
+        action={<Button asChild><Link href="/feed-memory">Add a source</Link></Button>}
+      />
     );
   }
 
@@ -448,6 +428,8 @@ function TopicMapView({
               }}
             >
               <button
+                type="button"
+                aria-expanded={isOpen}
                 onClick={() => toggleCluster(cluster.tag)}
                 className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-surface-container transition-colors"
               >
@@ -455,12 +437,12 @@ function TopicMapView({
                   <span className="font-headline text-[1.1rem] text-on-surface" style={{ fontStyle: "italic" }}>
                     {cluster.tag}
                   </span>
-                  <span className="label-caps text-outline">
-                    {cluster.source_count} source{cluster.source_count !== 1 ? "s" : ""} · {cluster.total_chunks} chunk{cluster.total_chunks !== 1 ? "s" : ""}
+                  <span className="label-caps text-on-surface-variant">
+                    {cluster.source_count} source{cluster.source_count !== 1 ? "s" : ""} · {cluster.total_chunks} passage{cluster.total_chunks !== 1 ? "s" : ""}
                   </span>
                 </div>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                  className={`text-outline transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}>
+                  className={`text-on-surface-variant transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}>
                   <polyline points="6 9 12 15 18 9" />
                 </svg>
               </button>
@@ -479,10 +461,10 @@ function TopicMapView({
                       <span className="text-[13px] text-on-surface group-hover:text-primary transition-colors flex-1 leading-snug">
                         {source.source_title}
                       </span>
-                      <span className="label-caps text-outline bg-surface-container rounded-full px-2 py-0.5 shrink-0">
+                      <span className="label-caps text-on-surface-variant bg-surface-container rounded-full px-2 py-0.5 shrink-0">
                         {TYPE_LABELS[source.source_type] ?? source.source_type}
                       </span>
-                      <span className="text-[11px] text-outline-variant shrink-0 w-20 text-right">
+                      <span className="text-[11px] text-on-surface-variant shrink-0 w-20 text-right">
                         {formatDate(source.ingested_at)}
                       </span>
                     </button>
@@ -497,17 +479,19 @@ function TopicMapView({
         {unclustered.length > 0 && (
           <div className="bg-surface-container rounded-lg overflow-hidden" style={{ borderLeft: `4px solid ${getClusterColor(clusters.length)}` }}>
             <button
+              type="button"
+              aria-expanded={showUnclustered}
               onClick={() => setShowUnclustered(v => !v)}
               className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-surface-container-high transition-colors"
             >
               <div className="flex items-center gap-3">
-                <span className="font-headline text-[1.1rem] text-outline" style={{ fontStyle: "italic" }}>Unclustered</span>
-                <span className="label-caps text-outline-variant">
+                <span className="font-headline text-[1.1rem] text-on-surface-variant" style={{ fontStyle: "italic" }}>Not in a topic yet</span>
+                <span className="label-caps text-on-surface-variant">
                   {unclustered.length} source{unclustered.length !== 1 ? "s" : ""} · unique tags only
                 </span>
               </div>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                className={`text-outline-variant transition-transform duration-200 ${showUnclustered ? "rotate-180" : ""}`}>
+                className={`text-on-surface-variant transition-transform duration-200 ${showUnclustered ? "rotate-180" : ""}`}>
                 <polyline points="6 9 12 15 18 9" />
               </svg>
             </button>
@@ -523,13 +507,13 @@ function TopicMapView({
                       className="inline-block w-2 h-2 rounded-full shrink-0"
                       style={{ background: getSourceTypeDotColor(source.source_type), marginRight: 8 }}
                     />
-                    <span className="text-[13px] text-outline group-hover:text-secondary transition-colors flex-1 leading-snug">
+                    <span className="text-[13px] text-on-surface-variant group-hover:text-secondary transition-colors flex-1 leading-snug">
                       {source.source_title}
                     </span>
-                    <span className="label-caps text-outline-variant bg-surface-container-high rounded-full px-2 py-0.5 shrink-0">
+                    <span className="label-caps text-on-surface-variant bg-surface-container-high rounded-full px-2 py-0.5 shrink-0">
                       {TYPE_LABELS[source.source_type] ?? source.source_type}
                     </span>
-                    <span className="text-[11px] text-outline-variant shrink-0 w-20 text-right">
+                    <span className="text-[11px] text-on-surface-variant shrink-0 w-20 text-right">
                       {formatDate(source.ingested_at)}
                     </span>
                   </button>
@@ -558,8 +542,6 @@ export default function LibraryPage() {
   const [sort, setSort] = useState<SortOrder>("newest");
   const [search, setSearch] = useState("");
 
-  const cycleSortOrder = () => setSort(s => s === "newest" ? "oldest" : s === "oldest" ? "most-used" : "newest");
-  const sortLabel = sort === "newest" ? "Date Added" : sort === "oldest" ? "Oldest First" : "Most Used";
 
   // Main view toggle
   const [mainView, setMainView] = useState<MainView>("sources");
@@ -571,10 +553,13 @@ export default function LibraryPage() {
   const [clusterTotalTags, setClusterTotalTags] = useState(0);
   const [clustersLoading, setClustersLoading] = useState(false);
   const [clustersError, setClustersError] = useState("");
+  const [clustersReload, setClustersReload] = useState(0);
 
   // Pure UI state
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [visibleCount, setVisibleCount] = useState(6);
+  // Bumped by "Try again" to load the library again.
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -589,7 +574,7 @@ export default function LibraryPage() {
         setTotalChunks(data.total_chunks ?? 0);
         setError("");
       })
-      .catch(() => { if (active) setError("Could not load library. Is the backend running?"); })
+      .catch(() => { if (active) setError("We couldn't load your library. Check your connection and try again."); })
       .finally(() => { if (active) setLoading(false); });
     const refreshWhenVisible = () => {
       if (document.visibilityState === "visible") void loadLibrary();
@@ -602,7 +587,7 @@ export default function LibraryPage() {
       window.removeEventListener("focus", refreshWhenVisible);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
-  }, []);
+  }, [reloadKey]);
 
   useEffect(() => {
     if (mainView !== "topic-map") return;
@@ -615,9 +600,9 @@ export default function LibraryPage() {
         setClusterTotalSources(data.total_sources);
         setClusterTotalTags(data.total_tags);
       })
-      .catch(() => setClustersError("Could not load topic clusters."))
+      .catch(() => setClustersError("We couldn't load your topics. Try again in a moment."))
       .finally(() => setClustersLoading(false));
-  }, [mainView]);
+  }, [mainView, clustersReload]);
 
   const handleClusterSourceClick = (sourceTitle: string) => {
     setMainView("sources");
@@ -650,7 +635,7 @@ export default function LibraryPage() {
     });
 
   const FILTER_TABS: { id: FilterType; label: string }[] = [
-    { id: "all", label: "All Sources" },
+    { id: "all", label: "All" },
     { id: "article", label: "Articles" },
     { id: "note", label: "Notes" },
     { id: "image", label: "Images" },
@@ -660,169 +645,96 @@ export default function LibraryPage() {
   const visibleSources = filtered.slice(0, visibleCount);
 
   return (
-    <div className="-mx-10 -mt-10 -mb-10 min-h-screen bg-background flex flex-col">
+    <div className="-mx-4 -mt-6 -mb-6 sm:-mx-6 md:-mx-10 md:-mt-10 md:-mb-10 min-h-screen bg-background flex flex-col">
 
-      {/* ── Top header bar ─────────────────────────────────────────────────── */}
-      <div
-        style={{ borderBottom: "0.5px solid #dfe3e2", height: "56px" }}
-        className="hidden md:flex items-center px-10 bg-background shrink-0 gap-4"
-      >
-        {/* Search */}
-        <div className="relative flex-1 max-w-sm">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-outline-variant" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-          </svg>
-          <input
-            type="text"
-            placeholder="Search your library..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-1.5 text-[13px] bg-surface-container-low rounded-full border border-surface-container-high focus:outline-none focus:border-outline-variant transition-all text-on-surface placeholder:text-outline-variant"
-          />
-        </div>
-
-        <div className="flex-1" />
-
-        {/* Bell */}
-        <button className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container transition-colors">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-outline">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-          </svg>
-        </button>
-
-        {/* User pill */}
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center">
-            <span className="text-[10px] font-bold text-white">U</span>
+      <div className="flex-1 overflow-y-auto px-4 md:px-10 py-8 md:py-10">
+        <div className="flex flex-col md:flex-row items-start justify-between gap-6 md:gap-8 mb-8">
+          <div>
+            <h1 className="font-headline text-[2.2rem] md:text-[2.75rem] text-on-surface leading-tight">Library</h1>
+            <p className="mt-2 max-w-lg text-[0.9375rem] leading-relaxed text-on-surface-variant">
+              Everything you&apos;ve given Contendo to write from: articles, notes, videos and images.
+            </p>
           </div>
-          <span className="text-[13px] font-medium text-on-surface">User</span>
+          {!loading && !error && (
+            <dl className="grid w-full grid-cols-3 gap-2 md:w-auto md:gap-3">
+              {[
+                { value: sources.length, label: "Sources" },
+                { value: totalChunks >= 1000 ? `${(totalChunks / 1000).toFixed(1)}k` : totalChunks, label: "Passages" },
+                { value: allTags.length, label: "Topics" },
+              ].map(({ value, label }) => (
+                <div key={label} className="rounded-xl bg-surface-container-lowest px-3 py-4 text-center md:min-w-[110px] md:px-5">
+                  <dd className="font-headline text-2xl text-on-surface tabular-nums">{value}</dd>
+                  <dt className="label-caps text-on-surface-variant mt-1.5">{label}</dt>
+                </div>
+              ))}
+            </dl>
+          )}
         </div>
-      </div>
 
-      {/* ── Main content ───────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto px-4 md:px-10 py-6 md:py-8">
-
-        {loading && <p className="text-sm text-outline">Loading...</p>}
-        {error && <p className="text-sm text-error">{error}</p>}
+        {loading && (
+          <div role="status" aria-label="Loading your library" className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {[0, 1, 2].map((n) => (
+              <div key={n} className="rounded-2xl bg-surface-container-lowest overflow-hidden">
+                <Skeleton className="h-40 w-full rounded-none" />
+                <div className="p-4"><Skeleton className="h-3 w-1/3" /><Skeleton className="mt-3 h-4 w-3/4" /></div>
+              </div>
+            ))}
+          </div>
+        )}
+        {!loading && error && <ErrorState message={error} onRetry={() => { setLoading(true); setReloadKey((k) => k + 1); }} />}
 
         {!loading && !error && (
           <>
-            {/* ── Title + stats row ──────────────────────────────────────── */}
-            <div className="flex flex-col md:flex-row items-start justify-between gap-5 md:gap-8 mb-8">
-              {/* Left: breadcrumb + two-line title */}
-              <div>
-                <p className="label-caps text-outline mb-2">Workspace / Library</p>
-                <h1 className="font-headline text-[2.75rem] text-on-surface leading-[1.1]">Collected</h1>
-                <h1 className="font-headline text-[2.75rem] italic text-on-surface leading-[1.1]">Sources</h1>
+            <div className="mb-6 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-end">
+              <div className="md:w-72">
+                <Label htmlFor="library-search">Search</Label>
+                <Input id="library-search" type="search" placeholder="Search titles and topics" value={search} onChange={(e) => setSearch(e.target.value)} />
               </div>
-
-              {/* Right: stats tiles */}
-              <div className="flex gap-3 shrink-0 pt-2 overflow-x-auto no-scrollbar w-full md:w-auto">
-                {[
-                  { value: sources.length, label: "Total Sources" },
-                  { value: totalChunks >= 1000 ? `${(totalChunks / 1000).toFixed(1)}k` : totalChunks, label: "AI Chunks" },
-                  { value: allTags.length, label: "Active Tags" },
-                ].map(({ value, label }) => (
-                  <div
-                    key={label}
-                    className="rounded-xl bg-surface-container-lowest px-4 md:px-5 py-4 text-center min-w-[110px] shrink-0"
-                    style={{ outline: "1px solid rgba(174,179,178,0.15)" }}
-                  >
-                    <p className="font-headline text-2xl text-on-surface tabular-nums">{value}</p>
-                    <p className="label-caps text-outline mt-1.5">{label}</p>
+              <div role="group" aria-label="View" className="flex w-fit gap-1 rounded-md bg-surface-container-low p-1">
+                {(["sources", "topic-map"] as const).map((view) => (
+                  <button key={view} type="button" aria-pressed={mainView === view} onClick={() => setMainView(view)}
+                    className={`min-h-11 sm:min-h-9 rounded-[0.6rem] px-3.5 text-[0.875rem] whitespace-nowrap transition-colors ${mainView === view ? "bg-surface-container-lowest text-on-surface font-medium" : "text-on-surface-variant hover:text-on-surface"}`}>
+                    {view === "sources" ? "Sources" : "Topic map"}
+                  </button>
+                ))}
+              </div>
+              {mainView === "sources" && (
+                <>
+                  <div className="md:w-44">
+                    <Label htmlFor="library-sort">Sort by</Label>
+                    <Select id="library-sort" value={sort} onValueChange={(v) => setSort(v as SortOrder)} options={[{ value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" }, { value: "most-used", label: "Most used" }]} />
                   </div>
-                ))}
-              </div>
+                  <div role="group" aria-label="Layout" className="flex w-fit gap-1 rounded-md bg-surface-container-low p-1 md:ml-auto">
+                    {(["grid", "list"] as const).map((mode) => (
+                      <button key={mode} type="button" aria-pressed={viewMode === mode} aria-label={mode === "grid" ? "Grid" : "List"} onClick={() => setViewMode(mode)}
+                        className={`grid h-11 w-11 sm:h-9 sm:w-9 place-items-center rounded-[0.6rem] transition-colors ${viewMode === mode ? "bg-surface-container-lowest text-on-surface" : "text-on-surface-variant hover:text-on-surface"}`}>
+                        {mode === "grid" ? (
+                          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                        ) : (
+                          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
 
-            {/* ── Filter tabs + controls ─────────────────────────────────── */}
-            <div className="flex flex-col md:flex-row md:items-end justify-between mb-6 gap-2" style={{ borderBottom: "1px solid #dfe3e2" }}>
-              {/* Underline tabs — hidden in Topic Map view */}
-              <div className="flex gap-4 md:gap-6 overflow-x-auto no-scrollbar w-full md:w-auto">
-                {mainView === "sources" && FILTER_TABS.map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => { setFilter(tab.id); setVisibleCount(6); }}
-                    className={`pb-3 text-[12px] md:text-[13px] font-medium transition-colors relative whitespace-nowrap ${
-                      filter === tab.id
-                        ? "text-on-surface"
-                        : "text-outline hover:text-secondary"
-                    }`}
-                  >
+            {mainView === "sources" && sources.length > 0 && (
+              <div role="group" aria-label="Type" className="mb-6 flex gap-1 overflow-x-auto no-scrollbar">
+                {FILTER_TABS.map((tab) => (
+                  <button key={tab.id} type="button" aria-pressed={filter === tab.id} onClick={() => { setFilter(tab.id); setVisibleCount(6); }}
+                    className={chipClass(filter === tab.id)}>
                     {tab.label}
-                    {filter === tab.id && (
-                      <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-on-surface rounded-full" />
-                    )}
                   </button>
                 ))}
               </div>
-
-              {/* Right controls */}
-              <div className="flex items-center gap-2 pb-3 overflow-x-auto no-scrollbar w-full md:w-auto">
-                {/* Sources / Topic Map toggle */}
-                <div className="flex border border-surface-container-high rounded-lg overflow-hidden">
-                  <button
-                    onClick={() => setMainView("sources")}
-                    className={`px-2.5 md:px-3 py-1.5 text-[11px] md:text-[12px] font-medium transition-colors whitespace-nowrap ${mainView === "sources" ? "bg-surface-container text-on-surface" : "bg-surface-container-lowest text-outline hover:text-secondary"}`}
-                  >
-                    Sources
-                  </button>
-                  <button
-                    onClick={() => setMainView("topic-map")}
-                    className={`px-2.5 md:px-3 py-1.5 text-[11px] md:text-[12px] font-medium transition-colors border-l border-surface-container-high whitespace-nowrap ${mainView === "topic-map" ? "bg-surface-container text-on-surface" : "bg-surface-container-lowest text-outline hover:text-secondary"}`}
-                  >
-                    Topic Map
-                  </button>
-                </div>
-
-                {/* Sort + grid/list — only in Sources view */}
-                {mainView === "sources" && (
-                  <>
-                    <button className="flex items-center gap-1.5 text-[12px] text-secondary border border-surface-container-high rounded-lg px-3 py-1.5 hover:border-outline-variant hover:text-on-surface transition-colors bg-surface-container-lowest">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/>
-                      </svg>
-                      Filters
-                    </button>
-
-                    <button
-                      onClick={cycleSortOrder}
-                      className="flex items-center gap-1.5 text-[11px] md:text-[12px] text-secondary border border-surface-container-high rounded-lg px-2.5 md:px-3 py-1.5 hover:border-outline-variant hover:text-on-surface transition-colors bg-surface-container-lowest whitespace-nowrap"
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>
-                      </svg>
-                      {sortLabel}
-                    </button>
-
-                    <div className="flex border border-surface-container-high rounded-lg overflow-hidden">
-                      <button
-                        onClick={() => setViewMode("grid")}
-                        className={`px-2.5 py-1.5 transition-colors ${viewMode === "grid" ? "bg-surface-container text-on-surface" : "bg-surface-container-lowest text-outline hover:text-secondary"}`}
-                      >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
-                        </svg>
-                      </button>
-                      <button
-                        onClick={() => setViewMode("list")}
-                        className={`px-2.5 py-1.5 transition-colors border-l border-surface-container-high ${viewMode === "list" ? "bg-surface-container text-on-surface" : "bg-surface-container-lowest text-outline hover:text-secondary"}`}
-                      >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
-                        </svg>
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
+            )}
 
             {/* ── Topic Map view ─────────────────────────────────────────── */}
             {mainView === "topic-map" && (
               <>
-                {clustersError && <p className="text-sm text-error mb-4">{clustersError}</p>}
+                {clustersError && <div className="mb-4"><ErrorState message={clustersError} onRetry={() => setClustersReload((k) => k + 1)} /></div>}
                 <TopicMapView
                   clusters={clusters}
                   unclustered={unclusteredSources}
@@ -839,16 +751,19 @@ export default function LibraryPage() {
               <>
                 {/* Empty states */}
                 {sources.length === 0 && (
-                  <div className="rounded-2xl bg-surface-container-lowest shadow-card px-6 py-12 text-center">
-                    <p className="text-outline text-sm">Your library is empty.</p>
-                    <p className="text-outline-variant text-xs mt-1">Add articles, notes, and resources in Feed Memory.</p>
-                  </div>
+                  <EmptyState
+                    title="Your library is empty"
+                    body="Add an article, a note or a video. Contendo writes your posts from what's in here."
+                    action={<Button asChild><Link href="/feed-memory">Add your first source</Link></Button>}
+                  />
                 )}
 
                 {sources.length > 0 && filtered.length === 0 && (
-                  <div className="rounded-2xl bg-surface-container-lowest shadow-card px-6 py-8 text-center">
-                    <p className="text-outline text-sm">No {TYPE_LABELS[filter] ?? filter} sources yet.</p>
-                  </div>
+                  <EmptyState
+                    title="Nothing matches"
+                    body={search.trim() ? "Try a different search." : `You haven't added any ${(TYPE_LABELS[filter] ?? filter).toLowerCase()} sources yet.`}
+                    action={<Button variant="secondary" onClick={() => { setSearch(""); setFilter("all"); }}>Show all sources</Button>}
+                  />
                 )}
 
                 {/* Source grid */}
@@ -882,16 +797,13 @@ export default function LibraryPage() {
                 {/* Pagination */}
                 {filtered.length > 0 && (
                   <div className="flex flex-col items-center mt-10 gap-3">
-                    <p className="label-caps text-outline">
-                      Showing {Math.min(visibleCount, filtered.length)} of {filtered.length} Sources
+                    <p className="label-caps text-on-surface-variant">
+                      Showing {Math.min(visibleCount, filtered.length)} of {filtered.length} sources
                     </p>
                     {visibleCount < filtered.length && (
-                      <button
-                        onClick={() => setVisibleCount(v => v + 6)}
-                        className="rounded-full border border-outline-variant/30 bg-surface-container-lowest px-8 py-2.5 text-[13px] font-medium text-secondary hover:text-on-surface hover:border-outline-variant shadow-card hover:shadow-card-hover transition-all duration-200"
-                      >
-                        Load More Archives
-                      </button>
+                      <Button variant="secondary" onClick={() => setVisibleCount(v => v + 6)}>
+                        Show more
+                      </Button>
                     )}
                   </div>
                 )}

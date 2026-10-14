@@ -14,3 +14,18 @@ export async function requireResponse(response: Response): Promise<Response> {
   if (!response.ok) throw new RequestError(response.status, "Request failed");
   return response;
 }
+
+/**
+ * The message to show for a failed response: the server's own `detail` when
+ * it sent one as text (Contendo's API words these for people), otherwise
+ * `fallback`. Never throws, so a non-JSON error page (a proxy's or the
+ * server's plain "Internal Server Error") can't surface as a parse error.
+ */
+export async function errorDetail(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = await response.json();
+    return typeof body?.detail === "string" && body.detail.trim() ? body.detail : fallback;
+  } catch {
+    return fallback;
+  }
+}

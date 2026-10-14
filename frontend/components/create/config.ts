@@ -24,8 +24,8 @@ export type Tone = "casual" | "technical" | "storytelling";
 export type Length = "concise" | "standard" | "long-form";
 
 export const FORMATS: { id: Format; label: string }[] = [
-  { id: "linkedin post", label: "LinkedIn Post" },
-  { id: "medium article", label: "Medium Article" },
+  { id: "linkedin post", label: "LinkedIn post" },
+  { id: "medium article", label: "Medium article" },
   { id: "thread", label: "Thread" },
 ];
 

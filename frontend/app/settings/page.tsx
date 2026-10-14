@@ -6,6 +6,9 @@ import { useRouter } from "next/navigation";
 import { useApi } from "@/lib/api";
 import type { User } from "@supabase/supabase-js";
 import supabase from "@/lib/supabase";
+import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/states";
+import { legalIdentity } from "@/lib/legal";
 
 
 
@@ -29,14 +32,6 @@ interface StatsSnapshot {
   tags: string[];
 }
 
-interface UsageSnapshot {
-  total_calls: number;
-  total_input_tokens: number;
-  total_output_tokens: number;
-  total_cost_usd: number;
-  calls_this_week: number;
-  cost_this_week: number;
-}
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 
@@ -72,79 +67,61 @@ export default function SettingsHubPage() {
 
   const [profile, setProfile] = useState<ProfileSnapshot | null>(null);
   const [stats, setStats] = useState<StatsSnapshot | null>(null);
-  const [usage, setUsage] = useState<UsageSnapshot | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(true);
-  const [usageLoading, setUsageLoading] = useState(true);
+  const [profileFailed, setProfileFailed] = useState(false);
+  const [statsFailed, setStatsFailed] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => setUser(user));
   }, []);
 
+  async function loadProfile() {
+    setProfileLoading(true);
+    try {
+      const res = await api.getProfile();
+      if (!res.ok) throw new Error("Failed");
+      const data = await res.json();
+      const p = data.profile ?? {};
+      setProfile({
+        name: p.name ?? "",
+        role: p.role ?? "",
+        bio: p.bio ?? "",
+        location: p.location ?? "",
+        voice_descriptors: p.voice_descriptors ?? [],
+        words_to_avoid: p.words_to_avoid ?? [],
+        writing_rules: p.writing_rules ?? [],
+        topics_of_expertise: p.topics_of_expertise ?? [],
+        writing_samples: p.writing_samples ?? [],
+        opinions: p.opinions ?? [],
+      });
+      setProfileFailed(false);
+    } catch {
+      setProfileFailed(true);
+    } finally {
+      setProfileLoading(false);
+    }
+  }
+
+  async function loadStats() {
+    setStatsLoading(true);
+    try {
+      const res = await api.getStats();
+      if (!res.ok) throw new Error("Failed");
+      const data = await res.json();
+      setStats({ total_chunks: data.total_chunks ?? 0, tags: data.tags ?? [] });
+      setStatsFailed(false);
+    } catch {
+      setStatsFailed(true);
+    } finally {
+      setStatsLoading(false);
+    }
+  }
+
   useEffect(() => {
-    async function loadProfile() {
-      try {
-        const res = await api.getProfile();
-        const data = await res.json();
-        const p = data.profile ?? {};
-        setProfile({
-          name: p.name ?? "",
-          role: p.role ?? "",
-          bio: p.bio ?? "",
-          location: p.location ?? "",
-          voice_descriptors: p.voice_descriptors ?? [],
-          words_to_avoid: p.words_to_avoid ?? [],
-          writing_rules: p.writing_rules ?? [],
-          topics_of_expertise: p.topics_of_expertise ?? [],
-          writing_samples: p.writing_samples ?? [],
-          opinions: p.opinions ?? [],
-        });
-      } catch {
-        setProfile(null);
-      } finally {
-        setProfileLoading(false);
-      }
-    }
-
-    async function loadStats() {
-      try {
-        const res = await api.getStats();
-        const data = await res.json();
-        setStats({
-          total_chunks: data.total_chunks ?? 0,
-          tags: data.tags ?? [],
-        });
-      } catch {
-        setStats(null);
-      } finally {
-        setStatsLoading(false);
-      }
-    }
-
-    async function loadUsage() {
-      try {
-        const res = await api.getUsage();
-        if (!res.ok) throw new Error("Failed");
-        const data = await res.json();
-        setUsage({
-          total_calls: data.total_calls ?? 0,
-          total_input_tokens: data.total_input_tokens ?? 0,
-          total_output_tokens: data.total_output_tokens ?? 0,
-          total_cost_usd: data.total_cost_usd ?? 0,
-          calls_this_week: data.calls_this_week ?? 0,
-          cost_this_week: data.cost_this_week ?? 0,
-        });
-      } catch {
-        setUsage(null);
-      } finally {
-        setUsageLoading(false);
-      }
-    }
-
     loadProfile();
     loadStats();
-    loadUsage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -193,7 +170,7 @@ export default function SettingsHubPage() {
                     {profile?.role || "No role set"}
                   </span>
                   {profile?.location && (
-                    <span className="text-outline text-[11px]">{profile.location}</span>
+                    <span className="text-on-surface-variant text-[11px]">{profile.location}</span>
                   )}
                 </div>
               </div>
@@ -212,12 +189,12 @@ export default function SettingsHubPage() {
     </Link>
   );
 
-  // ── Voice & Fingerprint card ─────────────────────────────────────────────────
+  // ── Voice card ─────────────────────────────────────────────────
 
   const voiceCard = (
     <Link href="/settings/profile" className="block h-full">
       <div className="bg-surface-container-low rounded-2xl p-6 h-full flex flex-col gap-4 hover:bg-surface-container transition-colors duration-200 cursor-pointer">
-        <p className="label-caps text-secondary">Voice &amp; Fingerprint</p>
+        <p className="label-caps text-secondary">Your voice</p>
         <div className="flex-1 flex flex-col gap-3">
           {profileLoading ? (
             <div className="flex flex-col gap-2.5">
@@ -240,7 +217,7 @@ export default function SettingsHubPage() {
                   <span className="text-[13px] text-secondary">{label}</span>
                   <span
                     className={`text-[13px] font-medium tabular-nums ${
-                      count > 0 ? "text-primary" : "text-outline-variant"
+                      count > 0 ? "text-primary" : "text-on-surface-variant"
                     }`}
                   >
                     {count}
@@ -251,7 +228,7 @@ export default function SettingsHubPage() {
           )}
         </div>
         <div className="flex items-center gap-1 text-primary text-[13px] font-medium">
-          Edit fingerprint <ArrowRight />
+          Edit your voice <ArrowRight />
         </div>
       </div>
     </Link>
@@ -285,7 +262,7 @@ export default function SettingsHubPage() {
                         : "writing samples teaching Contendo your rhythm."}
                     </p>
                     {count === 0 && (
-                      <p className="text-[12px] text-outline mt-1">
+                      <p className="text-[12px] text-on-surface-variant mt-1">
                         Add at least one real sample for best results.
                       </p>
                     )}
@@ -318,15 +295,15 @@ export default function SettingsHubPage() {
             </div>
           ) : (
             <div className="flex flex-col gap-2">
-              <span className="text-[40px] font-headline text-on-surface leading-none">
-                {(stats?.total_chunks ?? 0).toLocaleString()}
-              </span>
-              <p className="text-[13px] text-secondary">
-                knowledge chunks stored
-              </p>
-              <p className="text-[12px] text-outline">
-                {stats?.tags.length ?? 0} unique tags &middot; Clear / export options coming soon
-              </p>
+              {statsFailed || !stats ? (
+                <p className="text-[0.875rem] text-on-surface-variant">We couldn&apos;t load this right now.</p>
+              ) : (
+                <>
+                  <span className="text-[40px] font-headline text-on-surface leading-none">{stats.total_chunks.toLocaleString()}</span>
+                  <p className="text-[13px] text-secondary">passages saved from your sources</p>
+                  <p className="text-[12px] text-on-surface-variant">{stats.tags.length} topics</p>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -371,82 +348,14 @@ export default function SettingsHubPage() {
         </div>
 
         <div className="flex flex-col gap-2 mt-1">
-          <button
-            type="button"
-            onClick={handleSignOut}
-            disabled={signingOut}
-            className="w-full py-2 px-4 rounded-xl bg-surface-container text-on-surface text-[13px] font-medium hover:bg-[#e5e7e6] transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-left"
-          >
-            {signingOut ? "Signing out…" : "Sign out"}
-          </button>
-          <p className="text-[11px] text-outline-variant">
-            Delete account — coming soon
+          <Button variant="secondary" className="w-full sm:w-auto" onClick={handleSignOut} loading={signingOut}>
+            Sign out
+          </Button>
+          <p className="text-[0.8125rem] text-on-surface-variant">
+            To delete your account, email{" "}
+            <a href={`mailto:${legalIdentity().email}`} className="text-primary underline underline-offset-4">{legalIdentity().email}</a>.
           </p>
         </div>
-      </div>
-    </div>
-  );
-
-  // ── Usage & Tokens card ──────────────────────────────────────────────────────
-
-  const totalTokens = (usage?.total_input_tokens ?? 0) + (usage?.total_output_tokens ?? 0);
-  const generateCalls =
-    usage?.total_calls != null ? usage.total_calls : null;
-
-  const usageCard = (
-    <div className="bg-surface-container-low rounded-2xl p-6 h-full flex flex-col gap-4">
-      <div className="flex items-center gap-2">
-        <p className="label-caps text-secondary">Usage &amp; Tokens</p>
-        {/* Pulse icon */}
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" className="text-primary opacity-70">
-          <path d="M1 6h2l1.5-4L7 10l1.5-4H11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </div>
-
-      <div className="flex-1 flex flex-col gap-3">
-        {usageLoading ? (
-          <div className="flex flex-col gap-2.5">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="flex items-center justify-between">
-                <SkeletonBar w="w-1/2" />
-                <div className="bg-surface-container animate-pulse rounded h-3.5 w-12" />
-              </div>
-            ))}
-          </div>
-        ) : usage == null ? (
-          <p className="text-[12px] text-outline">Usage data unavailable.</p>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {/* Primary stats — leads with posts, not cost */}
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[11px] text-secondary uppercase tracking-wide">Posts generated</span>
-                <span className="text-[28px] font-headline text-on-surface leading-none">
-                  {(generateCalls ?? 0).toLocaleString()}
-                </span>
-              </div>
-              <div className="flex flex-col gap-0.5 text-right">
-                <span className="text-[11px] text-secondary uppercase tracking-wide">This week</span>
-                <span className="text-[28px] font-headline text-on-surface leading-none">
-                  {usage.calls_this_week.toLocaleString()}
-                </span>
-              </div>
-            </div>
-
-            {/* Token count */}
-            <p className="text-[13px] text-secondary">
-              Estimated tokens used:{" "}
-              <span className="text-on-surface font-medium tabular-nums">
-                {totalTokens.toLocaleString()}
-              </span>
-            </p>
-
-            {/* Cost — de-emphasised */}
-            <p className="text-[11px] text-outline" style={{ fontSize: "0.78rem" }}>
-              API cost to date: ${usage.total_cost_usd.toFixed(4)}
-            </p>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -485,13 +394,21 @@ export default function SettingsHubPage() {
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="max-w-4xl mx-auto px-6 py-10">
+    <div className="max-w-4xl mx-auto">
       {/* Page header */}
       <p className="label-caps text-secondary mb-2">YOUR WORKSPACE</p>
       <h1 className="font-headline text-[32px] text-on-surface mb-2">Settings</h1>
       <p className="text-[14px] text-secondary mb-10">
         Manage your profile, voice, memory, and account preferences.
       </p>
+
+      {(profileFailed || statsFailed) && (
+        <ErrorState
+          className="mb-5"
+          message="Some of your settings didn't load. Check your connection and try again."
+          onRetry={() => { if (profileFailed) loadProfile(); if (statsFailed) loadStats(); }}
+        />
+      )}
 
       {/* Publishing and plan */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
@@ -512,7 +429,6 @@ export default function SettingsHubPage() {
         {voiceCard}
         {samplesCard}
         {memoryCard}
-        {usageCard}
         {accountCard}
         {integrationsCard}
       </div>

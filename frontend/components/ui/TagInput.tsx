@@ -3,13 +3,15 @@
 import { useState } from "react";
 
 export interface TagInputProps {
+  /** For the field's label (htmlFor). */
+  id?: string;
   value: string[];
   onChange: (tags: string[]) => void;
   placeholder?: string;
   hint?: string;
 }
 
-export default function TagInput({ value, onChange, placeholder, hint }: TagInputProps) {
+export default function TagInput({ id, value, onChange, placeholder, hint }: TagInputProps) {
   const [input, setInput] = useState("");
 
   function addTag(raw: string) {
@@ -30,32 +32,35 @@ export default function TagInput({ value, onChange, placeholder, hint }: TagInpu
   return (
     <div className="flex flex-col gap-2">
       {/* Pills + input container — matches input-editorial style */}
-      <div className="flex flex-wrap gap-2 bg-[#f3f4f3] px-3 py-2.5 border-b border-b-[#aeb3b2] focus-within:border-b-[#58614f] focus-within:border-b-2 transition-all">
+      <div className="flex min-h-11 flex-wrap items-center gap-2 bg-surface-container-lowest rounded-t-md px-3 py-0.5 border-b-[1.5px] border-b-outline focus-within:border-b-primary focus-within:border-b-2 transition-colors">
         {value.map((tag) => (
           <span
             key={tag}
-            className="inline-flex items-center gap-1 bg-[#58614f]/15 text-[#58614f] text-[12px] font-medium px-2.5 py-0.5 rounded-full"
+            className="inline-flex items-center gap-1 bg-primary-container text-on-primary-fixed text-[0.8125rem] font-medium pl-2.5 rounded-full"
           >
             {tag}
             <button
               type="button"
               onClick={() => onChange(value.filter((t) => t !== tag))}
-              className="opacity-60 hover:opacity-100 leading-none ml-0.5"
+              aria-label={`Remove ${tag}`}
+              className="relative grid h-8 w-8 place-items-center rounded-full leading-none hover:bg-primary/15 after:absolute after:-inset-1.5 after:content-['']"
             >
               ×
             </button>
           </span>
         ))}
         <input
+          id={id}
+          aria-describedby={hint && id ? `${id}-hint` : undefined}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKeyDown}
           onBlur={() => input && addTag(input)}
           placeholder={value.length === 0 ? placeholder : ""}
-          className="flex-1 min-w-[140px] bg-transparent outline-none text-[14px] text-[#2f3333] placeholder-[#aeb3b2]"
+          className="flex-1 min-w-[140px] min-h-11 bg-transparent outline-none text-[0.9375rem] text-on-surface placeholder:text-placeholder"
         />
       </div>
-      {hint && <p className="text-[11px] text-[#aeb3b2]">{hint}</p>}
+      {hint && <p id={id ? `${id}-hint` : undefined} className="text-[0.75rem] text-on-surface-variant">{hint}</p>}
     </div>
   );
 }

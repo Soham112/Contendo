@@ -6,6 +6,8 @@ import { usePathname, useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import supabase from "@/lib/supabase";
 import FeedbackModal from "@/components/ui/FeedbackButton";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { ContendoLogoSmall } from "@/components/ContendoLogo";
 import { useTracking } from "@/lib/useTracking";
 import { useIsAdmin } from "@/lib/useIsAdmin";
@@ -13,7 +15,7 @@ import { useIsAdmin } from "@/lib/useIsAdmin";
 const NAV_ITEMS = [
   {
     href: "/create",
-    label: "Create Post",
+    label: "Create post",
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M2 12.5L3.5 9 11 1.5 14.5 5 7 12.5l-3.5 1.5 1-3.5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
@@ -22,7 +24,7 @@ const NAV_ITEMS = [
   },
   {
     href: "/feed-memory",
-    label: "Feed Memory",
+    label: "Feed memory",
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M8 2v12M2 8h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
@@ -31,7 +33,7 @@ const NAV_ITEMS = [
   },
   {
     href: "/ideas",
-    label: "Get Ideas",
+    label: "Get ideas",
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M8 2a4 4 0 0 1 2.5 7.1V11h-5V9.1A4 4 0 0 1 8 2z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
@@ -133,19 +135,16 @@ export default function Sidebar({
           type="button"
           aria-label="Close menu"
           onClick={onClose}
-          className="md:hidden absolute top-3 right-3 w-10 h-10 flex items-center justify-center text-on-surface"
+          className="md:hidden absolute top-2 right-2 w-11 h-11 rounded-md flex items-center justify-center text-on-surface hover:bg-surface-container"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M6 6L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             <path d="M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
           </svg>
         </button>
-        <Link href="/welcome" className="flex items-center gap-2.5 group">
+        <Link href="/" className="flex min-h-11 items-center gap-2.5 group rounded-md">
           <ContendoLogoSmall />
-          <div className="flex flex-col leading-tight">
-            <span className="text-[15px] font-bold text-on-surface tracking-tight font-headline">Contendo</span>
-            <span className="text-[9px] uppercase tracking-[0.12em] text-secondary font-label">Editorial Atelier</span>
-          </div>
+          <span className="text-[15px] font-bold text-on-surface tracking-tight font-headline">Contendo</span>
         </Link>
       </div>
 
@@ -182,13 +181,14 @@ export default function Sidebar({
                 logEvent({ event_type: "button_click", page_url: pathname ?? undefined, button_name: item.href.replace("/", "") + "_nav", metadata: { destination: item.href } });
                 onClose();
               }}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13.5px] transition-all duration-150 ${
+              aria-current={isActive ? "page" : undefined}
+              className={`flex items-center gap-3 px-3 min-h-11 rounded-lg text-[0.875rem] transition-colors duration-150 ${
                 isActive
                   ? "bg-surface-container text-primary font-semibold"
                   : "text-secondary hover:text-on-surface hover:bg-surface-container font-medium"
               }`}
             >
-              <span className={`shrink-0 ${isActive ? "text-primary" : "text-outline"}`}>
+              <span aria-hidden="true" className={`shrink-0 ${isActive ? "text-primary" : "text-on-surface-variant"}`}>
                 {item.icon}
               </span>
               {item.label}
@@ -205,27 +205,28 @@ export default function Sidebar({
             logEvent({ event_type: "button_click", page_url: pathname ?? undefined, button_name: "create_post_cta", metadata: { destination: "/create" } });
             onClose();
           }}
-          className="btn-primary flex items-center justify-center gap-2 w-full py-2.5 rounded-lg text-[12px] uppercase tracking-widest font-semibold text-white shadow-card hover:opacity-90 active:scale-95 transition-all"
+          className={cn(buttonVariants({ variant: "primary", size: "md" }), "w-full")}
         >
-          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M2 10.5L3.5 7 10 1.5 13.5 5 6 10.5l-3.5 1.5 1-3z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
           </svg>
-          Create Post
+          Create a post
         </Link>
       </div>
 
       {/* Send Feedback */}
       <div className="px-3 pb-1">
         <button
+          type="button"
           onClick={() => setFeedbackOpen(true)}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13.5px] transition-all duration-150 w-full text-secondary hover:text-on-surface hover:bg-surface-container font-medium"
+          className="flex items-center gap-3 px-3 min-h-11 rounded-lg text-[0.875rem] transition-colors duration-150 w-full text-secondary hover:text-on-surface hover:bg-surface-container font-medium"
         >
-          <span className="shrink-0 text-outline">
+          <span aria-hidden="true" className="shrink-0 text-on-surface-variant">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M13 2H3a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h3l2 2 2-2h3a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
             </svg>
           </span>
-          Send Feedback
+          Send feedback
         </button>
       </div>
 
@@ -238,11 +239,11 @@ export default function Sidebar({
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={avatarUrl}
-                  alt={displayName}
+                  alt=""
                   className="w-7 h-7 rounded-full shrink-0 object-cover"
                 />
               ) : (
-                <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                <div aria-hidden="true" className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
                   <span className="text-[11px] font-semibold text-primary">
                     {(displayName ?? email ?? "?")[0].toUpperCase()}
                   </span>
@@ -258,10 +259,11 @@ export default function Sidebar({
               </div>
             </div>
             <button
+              type="button"
               onClick={handleSignOut}
-              className="flex items-center gap-2 w-full text-[12px] text-secondary hover:text-on-surface transition-colors duration-150"
+              className="-mx-1 flex items-center gap-2 w-full min-h-11 px-1 rounded-md text-[0.8125rem] text-secondary hover:text-on-surface transition-colors duration-150"
             >
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <svg aria-hidden="true" width="13" height="13" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M6 14H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1h3M11 11l3-3-3-3M14 8H6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
               Sign out

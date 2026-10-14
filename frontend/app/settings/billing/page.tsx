@@ -5,17 +5,31 @@ import { useSearchParams } from "next/navigation";
 import { useApi } from "@/lib/api";
 import { PRO_NOT_AVAILABLE, formatDay, formatPrice, quotaLine, type Plans } from "@/lib/billing";
 import { useEntitlements } from "@/hooks/useEntitlements";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/card";
+import { ErrorState } from "@/components/ui/states";
 
 // After Checkout, Stripe's webhook reaches the backend a moment later. The page
 // re-reads the plan a few times; it never marks the user as Pro itself.
 const RECHECK_MS = 2000;
 const RECHECKS = 8;
 
+function BillingSkeleton() {
+  return (
+    <div role="status" aria-label="Loading your plan" className="rounded-2xl bg-surface-container-lowest px-5 py-6 sm:px-7">
+      <Skeleton className="h-3 w-24" />
+      <Skeleton className="mt-4 h-7 w-20" />
+      <Skeleton className="mt-3 h-4 w-3/5" />
+      <Skeleton className="mt-6 h-11 w-40" />
+    </div>
+  );
+}
+
 function Billing() {
   const api = useApi();
   const searchParams = useSearchParams();
   const checkout = searchParams.get("checkout");
-  const { entitlements, refresh } = useEntitlements();
+  const { entitlements, refresh, failed } = useEntitlements();
   const [plans, setPlans] = useState<Plans | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -47,7 +61,8 @@ function Billing() {
     }
   }
 
-  if (!entitlements) return <p className="text-secondary text-[0.9375rem]">Loading…</p>;
+  if (!entitlements && failed) return <ErrorState message="We couldn't load your plan. Check your connection and try again." onRetry={refresh} />;
+  if (!entitlements) return <BillingSkeleton />;
 
   const pro = entitlements.plan === "pro";
   const price = plans?.pro.price ?? null;
@@ -75,7 +90,7 @@ function Billing() {
         </p>
       )}
 
-      <section className="rounded-lg bg-surface-container-lowest px-5 py-6 sm:px-7">
+      <section className="rounded-2xl bg-surface-container-lowest px-5 py-6 sm:px-7">
         <p className="label-caps text-secondary">Your plan</p>
         <p className="mt-2 font-headline text-[1.5rem] text-on-surface">{pro ? "Pro" : "Free"}</p>
         <p className="mt-2 text-[0.9375rem] text-secondary">{quotaLine(entitlements)}</p>
@@ -92,43 +107,25 @@ function Billing() {
           </p>
         )}
 
-        {error && (
-          <p role="alert" className="mt-4 text-[0.875rem] text-error">
-            {error}
-          </p>
-        )}
+        {error && <ErrorState className="mt-4" message={error} />}
 
         <div className="mt-6">
           {pro ? (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => go(api.openBillingPortal)}
-              className="btn-primary text-white rounded-md px-5 py-3 text-[0.9375rem] font-medium disabled:opacity-50"
-            >
-              {busy ? "One moment…" : "Manage billing"}
-            </button>
+            <Button loading={busy} onClick={() => go(api.openBillingPortal)}>
+              Manage billing
+            </Button>
           ) : plans?.checkout_available === false ? (
             <p className="text-[0.9375rem] leading-relaxed text-secondary">{PRO_NOT_AVAILABLE}</p>
           ) : (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => go(api.startCheckout)}
-              className="rounded-md bg-tertiary hover:bg-tertiary-dim text-on-tertiary px-5 py-3 text-[0.9375rem] font-medium transition-colors disabled:opacity-50"
-            >
-              {busy
-                ? "One moment…"
-                : price && price.trial_days > 0
-                  ? `Start ${price.trial_days}-day free trial`
-                  : "Upgrade to Pro"}
-            </button>
+            <Button variant="cta" loading={busy} onClick={() => go(api.startCheckout)}>
+              {price && price.trial_days > 0 ? `Start ${price.trial_days}-day free trial` : "Upgrade to Pro"}
+            </Button>
           )}
         </div>
       </section>
 
       {!pro && plans && (
-        <section className="rounded-lg bg-surface-container-low px-5 py-6 sm:px-7">
+        <section className="rounded-2xl bg-surface-container-low px-5 py-6 sm:px-7">
           <p className="label-caps text-secondary">Pro</p>
           {price && <p className="mt-2 font-headline text-[1.25rem] text-on-surface">{formatPrice(price)}</p>}
           <ul className="mt-4 flex flex-col gap-2.5 text-[0.9375rem] leading-relaxed text-on-surface">
@@ -151,7 +148,7 @@ export default function BillingPage() {
     <div className="max-w-[40rem] mx-auto">
       <h1 className="font-headline text-[2rem] sm:text-[2.5rem] text-on-surface leading-tight">Plan and billing</h1>
       <div className="mt-8">
-        <Suspense fallback={<p className="text-secondary text-[0.9375rem]">Loading…</p>}>
+        <Suspense fallback={<BillingSkeleton />}>
           <Billing />
         </Suspense>
       </div>

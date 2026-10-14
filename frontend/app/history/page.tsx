@@ -4,8 +4,15 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useApi } from "@/lib/api";
-import DiagramView from "@/components/DiagramView";
-import { svgToPngDataURL } from "@/lib/svg";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Input, Label, Textarea } from "@/components/ui/field";
+import { Select } from "@/components/ui/select";
+import { EmptyState, ErrorState, ListSkeleton } from "@/components/ui/states";
+import { ChoiceGroup } from "@/components/ui/choice-group";
+import { Dialog, DialogActions } from "@/components/ui/dialog";
+import MarkPublishedDialog from "@/components/history/MarkPublishedDialog";
+import { DiagramCard } from "@/components/create/VisualCards";
 
 const SS_POST = "contentOS_last_post";
 const SS_SCORE = "contentOS_last_score";
@@ -49,68 +56,6 @@ interface Post {
   published_content: string | null;
 }
 
-function HistoryDiagramCard({ diagram }: { diagram: Diagram }) {
-  const [pngState, setPngState] = useState<"idle" | "opened" | "blocked">("idle");
-  const [fallbackDataURL, setFallbackDataURL] = useState<string | null>(null);
-
-  const handleOpen = async () => {
-    try {
-      const dataURL = await svgToPngDataURL(diagram.svg_code);
-      const win = window.open();
-      if (win) {
-        win.document.write(
-          `<html><body style="margin:0;background:#faf9f8;display:flex;justify-content:center;padding:24px">` +
-          `<img src="${dataURL}" style="max-width:100%;border-radius:8px" />` +
-          `</body></html>`
-        );
-        win.document.close();
-        setPngState("opened");
-        setTimeout(() => setPngState("idle"), 5000);
-      } else {
-        setFallbackDataURL(dataURL);
-        setPngState("blocked");
-      }
-    } catch {
-      // conversion failed
-    }
-  };
-
-  return (
-    <div className="rounded-xl bg-surface-container overflow-hidden">
-      <div className="px-4 py-2.5 border-b border-surface-container-high">
-        <p className="text-xs font-medium text-secondary">
-          Diagram —{" "}
-          <span className="font-normal text-outline">
-            {diagram.description.length > 60
-              ? diagram.description.slice(0, 60) + "…"
-              : diagram.description}
-          </span>
-        </p>
-      </div>
-      <DiagramView className="p-3 overflow-x-auto" svg={diagram.svg_code} description={diagram.description} />
-      <div className="px-4 py-2.5 border-t border-surface-container-high space-y-2">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleOpen}
-            className="text-xs border border-surface-container-high rounded-lg px-3 py-1.5 text-secondary hover:border-outline-variant hover:text-on-surface transition-colors"
-          >
-            Open as PNG
-          </button>
-          {pngState === "opened" && (
-            <span className="text-xs text-outline">PNG opened — right-click and <strong>Save Image</strong></span>
-          )}
-          {pngState === "blocked" && (
-            <span className="text-xs text-outline">Popup blocked — right-click image below to save</span>
-          )}
-        </div>
-        {pngState === "blocked" && fallbackDataURL && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={fallbackDataURL} alt="diagram PNG" className="max-w-full rounded-lg border border-surface-container-high" />
-        )}
-      </div>
-    </div>
-  );
-}
 
 const FORMAT_LABELS: Record<string, string> = {
   "linkedin post": "LinkedIn",
@@ -256,9 +201,14 @@ function PostCard({
   if (!isExpanded) {
     return (
       <div
-        className="bg-surface-container-lowest rounded-xl px-6 py-5 cursor-pointer hover:bg-surface-container transition-colors duration-200"
+        role="button"
+        tabIndex={0}
+        aria-expanded={false}
+        aria-label={`${post.topic}, ${date}. Show the full post`}
+        className="bg-surface-container-lowest rounded-xl px-6 py-5 cursor-pointer hover:bg-surface-container transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         style={{ boxShadow: "0px 4px 20px rgba(47,51,51,0.04), 0px 12px 40px rgba(47,51,51,0.06)" }}
         onClick={onToggle}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); } }}
       >
         <div className="flex items-center gap-3 flex-wrap">
           {/* Badges */}
@@ -273,7 +223,7 @@ function PostCard({
               Published{post.published_platform ? ` · ${post.published_platform.charAt(0).toUpperCase() + post.published_platform.slice(1)}` : ""}
             </span>
           )}
-          <span className="text-[11px] text-outline-variant ml-1">{date}</span>
+          <span className="text-[11px] text-on-surface-variant ml-1">{date}</span>
 
           <div className="flex-1 min-w-0 ml-2">
             <p className="text-[13px] font-medium text-on-surface truncate">{post.topic}</p>
@@ -286,7 +236,7 @@ function PostCard({
                 {displayScore}
               </span>
             )}
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-outline-variant">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-on-surface-variant">
               <polyline points="6 9 12 15 18 9"/>
             </svg>
           </div>
@@ -294,7 +244,7 @@ function PostCard({
 
         {/* 2-line preview with fade */}
         <div className="relative mt-2 pl-1 overflow-hidden" style={{ maxHeight: "2.8em" }}>
-          <p className="text-[12.5px] text-outline leading-relaxed line-clamp-2 whitespace-pre-wrap">
+          <p className="text-[12.5px] text-on-surface-variant leading-relaxed line-clamp-2 whitespace-pre-wrap">
             {activeContent}
           </p>
           <div className="absolute bottom-0 left-0 right-0 h-5 bg-gradient-to-t from-surface-container-lowest to-transparent pointer-events-none" />
@@ -325,13 +275,13 @@ function PostCard({
               Published{post.published_platform ? ` · ${post.published_platform.charAt(0).toUpperCase() + post.published_platform.slice(1)}` : ""}
             </span>
           )}
-          <span className="text-[11px] text-outline-variant ml-1">{date}</span>
+          <span className="text-[11px] text-on-surface-variant ml-1">{date}</span>
 
           <div className="flex-1" />
 
           {/* Aesthetic score */}
           <div className="flex items-baseline gap-1.5 mr-2">
-            <span className="label-caps text-outline">Aesthetic Score</span>
+            <span className="label-caps text-on-surface-variant">Score</span>
             {displayScore !== null && (
               <span className="font-headline text-3xl font-semibold leading-none" style={{ color: scoreColor(displayScore) }}>
                 {displayScore}
@@ -339,22 +289,12 @@ function PostCard({
             )}
           </div>
 
-          {/* Three-dot menu */}
-          <button className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-surface-container transition-colors">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" className="text-outline-variant">
-              <circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>
-            </svg>
-          </button>
-
           {/* Collapse chevron */}
-          <button
-            onClick={onToggle}
-            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-surface-container transition-colors"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-outline-variant" style={{ transform: "rotate(180deg)" }}>
+          <Button variant="ghost" size="icon" onClick={onToggle} aria-expanded aria-label="Collapse post">
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-on-surface-variant" style={{ transform: "rotate(180deg)" }}>
               <polyline points="6 9 12 15 18 9"/>
             </svg>
-          </button>
+          </Button>
         </div>
 
         {/* Row 2: serif title */}
@@ -365,15 +305,17 @@ function PostCard({
         {/* Row 3: version pills */}
         {hasVersions && (
           <div className="flex items-center gap-2 mb-4 flex-wrap">
-            <span className="label-caps text-outline mr-1">Versions:</span>
+            <span className="label-caps text-on-surface-variant mr-1">Versions:</span>
             {post.versions.map((v, i) => {
               const isSelected = i === selectedVersionIdx;
               const isBest = i === bestIdx;
               return (
                 <button
                   key={v.id}
+                  type="button"
+                  aria-pressed={isSelected}
                   onClick={() => setSelectedVersionIdx(i)}
-                  className={`text-[11px] font-semibold px-3 py-1 rounded-full transition-all duration-200 ${
+                  className={`min-h-11 sm:min-h-8 text-[0.75rem] font-semibold px-3 rounded-full transition-colors duration-150 ${
                     isSelected
                       ? "bg-on-surface text-white"
                       : "bg-surface-container text-secondary hover:bg-surface-container-high hover:text-on-surface"
@@ -384,7 +326,7 @@ function PostCard({
               );
             })}
             {hasVersions && (
-              <span className="text-[11px] text-outline ml-1">
+              <span className="text-[11px] text-on-surface-variant ml-1">
                 {post.versions[selectedVersionIdx].version_type}
               </span>
             )}
@@ -399,21 +341,14 @@ function PostCard({
 
       {/* ── Delete confirm bar ──────────────────────────────────────────── */}
       {isConfirming && (
-        <div className="mx-6 mb-4 rounded-xl bg-surface-container px-4 py-3 flex items-center gap-3">
-          <span className="text-xs text-outline flex-1">Permanently delete this post and all its versions?</span>
-          <button
-            onClick={handleDelete}
-            disabled={deleting}
-            className="text-xs text-white bg-error rounded-lg px-3 py-1.5 hover:opacity-80 disabled:opacity-50 transition-opacity font-medium"
-          >
-            {deleting ? "Deleting..." : "Yes, delete"}
-          </button>
-          <button
-            onClick={() => setConfirmingId(null)}
-            className="text-xs text-secondary border border-surface-container-high rounded-lg px-3 py-1.5 hover:text-on-surface transition-colors"
-          >
+        <div role="alert" className="mx-6 mb-4 rounded-xl bg-surface-container px-4 py-3 flex flex-wrap items-center gap-3">
+          <span className="text-[0.8125rem] text-on-surface flex-1">Permanently delete this post and all its versions?</span>
+          <Button variant="destructive" size="sm" onClick={handleDelete} loading={deleting}>
+            Yes, delete
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => setConfirmingId(null)}>
             Cancel
-          </button>
+          </Button>
         </div>
       )}
 
@@ -424,186 +359,53 @@ function PostCard({
 
       {/* ── Copy feedback ───────────────────────────────────────────────── */}
       {copied && (
-        <p className="mx-6 mb-4 text-xs text-secondary">Copied to clipboard.</p>
+        <p role="status" className="mx-6 mb-4 text-xs text-secondary">Copied to clipboard.</p>
       )}
 
       {/* ── Diagrams ────────────────────────────────────────────────────── */}
       {activeDiagrams && activeDiagrams.length > 0 && (
         <div className="mx-6 mb-4 space-y-3">
-          <p className="label-caps text-outline-variant">Diagrams</p>
+          <p className="label-caps text-on-surface-variant">Diagrams</p>
           {activeDiagrams.map((d) => (
-            <HistoryDiagramCard key={d.position} diagram={d} />
+            <DiagramCard key={d.position} svg={d.svg_code} description={d.description} />
           ))}
         </div>
       )}
 
       {/* ── Card footer ─────────────────────────────────────────────────── */}
       <div
-        className="px-6 py-4 flex items-center gap-4 flex-wrap"
+        className="px-6 py-4 flex items-center gap-2 flex-wrap"
         style={{ borderTop: "0.5px solid #dfe3e2" }}
       >
-        {/* View Revision History */}
-        <button
-          onClick={handleCopy}
-          className="flex items-center gap-1.5 text-[12px] text-secondary hover:text-on-surface transition-colors"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10"/>
-            <polyline points="12 6 12 12 16 14"/>
-          </svg>
-          {copied ? "Copied!" : "View Revision History"}
-        </button>
-
-        {/* Open in editor */}
-        <button
-          onClick={handleOpenInEditor}
-          className="flex items-center gap-1.5 text-[12px] text-secondary hover:text-on-surface transition-colors"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-          </svg>
+        <Button variant="secondary" size="sm" onClick={handleCopy}>
+          {copied ? "Copied" : "Copy"}
+        </Button>
+        <Button variant="secondary" size="sm" onClick={handleOpenInEditor}>
           Open in editor
-        </button>
-
-        {/* Mark as published */}
+        </Button>
         {!post.published_at && (
-          <button
-            onClick={() => onMarkPublished(post.id)}
-            className="flex items-center gap-1.5 text-[12px] text-outline-variant hover:text-primary transition-colors"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="20 6 9 17 4 12"/>
-            </svg>
+          <Button variant="secondary" size="sm" onClick={() => onMarkPublished(post.id)}>
             Mark as published
-          </button>
+          </Button>
         )}
-
-        {/* Delete */}
-        <button
+        <Button
+          variant="secondary"
+          size="sm"
+          className="text-error hover:text-error"
+          aria-expanded={isConfirming}
           onClick={() => isConfirming ? setConfirmingId(null) : setConfirmingId(post.id)}
-          className="flex items-center gap-1.5 text-[12px] text-outline-variant hover:text-error transition-colors"
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="3 6 5 6 21 6"/>
-            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-            <path d="M10 11v6M14 11v6"/>
-            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
-          </svg>
           Delete
-        </button>
+        </Button>
 
         <div className="flex-1" />
 
         {/* Restore Draft */}
-        {hasVersions ? (
-          <button
-            onClick={handleRestore}
-            disabled={restoring}
-            className="btn-primary flex items-center gap-2 text-white rounded-xl px-5 py-2.5 text-[12px] font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity shadow-card"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="1 4 1 10 7 10"/>
-              <path d="M3.51 15a9 9 0 1 0 .49-3.74"/>
-            </svg>
-            {restoring ? "Restoring…" : `Restore v${post.versions[selectedVersionIdx].version_number}`}
-          </button>
-        ) : (
-          <button
-            onClick={handleCopy}
-            className="btn-primary flex items-center gap-2 text-white rounded-xl px-5 py-2.5 text-[12px] font-semibold hover:opacity-90 transition-opacity shadow-card"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-            </svg>
-            {copied ? "Copied!" : "Copy Draft"}
-          </button>
+        {hasVersions && (
+          <Button onClick={handleRestore} loading={restoring}>
+            Restore v{post.versions[selectedVersionIdx].version_number}
+          </Button>
         )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Publish Modal ────────────────────────────────────────────────────────────
-
-const PLATFORMS = [
-  { id: "linkedin", label: "LinkedIn" },
-  { id: "twitter", label: "X" },
-  { id: "medium", label: "Medium" },
-  { id: "other", label: "Other" },
-];
-
-function PublishModal({
-  onSave,
-  onClose,
-  saving,
-}: {
-  onSave: (platform: string, content: string) => void;
-  onClose: () => void;
-  saving: boolean;
-}) {
-  const [platform, setPlatform] = useState("linkedin");
-  const [finalContent, setFinalContent] = useState("");
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: "rgba(47,51,51,0.35)", backdropFilter: "blur(4px)" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div
-        className="bg-surface-container-lowest rounded-2xl px-8 py-7 w-full max-w-md mx-4"
-        style={{ boxShadow: "0px 4px 20px rgba(47,51,51,0.08), 0px 24px 60px rgba(47,51,51,0.12)" }}
-      >
-        <h2 className="font-headline text-[1.2rem] text-on-surface mb-1">Mark as published</h2>
-        <p className="text-[12px] text-outline mb-5">Record where this post went live.</p>
-
-        {/* Platform pills */}
-        <p className="label-caps text-outline mb-2">Platform</p>
-        <div className="flex gap-2 flex-wrap mb-5">
-          {PLATFORMS.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => setPlatform(p.id)}
-              className={`px-4 py-1.5 rounded-full text-[12px] font-semibold transition-all duration-150 ${
-                platform === p.id
-                  ? "text-white"
-                  : "bg-surface-container text-secondary hover:bg-surface-container-high"
-              }`}
-              style={platform === p.id ? { background: "linear-gradient(135deg, #58614f, #4c5543)" } : {}}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Final version textarea */}
-        <p className="label-caps text-outline mb-2">Final version <span className="normal-case font-normal">(optional)</span></p>
-        <textarea
-          value={finalContent}
-          onChange={(e) => setFinalContent(e.target.value)}
-          rows={4}
-          placeholder="Paste what you actually posted — your voice model will learn from it."
-          className="input-editorial w-full px-0 py-2 text-sm text-on-surface placeholder:text-outline-variant focus:outline-none resize-none mb-5"
-          style={{ borderBottom: "1px solid #dfe3e2" }}
-        />
-
-        {/* Actions */}
-        <div className="flex items-center gap-3 justify-end">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-[13px] text-secondary hover:text-on-surface transition-colors ghost-border rounded-xl"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => onSave(platform, finalContent)}
-            disabled={saving}
-            className="btn-primary px-5 py-2 text-[13px] text-white rounded-xl font-semibold disabled:opacity-50 transition-opacity"
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -655,7 +457,7 @@ export default function HistoryPage() {
         )
       );
       if (publishedContent.trim()) {
-        setPublishSuccessMsg("Added to your writing samples — your voice model just got sharper.");
+        setPublishSuccessMsg("Saved. Contendo will learn your voice from this version.");
         setTimeout(() => {
           setPublishingPostId(null);
           setPublishSuccessMsg("");
@@ -671,15 +473,22 @@ export default function HistoryPage() {
     }
   };
 
-  useEffect(() => {
+  const loadHistory = () => {
+    setLoading(true);
+    setError("");
     api.getHistory()
       .then((r) => {
         if (!r.ok) throw new Error("Failed to load history");
         return r.json();
       })
       .then((data) => setPosts(data.posts ?? []))
-      .catch(() => setError("Could not load post history. Is the backend running?"))
+      .catch(() => setError("We couldn't load your posts. Check your connection and try again."))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filteredPosts = posts
@@ -698,118 +507,67 @@ export default function HistoryPage() {
   const SORT_OPTIONS: { id: "newest" | "oldest" | "score"; label: string }[] = [
     { id: "newest", label: "Newest" },
     { id: "oldest", label: "Oldest" },
-    { id: "score", label: "By Score" },
+    { id: "score", label: "Highest score" },
   ];
 
   return (
-    <div className="-mx-10 -mt-10 -mb-10 min-h-screen bg-background flex flex-col">
+    <div className="-mx-4 -mt-6 -mb-6 sm:-mx-6 md:-mx-10 md:-mt-10 md:-mb-10 min-h-screen bg-background flex flex-col">
 
-      {/* ── Top header bar ───────────────────────────────────────────────── */}
-      <div
-        style={{ borderBottom: "0.5px solid #dfe3e2", height: "56px" }}
-        className="hidden md:flex items-center px-10 bg-background shrink-0 gap-4"
-      >
-        {/* Search */}
-        <div className="relative w-72">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-outline-variant" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-          </svg>
-          <input
-            type="text"
-            placeholder="Search past drafts..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-8 pr-4 py-1.5 text-[13px] bg-surface-container-low rounded-full border border-surface-container-high focus:outline-none focus:border-outline-variant transition-all text-on-surface placeholder:text-outline-variant"
-          />
-        </div>
-
-        {/* Filter toggle: All / Published */}
-        <div className="flex items-center gap-1 bg-surface-container rounded-full p-0.5">
-          {(["all", "published"] as const).map((f) => (
-            <button
-              key={f}
-              onClick={() => setPublishFilter(f)}
-              className={`px-3.5 py-1 rounded-full text-[11px] font-semibold capitalize transition-all duration-150 ${
-                publishFilter === f ? "bg-surface-container-lowest text-on-surface shadow-sm" : "text-outline hover:text-secondary"
-              }`}
-            >
-              {f === "all" ? "All" : "Published"}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex-1" />
-
-        {/* Bell */}
-        <button className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container transition-colors">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-outline">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-          </svg>
-        </button>
-
-        {/* Avatar */}
-        <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center">
-          <span className="text-[10px] font-bold text-white">U</span>
-        </div>
-      </div>
-
-      {/* ── Scrollable content ────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto px-4 md:px-10 py-8 md:py-10">
+        <div className="mb-8">
+          <h1 className="font-headline text-[2.2rem] md:text-[2.75rem] text-on-surface leading-tight mb-3">History</h1>
+          <p className="text-on-surface-variant text-[0.9375rem] leading-relaxed max-w-lg">
+            Every post you&apos;ve written, with its earlier versions. Open one to copy it, edit it or restore a version.
+          </p>
+        </div>
 
-        {/* ── Title row ──────────────────────────────────────────────────── */}
-        <div className="flex flex-col md:flex-row items-start justify-between gap-4 md:gap-8 mb-10">
-          {/* Left: title + subtitle */}
-          <div className="flex-1 min-w-0">
-            <h1 className="font-headline text-[2.2rem] md:text-[2.75rem] text-on-surface leading-tight mb-3">
-              History Archive
-            </h1>
-            <p className="text-secondary text-[14px] leading-relaxed max-w-full md:max-w-lg">
-              A chronological collection of your creative output. Review, refine, and restore past versions of your stories.
-            </p>
+        {/* Search, filter and sort: on every screen size */}
+        <div className="mb-8 flex flex-col gap-3 md:flex-row md:items-end">
+          <div className="md:w-80">
+            <Label htmlFor="history-search">Search</Label>
+            <Input id="history-search" type="search" placeholder="Search your posts" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
-
-          {/* Right: sort pills */}
-          <div className="flex items-center gap-2 mt-3 md:mt-0 w-full md:w-auto flex-wrap">
-            {SORT_OPTIONS.map((opt) => (
+          <div role="group" aria-label="Show" className="flex gap-1 rounded-md bg-surface-container-low p-1">
+            {(["all", "published"] as const).map((f) => (
               <button
-                key={opt.id}
-                onClick={() => setSort(opt.id)}
-                className={`px-4 py-2 rounded-full text-[12px] font-semibold transition-all duration-200 ${
-                  sort === opt.id
-                    ? "btn-primary text-white shadow-card"
-                    : "bg-surface-container text-secondary hover:bg-surface-container-high hover:text-on-surface"
+                key={f}
+                type="button"
+                aria-pressed={publishFilter === f}
+                onClick={() => setPublishFilter(f)}
+                className={`min-h-11 sm:min-h-9 rounded-[0.6rem] px-4 text-[0.875rem] transition-colors ${
+                  publishFilter === f ? "bg-surface-container-lowest text-on-surface font-medium" : "text-on-surface-variant hover:text-on-surface"
                 }`}
               >
-                {opt.label}
+                {f === "all" ? "All posts" : "Published"}
               </button>
             ))}
           </div>
+          <div className="md:ml-auto md:w-48">
+            <Label htmlFor="history-sort">Sort by</Label>
+            <Select id="history-sort" value={sort} onValueChange={(v) => setSort(v as typeof sort)} options={SORT_OPTIONS.map((o) => ({ value: o.id, label: o.label }))} />
+          </div>
         </div>
 
-        {/* ── States ─────────────────────────────────────────────────────── */}
-        {loading && (
-          <div className="flex items-center gap-3 py-12 justify-center">
-            <div className="w-5 h-5 rounded-full border-2 border-surface-container-high border-t-primary animate-spin" />
-            <p className="text-sm text-outline">Loading archive…</p>
-          </div>
-        )}
+        {loading && <ListSkeleton rows={3} />}
 
-        {error && <p className="text-sm text-error mb-6">{error}</p>}
+        {!loading && error && <ErrorState message={error} onRetry={loadHistory} />}
 
         {!loading && !error && posts.length === 0 && (
-          <div className="rounded-2xl bg-surface-container-lowest px-6 py-16 text-center" style={{ boxShadow: "0px 4px 20px rgba(47,51,51,0.04), 0px 12px 40px rgba(47,51,51,0.06)" }}>
-            <p className="font-headline text-xl text-on-surface mb-2">No drafts yet</p>
-            <p className="text-outline text-sm">Posts are auto-saved when you generate. They will appear here.</p>
-          </div>
+          <EmptyState
+            title="No posts yet"
+            body="Every post you write is saved here automatically."
+            action={<Button asChild><Link href="/create">Write a post</Link></Button>}
+          />
         )}
 
         {!loading && posts.length > 0 && filteredPosts.length === 0 && (
-          <div className="rounded-2xl bg-surface-container-lowest px-6 py-12 text-center" style={{ boxShadow: "0px 4px 20px rgba(47,51,51,0.04), 0px 12px 40px rgba(47,51,51,0.06)" }}>
-            <p className="text-outline text-sm">No posts match your search.</p>
-          </div>
+          <EmptyState
+            title="No posts match"
+            body={publishFilter === "published" ? "None of your published posts match. Try all posts or a different search." : "Try a different search."}
+            action={<Button variant="secondary" onClick={() => { setSearch(""); setPublishFilter("all"); }}>Clear search</Button>}
+          />
         )}
 
-        {/* ── Post cards ─────────────────────────────────────────────────── */}
         {!loading && filteredPosts.length > 0 && (
           <div className="space-y-3">
             {filteredPosts.map((post) => (
@@ -826,27 +584,7 @@ export default function HistoryPage() {
             ))}
           </div>
         )}
-
-        {/* ── Show older entries ─────────────────────────────────────────── */}
-        {!loading && filteredPosts.length > 0 && (
-          <div className="flex flex-col items-center mt-12 gap-2">
-            <span className="label-caps text-outline-variant">Show Older Entries</span>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-outline-variant">
-              <polyline points="7 13 12 18 17 13"/>
-              <polyline points="7 7 12 12 17 7"/>
-            </svg>
-          </div>
-        )}
       </div>
-
-      {/* ── Floating action button ────────────────────────────────────────── */}
-      <button
-        className="fixed bottom-8 right-8 w-14 h-14 rounded-full btn-primary shadow-card hover:shadow-card-hover hover:-translate-y-0.5 flex items-center justify-center transition-all duration-200 z-20"
-      >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white">
-          <path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5z"/>
-        </svg>
-      </button>
 
       {/* ── Publish modal ─────────────────────────────────────────────────── */}
       {publishingPostId !== null && (
@@ -864,7 +602,7 @@ export default function HistoryPage() {
             </div>
           </div>
         ) : (
-          <PublishModal
+          <MarkPublishedDialog
             onSave={handlePublishSave}
             onClose={() => setPublishingPostId(null)}
             saving={publishSaving}

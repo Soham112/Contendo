@@ -66,6 +66,8 @@ const config: Config = {
         "inverse-primary":            "#e7f2d9",
 
         "outline":                    "#777c7b",
+        // Placeholder text: 4.5:1 on the input fill (#f3f4f3), where `outline` reaches only 3.8:1.
+        "placeholder":                "#6b706f",
         "outline-variant":            "#aeb3b2",
 
         "error":                      "#9e422c",

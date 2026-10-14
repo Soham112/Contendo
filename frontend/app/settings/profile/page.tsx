@@ -1,14 +1,16 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useId } from "react";
 import Link from "next/link";
 import { useApi } from "@/lib/api";
 import { useToast } from "@/components/ui/ToastProvider";
 import TagInput from "@/components/ui/TagInput";
+import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/states";
 
 // ── Shared input class ────────────────────────────────────────────────────────
 const inputCls =
-  "w-full bg-[#f3f4f3] border-0 border-b border-b-[#aeb3b2] focus:border-b-2 focus:border-b-[#58614f] outline-none px-3 py-2.5 text-[14px] text-[#2f3333] placeholder-[#aeb3b2] transition-all resize-none";
+  "w-full min-h-11 bg-surface-container-lowest border-0 border-b-[1.5px] border-b-outline rounded-t-md focus:border-b-2 focus:border-b-primary focus-visible:ring-2 focus-visible:ring-primary/30 outline-none px-3 py-2.5 text-[0.9375rem] text-on-surface placeholder:text-placeholder transition-colors resize-none";
 
 // ── Form state ────────────────────────────────────────────────────────────────
 interface SettingsForm {
@@ -62,17 +64,24 @@ function Field({
   optional?: boolean;
   children: React.ReactNode;
 }) {
+  // The label names the field's first control: it gets this id unless it has one.
+  const id = useId();
+  const items = React.Children.toArray(children);
+  const [first, ...rest] = items;
+  const control = React.isValidElement<{ id?: string }>(first) ? React.cloneElement(first, { id: first.props.id ?? id }) : first;
+  const controlId = React.isValidElement<{ id?: string }>(first) ? (first.props.id ?? id) : undefined;
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="label-caps text-[#645e57]">
+      <label htmlFor={controlId} className="label-caps text-secondary">
         {label}
         {optional && (
-          <span className="normal-case tracking-normal font-normal text-[#aeb3b2] ml-1">
+          <span className="normal-case tracking-normal font-normal text-on-surface-variant ml-1">
             (optional)
           </span>
         )}
       </label>
-      {children}
+      {control}
+      {rest}
     </div>
   );
 }
@@ -118,7 +127,7 @@ function DynamicList({
         <button
           type="button"
           onClick={() => onChange([...items, ""])}
-          className="text-[13px] text-[#58614f] hover:underline text-left w-fit"
+          className="inline-flex min-h-11 items-center text-[0.875rem] text-primary underline-offset-4 hover:underline text-left w-fit"
         >
           {addLabel}
         </button>
@@ -144,6 +153,9 @@ export default function ProfileSettingsPage() {
   const [loaded, setLoaded] = useState<SettingsForm | null>(null);
   const [saving, setSaving] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  // Bumped by "Try again" to load the profile again.
+  const [reloadKey, setReloadKey] = useState(0);
 
   // ── Dirty tracking ────────────────────────────────────────────────────────
   const isDirty =
@@ -163,8 +175,10 @@ export default function ProfileSettingsPage() {
   // ── Load profile on mount ─────────────────────────────────────────────────
   useEffect(() => {
     async function load() {
+      setLoadFailed(false);
       try {
         const res = await api.getProfile();
+        if (!res.ok) throw new Error("Failed");
         const data = await res.json();
         const p = data.profile ?? {};
 
@@ -194,15 +208,12 @@ export default function ProfileSettingsPage() {
         setForm(initial);
         setLoaded(structuredClone(initial));
       } catch {
-        showToast("Failed to load profile", "error");
-        const fallback = emptyForm();
-        setForm(fallback);
-        setLoaded(structuredClone(fallback));
+        setLoadFailed(true);
       }
     }
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [reloadKey]);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const set = useCallback(
@@ -233,23 +244,23 @@ export default function ProfileSettingsPage() {
         setLoaded(structuredClone(form));
         showToast("Profile updated", "success");
       } else {
-        showToast("Failed to save profile", "error");
+        showToast("We couldn't save your profile. Please try again.", "error");
       }
     } catch {
-      showToast("Failed to save profile", "error");
+      showToast("We couldn't save your profile. Please try again.", "error");
     }
     setSaving(false);
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="max-w-2xl mx-auto px-6 py-10 pb-32">
+    <div className="max-w-2xl mx-auto pb-32">
 
       {/* Back link */}
       <div className="mb-6">
         <Link
           href="/settings"
-          className="inline-flex items-center gap-1.5 text-[13px] text-secondary hover:text-on-surface transition-colors"
+          className="inline-flex min-h-11 items-center gap-1.5 text-[0.875rem] text-secondary hover:text-on-surface transition-colors"
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
             <path
@@ -265,9 +276,9 @@ export default function ProfileSettingsPage() {
       </div>
 
       {/* Page header */}
-      <p className="label-caps text-[#645e57] mb-2">PROFILE</p>
-      <h1 className="font-headline text-[32px] text-[#2f3333] mb-2">Edit Profile</h1>
-      <p className="text-[14px] text-[#645e57] mb-8">
+      <p className="label-caps text-secondary mb-2">PROFILE</p>
+      <h1 className="font-headline text-[32px] text-on-surface mb-2">Edit profile</h1>
+      <p className="text-[14px] text-secondary mb-8">
         Your voice profile. Everything here shapes how Contendo writes for you.
       </p>
 
@@ -287,7 +298,7 @@ export default function ProfileSettingsPage() {
               {form.role || "Your role"}
             </span>
             {form.location && (
-              <span className="text-outline text-[12px]">{form.location}</span>
+              <span className="text-on-surface-variant text-[12px]">{form.location}</span>
             )}
             <p className="text-[12px] text-secondary mt-1 leading-relaxed">
               Your voice profile shapes every post Contendo writes for you.
@@ -318,7 +329,7 @@ export default function ProfileSettingsPage() {
             <a
               key={id}
               href={`#${id}`}
-              className="px-3 py-1 rounded-lg text-[12px] uppercase tracking-wide whitespace-nowrap text-secondary hover:text-on-surface hover:bg-surface-container transition-colors shrink-0"
+              className="inline-flex min-h-11 items-center px-3 rounded-lg text-[0.75rem] uppercase tracking-wide whitespace-nowrap text-secondary hover:text-on-surface hover:bg-surface-container transition-colors shrink-0"
             >
               {label}
             </a>
@@ -326,8 +337,10 @@ export default function ProfileSettingsPage() {
         </div>
       </div>
 
-      {/* Loading skeleton */}
-      {!form && <LoadingSkeleton />}
+      {!form && loadFailed && (
+        <ErrorState message="We couldn't load your profile. Check your connection and try again." onRetry={() => setReloadKey((k) => k + 1)} />
+      )}
+      {!form && !loadFailed && <LoadingSkeleton />}
 
       {/* Form sections */}
       {form && (
@@ -339,7 +352,7 @@ export default function ProfileSettingsPage() {
             style={{ scrollMarginTop: "72px" }}
             className="bg-surface-container-low rounded-2xl p-6 flex flex-col gap-5"
           >
-            <p className="label-caps text-[#645e57]">About you</p>
+            <p className="label-caps text-secondary">About you</p>
             <Field label="Full name">
               <input
                 className={inputCls}
@@ -381,7 +394,7 @@ export default function ProfileSettingsPage() {
             style={{ scrollMarginTop: "72px" }}
             className="bg-surface-container-low rounded-2xl p-6 flex flex-col gap-5"
           >
-            <p className="label-caps text-[#645e57]">Expertise</p>
+            <p className="label-caps text-secondary">Expertise</p>
             <Field label="Topics of expertise">
               <TagInput
                 value={form.topics_of_expertise}
@@ -406,7 +419,7 @@ export default function ProfileSettingsPage() {
             style={{ scrollMarginTop: "72px" }}
             className="bg-surface-container-low rounded-2xl p-6 flex flex-col gap-5"
           >
-            <p className="label-caps text-[#645e57]">Writing fingerprint</p>
+            <p className="label-caps text-secondary">How you write</p>
             <Field label="Phrases you use">
               <TagInput
                 value={form.voice_descriptors}
@@ -431,10 +444,9 @@ export default function ProfileSettingsPage() {
                 addLabel="+ Add rule"
                 renderItem={(value, i, onItemChange) => (
                   <div key={i} className="flex flex-col gap-1">
-                    <span className="text-[11px] text-[#aeb3b2] uppercase tracking-wide">
-                      Rule {i + 1}
-                    </span>
+                    <label htmlFor={`rule-${i}`} className="text-[0.75rem] text-on-surface-variant uppercase tracking-wide">Rule {i + 1}</label>
                     <input
+                      id={`rule-${i}`}
                       className={inputCls}
                       placeholder={
                         i === 0
@@ -458,7 +470,7 @@ export default function ProfileSettingsPage() {
             style={{ scrollMarginTop: "72px" }}
             className="bg-surface-container-low rounded-2xl p-6 flex flex-col gap-5"
           >
-            <p className="label-caps text-[#645e57]">Your opinions</p>
+            <p className="label-caps text-secondary">Your opinions</p>
             <DynamicList
               items={form.opinions}
               onChange={(v) => set("opinions", v)}
@@ -466,20 +478,19 @@ export default function ProfileSettingsPage() {
               addLabel="+ Add opinion"
               renderItem={(value, i, onItemChange) => (
                 <div key={i} className="flex flex-col gap-1.5">
-                  <span className="text-[11px] text-[#aeb3b2] uppercase tracking-wide">
-                    Opinion {i + 1}
-                  </span>
+                  <label htmlFor={`opinion-${i}`} className="text-[0.75rem] text-on-surface-variant uppercase tracking-wide">Opinion {i + 1}</label>
                   <textarea
+                    id={`opinion-${i}`}
                     className={inputCls}
                     rows={2}
-                    placeholder="A take you'd defend publicly. Be specific — not 'AI is important' but 'most AI demos fail because founders optimize for wow moments, not retention'"
+                    placeholder="A take you'd defend publicly. Be specific: not 'marketing matters' but 'most open houses fail because they're scheduled for the agent, not the buyer'"
                     value={value}
                     onChange={(e) => onItemChange(e.target.value)}
                   />
                 </div>
               )}
             />
-            <p className="text-[11px] text-[#aeb3b2]">
+            <p className="text-[11px] text-on-surface-variant">
               The more specific, the better. Vague opinions produce generic posts.
             </p>
           </div>
@@ -490,7 +501,7 @@ export default function ProfileSettingsPage() {
             style={{ scrollMarginTop: "72px" }}
             className="bg-surface-container-low rounded-2xl p-6 flex flex-col gap-5"
           >
-            <p className="label-caps text-[#645e57]">Writing samples</p>
+            <p className="label-caps text-secondary">Writing samples</p>
             <DynamicList
               items={form.writing_samples}
               onChange={(v) => set("writing_samples", v)}
@@ -498,8 +509,9 @@ export default function ProfileSettingsPage() {
               addLabel="+ Add sample"
               renderItem={(value, i, onItemChange) => (
                 <div key={i} className="flex flex-col gap-1.5">
-                  <label className="label-caps text-[#645e57]">Sample {i + 1}</label>
+                  <label htmlFor={`sample-${i}`} className="label-caps text-secondary">Sample {i + 1}</label>
                   <textarea
+                    id={`sample-${i}`}
                     className={inputCls}
                     rows={i === 0 ? 8 : 6}
                     placeholder={
@@ -513,7 +525,7 @@ export default function ProfileSettingsPage() {
                 </div>
               )}
             />
-            <p className="text-[11px] text-[#aeb3b2]">
+            <p className="text-[11px] text-on-surface-variant">
               These are never shared. They teach Contendo your exact rhythm and word choices.
             </p>
           </div>
@@ -527,7 +539,8 @@ export default function ProfileSettingsPage() {
             <button
               type="button"
               onClick={() => setAdvancedOpen((v) => !v)}
-              className="flex items-center gap-2 label-caps text-[#645e57] hover:text-[#2f3333] transition-colors w-fit"
+              aria-expanded={advancedOpen}
+              className="flex min-h-11 items-center gap-2 label-caps text-secondary hover:text-on-surface transition-colors w-fit"
             >
               Advanced
               <svg
@@ -560,7 +573,7 @@ export default function ProfileSettingsPage() {
                     value={form.technical_voice_notes}
                     onChange={(e) => set("technical_voice_notes", e.target.value)}
                   />
-                  <p className="text-[11px] text-[#aeb3b2]">Each line becomes a separate note.</p>
+                  <p className="text-[11px] text-on-surface-variant">Each line becomes a separate note.</p>
                 </Field>
                 <Field label="LinkedIn style notes">
                   <textarea
@@ -598,25 +611,10 @@ export default function ProfileSettingsPage() {
 
       {/* ── Sticky save button ──────────────────────────────────────────────── */}
       {form && (
-        <div className="fixed bottom-0 right-0 p-6 z-40">
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving || !isDirty}
-            className="btn-primary flex items-center gap-2 px-5 py-2.5 rounded-xl text-[14px] font-medium text-white disabled:opacity-40 disabled:cursor-not-allowed shadow-float transition-opacity"
-          >
-            {isDirty && (
-              <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
-            )}
-            {saving ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                Saving…
-              </>
-            ) : (
-              "Save changes"
-            )}
-          </button>
+        <div className="fixed bottom-0 right-0 p-4 sm:p-6 z-40">
+          <Button size="lg" className="shadow-float" onClick={handleSave} loading={saving} disabled={!isDirty} disabledReason="No changes to save">
+            Save changes
+          </Button>
         </div>
       )}
     </div>

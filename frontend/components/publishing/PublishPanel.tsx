@@ -12,6 +12,10 @@ import {
 import ApprovalReview from "./ApprovalReview";
 import type { ContentReview } from "@/lib/publishing";
 import UpgradeScreen from "@/components/billing/UpgradeScreen";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/card";
+import { ChoiceGroup } from "@/components/ui/choice-group";
+import { Input, Label } from "@/components/ui/field";
 
 /**
  * Publish now, schedule, or add to the queue, for one finished post. Every
@@ -93,13 +97,7 @@ export default function PublishPanel({ content, postId, traceId }: { content: st
 
   if (!open) {
     return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="btn-primary text-white rounded-md px-5 py-2.5 text-[0.875rem] font-medium"
-      >
-        Publish
-      </button>
+      <Button onClick={() => setOpen(true)}>Publish</Button>
     );
   }
 
@@ -114,13 +112,16 @@ export default function PublishPanel({ content, postId, traceId }: { content: st
     <section aria-label="Publish this post" className="w-full rounded-lg bg-surface-container-low px-4 py-5 sm:px-6">
       <div className="flex items-center justify-between gap-4">
         <h3 className="font-headline text-[1.125rem] text-on-surface">Publish this post</h3>
-        <button type="button" onClick={() => setOpen(false)} className="text-[0.875rem] text-secondary hover:text-on-surface py-1">
+        <Button variant="tertiary" size="sm" onClick={() => setOpen(false)}>
           Close
-        </button>
+        </Button>
       </div>
 
       {accounts === null ? (
-        <p className="mt-4 text-[0.9375rem] text-secondary">Loading your accounts…</p>
+        <div role="status" aria-label="Loading your accounts" className="mt-4 flex flex-col gap-2">
+          <Skeleton className="h-14 w-full rounded-lg" />
+          <Skeleton className="h-14 w-full rounded-lg" />
+        </div>
       ) : (
         <>
           <fieldset className="mt-4">
@@ -140,10 +141,10 @@ export default function PublishPanel({ content, postId, traceId }: { content: st
                   const selected = chosen.includes(account.id);
                   return (
                     <li key={account.id}>
-                      <label className="flex items-start gap-3 rounded-lg bg-surface-container-lowest px-3 py-3 cursor-pointer">
+                      <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-lg bg-surface-container-lowest px-3 py-3">
                         <input
                           type="checkbox"
-                          className="mt-1 accent-primary"
+                          className="mt-0.5 h-5 w-5 shrink-0 accent-primary"
                           checked={selected}
                           onChange={() =>
                             setChosen((prev) => (selected ? prev.filter((id) => id !== account.id) : [...prev, account.id]))
@@ -180,56 +181,45 @@ export default function PublishPanel({ content, postId, traceId }: { content: st
           </fieldset>
 
           <div className="mt-5">
-            <p className="label-caps text-secondary">Image or video (optional)</p>
+            <Label htmlFor="publish-media">Image or video (optional)</Label>
             <input
+              id="publish-media"
               type="file"
               accept="image/*,video/*"
-              aria-label="Add an image or video"
               disabled={!!busy}
               onChange={(e) => {
                 addMedia(e.target.files?.[0]);
                 e.target.value = "";
               }}
-              className="mt-2 block w-full text-[0.875rem] text-secondary"
+              className="block w-full text-[0.875rem] text-on-surface-variant file:mr-3 file:min-h-11 file:cursor-pointer file:rounded-md file:border-0 file:bg-surface-container-lowest file:px-4 file:text-[0.875rem] file:font-medium file:text-on-surface hover:file:bg-surface-container-high"
             />
-            {busy === "media" && <p className="mt-1 text-[0.8125rem] text-secondary">Uploading…</p>}
+            {busy === "media" && <p role="status" className="mt-1 text-[0.8125rem] text-on-surface-variant">Uploading…</p>}
             {media.length > 0 && (
               <p className="mt-1 text-[0.8125rem] text-secondary">
                 {media.length} file{media.length === 1 ? "" : "s"} attached.{" "}
-                <button type="button" onClick={() => setMedia([])} className="underline underline-offset-4">
+                <Button variant="tertiary" size="sm" onClick={() => setMedia([])}>
                   Remove
-                </button>
+                </Button>
               </p>
             )}
           </div>
 
-          <fieldset className="mt-5">
-            <legend className="label-caps text-secondary">When</legend>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {WHEN.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  aria-pressed={when === option.value}
-                  onClick={() => setWhen(option.value)}
-                  className={`rounded-full px-4 py-2 text-[0.875rem] transition-colors ${
-                    when === option.value
-                      ? "bg-primary-container text-on-primary-fixed outline outline-1 outline-primary"
-                      : "bg-surface-container-lowest text-on-surface hover:bg-surface-container-highest"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
+          <div className="mt-5">
+            <ChoiceGroup
+              legend="When"
+              value={when}
+              onChange={setWhen}
+              options={WHEN.map((option) => ({ value: option.value, label: option.label }))}
+            />
             {when === "schedule" && (
               <div className="mt-3">
-                <input
+                <Label htmlFor="publish-when">Date and time</Label>
+                <Input
+                  id="publish-when"
                   type="datetime-local"
-                  aria-label="Date and time"
                   value={scheduleValue}
                   onChange={(e) => setScheduleValue(e.target.value)}
-                  className="input-editorial w-full sm:w-auto px-3 py-2.5 text-[1rem] text-on-surface"
+                  className="w-full sm:w-auto"
                 />
                 <p className="mt-1 text-[0.8125rem] text-secondary">Your time zone: {browserTimeZone()}</p>
               </div>
@@ -239,7 +229,7 @@ export default function PublishPanel({ content, postId, traceId }: { content: st
                 Goes out at 9:00 AM your time on the next day with nothing scheduled.
               </p>
             )}
-          </fieldset>
+          </div>
 
           {problems.length > 0 && (
             <ul role="alert" className="mt-4 flex flex-col gap-1 text-[0.875rem] text-error">
@@ -259,14 +249,16 @@ export default function PublishPanel({ content, postId, traceId }: { content: st
 
           <ApprovalReview key={JSON.stringify([content, postId, traceId, media])}
             content={content} postId={postId} traceId={traceId} media={media} onApproved={setApproved} onPaywall={setPaywall} />
-          <button
-            type="button"
+          <Button
+            className="mt-5"
+            size="lg"
+            loading={busy === "submit"}
             disabled={!!busy || chosen.length === 0 || !approvalId}
+            disabledReason={busy ? undefined : chosen.length === 0 ? "Choose an account to continue" : "Approve the text to continue"}
             onClick={submit}
-            className="mt-5 btn-primary text-white rounded-md px-6 py-3 text-[0.9375rem] font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {busy === "submit" ? "Saving…" : WHEN.find((option) => option.value === when)?.action}
-          </button>
+            {WHEN.find((option) => option.value === when)?.action}
+          </Button>
         </>
       )}
 

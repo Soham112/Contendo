@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useApi } from "@/lib/api";
 import type { Segment } from "@/lib/account";
 import SegmentQuestion from "@/components/onboarding/SegmentQuestion";
+import { Dialog } from "@/components/ui/dialog";
 
 /**
  * The segment question for someone already using the app. The backend decides
@@ -43,19 +44,17 @@ export default function SegmentPrompt({ due }: { due: boolean }) {
     finish(() => api.saveSegment({ segment }));
   }
 
-  if (!open) return null;
-
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Who are you creating content for?"
-      className="fixed inset-0 z-50 flex items-center justify-center px-4"
-      style={{ background: "rgba(47, 51, 51, 0.45)" }}
+    <Dialog
+      open={open}
+      // It must be answered or skipped with its own buttons.
+      onOpenChange={() => {}}
+      hideClose
+      title="Who are you creating content for?"
+      description="It decides what we ask you next and the kinds of post we suggest."
+      className="max-w-[34rem]"
     >
-      <div className="w-full max-w-[34rem] max-h-[90vh] overflow-y-auto bg-surface-container-lowest rounded-2xl shadow-float px-5 py-8 sm:px-10 sm:py-10">
-        <SegmentQuestion onChoose={choose} onSkip={() => finish(() => api.skipSegment())} busy={busy} error={error} />
-      </div>
-    </div>
+      <SegmentQuestion onChoose={choose} onSkip={() => finish(() => api.skipSegment())} busy={busy} error={error} showHeading={false} />
+    </Dialog>
   );
 }

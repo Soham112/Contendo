@@ -155,7 +155,7 @@ def _raise_anthropic_error(e: Exception) -> None:
     if isinstance(e, InternalServerError) and "overloaded" in str(e).lower():
         raise HTTPException(
             status_code=503,
-            detail="Anthropic API is temporarily overloaded. Wait 30 seconds and try again.",
+            detail="Our writing service is overloaded right now. Wait 30 seconds and try again.",
         )
     logger.exception("Anthropic API error")
     raise HTTPException(status_code=500, detail=_GENERIC_500)

@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ClosestSource } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Label, Textarea } from "@/components/ui/field";
 
 const HINT_WHEN_DISABLED =
   "Or paste your own notes on this topic as a source, then generate again.";
@@ -35,8 +37,8 @@ export function LowCoverageNotice({
   }, [detailsOpen]);
 
   return (
-    <section className="bg-surface-container-low rounded-2xl p-8 space-y-5">
-      <h2 className="font-headline italic text-2xl text-on-surface">
+    <section aria-labelledby="low-coverage-title" className="bg-surface-container-low rounded-2xl p-5 sm:p-8 space-y-5">
+      <h2 id="low-coverage-title" className="font-headline italic text-[1.5rem] text-on-surface">
         Your memory doesn&apos;t cover this topic yet
       </h2>
       {sources.length > 0 && (
@@ -53,23 +55,18 @@ export function LowCoverageNotice({
         </div>
       )}
       <div className="flex flex-wrap gap-3">
-        <button
+        <Button
           onClick={() => {
             onAddSource();
             router.push("/feed-memory");
           }}
-          className="btn-primary text-white rounded-xl font-bold tracking-widest uppercase text-[13px] py-3 px-6"
         >
           Add a source
-        </button>
+        </Button>
         {opinionEnabled && (
-        <button
-          onClick={onWriteOpinion}
-          disabled={busy}
-          className="rounded-xl text-[13px] font-semibold py-3 px-6 bg-surface-container text-on-surface hover:bg-surface-container-high disabled:opacity-50"
-        >
-          Write an opinion post without specifics
-        </button>
+          <Button variant="secondary" onClick={onWriteOpinion} loading={busy} className="whitespace-normal text-left">
+            Write an opinion post without specifics
+          </Button>
         )}
       </div>
       {!opinionEnabled ? (
@@ -78,26 +75,31 @@ export function LowCoverageNotice({
         </p>
       ) : detailsOpen ? (
         <div className="space-y-3">
-          <textarea
+          <Label htmlFor="low-coverage-details">Your details</Label>
+          <Textarea
+            id="low-coverage-details"
             ref={detailsRef}
             value={details}
             onChange={(e) => setDetails(e.target.value)}
             rows={4}
             placeholder="What happened, which ones, what you liked…"
-            className="w-full rounded-xl bg-surface-container-lowest p-4 text-sm text-on-surface placeholder:text-on-surface-variant/60 outline-none resize-y"
+            className="resize-y bg-surface-container-lowest"
           />
-          <button
+          <Button
+            variant="secondary"
             onClick={() => onWriteWithDetails(details.trim())}
-            disabled={busy || !details.trim()}
-            className="rounded-xl text-[13px] font-semibold py-3 px-6 bg-surface-container text-on-surface hover:bg-surface-container-high disabled:opacity-50"
+            loading={busy}
+            disabled={!details.trim()}
+            disabledReason="Add your details to continue"
           >
             Write it from my details
-          </button>
+          </Button>
         </div>
       ) : (
         <button
+          type="button"
           onClick={() => setDetailsOpen(true)}
-          className="block text-left text-sm text-on-surface-variant hover:text-on-surface"
+          className="block min-h-11 rounded-md text-left text-[0.875rem] text-on-surface-variant underline decoration-outline-variant underline-offset-4 hover:text-on-surface"
         >
           Or add details in the context box (what happened, which ones, what you liked), and we&apos;ll use only what you write.
         </button>

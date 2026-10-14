@@ -4,6 +4,12 @@ import { useEffect, useState } from "react";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useRouter } from "next/navigation";
 import { useApi } from "@/lib/api";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Card, Skeleton } from "@/components/ui/card";
+import { ChoiceGroup } from "@/components/ui/choice-group";
+import { Input, Label } from "@/components/ui/field";
+import { EmptyState, ErrorState } from "@/components/ui/states";
 
 const LS_IDEAS = "contendo_ideas";
 const LS_SAVED = "contendo_saved_ideas";
@@ -52,53 +58,21 @@ function IdeaCard({
   const badge = FORMAT_BADGE[idea.format] ?? idea.format;
 
   return (
-    <div className="bg-surface-container-lowest rounded-xl flex flex-col gap-3 p-5 shadow-card hover:bg-surface-container-low transition-all duration-200">
-      {/* Top row: badge + three-dot menu */}
-      <div className="flex items-start justify-between gap-2">
-        <span className="text-[10px] font-semibold tracking-[0.07em] uppercase px-2 py-0.5 rounded-full bg-surface-container border border-surface-container-high text-outline">
-          {badge}
-        </span>
-        <button className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-surface-container transition-colors shrink-0">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" className="text-outline-variant">
-            <circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>
-          </svg>
-        </button>
+    <Card className="flex flex-col gap-3">
+      <span className="w-fit text-[0.6875rem] font-semibold tracking-[0.06em] uppercase px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant">
+        {badge}
+      </span>
+      <h3 className="font-headline text-[1rem] text-on-surface leading-snug font-semibold flex-1">{idea.title}</h3>
+      <p className="text-[0.875rem] text-secondary leading-relaxed">{idea.angle}</p>
+      <div className="mt-1 flex gap-2">
+        <Button variant="secondary" size="sm" className="flex-1" aria-pressed={isSaved} onClick={isSaved ? onUnsave : onSave}>
+          {isSaved ? "Saved" : "Save for later"}
+        </Button>
+        <Button size="sm" className="flex-1" onClick={onUseThis}>Use this</Button>
       </div>
-
-      {/* Title */}
-      <p className="font-headline text-[15px] text-on-surface leading-snug font-semibold flex-1">
-        {idea.title}
-      </p>
-
-      {/* Angle/description */}
-      <p className="text-[12.5px] text-secondary leading-relaxed">
-        {idea.angle}
-      </p>
-
-      {/* Action row */}
-      <div className="flex gap-2 mt-1">
-        <button
-          onClick={isSaved ? onUnsave : onSave}
-          className={`flex-1 rounded-lg border text-[12px] font-medium py-2 transition-colors ${
-            isSaved
-              ? "border-primary/30 text-primary bg-surface-container-low"
-              : "border-surface-container-high text-secondary hover:text-on-surface hover:border-outline-variant bg-surface-container-lowest"
-          }`}
-        >
-          {isSaved ? "Saved ✓" : "Save for Later"}
-        </button>
-        <button
-          onClick={onUseThis}
-          className="flex-1 btn-primary text-white rounded-lg text-[12px] font-semibold py-2 hover:opacity-90 transition-opacity"
-        >
-          Use This
-        </button>
-      </div>
-    </div>
+    </Card>
   );
 }
-
-// ─── Curated Archive Row ──────────────────────────────────────────────────────
 
 function ArchiveRow({
   idea,
@@ -112,47 +86,23 @@ function ArchiveRow({
   const badge = FORMAT_BADGE[idea.format] ?? idea.format;
 
   return (
-    <div className="flex items-center gap-4 py-3.5 group">
-      {/* Left color tile */}
-      <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary">
-          <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
-        </svg>
-      </div>
-
-      {/* Text */}
+    <li className="flex items-center gap-3 py-3">
       <div className="flex-1 min-w-0">
-        <p className="label-caps text-outline mb-0.5">{badge}</p>
-        <p className="text-[13.5px] font-medium text-on-surface leading-snug truncate">{idea.title}</p>
+        <p className="label-caps text-on-surface-variant mb-0.5">{badge}</p>
+        <p className="text-[0.9375rem] font-medium text-on-surface leading-snug truncate">{idea.title}</p>
       </div>
-
-      {/* Right: timestamp + actions */}
-      <div className="flex items-center gap-3 shrink-0">
-        <span className="text-[11px] text-outline-variant hidden md:block">Saved recently</span>
-
-        {/* Trash */}
-        <button
-          onClick={onUnsave}
-          className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-error/10 transition-colors opacity-0 group-hover:opacity-100"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-error">
-            <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
-          </svg>
-        </button>
-
-        {/* Arrow (use this) */}
-        <button
-          onClick={onUseThis}
-          className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-surface-container-high transition-colors"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-secondary group-hover:text-on-surface transition-colors">
-            <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
-          </svg>
-        </button>
-      </div>
-    </div>
+      <Button variant="ghost" size="icon" onClick={onUnsave} aria-label={`Remove "${idea.title}" from saved ideas`} className="text-error hover:text-error">
+        <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+        </svg>
+      </Button>
+      <Button variant="secondary" size="sm" onClick={onUseThis}>Use this</Button>
+    </li>
   );
 }
+
+// How many ideas the user can ask for at once.
+const COUNT_OPTIONS = [3, 5, 10];
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -164,7 +114,7 @@ export default function IdeasPage() {
   const [savedIdeas, setSavedIdeas] = useState<Idea[]>([]);
   const [savedTitles, setSavedTitles] = useState<Set<string>>(new Set());
   const [topic, setTopic] = useState("");
-  const [count, setCount] = useState(8);
+  const [count, setCount] = useState(5);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [sparse, setSparse] = useState(false);
@@ -180,7 +130,7 @@ export default function IdeasPage() {
     const topicStr = lsGet(LS_TOPIC);
     if (topicStr) setTopic(topicStr);
     const countStr = lsGet(LS_COUNT);
-    if (countStr) setCount(parseInt(countStr));
+    if (countStr && COUNT_OPTIONS.includes(parseInt(countStr))) setCount(parseInt(countStr));
     const savedStr = lsGet(LS_SAVED);
     if (savedStr) {
       try {
@@ -207,13 +157,11 @@ export default function IdeasPage() {
       }
       const newIdeas: Idea[] = data.suggestions ?? [];
       setIdeas(newIdeas);
-      showToast(`Generated ${newIdeas.length} ideas`, "success");
-      lsSet(LS_IDEAS, JSON.stringify(newIdeas));
+            lsSet(LS_IDEAS, JSON.stringify(newIdeas));
       lsSet(LS_TOPIC, topic);
       lsSet(LS_COUNT, String(count));
     } catch {
-      setError("Couldn't load ideas — check that the backend is running and try again.");
-      showToast("Failed to generate ideas", "error");
+      setError("We couldn't get ideas right now. Check your connection and try again.");
     } finally {
       setLoading(false);
     }
@@ -225,7 +173,7 @@ export default function IdeasPage() {
     lsSet(LS_SAVED, JSON.stringify(updated));
     setSavedIdeas(updated);
     setSavedTitles(new Set(updated.map((i) => i.title)));
-    showToast("Idea saved to pinned list", "success");
+    showToast("Idea saved", "success");
   };
 
   const handleUnsave = (idea: Idea) => {
@@ -233,7 +181,7 @@ export default function IdeasPage() {
     lsSet(LS_SAVED, JSON.stringify(updated));
     setSavedIdeas(updated);
     setSavedTitles(new Set(updated.map((i) => i.title)));
-    showToast("Idea removed from pinned list", "info");
+    showToast("Idea removed", "info");
   };
 
   const handleClearAll = () => {
@@ -253,136 +201,65 @@ export default function IdeasPage() {
   const hasIdeas = ideas.length > 0;
   const hasSaved = savedIdeas.length > 0;
 
-  const COUNT_OPTIONS = [3, 5, 10];
 
   return (
-    <div className="-mx-10 -mt-10 -mb-10 min-h-screen bg-background flex flex-col">
-
-      {/* ── Top header bar ───────────────────────────────────────────────── */}
-      <div
-        style={{ borderBottom: "0.5px solid #dfe3e2", height: "56px" }}
-        className="hidden md:flex items-center px-10 bg-background shrink-0 gap-4"
-      >
-        <div className="flex-1" />
-
-        {/* Search */}
-        <div className="relative w-56">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-outline-variant" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-          </svg>
-          <input
-            type="text"
-            placeholder="Search Atelier..."
-            className="w-full pl-8 pr-3 py-1.5 text-[12px] bg-surface-container-low rounded-full border border-surface-container-high focus:outline-none focus:border-outline-variant transition-all text-on-surface placeholder:text-outline-variant"
-          />
-        </div>
-
-        {/* Bell */}
-        <button className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container transition-colors">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-outline">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-          </svg>
-        </button>
-
-        {/* Avatar */}
-        <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center">
-          <span className="text-[10px] font-bold text-white">U</span>
-        </div>
-      </div>
-
-      {/* ── Scrollable content ────────────────────────────────────────────── */}
+    <div className="-mx-4 -mt-6 -mb-6 sm:-mx-6 md:-mx-10 md:-mt-10 md:-mb-10 min-h-screen bg-background flex flex-col">
       <div className="flex-1 overflow-y-auto px-4 md:px-10 py-8 md:py-10">
-
-        {/* Breadcrumb */}
-        <p className="label-caps text-outline mb-8">Workspace / Ideation</p>
-
-        {/* ── Hero — centered ────────────────────────────────────────────── */}
-        <div className="text-center mb-10">
-          <h1 className="font-headline text-[3rem] text-on-surface leading-[1.1] mb-4">
-            Ignite your next<br />
-            <em>literary masterpiece.</em>
-          </h1>
-          <p className="text-secondary text-[15px] leading-relaxed">
-            Input a theme or leave it to chance. Our atelier synthesizes global trends with your unique editorial voice.
+        <div className="mx-auto mb-10 max-w-xl text-center">
+          <h1 className="font-headline text-[2.25rem] md:text-[3rem] text-on-surface leading-[1.1] mb-4">Find your next post</h1>
+          <p className="text-on-surface-variant text-[0.9375rem] leading-relaxed">
+            Ideas come from what you&apos;ve added to your library. Add a topic to narrow them down, or leave it blank.
           </p>
         </div>
 
-        {/* ── Controls — centered single column ──────────────────────────── */}
-        <div className="flex flex-col gap-4 mx-auto mb-12" style={{ maxWidth: 420 }}>
-
-          {/* Topic input — pill shape */}
+        <form
+          className="mx-auto mb-12 flex max-w-[420px] flex-col gap-5"
+          onSubmit={(e) => { e.preventDefault(); if (!loading) handleGenerate(); }}
+        >
           <div>
-            <label className="label-caps text-secondary block mb-2 text-center">Topic Filter (Optional)</label>
-            <input
-              type="text"
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && !loading && handleGenerate()}
-              placeholder="e.g. Minimalist Architecture, French..."
-              className="input-editorial w-full px-5 py-3 rounded-full text-[14px] font-medium text-on-surface placeholder:text-outline-variant focus:outline-none"
-            />
+            <Label htmlFor="ideas-topic">Topic <span className="normal-case font-normal">(optional)</span></Label>
+            <Input id="ideas-topic" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="e.g. first-time buyers" />
           </div>
+          <ChoiceGroup
+            legend="How many ideas"
+            value={String(count)}
+            onChange={(v) => setCount(Number(v))}
+            options={COUNT_OPTIONS.map((n) => ({ value: String(n), label: String(n) }))}
+            className="grid grid-cols-3 gap-2"
+            tileClassName="items-center"
+          />
+          <Button type="submit" size="lg" loading={loading} className="w-full">Get ideas</Button>
+        </form>
 
-          {/* Count pills — centered row */}
-          <div>
-            <label className="label-caps text-secondary block mb-2 text-center">Idea Count</label>
-            <div className="flex gap-2 justify-center">
-              {COUNT_OPTIONS.map((n) => (
-                <button
-                  key={n}
-                  onClick={() => setCount(n)}
-                  className={`flex-1 py-2 rounded-full text-[13px] font-semibold transition-all duration-200 ${
-                    count === n
-                      ? "btn-primary text-white shadow-card"
-                      : "bg-surface-container text-secondary hover:bg-surface-container-high hover:text-on-surface"
-                  }`}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Generate button — full width */}
-          <button
-            onClick={handleGenerate}
-            disabled={loading}
-            className="btn-primary w-full rounded-xl text-white text-[13px] font-bold tracking-widest uppercase py-3.5 hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed shadow-card hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-2"
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5z"/>
-              <path d="M5 3l.5 2L7 6l-1.5.5L5 9l-.5-2.5L3 6l1.5-.5z"/>
-            </svg>
-            {loading ? "Generating..." : "Generate Ideas"}
-          </button>
-
-          {error && <p className="text-error text-xs text-center">{error}</p>}
-        </div>
-
-        {/* ── Generated ideas grid ───────────────────────────────────────── */}
-        {hasIdeas && (
-          <div className="mb-12">
-            {/* Section header */}
-            <div className="flex items-center justify-between gap-3 mb-5">
-              <h2 className="font-headline text-2xl text-on-surface">Fresh Concepts</h2>
-              <div className="flex items-center gap-3 shrink-0">
-                <span className="label-caps text-outline whitespace-nowrap">{ideas.length} Results Found</span>
-                {clearConfirm ? (
-                  <span className="text-xs text-outline whitespace-nowrap">
-                    Clear all?{" "}
-                    <button onClick={handleClearAll} className="underline hover:text-on-surface">Yes</button>
-                    {" / "}
-                    <button onClick={() => setClearConfirm(false)} className="underline hover:text-on-surface">No</button>
-                  </span>
-                ) : (
-                  <button onClick={() => setClearConfirm(true)} className="text-xs text-outline-variant hover:text-outline transition-colors underline whitespace-nowrap">
-                    Clear all
-                  </button>
-                )}
+        {loading && (
+          <div role="status" aria-label="Finding ideas" className="mb-12 grid grid-cols-1 gap-4 md:grid-cols-3">
+            {Array.from({ length: Math.min(count, 3) }, (_, n) => (
+              <div key={n} className="rounded-2xl bg-surface-container-lowest p-5">
+                <Skeleton className="h-4 w-20" /><Skeleton className="mt-4 h-5 w-4/5" /><Skeleton className="mt-3 h-3 w-full" /><Skeleton className="mt-2 h-3 w-2/3" />
               </div>
-            </div>
+            ))}
+          </div>
+        )}
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {!loading && error && <div className="mx-auto mb-12 max-w-xl"><ErrorState message={error} onRetry={handleGenerate} /></div>}
+
+        {!loading && hasIdeas && (
+          <section aria-labelledby="ideas-heading" className="mb-12">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+              <h2 id="ideas-heading" className="font-headline text-2xl text-on-surface">
+                Ideas <span className="text-on-surface-variant text-[1rem] font-sans">({ideas.length})</span>
+              </h2>
+              {clearConfirm ? (
+                <div role="alert" className="flex items-center gap-2">
+                  <span className="text-[0.875rem] text-on-surface">Clear these ideas?</span>
+                  <Button variant="destructive" size="sm" onClick={handleClearAll}>Clear</Button>
+                  <Button variant="secondary" size="sm" onClick={() => setClearConfirm(false)}>Keep</Button>
+                </div>
+              ) : (
+                <Button variant="tertiary" size="sm" onClick={() => setClearConfirm(true)}>Clear all</Button>
+              )}
+            </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               {ideas.map((idea, i) => (
                 <IdeaCard
                   key={i}
@@ -394,88 +271,32 @@ export default function IdeasPage() {
                 />
               ))}
             </div>
-          </div>
+          </section>
         )}
 
-        {/* ── Empty state ────────────────────────────────────────────────── */}
-        {!hasIdeas && !loading && (
+        {!hasIdeas && !loading && !error && (
           sparse ? (
-            <div className="flex flex-col items-center text-center py-12 gap-4">
-              <div className="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-outline">
-                  <path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"/>
-                  <path d="M12 8v4M12 16h.01"/>
-                </svg>
-              </div>
-              <div className="space-y-1.5">
-                <p className="font-headline text-xl text-on-surface">Your knowledge base is empty</p>
-                <p className="text-outline text-sm max-w-sm leading-relaxed">
-                  Ideas are grounded in what you know. Feed some articles, notes, or videos first — then come back to generate.
-                </p>
-              </div>
-              <button
-                onClick={() => router.push("/feed-memory")}
-                className="btn-primary px-6 py-2.5 rounded-lg text-white text-[13px] font-semibold uppercase tracking-widest shadow-card hover:opacity-90 transition-all"
-              >
-                Feed Memory
-              </button>
-            </div>
+            <EmptyState
+              title="Add something to write from first"
+              body="Ideas come from your library. Add an article, a note or a video, then come back for ideas."
+              action={<Button asChild><Link href="/feed-memory">Add a source</Link></Button>}
+            />
           ) : (
-            <div className="flex flex-col items-center text-center py-12 gap-3">
-              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" className="text-outline-variant">
-                <path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5z"/>
-              </svg>
-              <p className="font-headline text-xl text-on-surface">No ideas yet</p>
-              <p className="text-outline text-sm max-w-xs">Configure your filters above and hit Generate Ideas to spark your next piece.</p>
-            </div>
+            <EmptyState title="No ideas yet" body="Choose how many you'd like, then select Get ideas." />
           )
         )}
 
-        {/* ── Curated Archive ────────────────────────────────────────────── */}
         {hasSaved && (
-          <div>
-            {/* Section header */}
-            <div className="flex items-center gap-3 mb-1">
-              <span className="text-lg">📚</span>
-              <h2 className="font-headline text-2xl text-on-surface">Curated Archive</h2>
-            </div>
-            <div className="h-px bg-surface-container-high mb-4" />
-
-            {/* Archive rows */}
-            <div className="divide-y divide-surface-container-high">
+          <section aria-labelledby="saved-heading" className="mt-12">
+            <h2 id="saved-heading" className="font-headline text-2xl text-on-surface mb-2">Saved ideas</h2>
+            <ul className="divide-y divide-surface-container-high">
               {savedIdeas.map((idea, i) => (
-                <ArchiveRow
-                  key={i}
-                  idea={idea}
-                  onUseThis={() => handleUseThis(idea)}
-                  onUnsave={() => handleUnsave(idea)}
-                />
+                <ArchiveRow key={i} idea={idea} onUseThis={() => handleUseThis(idea)} onUnsave={() => handleUnsave(idea)} />
               ))}
-            </div>
-
-            {/* View full library link */}
-            <div className="flex justify-center mt-6">
-              <button
-                onClick={() => router.push("/library")}
-                className="label-caps text-outline hover:text-secondary transition-colors"
-              >
-                View Full Library »
-              </button>
-            </div>
-          </div>
+            </ul>
+          </section>
         )}
       </div>
-
-      {/* ── Floating action button ────────────────────────────────────────── */}
-      <button
-        onClick={handleGenerate}
-        disabled={loading}
-        className="fixed bottom-8 right-8 w-14 h-14 rounded-full btn-primary shadow-card hover:shadow-card-hover hover:-translate-y-0.5 flex items-center justify-center transition-all duration-200 disabled:opacity-60 z-20"
-      >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white">
-          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
-        </svg>
-      </button>
     </div>
   );
 }

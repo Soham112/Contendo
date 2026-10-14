@@ -17,7 +17,7 @@ function Toggle<T extends string>({ label, value, options, onChange }: {
           type="button"
           aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
-          className={`rounded-[0.6rem] px-3 py-1.5 text-[0.8125rem] transition-colors ${
+          className={`min-h-11 sm:min-h-9 rounded-[0.6rem] px-3 text-[0.8125rem] transition-colors ${
             value === option.value ? "bg-surface-container-lowest text-on-surface" : "text-secondary hover:text-on-surface"
           }`}
         >
@@ -83,6 +83,10 @@ export default function PostPreview({ text, author, platforms = PLATFORMS }: {
   const id = useId();
   const [active, setActive] = useState(platforms[0].id);
   const [device, setDevice] = useState<Device>("desktop");
+  // Phones start in the mobile view: it is what they will see, and needs far less scaling.
+  useEffect(() => {
+    if (window.matchMedia?.("(max-width: 640px)").matches) setDevice("mobile");
+  }, []);
   const [theme, setTheme] = useState<Theme>("light");
   const [expanded, setExpanded] = useState(false);
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -118,7 +122,7 @@ export default function PostPreview({ text, author, platforms = PLATFORMS }: {
               tabIndex={p.id === platform.id ? 0 : -1}
               onClick={() => setActive(p.id)}
               onKeyDown={(event) => onTabKey(event, index)}
-              className={`rounded-md px-3.5 py-2 text-[0.875rem] transition-colors ${
+              className={`min-h-11 sm:min-h-9 rounded-md px-3.5 text-[0.875rem] transition-colors ${
                 p.id === platform.id ? "bg-surface-container-lowest text-on-surface font-medium" : "text-secondary hover:text-on-surface"
               }`}
             >

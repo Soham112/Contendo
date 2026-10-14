@@ -7,6 +7,7 @@ import { QuillIcon } from "@/components/ContendoLogo";
 import Faq from "@/components/marketing/Faq";
 import NicheLinks from "@/components/marketing/NicheLinks";
 import { HOME_FAQ_HEADING, HOME_HERO, homeFaqs } from "@/content/home";
+import { Button } from "@/components/ui/button";
 
 const MOOD_GRADIENTS = [
   { label: "Analytical",   from: "#3a4a35", to: "#58614f", img: "/mood-analytical.png" },
@@ -26,7 +27,7 @@ function TopNav({ isSignedIn, authLoaded }: { isSignedIn: boolean; authLoaded: b
       <div className="max-w-[1200px] mx-auto px-5 sm:px-8 py-4 flex items-center justify-between relative">
         <Link
           href="/"
-          className="flex items-center gap-2.5 font-headline italic text-on-surface text-xl tracking-tight"
+          className="flex min-h-11 items-center gap-2.5 font-headline italic text-on-surface text-xl tracking-tight"
         >
           <QuillIcon size={22} />
           Contendo
@@ -35,55 +36,19 @@ function TopNav({ isSignedIn, authLoaded }: { isSignedIn: boolean; authLoaded: b
         {/* Center links — absolutely centered in the nav */}
         <div
           className="hidden md:flex items-center gap-8 absolute left-1/2 -translate-x-1/2">
-          <a
-            href="#how-it-works"
-            className="text-[0.875rem] text-secondary hover:text-on-surface transition-colors"
-          >
-            How it works
-          </a>
-          <a
-            href="/about"
-            className="text-[0.875rem] text-secondary hover:text-on-surface transition-colors"
-          >
-            About
-          </a>
-          <a
-            href="/careers"
-            className="text-[0.875rem] text-secondary hover:text-on-surface transition-colors"
-          >
-            Careers
-          </a>
-          <a
-            href="/pricing"
-            className="text-[0.875rem] text-secondary hover:text-on-surface transition-colors"
-          >
-            Pricing
-          </a>
+          <a href="#how-it-works" className="inline-flex min-h-11 items-center text-[0.875rem] text-secondary hover:text-on-surface transition-colors">How it works</a>
+          <Link href="/about" className="inline-flex min-h-11 items-center text-[0.875rem] text-secondary hover:text-on-surface transition-colors">About</Link>
+          
         </div>
 
         {/* Right — auth-aware */}
         <div className="flex items-center gap-2 sm:gap-3">
           {authLoaded && isSignedIn ? (
-            <Link
-              href="/create"
-              className="text-[11px] label-caps text-primary border border-primary/40 hover:border-primary hover:bg-surface-container-low rounded-lg px-4 py-2.5 sm:px-5 transition-colors"
-            >
-              Open workspace
-            </Link>
+            <Button asChild variant="secondary" size="sm"><Link href="/create">Open workspace</Link></Button>
           ) : (
             <>
-              <Link
-                href="/sign-in?redirect_url=/welcome"
-                className="hidden sm:inline-flex text-[12px] text-secondary hover:text-on-surface px-3 py-2 rounded-lg transition-colors"
-              >
-                Sign in
-              </Link>
-              <Link
-                href="/first-post"
-                className="text-[11px] label-caps text-primary border border-primary/40 hover:border-primary hover:bg-surface-container-low rounded-lg px-4 py-2.5 sm:px-5 transition-colors"
-              >
-                Get started
-              </Link>
+              <Button asChild variant="tertiary" size="sm" className="hidden sm:inline-flex"><Link href="/sign-in?redirect_url=/welcome">Sign in</Link></Button>
+              <Button asChild variant="secondary" size="sm"><Link href="/first-post">Get started</Link></Button>
             </>
           )}
         </div>
@@ -105,9 +70,9 @@ export default function WelcomePage() {
 
   const heroPrimaryCta = useMemo(() => {
     if (isSignedIn) {
-      return { href: "/create", label: "OPEN WORKSPACE" };
+      return { href: "/create", label: "Open workspace" };
     }
-    return { href: "/first-post", label: "TRY FOR FREE" };
+    return { href: "/first-post", label: "Try it free" };
   }, [authLoaded, isSignedIn]);
 
   return (
@@ -158,21 +123,15 @@ export default function WelcomePage() {
             </p>
 
             {/* CTA */}
-            <Link
-              href={heroPrimaryCta.href}
-              className="font-sans font-medium text-white text-base px-8 py-3 rounded-md transition-opacity hover:opacity-90 mb-6"
-              style={{
-                background: "linear-gradient(135deg, #58614f 0%, #4c5543 100%)",
-              }}
-            >
-              {authLoaded ? heroPrimaryCta.label : <span className="opacity-0">TRY FOR FREE</span>}
-            </Link>
+            <Button asChild variant="cta" size="lg" className="mb-6">
+              <Link href={heroPrimaryCta.href}>{heroPrimaryCta.label}</Link>
+            </Button>
 
             {/* Trust chips */}
             <div className="flex flex-wrap gap-6 justify-center items-center">
-              {["✓ Learns in seconds", "✓ Sounds like you", "✓ Ready to post"].map((chip) => (
-                <span key={chip} className="font-sans text-sm text-on-surface/60 text-center">
-                  {chip}
+              {["Free to start", "Written in your voice", "You edit every draft"].map((chip) => (
+                <span key={chip} className="font-sans text-sm text-on-surface-variant text-center">
+                  <span aria-hidden="true">✓ </span>{chip}
                 </span>
               ))}
             </div>
@@ -191,7 +150,7 @@ export default function WelcomePage() {
                 {
                   num: "1.",
                   title: "Feed your knowledge",
-                  body: "Paste articles, upload PDFs, drop in notes. Contendo indexes everything into a private semantic library only you can access.",
+                  body: "Paste articles, upload PDFs, drop in notes. Contendo keeps it all in a private library only you can access.",
                 },
                 {
                   num: "2.",
@@ -201,7 +160,7 @@ export default function WelcomePage() {
                 {
                   num: "3.",
                   title: "Get a post worth publishing",
-                  body: "A draft in your voice, grounded in your knowledge. Not generic. Not hallucinated. Yours.",
+                  body: "A draft in your voice, grounded in your knowledge. Not generic. Not made up. Yours.",
                 },
               ].map((step) => (
                 <div key={step.num}>
@@ -367,30 +326,30 @@ export default function WelcomePage() {
               <p className="label-caps text-[10px] text-tertiary mb-3">The Philosophy</p>
               <h3 className="font-headline text-[2rem] sm:text-[2.7rem] leading-[1.05] mb-4">Beyond Content Generation</h3>
               <p className="text-[14px] text-secondary leading-relaxed mb-4">
-                In an age of generic noise, we believe in the Digital Atelier. Rather than asking an AI to hallucinate, you feed Contendo your own library of notes, research, and sparks.
+                Most AI tools write from whatever they were trained on. Contendo writes from your own notes, research and opinions instead.
               </p>
               <p className="text-[14px] text-secondary leading-relaxed mb-6">
-                Our engine doesn&apos;t just infer; it synthesizes your specific knowledge base to produce resonance that feels authentically yours.
+                Every draft starts from what you&apos;ve added, so it says what you would say, the way you would say it.
               </p>
 
               <ul className="space-y-3 text-[12px] text-on-surface/80">
                 <li className="flex items-center gap-2">
                   <span className="w-1.5 h-1.5 rounded-full bg-primary" />
-                  Personal Style Synthesis
+                  Learns from your writing samples
                 </li>
                 <li className="flex items-center gap-2">
                   <span className="w-1.5 h-1.5 rounded-full bg-primary" />
-                  Knowledge Graph Integration
+                  Draws on everything in your library
                 </li>
               </ul>
             </div>
           </div>
         </section>
 
-        {/* ── Craftsman's Toolkit — NO CHANGES ─────────────────────────────── */}
+        {/* ── Features ───────────────────────────────────────────────────────── */}
         <section id="features" className="px-5 sm:px-8 py-16 sm:py-24 bg-surface-container-low">
           <div className="max-w-[1080px] mx-auto">
-            <h2 className="font-headline text-[2rem] sm:text-[2.8rem] text-center mb-2">The Craftsman&apos;s Toolkit</h2>
+            <h2 className="font-headline text-[2rem] sm:text-[2.8rem] text-center mb-2">What Contendo does</h2>
             <div className="w-12 h-[1.5px] bg-tertiary/60 mx-auto mb-10" />
 
             <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
@@ -402,8 +361,7 @@ export default function WelcomePage() {
                   <div style={{ flex: 1 }}>
                     <p className="font-headline text-[1.55rem] mb-2">The Living Archive</p>
                     <p className="text-[13px] text-secondary leading-relaxed max-w-[560px]">
-                      Input any source, from PDFs to raw voice notes. Contendo indexes your unique
-                      world-view into a private semantic library.
+                      Add any source, from PDFs to rough notes. Contendo keeps what you know in a private library.
                     </p>
                   </div>
                   <img
@@ -421,14 +379,11 @@ export default function WelcomePage() {
               >
                 <p className="font-headline text-[1.55rem] text-white mb-2">Endless Inspiration</p>
                 <p className="text-[13px] text-white/75 leading-relaxed mb-6">
-                  Break through writer&apos;s block with an ideation engine that suggests angles
-                  based on the gaps in your existing archive.
+                  Stuck for a topic? Get post ideas drawn from what's already in your library.
                 </p>
                 <Link
                   href="/ideas"
-                  className="inline-flex px-3.5 py-2 rounded-md text-[10px] label-caps bg-white/85 text-primary hover:bg-white transition-colors"
-                >
-                  Explore ideas
+                  className="inline-flex min-h-11 items-center px-4 rounded-md text-[0.875rem] font-medium bg-white text-primary hover:bg-white/90 transition-colors" > Explore ideas
                 </Link>
                 <div className="absolute right-2 bottom-2 opacity-20 text-white">
                   <svg width="88" height="88" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1">
@@ -441,26 +396,24 @@ export default function WelcomePage() {
                 <div>
                   <p className="font-headline text-[1.55rem] mb-2">Refinement, Not Replacement</p>
                   <p className="text-[13px] text-secondary leading-relaxed max-w-[540px]">
-                    The AI acts as your editor. It checks tonal consistency against your voice
-                    profile and scores how well the draft resonates with your intended audience.
-                    Every suggestion is grounded in your own writing, not a template.
+                    Contendo acts as your editor. It rewrites any passage you select, in your voice, and scores how much a draft sounds like you. Every change starts from your own writing, not a template.
                   </p>
                   <div style={{ marginTop: "1rem", display: "flex", flexDirection: "column", gap: 8 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.875rem", color: "#645e57" }}>
                       <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                         <polyline points="2,7 5.5,10.5 12,4" stroke="#58614f" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
-                      Tone Consistency Check
+                      Refine any passage in place
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.875rem", color: "#645e57" }}>
                       <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                         <polyline points="2,7 5.5,10.5 12,4" stroke="#58614f" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
-                      Audience Resonance Scoring
+                      A score for how much it sounds like you
                     </div>
                   </div>
                 </div>
-                <div className="glass rounded-xl p-4">
+                <div aria-hidden="true" className="glass rounded-xl p-4">
                   <p className="font-headline italic text-[1.05rem] text-secondary mb-4">
                     &ldquo;The scent of old paper and the hum of creation...&rdquo;
                   </p>
@@ -555,12 +508,9 @@ export default function WelcomePage() {
               sounds like you wrote it.
             </p>
 
-            <Link
-              href={heroPrimaryCta.href}
-              className="btn-primary text-white text-[11px] label-caps rounded-lg px-7 py-3 inline-flex"
-            >
-              {isSignedIn ? "Open workspace" : "Get started free"}
-            </Link>
+            <Button asChild variant="cta" size="lg">
+              <Link href={heroPrimaryCta.href}>{isSignedIn ? "Open workspace" : "Get started free"}</Link>
+            </Button>
           </div>
         </section>
 
@@ -588,7 +538,7 @@ export default function WelcomePage() {
                 className="mt-2 text-secondary"
                 style={{ fontSize: "0.875rem" }}
               >
-                A personal writing atelier for builders and researchers.
+                Posts in your own voice, written from what you know.
               </p>
             </div>
 
@@ -611,18 +561,12 @@ export default function WelcomePage() {
                 <div className="flex flex-col gap-2.5">
                   <a
                     href="/about"
-                    className="text-secondary hover:text-on-surface transition-colors"
+                    className="inline-flex min-h-11 items-center text-secondary hover:text-on-surface transition-colors"
                     style={{ fontSize: "0.9rem" }}
                   >
                     About us
                   </a>
-                  <a
-                    href="/careers"
-                    className="text-secondary hover:text-on-surface transition-colors"
-                    style={{ fontSize: "0.9rem" }}
-                  >
-                    Careers
-                  </a>
+                  
                 </div>
               </div>
 
@@ -640,32 +584,26 @@ export default function WelcomePage() {
                 <div className="flex flex-col gap-2.5">
                   <a
                     href="#how-it-works"
-                    className="text-secondary hover:text-on-surface transition-colors"
+                    className="inline-flex min-h-11 items-center text-secondary hover:text-on-surface transition-colors"
                     style={{ fontSize: "0.9rem" }}
                   >
                     How it works
                   </a>
                   <Link
                     href="/sign-in"
-                    className="text-secondary hover:text-on-surface transition-colors"
+                    className="inline-flex min-h-11 items-center text-secondary hover:text-on-surface transition-colors"
                     style={{ fontSize: "0.9rem" }}
                   >
                     Sign in
                   </Link>
                   <Link
                     href="/first-post"
-                    className="text-secondary hover:text-on-surface transition-colors"
+                    className="inline-flex min-h-11 items-center text-secondary hover:text-on-surface transition-colors"
                     style={{ fontSize: "0.9rem" }}
                   >
                     Get started
                   </Link>
-                  <a
-                    href="/pricing"
-                    className="text-secondary hover:text-on-surface transition-colors"
-                    style={{ fontSize: "0.9rem" }}
-                  >
-                    Pricing
-                  </a>
+                  
                 </div>
               </div>
 
@@ -683,14 +621,14 @@ export default function WelcomePage() {
                 <div className="flex flex-col gap-2.5">
                   <a
                     href="/privacy-policy"
-                    className="text-secondary hover:text-on-surface transition-colors"
+                    className="inline-flex min-h-11 items-center text-secondary hover:text-on-surface transition-colors"
                     style={{ fontSize: "0.9rem" }}
                   >
                     Privacy Policy
                   </a>
                   <a
                     href="/terms-of-service"
-                    className="text-secondary hover:text-on-surface transition-colors"
+                    className="inline-flex min-h-11 items-center text-secondary hover:text-on-surface transition-colors"
                     style={{ fontSize: "0.9rem" }}
                   >
                     Terms of Service
@@ -707,7 +645,7 @@ export default function WelcomePage() {
               className="text-secondary"
               style={{ fontSize: "0.8rem" }}
             >
-              © 2026 Contendo. Crafted for the Digital Atelier.
+              © 2026 Contendo.
             </p>
           </div>
         </div>

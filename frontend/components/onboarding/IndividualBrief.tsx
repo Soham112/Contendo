@@ -1,30 +1,38 @@
 "use client";
 import type { FirstPostBrief } from '@/lib/onboarding-api';
+import { Button } from '@/components/ui/button';
+import { Input, Label, Textarea } from '@/components/ui/field';
 
-const FIELD = 'input-editorial w-full px-3 py-2.5 text-on-surface';
+// A native select styled like the other controls: no hooks, so this step renders as a plain function in tests.
+const SELECT = 'w-full min-h-11 rounded-t-md bg-surface-container-low px-3 text-[1rem] text-on-surface border-0 border-b-[1.5px] border-outline focus:outline-none focus:border-b-2 focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/30';
+
 export default function IndividualBrief({ brief, onChange, takes, suggesting, busy, onSuggest, onGenerate }: {
   brief: FirstPostBrief; onChange: (value: FirstPostBrief) => void; takes: string[];
   suggesting: boolean; busy: boolean; onSuggest: () => void; onGenerate: () => void;
 }) {
   const valid = Boolean(brief.topic.trim() && brief.story.trim());
+  const missing = !brief.topic.trim() ? 'Add a topic to continue' : !brief.story.trim() ? 'Add a sentence about it to continue' : undefined;
   return <form onSubmit={event => { event.preventDefault(); if (valid) onGenerate(); }} className="flex flex-col gap-6">
     <h1 className="font-headline text-[1.75rem] text-on-surface">What would you like to share?</h1>
-    <label className="flex flex-col gap-2 text-secondary">Topic
-      <input required maxLength={500} className={FIELD} value={brief.topic} onChange={e => onChange({ ...brief, topic: e.target.value, take: '' })} />
-    </label>
-    <label className="flex flex-col gap-2 text-secondary">Format
-      <select className={FIELD} value={brief.format} onChange={e => onChange({ ...brief, format: e.target.value })}>
+    <div>
+      <Label htmlFor="brief-topic">Topic</Label>
+      <Input id="brief-topic" required maxLength={500} value={brief.topic} onChange={e => onChange({ ...brief, topic: e.target.value, take: '' })} />
+    </div>
+    <div>
+      <Label htmlFor="brief-format">Format</Label>
+      <select id="brief-format" className={SELECT} value={brief.format} onChange={e => onChange({ ...brief, format: e.target.value })}>
         <option value="linkedin post">LinkedIn post</option><option value="medium article">Medium article</option><option value="twitter thread">Thread</option>
       </select>
-    </label>
-    <label className="flex flex-col gap-2 text-secondary">One sentence about it
-      <textarea required maxLength={4000} rows={3} className={FIELD} placeholder="Tell us the specific story, experience or idea you want to share." value={brief.story} onChange={e => onChange({ ...brief, story: e.target.value, take: '' })} />
-    </label>
-    <div>
-      <button type="button" disabled={!valid || suggesting || busy} onClick={onSuggest} className="text-primary underline underline-offset-4 disabled:opacity-50">{suggesting ? 'Thinking of takes…' : 'Suggest a take (optional)'}</button>
-      <p className="mt-2 text-sm text-secondary">Choose a viewpoint only if it reflects what you believe.</p>
-      <div className="mt-3 flex flex-col gap-2">{takes.map(take => <button key={take} type="button" aria-pressed={brief.take === take} onClick={() => onChange({ ...brief, take: brief.take === take ? '' : take })} className={`rounded-lg p-3 text-left ${brief.take === take ? 'bg-primary-container' : 'bg-surface-container-low'}`}>{take}</button>)}</div>
     </div>
-    <button disabled={!valid || busy || suggesting} className="btn-primary rounded-md px-5 py-3 text-white disabled:opacity-50">Generate my first post</button>
+    <div>
+      <Label htmlFor="brief-story">One sentence about it</Label>
+      <Textarea id="brief-story" required maxLength={4000} rows={3} placeholder="Tell us the specific story, experience or idea you want to share." value={brief.story} onChange={e => onChange({ ...brief, story: e.target.value, take: '' })} />
+    </div>
+    <div>
+      <Button variant="tertiary" disabled={!valid || busy} loading={suggesting} onClick={onSuggest} disabledReason={busy ? undefined : 'Add a topic and a sentence to get suggested takes'}>Suggest a take (optional)</Button>
+      <p className="mt-2 text-sm text-secondary">Choose a viewpoint only if it reflects what you believe.</p>
+      <div className="mt-3 flex flex-col gap-2">{takes.map(take => <button key={take} type="button" aria-pressed={brief.take === take} onClick={() => onChange({ ...brief, take: brief.take === take ? '' : take })} className={`min-h-11 rounded-xl border p-3 text-left text-[0.9375rem] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${brief.take === take ? 'border-primary bg-primary-container text-on-primary-fixed' : 'border-outline-variant bg-surface-container-lowest hover:bg-surface-container-low'}`}>{take}</button>)}</div>
+    </div>
+    <Button type="submit" size="lg" disabled={!valid || suggesting} loading={busy} disabledReason={suggesting ? undefined : missing}>Create my first post</Button>
   </form>;
 }

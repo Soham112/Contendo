@@ -3,6 +3,7 @@ import { Inter, Noto_Serif } from "next/font/google";
 import "./globals.css";
 import AppShell from "@/components/AppShell";
 import { ToastProvider } from "@/components/ui/ToastProvider";
+import { MotionProvider } from "@/components/ui/motion";
 import { DEFAULT_DESCRIPTION, DEFAULT_SOCIAL_IMAGE, SITE_NAME, SITE_URL, TITLE_SUFFIX } from "@/lib/seo";
 
 // Self-hosted at build time and swapped in when ready, so text paints at once
@@ -36,9 +37,11 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${headline.variable} ${body.variable}`}>
       <body className="bg-page text-text-primary">
-        <ToastProvider>
-          <AppShell>{children}</AppShell>
-        </ToastProvider>
+        <MotionProvider>
+          <ToastProvider>
+            <AppShell>{children}</AppShell>
+          </ToastProvider>
+        </MotionProvider>
       </body>
     </html>
   );

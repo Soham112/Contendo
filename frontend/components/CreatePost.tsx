@@ -23,12 +23,22 @@ import PostActionButtons from "@/components/create/PostActionButtons";
 import { WorkspaceBar } from "@/components/create/PostChrome";
 import ResumeDraftPrompt from "@/components/create/ResumeDraftPrompt";
 import PostWorkspace from "@/components/create/PostWorkspace";
+import { ProgressSteps } from "@/components/ui/states";
+
+// What happens while a post is written, in the order the pipeline does it.
+const GENERATION_STEPS = [
+  "Finding what you know about this",
+  "Drafting it in your voice",
+  "Checking facts against your sources",
+  "Polishing the wording",
+];
 import {
   GENERATION_KEYS, readDraft, readSavedIdeas, readSavedLength, readShowAnalysis, removeKeys, saveDraft, START_FRESH_KEYS, storedPostId,
 } from "@/components/create/draft-storage";
 import { useSaveStatus, useSplitLayout } from "@/components/create/layout-hooks";
 import { useIdeas } from "@/components/create/useIdeas";
 import { useVisuals } from "@/components/create/useVisuals";
+import { errorDetail } from "@/lib/request-errors";
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
@@ -376,15 +386,15 @@ export default function CreatePost() {
       });
 
       if (!res.ok) {
-        const err = await res.json();
+        const err = await res.clone().json().catch(() => null);
         // Out of posts for the month: explain the plan instead of showing an error.
-        const refused = readPaywall(res.status, err);
+        const refused = err ? readPaywall(res.status, err) : null;
         if (refused) {
           setPaywall(refused);
           refreshEntitlements();
           return;
         }
-        throw new Error(typeof err.detail === "string" ? err.detail : "Generation failed");
+        throw new Error(await errorDetail(res, "We couldn't write that post. Please try again."));
       }
 
       const data: GenerateResult = await res.json();
@@ -414,7 +424,8 @@ export default function CreatePost() {
       setEditorHinted(false);
       await autoSavePost(data, cleanPost);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Something went wrong.");
+      // A network failure (TypeError "Failed to fetch") is not something to show as-is.
+      setError(e instanceof TypeError ? "We couldn't reach Contendo. Check your connection and try again." : e instanceof Error ? e.message : "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -596,6 +607,26 @@ export default function CreatePost() {
     />
   );
 
+  const mobileActionButtons = (
+    <PostActionButtons
+      compact={false}
+      row
+      loading={loading}
+      visualsLoading={visualsLoading}
+      visualsVisible={visualsVisible}
+      hasVisuals={visuals.length > 0}
+      copiedLinkedIn={copiedLinkedIn}
+      copiedMedium={copiedMedium}
+      onRegenerate={openDrawer}
+      onAnalyse={openAnalysis}
+      onShowVisuals={() => setVisualsVisible(true)}
+      onHideVisuals={() => setVisualsVisible(false)}
+      onGenerateVisuals={handleGenerateVisuals}
+      onCopyLinkedIn={handleCopyLinkedIn}
+      onCopyMedium={handleCopyMedium}
+    />
+  );
+
   // ─── Post metadata bar ────────────────────────────────────────────────────
 
   const postStats = useMemo(() => getPostStats(editedPost), [editedPost]);
@@ -604,7 +635,7 @@ export default function CreatePost() {
 
   return (
     <div
-      className={splitActive ? "" : "-mx-10 -mt-10 -mb-10 bg-background flex flex-col"}
+      className={splitActive ? "" : "-mx-4 -mt-6 -mb-6 sm:-mx-6 md:-mx-10 md:-mt-10 md:-mb-10 bg-background flex flex-col"}
       style={
         splitActive
           ? {
@@ -636,6 +667,7 @@ export default function CreatePost() {
           tone={tone}
           onStartOver={handleStartOver}
           actions={postActionButtons}
+          mobileActions={mobileActionButtons}
           editorRef={postEditorRef}
           opinionMode={opinionMode}
           hinted={editorHinted}
@@ -718,27 +750,16 @@ export default function CreatePost() {
             )}
 
             {/* ── Generating spinner ──────────────────────────────────────── */}
-            {loading && (
-              <div className="flex flex-col items-center justify-center py-20 gap-5 text-center">
-                <div className="w-10 h-10 rounded-full border-2 border-surface-container-high border-t-primary animate-spin" />
-                <div>
-                  <p className="text-sm font-medium text-on-surface font-headline">
-                    Generating your draft
-                  </p>
-                  <p className="text-xs text-outline mt-1">
-                    Retrieving from memory, composing in your voice, running humanizer pass…
-                  </p>
-                </div>
-              </div>
-            )}
+            {loading && <ProgressSteps title="Writing your post" steps={GENERATION_STEPS} stepMs={6000} />}
 
           </div>
         </div>
       )}
 
       {/* Settings drawer */}
-      {drawerOpen && (
+      {postGenerated && (
         <SettingsDrawer
+          open={drawerOpen}
           initialTopic={topic}
           initialFormat={format}
           initialTone={tone}

@@ -50,7 +50,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return <LoadingWordmark />;
   }
 
-  if (profileError || accountError) return <main className="max-w-xl mx-auto p-8"><RetryNotice message={profileError || accountError} onRetry={profileError ? retryProfile : retryAccount} /></main>;
+  if (profileError || accountError) return <main className="max-w-xl mx-auto px-4 py-10"><RetryNotice message={profileError || accountError} onRetry={profileError ? retryProfile : retryAccount} /></main>;
 
 
 
@@ -62,16 +62,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             type="button"
             aria-label="Open menu"
             onClick={() => setSidebarOpen(true)}
-            className="w-10 h-10 flex items-center justify-center text-on-surface"
+            className="w-11 h-11 rounded-md flex items-center justify-center text-on-surface hover:bg-surface-container"
           >
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <line x1="4" y1="5" x2="20" y2="5" stroke="#2f3333" strokeWidth="2" strokeLinecap="round" />
               <line x1="4" y1="12" x2="20" y2="12" stroke="#2f3333" strokeWidth="2" strokeLinecap="round" />
               <line x1="4" y1="19" x2="20" y2="19" stroke="#2f3333" strokeWidth="2" strokeLinecap="round" />
             </svg>
           </button>
           <p className="font-headline italic text-[1.1rem] text-on-surface leading-none">Contendo</p>
-          <div className="w-10 h-10" aria-hidden="true" />
+          <div className="w-11 h-11" aria-hidden="true" />
         </div>
       </div>
 
@@ -85,7 +85,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       <Sidebar mobileOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <main className="flex-1 min-h-screen overflow-y-auto pt-[52px] md:pt-0">
-        <div className="px-10 py-10">
+        <div className="px-4 py-6 sm:px-6 md:px-10 md:py-10">
           <PageTransition key={pathname}>{children}</PageTransition>
         </div>
       </main>

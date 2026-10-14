@@ -1,6 +1,13 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { motion } from 'motion/react'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogActions } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/field'
+import { riseIn, transition } from '@/components/ui/motion'
+import { ErrorState } from '@/components/ui/states'
+import { chipClass } from '@/components/ui/chip'
 import { useRouter } from 'next/navigation'
 import { useApi } from '@/lib/api'
 import type { ProfileData } from '@/lib/api'
@@ -182,142 +189,60 @@ export default function OnboardingIntercept({ destination, onComplete }: Onboard
 
   const canAdvance = q.type === 'chip' ? !!currentChipAnswer : true
 
-  const overlayVisible = entered && !exiting
-
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 50,
-        background: 'rgba(47, 51, 51, 0.45)',
-        backdropFilter: 'blur(4px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '0 1rem',
-        opacity: overlayVisible ? 1 : 0,
-        transition: exiting ? 'opacity 150ms ease-in' : 'opacity 250ms ease-out',
-      }}
+    <Dialog
+      open={entered && !exiting}
+      onOpenChange={(open) => { if (!open && !saving) void finish(chipAnswers, null) }}
+      title="A few questions about your voice"
+      description={`Question ${step + 1} of ${QUESTIONS.length}. Every question is optional.`}
     >
-      <div
-        style={{
-          background: '#ffffff',
-          borderRadius: '1.25rem',
-          padding: '2.5rem',
-          maxWidth: '480px',
-          width: '90vw',
-          boxShadow:
-            '0px 4px 20px rgba(47,51,51,0.06), 0px 12px 40px rgba(47,51,51,0.10)',
-          transform: overlayVisible ? 'translateY(0)' : 'translateY(12px)',
-          transition: exiting
-            ? 'transform 150ms ease-in'
-            : 'transform 250ms ease-out',
-        }}
-      >
-        {saveError && <p role="alert" className="text-error mb-4">{saveError}</p>}
-        {/* Progress dots */}
-        <div className="flex items-center justify-center mb-10" style={{ gap: '8px' }}>
-          {QUESTIONS.map((_, i) => (
-            <div
-              key={i}
-              style={{
-                width: i <= step ? '8px' : '6px',
-                height: i <= step ? '8px' : '6px',
-                borderRadius: '9999px',
-                background: i <= step ? '#58614f' : '#aeb3b2',
-                opacity: i <= step ? 1 : 0.4,
-                transition: 'all 200ms',
-                flexShrink: 0,
-              }}
-            />
-          ))}
-        </div>
+      {saveError && <div className="mb-4"><ErrorState message={saveError} /></div>}
+      <div aria-hidden="true" className="mb-6 flex items-center gap-2">
+        {QUESTIONS.map((_, i) => (
+          <span key={i} className={`h-1.5 flex-1 rounded-full transition-colors duration-200 ${i <= step ? 'bg-primary' : 'bg-surface-container-high'}`} />
+        ))}
+      </div>
 
-        {/* Headline */}
-        <h2
-          className="font-headline italic text-[#2f3333] text-center mb-8 mx-auto"
-          style={{ fontSize: '1.4rem', lineHeight: 1.5, maxWidth: '340px' }}
-        >
-          {q.headline}
-        </h2>
-
-        {/* Input area */}
+      {/* Each question fades and rises in. */}
+      <motion.div key={step} initial={riseIn.initial} animate={riseIn.animate} transition={transition.base}>
         {q.type === 'chip' ? (
-          <div className="flex flex-wrap justify-center mb-10" style={{ gap: '8px' }}>
-            {q.chips.map(chip => (
-              <button
-                key={chip}
-                onClick={() => selectChip(chip)}
-                style={{
-                  padding: '10px 18px',
-                  borderRadius: '9999px',
-                  fontSize: '0.9rem',
-                  border: currentChipAnswer === chip
-                    ? '1px solid #58614f'
-                    : '1px solid transparent',
-                  background: currentChipAnswer === chip ? '#eef0eb' : '#f3f4f3',
-                  color: currentChipAnswer === chip ? '#58614f' : '#2f3333',
-                  cursor: 'pointer',
-                  transition: 'all 150ms',
-                }}
-                onMouseEnter={e => {
-                  if (currentChipAnswer !== chip) {
-                    (e.currentTarget as HTMLButtonElement).style.background = '#edeeed'
-                  }
-                }}
-                onMouseLeave={e => {
-                  if (currentChipAnswer !== chip) {
-                    (e.currentTarget as HTMLButtonElement).style.background = '#f3f4f3'
-                  }
-                }}
-              >
-                {chip}
-              </button>
-            ))}
-          </div>
+          <fieldset>
+            <legend className="font-headline italic text-[1.3rem] leading-snug text-on-surface mb-6">{q.headline}</legend>
+            <div className="flex flex-wrap gap-2">
+              {q.chips.map(chip => (
+                <button
+                  key={chip}
+                  type="button"
+                  aria-pressed={currentChipAnswer === chip}
+                  onClick={() => selectChip(chip)}
+                  className={chipClass(currentChipAnswer === chip)}
+                >
+                  {chip}
+                </button>
+              ))}
+            </div>
+          </fieldset>
         ) : (
-          <div className="mb-10">
-            <input
-              type="text"
+          <div>
+            <label htmlFor="voice-answer" className="block font-headline italic text-[1.3rem] leading-snug text-on-surface mb-6">{q.headline}</label>
+            <Input
+              id="voice-answer"
               value={textValue}
               onChange={e => setTextValue(e.target.value)}
               placeholder={q.placeholder}
               autoFocus
-              className="w-full bg-[#f3f4f3] rounded-xl px-4 py-3 text-[14px] text-[#2f3333] placeholder-[#2f3333]/40 outline-none focus:bg-[#edeeed] transition-colors"
-              onKeyDown={e => {
-                if (e.key === 'Enter' && !saving) handleNext()
-              }}
+              onKeyDown={e => { if (e.key === 'Enter' && !saving) handleNext() }}
             />
           </div>
         )}
+      </motion.div>
 
-        {/* Actions */}
-        <div className="flex items-center justify-end gap-4">
-          <button
-            onClick={handleSkip}
-            disabled={saving}
-            style={{
-              fontSize: '0.85rem',
-              color: '#645e57',
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              opacity: saving ? 0.4 : 1,
-            }}
-          >
-            {isLast && q.type === 'text' ? 'Skip this one →' : 'Skip'}
-          </button>
-
-          <button
-            onClick={handleNext}
-            disabled={!canAdvance || saving}
-            className="btn-primary text-white px-6 py-2.5 rounded-xl text-[14px] font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
-          >
-            {saving ? 'Saving...' : isLast ? 'Done →' : 'Next →'}
-          </button>
-        </div>
-      </div>
-    </div>
+      <DialogActions>
+        <Button variant="tertiary" onClick={handleSkip} disabled={saving}>Skip</Button>
+        <Button onClick={handleNext} loading={saving} disabled={!canAdvance} disabledReason="Choose an answer to continue">
+          {isLast ? 'Done' : 'Next'}
+        </Button>
+      </DialogActions>
+    </Dialog>
   )
 }
