@@ -20,6 +20,14 @@ class PipelineState(TypedDict, total=False):
 
     # Loaded profile
     profile: dict[str, Any]
+    # Business users only (absent for individuals), set by load_profile_node from
+    # the account and config.niches: {niche, niche_label, tone, pillar}. tone is
+    # the tone's label plus the user's own tone notes. pillar is {key, label,
+    # about, needs} when the request named one of the niche's pillars, else None.
+    # Persisted in generation_traces.node_outputs.
+    business: dict[str, Any]
+    # Request field: the key of the content pillar this post is (config.niches).
+    pillar: Optional[str]
 
     # Retrieved knowledge
     retrieval_query: str            # exact query string sent to retrieval (topic + context)

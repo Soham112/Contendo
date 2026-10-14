@@ -10,6 +10,8 @@
 
 > **Verification note (2026-10-03, fact check):** Fact Check Agent added after the word count enforcer (judge + rewrite prompts below). The first-person/organisation pattern guard and its retry-note line were removed; the regex guard covers numbers, dates, durations and money only. PROMPTS.md and the agent files are in sync.
 
+> **Verification note (2026-10-13, business posts):** Draft prompts gain `{business_post}` (empty for individuals) and `FRAMES` gains `BUSINESS_PROFILE`. PROMPTS.md, `agents/draft_prompt.py` and `utils/frames.py` are in sync.
+
 > **Verification note (2026-10-03, latest):** Draft agent: TOPIC RULE added after the topic and context (write about the topic as given, no analogy to the author's field, no expertise/projects/opinions unless asked; the profile shapes voice, not subject). PROMPTS.md and draft_agent.py are in sync.
 
 > **Verification note (2026-10-03, later):** Critic sees the topic and context, checks topic adherence first (new `topic` key) and never steers the post to the author's opinions, expertise or work unless asked; humanizer fixes topic first. PROMPTS.md and the agent files are in sync.
@@ -286,7 +288,7 @@ TOPIC RULE: Write about the topic as given. Don't frame it as an analogy or meta
 {posted_topics_section}
 {perspective_rule}
 {grounding_instruction}
-{first_post_instruction}
+{first_post_instruction}{business_post}
 Write the draft now. Do not add any preamble or explanation; output only the post content itself.
 
 ---
@@ -328,6 +330,7 @@ Never force a diagram into opinion pieces or short punchy posts where the words 
 - `perspective_rule` — `PERSPECTIVES[state["perspective"]]`: see **Perspective** below.
 - `grounding_instruction` — `_get_grounding_instruction(retrieval_confidence)`, with the no-notes rule and the no-specifics rule prepended when they apply.
 - `first_post_instruction` — `_FIRST_POST_INSTRUCTION` when `state["first_post"]`.
+- `business_post` — business users only (`state["business"]`, set by `load_profile_node`); `""` for an individual, whose prompt is unchanged. Otherwise a blank line, then the **Business post** block below. Both draft prompts share it.
 - `archetype_name`, `archetype_instructions` — the chosen archetype's name and structure block (see **Archetypes** below).
 - `source_rules` — one rule per frame present in this post's chunks, generated from `utils.frames.FRAMES`, followed by the cross-source rule; `""` when there are no chunks.
 
@@ -370,7 +373,7 @@ TOPIC RULE: Write about the topic as given. Don't frame it as an analogy or meta
 {posted_topics_section}
 {perspective_rule}
 {grounding_instruction}
-{first_post_instruction}
+{first_post_instruction}{business_post}
 
 ---
 POST STRUCTURE: write this post as a {archetype_name}:
@@ -658,6 +661,18 @@ Don't make claims about what most people, most founders or most teams do unless 
 
 ---
 
+### Business post (dynamic — business users only) — agents/draft_prompt.py
+
+`_business_post(state["business"])`. `{tone}` is the business's chosen tone label followed by the user's own tone notes. The pillar lines appear only when the request names one of the niche's pillars; `{pillar_label}`, `{pillar_about}` and `{pillar_needs}` come from `backend/config/niches.py`, the one place niche guidance lives.
+
+```
+BUSINESS POST: this post is published by a business, for its customers. Write it in this tone: {tone}.
+Kind of post: {pillar_label}. {pillar_about}
+A post of this kind is about {pillar_needs}. Use those details only where a source, the topic or the
+additional context gives them. Where they are missing, leave them out and write a shorter post: never
+invent a listing, address, price, review, award, client name or result.
+```
+
 ### Source rules (dynamic — one per frame present) — utils/frames.py
 
 `FRAMES` is the single list of frames: every value `chunk_frame()` can return, with the label its chunks get in the knowledge base block and the rule for writing from them. The draft prompt's `{source_rules}` contains only the rules for frames present in this post, each under the same label as in the knowledge base block.
@@ -666,6 +681,12 @@ Don't make claims about what most people, most founders or most teams do unless 
 ```
 CONSOLIDATED SUMMARY:
 A summary of what the author's notes say about this topic. Background only: absorb it, don't quote it. It cannot be the evidence for a first-person event.
+```
+
+`BUSINESS_PROFILE` (the note a business user's onboarding answers are saved as, `source_type` `business_profile`)
+```
+BUSINESS PROFILE:
+What the author told us about their business: its name, area, website and services. These are facts and may be stated as written. It says nothing about any listing, sale, price, client, review, award or result: never take one from it.
 ```
 
 `PERSONAL_WORK`

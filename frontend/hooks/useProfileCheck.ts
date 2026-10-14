@@ -9,7 +9,7 @@ import { useApi } from "@/lib/api";
 // The ID is stable for a given unpacked extension directory.
 const CONTENDO_EXTENSION_ID = "nlfgeodogbhnningocmjcjdndgcimbon";
 
-const SKIP_ROUTES = ["/welcome", "/sign-in", "/sign-up", "/onboarding", "/first-post"];
+const SKIP_ROUTES = ["/welcome", "/sign-in", "/sign-up", "/onboarding", "/first-post", "/get-started"];
 
 export function useProfileCheck() {
   const [isSignedIn, setIsSignedIn] = useState(false);
@@ -22,8 +22,14 @@ export function useProfileCheck() {
   const pathname = usePathname();
   const api = useApi();
 
-  // Resolve auth state once on mount and push token to the Chrome extension.
+  // Resolve auth state on mount (and push the token to the Chrome extension),
+  // then follow it: signing in with email and password does not reload the
+  // page, so without this the profile check below would never run for that user.
   useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsSignedIn(!!session);
+      setIsLoaded(true);
+    });
     supabase.auth.getUser().then(({ data: { user } }) => {
       setIsSignedIn(!!user);
       setIsLoaded(true);
@@ -50,6 +56,7 @@ export function useProfileCheck() {
         });
       }
     });
+    return () => subscription.unsubscribe();
   }, []);
 
   // Fetch profile once auth state is known
@@ -73,7 +80,10 @@ export function useProfileCheck() {
           setHasProfile(data.has_profile);
           setProfileComplete(data.profile_complete ?? false);
           if (!data.has_profile) {
-            router.push("/first-post");
+            // New users answer the segment question first, unless they have
+            // already answered or skipped it (the backend decides).
+            const account = await api.getAccount().catch(() => null);
+            router.push(account?.ask_segment ? "/get-started" : "/first-post");
           }
         }
       })

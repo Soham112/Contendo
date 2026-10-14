@@ -9,6 +9,12 @@ import type { ClosestSource, ScoreResponse } from "@/lib/api";
 import { generateOutcome } from "@/lib/generate-outcome";
 import { LowCoverageNotice, OpinionPostLabel } from "@/components/LowCoverageNotice";
 import { useTracking } from "@/lib/useTracking";
+import BusinessPostFields, { useBusinessPost } from "@/components/create/BusinessPostFields";
+import PublishPanel from "@/components/publishing/PublishPanel";
+import UpgradeScreen from "@/components/billing/UpgradeScreen";
+import QuotaLine from "@/components/billing/QuotaLine";
+import { useEntitlements } from "@/hooks/useEntitlements";
+import { readPaywall, type Paywall } from "@/lib/billing";
 
 const SS_POST = "contentOS_last_post";
 const SS_SCORE = "contentOS_last_score";
@@ -178,7 +184,7 @@ function setEditorContent(editor: HTMLDivElement, text: string): void {
       "display:flex",
       "align-items:center",
       "justify-content:center",
-      "font-family:Inter,sans-serif",
+      "font-family:var(--font-body),sans-serif",
       "font-size:0.85rem",
       "color:#645e57",
       "user-select:none",
@@ -264,10 +270,10 @@ function DiagramBlock({ visual, api, onActiveVersionChange }: DiagramBlockProps)
           padding: "20px 24px",
         }}
       >
-        <p style={{ color: "#81543c", fontSize: "0.85rem", fontFamily: "Inter, sans-serif" }}>
+        <p style={{ color: "#81543c", fontSize: "0.85rem", fontFamily: "var(--font-body), sans-serif" }}>
           Diagram generation failed — try again
         </p>
-        <p style={{ color: "#81543c", fontSize: "0.75rem", opacity: 0.7, marginTop: 4, fontFamily: "Inter, sans-serif" }}>
+        <p style={{ color: "#81543c", fontSize: "0.75rem", opacity: 0.7, marginTop: 4, fontFamily: "var(--font-body), sans-serif" }}>
           {visual.description}
         </p>
       </div>
@@ -316,7 +322,7 @@ function DiagramBlock({ visual, api, onActiveVersionChange }: DiagramBlockProps)
     >
       {/* Header */}
       <div style={{ padding: "12px 16px", borderBottom: "none" }}>
-        <p style={{ fontSize: "0.8rem", color: "#645e57", fontFamily: "Inter, sans-serif" }}>
+        <p style={{ fontSize: "0.8rem", color: "#645e57", fontFamily: "var(--font-body), sans-serif" }}>
           {visual.description.length > 70
             ? visual.description.slice(0, 70) + "…"
             : visual.description}
@@ -355,7 +361,7 @@ function DiagramBlock({ visual, api, onActiveVersionChange }: DiagramBlockProps)
                   background: idx === activeVersion ? "#eef0eb" : "#e8e9e8",
                   color: idx === activeVersion ? "#58614f" : "#645e57",
                   cursor: "pointer",
-                  fontFamily: "Inter, sans-serif",
+                  fontFamily: "var(--font-body), sans-serif",
                   fontWeight: idx === activeVersion ? 500 : 400,
                 }}
               >
@@ -384,7 +390,7 @@ function DiagramBlock({ visual, api, onActiveVersionChange }: DiagramBlockProps)
               fontSize: "0.85rem",
               color: "#2f3333",
               outline: "none",
-              fontFamily: "Inter, sans-serif",
+              fontFamily: "var(--font-body), sans-serif",
               transition: "border-color 0.15s",
             }}
           />
@@ -400,7 +406,7 @@ function DiagramBlock({ visual, api, onActiveVersionChange }: DiagramBlockProps)
               fontSize: "0.8rem",
               cursor: isLoading || !inputValue.trim() ? "not-allowed" : "pointer",
               opacity: isLoading || !inputValue.trim() ? 0.5 : 1,
-              fontFamily: "Inter, sans-serif",
+              fontFamily: "var(--font-body), sans-serif",
               whiteSpace: "nowrap",
             }}
           >
@@ -409,7 +415,7 @@ function DiagramBlock({ visual, api, onActiveVersionChange }: DiagramBlockProps)
         </div>
 
         {refinementError && (
-          <p style={{ fontSize: "0.78rem", color: "#81543c", fontFamily: "Inter, sans-serif" }}>
+          <p style={{ fontSize: "0.78rem", color: "#81543c", fontFamily: "var(--font-body), sans-serif" }}>
             {refinementError}
           </p>
         )}
@@ -670,6 +676,9 @@ function SettingsDrawer({ initialTopic, initialFormat, initialTone, initialLengt
 
 export default function CreatePost() {
   const api = useApi();
+  const businessPost = useBusinessPost();
+  const { entitlements, refresh: refreshEntitlements } = useEntitlements();
+  const [paywall, setPaywall] = useState<Paywall | null>(null);
   const { logEvent } = useTracking();
   const [topic, setTopic] = useState("");
   const [format, setFormat] = useState<Format>("linkedin post");
@@ -1107,14 +1116,23 @@ export default function CreatePost() {
       const res = await api.generatePost({
         topic: t, format: f, tone: tn, length: len, context: ctx,
         no_specifics: opts?.noSpecifics ?? false,
+        ...businessPost.requestFields(),
       });
 
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.detail ?? "Generation failed");
+        // Out of posts for the month: explain the plan instead of showing an error.
+        const refused = readPaywall(res.status, err);
+        if (refused) {
+          setPaywall(refused);
+          refreshEntitlements();
+          return;
+        }
+        throw new Error(typeof err.detail === "string" ? err.detail : "Generation failed");
       }
 
       const data: GenerateResult = await res.json();
+      refreshEntitlements();
       const outcome = generateOutcome(data);
       if (outcome.kind === "low_coverage") {
         setLowCoverage(outcome.closestSources);
@@ -1129,6 +1147,7 @@ export default function CreatePost() {
         return;
       }
       setOpinionMode(opts?.noSpecifics ?? false);
+      businessPost.clearDetails();
       pendingTraceIdRef.current = data.trace_id ?? null;
       currentTraceIdRef.current = data.trace_id ?? null;
       // Store raw post (with placeholders) for /generate-visuals, strip for display/editing
@@ -1455,7 +1474,7 @@ export default function CreatePost() {
                 x="65" y="62"
                 textAnchor="middle"
                 fontSize="26" fontWeight="700" fill="#2f3333"
-                fontFamily="Inter, system-ui, sans-serif"
+                style={{ fontFamily: "var(--font-body), system-ui, sans-serif" }}
               >
                 {result.score}
               </text>
@@ -1464,7 +1483,7 @@ export default function CreatePost() {
                 textAnchor="middle"
                 fontSize="8.5" fontWeight="500"
                 letterSpacing="0.09em" fill="#777c7b"
-                fontFamily="Inter, system-ui, sans-serif"
+                style={{ fontFamily: "var(--font-body), system-ui, sans-serif" }}
               >
                 AUTHSCORE
               </text>
@@ -1561,7 +1580,7 @@ export default function CreatePost() {
             <text
               x="65" y="62" textAnchor="middle"
               fontSize="26" fontWeight="500" fill="#aeb3b2"
-              fontFamily="Inter, system-ui, sans-serif"
+              style={{ fontFamily: "var(--font-body), system-ui, sans-serif" }}
             >
               0
             </text>
@@ -1569,7 +1588,7 @@ export default function CreatePost() {
               x="65" y="79" textAnchor="middle"
               fontSize="8.5" fontWeight="500"
               letterSpacing="0.09em" fill="#aeb3b2"
-              fontFamily="Inter, system-ui, sans-serif"
+              style={{ fontFamily: "var(--font-body), system-ui, sans-serif" }}
             >
               AUTHSCORE
             </text>
@@ -1894,7 +1913,7 @@ export default function CreatePost() {
                   <p className="label-caps text-secondary" style={{ fontSize: "0.6rem", letterSpacing: "0.1em", marginBottom: 6 }}>
                     MANUSCRIPT DRAFT
                   </p>
-                  <h1 style={{ fontFamily: "Noto Serif, serif", fontSize: "2rem", fontWeight: 300, color: "#2f3333", lineHeight: 1.2, margin: "0 0 0.5rem" }}>
+                  <h1 style={{ fontFamily: "var(--font-headline), serif", fontSize: "2rem", fontWeight: 300, color: "#2f3333", lineHeight: 1.2, margin: "0 0 0.5rem" }}>
                     {topic || "The Manuscript"}
                   </h1>
                   <p className="text-xs text-outline">Select any passage to refine it in place.</p>
@@ -2024,6 +2043,10 @@ export default function CreatePost() {
                 </div>
                 {/* END canvas card */}
 
+                <div style={{ width: "100%", marginTop: 20 }}>
+                  <PublishPanel content={editedPost} postId={currentPostId} />
+                </div>
+
                 {/* Below-canvas content — single-column only */}
                 {!splitActive && (
                   <>
@@ -2096,7 +2119,7 @@ export default function CreatePost() {
                                 padding: "4px 12px",
                                 cursor: visualsLoading ? "not-allowed" : "pointer",
                                 opacity: visualsLoading ? 0.5 : 1,
-                                fontFamily: "Inter, sans-serif",
+                                fontFamily: "var(--font-body), sans-serif",
                               }}
                             >
                               {visualsLoading ? "Scanning…" : "Regenerate"}
@@ -2130,7 +2153,7 @@ export default function CreatePost() {
                             }}
                           >
                             <div className="w-8 h-8 rounded-full border-2 border-surface-container-high border-t-primary animate-spin" />
-                            <p style={{ fontSize: "0.85rem", color: "#645e57", fontFamily: "Inter, sans-serif" }}>
+                            <p style={{ fontSize: "0.85rem", color: "#645e57", fontFamily: "var(--font-body), sans-serif" }}>
                               Scanning post for visual opportunities…
                             </p>
                           </div>
@@ -2144,7 +2167,7 @@ export default function CreatePost() {
                               padding: "20px 24px",
                             }}
                           >
-                            <p style={{ fontSize: "0.85rem", color: "#645e57", fontFamily: "Inter, sans-serif" }}>
+                            <p style={{ fontSize: "0.85rem", color: "#645e57", fontFamily: "var(--font-body), sans-serif" }}>
                               No visual placeholders found in post.
                             </p>
                           </div>
@@ -2417,6 +2440,8 @@ export default function CreatePost() {
                 </div>
 
                 <div className="space-y-8">
+                  <BusinessPostFields business={businessPost} />
+
                   {/* Topic */}
                   <div>
                     <label
@@ -2588,6 +2613,10 @@ export default function CreatePost() {
                     />
                   )}
 
+                  <div className="flex justify-center">
+                    <QuotaLine entitlements={entitlements} />
+                  </div>
+
                   {/* Generate button */}
                   <div className="flex justify-center pt-2">
                     <button
@@ -2688,7 +2717,7 @@ export default function CreatePost() {
                 outline: "none",
                 color: "#2f3333",
                 fontSize: "13px",
-                fontFamily: "Inter, sans-serif",
+                fontFamily: "var(--font-body), sans-serif",
               }}
             />
             <button
@@ -2703,7 +2732,7 @@ export default function CreatePost() {
                 padding: "6px 12px",
                 cursor: inlineLoading ? "wait" : "pointer",
                 opacity: !inlineInstruction.trim() || inlineLoading ? 0.5 : 1,
-                fontFamily: "Inter, sans-serif",
+                fontFamily: "var(--font-body), sans-serif",
               }}
             >
               {inlineLoading ? "..." : "→"}
@@ -2717,7 +2746,7 @@ export default function CreatePost() {
                 fontSize: "13px",
                 padding: "4px 6px",
                 cursor: "pointer",
-                fontFamily: "Inter, sans-serif",
+                fontFamily: "var(--font-body), sans-serif",
               }}
             >
               ✕
@@ -2726,6 +2755,7 @@ export default function CreatePost() {
         </>
       )}
 
+      {paywall && <UpgradeScreen code={paywall.code} message={paywall.message} onClose={() => setPaywall(null)} />}
     </div>
   );
 }

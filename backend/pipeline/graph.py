@@ -12,7 +12,9 @@ from pipeline.finalise import validation_record
 from pipeline.redraft import review_summary
 from pipeline.single_writer import wire_draft_only, wire_reviewed
 from utils.formatters import normalise_post_punctuation, resolve_length_target
+from utils.business_notes import business_context
 from utils.frames import decide_perspective
+from memory.account_store import get_account
 from memory.profile_store import load_profile
 from memory.feedback_store import get_all_topics_posted
 from memory.trace_store import save_generation_trace
@@ -34,6 +36,9 @@ MAX_ITERATIONS = 3
 def load_profile_node(state: PipelineState) -> PipelineState:
     user_id = state["user_id"]
     state["profile"] = load_profile(user_id=user_id)
+    business = business_context(get_account(user_id), state.get("pillar"))
+    if business:
+        state["business"] = business
     state["iterations"] = 0
     state["archetype"] = state.get("archetype", "")
     state["critic_brief"] = {}
@@ -219,6 +224,7 @@ def run_pipeline(
     *,
     user_id: str,
     no_specifics: bool = False,
+    pillar: str | None = None,
     variant: str | None = None,
     models: dict[str, str] | None = None,
 ) -> dict:
@@ -240,6 +246,10 @@ def run_pipeline(
     Proper fix: feat/citations-ui exposes per-sentence citations and recorded
     check/review results; the author decides what to change. Refine alignment
     and explicit no-post statuses are implemented here.
+
+    pillar: business users only, the key of the content pillar this post is
+    (config.niches); it adds that pillar's lines to the draft prompt. A key the
+    user's niche does not have is ignored here (/generate rejects it first).
 
     variant: which pipeline to run (config.features.PIPELINE_VARIANTS). None
     uses the configured one (PIPELINE_VARIANT, default C-Opus); evals pass it to
@@ -265,6 +275,7 @@ def run_pipeline(
         "context": context,
         "quality": quality,
         "user_id": user_id,
+        "pillar": pillar,
         "variant": variant,
         **single_writer_models,
         "iterations": 0,

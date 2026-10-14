@@ -1,6 +1,8 @@
 "use client";
 
 import supabase from "@/lib/supabase";
+import { accountApi } from "@/lib/account-api";
+import { commerceApi } from "@/lib/commerce-api";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -41,6 +43,10 @@ export interface GenerateRequest {
   quality?: string;
   /** Skip the coverage gate and write an opinion post without specifics. */
   no_specifics?: boolean;
+  /** Business users: the key of one of their niche's content pillars. */
+  pillar?: string | null;
+  /** Business users: what this post is about; saved to memory before drafting. */
+  pillar_details?: string;
 }
 
 export interface ClosestSource {
@@ -185,6 +191,9 @@ export function useApi() {
   }
 
   return {
+    ...accountApi(apiFetch),
+    ...commerceApi(apiFetch),
+
     // ── Ingest ────────────────────────────────────────────────────────────
     ingestContent: (body: IngestRequest) =>
       apiFetch("/ingest", {

@@ -105,7 +105,31 @@ TOPIC RULE: Write about the topic as given. Don't frame it as an analogy or meta
 {posted_topics_section}
 {perspective_rule}
 {grounding_instruction}
-{first_post_instruction}"""
+{first_post_instruction}{business_post}"""
+
+# Business users only (state["business"], set by load_profile_node). The pillar
+# lines are added only when the request names one; both come from config.niches.
+_BUSINESS_POST = (
+    "BUSINESS POST: this post is published by a business, for its customers. Write it in this tone: {tone}."
+)
+_BUSINESS_PILLAR = """Kind of post: {pillar_label}. {pillar_about}
+A post of this kind is about {pillar_needs}. Use those details only where a source, the topic or the
+additional context gives them. Where they are missing, leave them out and write a shorter post: never
+invent a listing, address, price, review, award, client name or result."""
+
+
+def _business_post(business: dict | None) -> str:
+    """The BUSINESS POST block, led by a blank line; "" for an individual, so
+    their prompt is exactly what it was before the block existed."""
+    if not business:
+        return ""
+    lines = [_BUSINESS_POST.format(tone=business["tone"])]
+    pillar = business.get("pillar")
+    if pillar:
+        lines.append(_BUSINESS_PILLAR.format(
+            pillar_label=pillar["label"], pillar_about=pillar["about"], pillar_needs=pillar["needs"],
+        ))
+    return "\n\n" + "\n".join(lines)
 
 _STRUCTURE = """---
 POST STRUCTURE: write this post as a {archetype_name}:
@@ -229,6 +253,7 @@ def _shared_fields(state: PipelineState) -> dict[str, str]:
         perspective_rule=PERSPECTIVES.get(state.get("perspective", ""), ""),
         grounding_instruction=grounding_instruction,
         first_post_instruction=_FIRST_POST_INSTRUCTION if is_first_post else "",
+        business_post=_business_post(state.get("business")),
     )
 
 
