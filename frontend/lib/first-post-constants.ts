@@ -47,7 +47,7 @@ export const ROLE_TO_BUCKET: Record<RoleKey, OpinionBucket> = {
 export const OPINION_STATEMENTS: Record<OpinionBucket, string[]> = {
   data: [
     'Most ML models fail in production because of data quality, not model quality',
-    'Feature engineering is still more valuable than model architecture in 2025',
+    'Feature engineering can matter more than model architecture',
     'The gap between a Jupyter notebook and a production system is where most projects die',
     "Stakeholders asking for AI when they need a spreadsheet is the industry's biggest waste",
     'Real-time ML is overhyped for 80% of use cases',

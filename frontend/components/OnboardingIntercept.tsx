@@ -90,6 +90,7 @@ export default function OnboardingIntercept({ destination, onComplete }: Onboard
   )
   const [textValue, setTextValue] = useState('')
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   // animation state
   const [entered, setEntered] = useState(false)
@@ -110,9 +111,11 @@ export default function OnboardingIntercept({ destination, onComplete }: Onboard
 
   async function finish(finalChipAnswers: (string | null)[], finalText: string | null) {
     setSaving(true)
+    setSaveError('')
     try {
       const res = await api.getProfile()
-      const existing: ProfileData = res.ok ? (await res.json()).profile ?? {} : {}
+      if (!res.ok) throw new Error('Profile check failed')
+      const existing: ProfileData = (await res.json()).profile ?? {}
       const merged: ProfileData = { ...existing }
 
       QUESTIONS.forEach((question, i) => {
@@ -134,9 +137,12 @@ export default function OnboardingIntercept({ destination, onComplete }: Onboard
         }
       })
 
-      await api.saveProfile(merged)
+      await api.saveProfile({ ...merged, voice_questionnaire_completed: true })
+      await api.recordOnboardingStep('enhancement', 'completed')
     } catch (err) {
       console.error('[OnboardingIntercept] profile save error:', err)
+      setSaveError('We couldn’t save your voice answers. Please try again.')
+      return
     } finally {
       setSaving(false)
     }
@@ -209,6 +215,7 @@ export default function OnboardingIntercept({ destination, onComplete }: Onboard
             : 'transform 250ms ease-out',
         }}
       >
+        {saveError && <p role="alert" className="text-error mb-4">{saveError}</p>}
         {/* Progress dots */}
         <div className="flex items-center justify-center mb-10" style={{ gap: '8px' }}>
           {QUESTIONS.map((_, i) => (

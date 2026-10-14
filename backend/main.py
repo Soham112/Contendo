@@ -12,13 +12,20 @@ import logging
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper())
 
 from config import features, security
+from config.startup import validate_environment
+
+validate_environment()
 from memory.feedback_store import init_db
 from memory.hierarchy_store import init_db as init_hierarchy_db
 from memory.retrieval_stats_store import init_retrieval_stats_db
 from memory.usage_store import set_main_loop
+from memory.schema_check import verify_schema
+from starlette.concurrency import run_in_threadpool
+from fastapi import Request
+from fastapi.responses import JSONResponse
 from publishing import worker as publish_worker
 from routers import (
-    account, admin, analytics, billing, feedback, generate, history, ideas, ingest, library, profile,
+    account, admin, analytics, billing, feedback, generate, history, ideas, ingest, library, profile, onboarding,
     publishing, stats,
 )
 
@@ -60,6 +67,7 @@ def _log_pipeline_variant() -> None:
 async def lifespan(app: FastAPI):
     _log_security_mode()
     _log_pipeline_variant()
+    await run_in_threadpool(verify_schema)
     init_db()
     init_hierarchy_db()
     init_retrieval_stats_db()
@@ -95,6 +103,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from postgrest.exceptions import APIError as DatabaseAPIError
+
+
+@app.exception_handler(DatabaseAPIError)
+async def database_error(request: Request, exc: DatabaseAPIError):
+    logger.error("Database request failed: %s %s", request.method, request.url.path,
+                 exc_info=(type(exc), exc, exc.__traceback__))
+    return JSONResponse(status_code=503, content={"detail": "We couldn't load your account data. Please try again shortly. If this continues, contact contendoai@gmail.com."})
+
+
+app.include_router(onboarding.router)
 app.include_router(account.router)
 app.include_router(billing.router)
 app.include_router(publishing.router)

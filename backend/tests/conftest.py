@@ -27,8 +27,8 @@ TEST_ADMIN_USER_ID = "admin-user"
 os.environ.update({
     "ENVIRONMENT": "development",
     "ANTHROPIC_API_KEY": "test-anthropic-key",
-    "SUPABASE_URL": "",
-    "SUPABASE_SERVICE_ROLE_KEY": "",
+    "SUPABASE_URL": "http://supabase.test",
+    "SUPABASE_SERVICE_ROLE_KEY": "test-service-key",
     "SUPABASE_JWT_SECRET": TEST_JWT_SECRET,
     "ADMIN_USER_IDS": f"{TEST_ADMIN_USER_ID}, another-admin",
     # Set (to off) so a developer's backend/.env can't switch them on for tests.

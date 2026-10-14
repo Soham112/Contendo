@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
+import RetryNotice from "@/components/RetryNotice";
 import Sidebar from "@/components/Sidebar";
 import { useProfileCheck } from "@/hooks/useProfileCheck";
 import { useAccount } from "@/hooks/useAccount";
-import OnboardingIntercept from "@/components/OnboardingIntercept";
+
 import SegmentPrompt from "@/components/onboarding/SegmentPrompt";
 import LoadingWordmark from "@/components/LoadingWordmark";
 import PageTransition from "@/components/PageTransition";
@@ -15,9 +16,9 @@ import { isNichePath } from "@/content/niches";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { loading, hasProfile } = useProfileCheck();
+  const { loading, hasProfile, error: profileError, retry: retryProfile } = useProfileCheck();
   // Who the user creates content for decides which onboarding prompt applies.
-  const { account, loaded: accountLoaded } = useAccount(hasProfile);
+  const { account, loaded: accountLoaded, error: accountError, retry: retryAccount } = useAccount(hasProfile);
   const { logEvent } = useTracking();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -27,15 +28,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
-
-  // Checked client-side only — default true to avoid flicker before mount
-  const [interceptDone, setInterceptDone] = useState(true);
-  const [interceptChecked, setInterceptChecked] = useState(false);
-
-  useEffect(() => {
-    setInterceptDone(localStorage.getItem("contendo_intercept_done") === "1");
-    setInterceptChecked(true);
-  }, []);
 
   // Niche landing pages are server-rendered marketing pages: no shell and no
   // entrance animation, so their content is visible before any script runs.
@@ -55,11 +47,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return <PageTransition key={pathname}>{children}</PageTransition>;
   }
 
-  if (loading || !interceptChecked) {
+  if (loading) {
     return <LoadingWordmark />;
   }
 
-  const showIntercept = hasProfile && !interceptDone && accountLoaded && account?.segment !== "business";
+  if (profileError || accountError) return <main className="max-w-xl mx-auto p-8"><RetryNotice message={profileError || accountError} onRetry={profileError ? retryProfile : retryAccount} /></main>;
+
+
 
   return (
     <div className="min-h-screen bg-background text-on-surface flex">
@@ -96,17 +90,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <PageTransition key={pathname}>{children}</PageTransition>
         </div>
       </main>
-      {/* Safety net: returning user who completed first-post but never saw the intercept.
-          Its questions are about an individual's voice; a business has already
-          described theirs in the business setup, so it is never shown to one. */}
-      {showIntercept && (
-        <OnboardingIntercept
-          destination={pathname ?? "/"}
-          onComplete={() => setInterceptDone(true)}
-        />
-      )}
-      {/* One question at a time: the segment question waits for the intercept. */}
-      {hasProfile && accountLoaded && !showIntercept && <SegmentPrompt due={!!account?.ask_segment} />}
+      {hasProfile && accountLoaded && <SegmentPrompt due={!!account?.ask_segment} />}
     </div>
   );
 }

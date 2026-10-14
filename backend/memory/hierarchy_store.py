@@ -38,7 +38,7 @@ def upsert_source_node(
         "topic_id": topic_id,
         "source_summary": source_summary,
         "created_at": datetime.now(timezone.utc).isoformat(),
-    }, on_conflict="source_id").execute()
+    }, on_conflict="user_id,source_id").execute()
 
 
 def get_source_node(source_id: str, user_id: str) -> dict[str, Any] | None:
@@ -102,7 +102,7 @@ def upsert_topic_node(
         "representative_tags": ",".join(representative_tags),
         "child_source_ids": ",".join(child_source_ids),
         "created_at": datetime.now(timezone.utc).isoformat(),
-    }, on_conflict="topic_id").execute()
+    }, on_conflict="user_id,topic_id").execute()
 
 
 def get_topic_node(topic_id: str, user_id: str) -> dict[str, Any] | None:
