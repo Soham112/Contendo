@@ -686,7 +686,7 @@ A summary of what the author's notes say about this topic. Background only: abso
 `BUSINESS_PROFILE` (the note a business user's onboarding answers are saved as, `source_type` `business_profile`)
 ```
 BUSINESS PROFILE:
-What the author told us about their business: its name, area, website and services. These are facts and may be stated as written. It says nothing about any listing, sale, price, client, review, award or result: never take one from it.
+What the author told us about their business: its name, area, website and services. These are facts and may be stated as written. Never add a listing, sale, price, client, review, award or result that it does not state.
 ```
 
 `PERSONAL_WORK`

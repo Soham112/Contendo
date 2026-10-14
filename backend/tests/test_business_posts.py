@@ -32,7 +32,7 @@ def test_the_profile_frame_rule_reaches_the_prompt_only_with_its_chunk():
     with_profile, _ = build_cited_prompt(make_state([PROFILE_CHUNK, OWN]))
     without, _ = build_cited_prompt(make_state([OWN]))
     assert 'kind="BUSINESS PROFILE"' in with_profile
-    assert "never take one from it" in with_profile
+    assert "Never add a listing, sale, price, client, review, award or result that it does not state." in with_profile
     assert "BUSINESS PROFILE" not in without
 
 

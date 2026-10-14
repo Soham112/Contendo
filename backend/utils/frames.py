@@ -174,8 +174,8 @@ FRAMES: dict[str, Frame] = {
     "BUSINESS_PROFILE": Frame(
         "BUSINESS PROFILE",
         "What the author told us about their business: its name, area, website and services. "
-        "These are facts and may be stated as written. It says nothing about any listing, sale, "
-        "price, client, review, award or result: never take one from it.",
+        "These are facts and may be stated as written. "
+        "Never add a listing, sale, price, client, review, award or result that it does not state.",
     ),
     "PERSONAL_WORK": Frame(
         "OWN EXPERIENCE: WORK",
