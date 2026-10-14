@@ -69,21 +69,9 @@ evals/results/
 .deepeval-cache.json
 .pytest_cache/
 
-# Documentation is tracked, including on checkouts with an old local docs/ exclude.
-!docs/
-!docs/**
+# Local documentation (never pushed)
+docs/
 # Keep local secrets and scratch output private.
 .env.*
 !.env.example
 !**/.env.example
-docs/**/.env*
-docs/**/secrets/
-docs/**/scratch/
-docs/**/*.scratch.*
-docs/**/*.pem
-docs/**/*.key
-docs/**/*.p12
-docs/**/*.log
-docs/**/*.local.*
-
-docs/**/.DS_Store

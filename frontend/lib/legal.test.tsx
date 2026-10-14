@@ -1,23 +1,19 @@
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { isLegalPath, legalIdentity } from "./legal";
 import PrivacyPolicy from "../app/privacy-policy/page";
 import TermsOfService from "../app/terms-of-service/page";
 
-beforeEach(() => {
-  vi.stubEnv("CONTENDO_LEGAL_OPERATOR", "Test Contendo Operator");
-  vi.stubEnv("CONTENDO_LEGAL_CONTACT_EMAIL", "legal@example.test");
-});
 afterEach(() => vi.unstubAllEnvs());
-it("requires real operator and contact configuration instead of inventing defaults", () => {
-  expect(legalIdentity()).toEqual({ operator: "Test Contendo Operator", email: "legal@example.test" });
+it("uses the confirmed public contact without deployment configuration", () => {
+  vi.stubEnv("CONTENDO_LEGAL_OPERATOR", "");
   vi.stubEnv("CONTENDO_LEGAL_CONTACT_EMAIL", "");
-  expect(legalIdentity).toThrow("CONTENDO_LEGAL_CONTACT_EMAIL");
+  expect(legalIdentity()).toEqual({ operator: "Contendo", email: "contendoai@gmail.com" });
 });
 it.each([PrivacyPolicy, TermsOfService])("renders public legal content and contact without a draft label", (Page) => {
   const html = renderToStaticMarkup(<Page />);
-  expect(html).toContain("Test Contendo Operator");
-  expect(html).toContain("mailto:legal@example.test");
+  expect(html).toContain("Contendo");
+  expect(html).toContain("mailto:contendoai@gmail.com");
   expect(html).toContain("Zernio");
   expect(html).toContain("Stripe");
   expect(html).toContain("Anthropic");
