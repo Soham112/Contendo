@@ -19,3 +19,4 @@ supabase>=2.0.0
 asyncpg>=0.29.0
 pysbd==0.3.4
 markdown-it-py==4.0.0
+stripe==16.0.0
