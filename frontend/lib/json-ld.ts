@@ -25,7 +25,8 @@ export function faqJsonLd(faqs: Faq[]) {
 export function softwareJsonLd(url: string, description: string, plans: Plans | null) {
   const offers: Record<string, unknown>[] = [{ "@type": "Offer", name: "Free", price: "0", priceCurrency: "USD" }];
   const price = plans?.pro.price;
-  if (price) {
+  // Pro is offered only while it can be bought (billing can be switched off).
+  if (price && plans?.checkout_available) {
     offers.push({
       "@type": "Offer",
       name: "Pro",
@@ -42,6 +43,25 @@ export function softwareJsonLd(url: string, description: string, plans: Plans | 
     url,
     description,
     offers,
+  };
+}
+
+/** The organisation behind the site. `sameAs` lists its official profiles only. */
+export function organizationJsonLd({ name, url, logo, email, sameAs }: {
+  name: string;
+  url: string;
+  logo: string;
+  email: string;
+  sameAs: readonly string[];
+}) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name,
+    url,
+    logo,
+    email,
+    ...(sameAs.length ? { sameAs } : {}),
   };
 }
 
