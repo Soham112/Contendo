@@ -7,7 +7,7 @@ import { useApi } from "@/lib/api";
 import type { User } from "@supabase/supabase-js";
 import supabase from "@/lib/supabase";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -124,12 +124,7 @@ export default function SettingsHubPage() {
 
     async function loadUsage() {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const headers: Record<string, string> = {};
-        if (session?.access_token) {
-          headers["Authorization"] = `Bearer ${session.access_token}`;
-        }
-        const res = await fetch(`${API}/usage/me`, { headers });
+        const res = await api.getUsage();
         if (!res.ok) throw new Error("Failed");
         const data = await res.json();
         setUsage({
@@ -504,6 +499,7 @@ export default function SettingsHubPage() {
           <p className="label-caps text-secondary">Connected accounts</p>
           <p className="mt-2 text-[14px] text-on-surface">Choose where your posts are published.</p>
         </Link>
+        <Link href="/settings/personalization" className="block bg-surface-container-low hover:bg-surface-container-highest rounded-2xl p-6 transition-colors"><p className="label-caps text-secondary">Make your posts sound more like you</p><p className="mt-2 text-sm text-secondary">Optional: work, resume and voice questions.</p></Link>
         <Link href="/settings/billing" className="block bg-surface-container-low hover:bg-surface-container-highest rounded-2xl p-6 transition-colors">
           <p className="label-caps text-secondary">Plan and billing</p>
           <p className="mt-2 text-[14px] text-on-surface">See your plan, posts left this month and invoices.</p>

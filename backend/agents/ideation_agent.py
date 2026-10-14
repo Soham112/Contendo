@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import json
 import random
 
@@ -291,7 +292,7 @@ TOPICS ALREADY WRITTEN ABOUT (do not repeat these):
         model=SONNET,
         max_tokens=2000,
         system=system,
-        messages=[{"role": "user", "content": user_message}],
+        messages=[{"role": "user", "content": "Current date (UTC): " + datetime.now(timezone.utc).date().isoformat() + "\nDo not assume a year for undated source material.\n" + user_message}],
         user_id=user_id,
         event_type="ideation",
         usage_metadata={"count": count, "topic": topic or "", "kb_chunks": len(chunks)},
@@ -332,7 +333,7 @@ TOPICS ALREADY WRITTEN ABOUT (do not repeat these):
         model=SONNET,
         max_tokens=2000,
         system=RESUME_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_message}],
+        messages=[{"role": "user", "content": "Current date (UTC): " + datetime.now(timezone.utc).date().isoformat() + "\nDo not assume a year for undated source material.\n" + user_message}],
         user_id=user_id,
         event_type="ideation",
         usage_metadata={"count": count, "topic": topic or "", "source": "resume_fallback"},

@@ -25,7 +25,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from publishing import worker as publish_worker
 from routers import (
-    account, admin, analytics, billing, feedback, generate, history, ideas, ingest, library, profile,
+    account, admin, analytics, billing, feedback, generate, history, ideas, ingest, library, profile, onboarding,
     publishing, stats,
 )
 
@@ -113,6 +113,7 @@ async def database_error(request: Request, exc: DatabaseAPIError):
     return JSONResponse(status_code=503, content={"detail": "We couldn't load your account data. Please try again shortly. If this continues, contact contendoai@gmail.com."})
 
 
+app.include_router(onboarding.router)
 app.include_router(account.router)
 app.include_router(billing.router)
 app.include_router(publishing.router)

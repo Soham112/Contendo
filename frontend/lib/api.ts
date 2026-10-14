@@ -1,6 +1,7 @@
 "use client";
 
 import supabase from "@/lib/supabase";
+import { onboardingApi } from "@/lib/onboarding-api";
 import { accountApi } from "@/lib/account-api";
 import { commerceApi } from "@/lib/commerce-api";
 
@@ -193,6 +194,7 @@ export function useApi() {
 
   return {
     ...accountApi(apiFetch),
+    ...onboardingApi(apiFetch),
     ...commerceApi(apiFetch),
 
     // ── Ingest ────────────────────────────────────────────────────────────
@@ -329,12 +331,15 @@ export function useApi() {
     // ── History ───────────────────────────────────────────────────────────
     getHistory: () => apiFetch("/history"),
 
-    logPost: (body: LogPostRequest) =>
-      apiFetch("/log-post", {
+    logPost: async (body: LogPostRequest) => {
+      const response = await apiFetch("/log-post", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
-      }),
+      });
+      if (response.ok) window.dispatchEvent(new Event("contendo:post-saved"));
+      return response;
+    },
 
     patchPost: (post_id: number, body: PatchPostRequest) =>
       apiFetch(`/history/${post_id}`, {
@@ -421,6 +426,7 @@ export function useApi() {
 
     // ── Admin (the backend checks the caller against ADMIN_USER_IDS) ───────
     getAdminStatus: () => apiFetch("/admin/me"),
+    getUsage: () => apiFetch("/usage/me"),
     getAdminUsage: () => apiFetch("/admin/usage"),
     getAdminAnalytics: (days: number) => apiFetch(`/admin/analytics-data?days=${days}`),
   };

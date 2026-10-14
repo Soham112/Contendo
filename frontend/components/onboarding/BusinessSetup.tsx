@@ -33,6 +33,7 @@ function Field({
       </label>
       {hint && <p className="mt-1 text-[0.8125rem] text-secondary">{hint}</p>}
       <div className="mt-2">{children}</div>
+
       {error && (
         <p role="alert" className="mt-1.5 text-[0.8125rem] text-error">
           {error}
@@ -58,6 +59,7 @@ export default function BusinessSetup({
   error,
   onBack,
   onSubmit,
+  onStep,
 }: {
   options: NicheOptions;
   initialNiche: string | null;
@@ -66,7 +68,9 @@ export default function BusinessSetup({
   error: string;
   onBack: () => void;
   onSubmit: (answer: SegmentAnswer) => void;
+  onStep: (step: "niche" | "business_profile", outcome: "started" | "completed") => void;
 }) {
+  const [stage, setStage] = useState<"niche" | "profile">("niche");
   const [niche, setNiche] = useState<string | null>(initialNiche);
   const [nicheOther, setNicheOther] = useState("");
   const [profile, setProfile] = useState<BusinessProfile>({ ...EMPTY_BUSINESS_PROFILE, ...prefill });
@@ -78,6 +82,12 @@ export default function BusinessSetup({
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (stage === "niche") {
+      if (!niche || (niche === options.other_niche && !nicheOther.trim())) { setErrors({ niche: "Choose your kind of business." }); return; }
+      onStep("niche", "completed");
+      onStep("business_profile", "started");
+      setErrors({}); setStage("profile"); return;
+    }
     const found = businessFormErrors(niche, nicheOther, profile, options);
     setErrors(found);
     if (Object.keys(found).length > 0) return;
@@ -101,7 +111,7 @@ export default function BusinessSetup({
         </p>
       </div>
 
-      <fieldset>
+      {stage === "niche" && <fieldset>
         <legend className="label-caps text-secondary">What kind of business?</legend>
         <div className="mt-3 flex flex-wrap gap-2">
           {options.niches.map((option) => {
@@ -138,8 +148,9 @@ export default function BusinessSetup({
             {errors.niche}
           </p>
         )}
-      </fieldset>
+      </fieldset>}
 
+      {stage === "profile" && <>
       <Field id="business_name" label="Business name" error={errors.business_name}>
         <input
           id="business_name"
@@ -161,17 +172,7 @@ export default function BusinessSetup({
         />
       </Field>
 
-      <Field id="website" label="Website (optional)" error={errors.website}>
-        <input
-          id="website"
-          className={FIELD}
-          value={profile.website}
-          inputMode="url"
-          autoComplete="url"
-          placeholder="yourbusiness.com"
-          onChange={(e) => set("website", e.target.value)}
-        />
-      </Field>
+
 
       <Field
         id="services"
@@ -198,15 +199,7 @@ export default function BusinessSetup({
         />
       </Field>
 
-      <Field id="typical_customer" label="Your typical customer (optional)">
-        <textarea
-          id="typical_customer"
-          className={`${FIELD} min-h-[4.5rem] leading-relaxed`}
-          value={profile.typical_customer}
-          maxLength={400}
-          onChange={(e) => set("typical_customer", e.target.value)}
-        />
-      </Field>
+
 
       <Field
         id="current_offers"
@@ -261,6 +254,8 @@ export default function BusinessSetup({
         />
       </fieldset>
 
+      </>}
+
       {error && (
         <p role="alert" className="text-[0.875rem] text-error">
           {error}
@@ -270,7 +265,7 @@ export default function BusinessSetup({
       <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
         <button
           type="button"
-          onClick={onBack}
+          onClick={() => { if (stage === "profile") { setStage("niche"); onStep("niche", "started"); } else onBack(); }}
           disabled={busy}
           className="text-[0.875rem] text-secondary hover:text-on-surface py-2 disabled:opacity-50"
         >
@@ -281,7 +276,7 @@ export default function BusinessSetup({
           disabled={busy}
           className="btn-primary text-white px-6 py-3 rounded-md text-[0.9375rem] font-medium disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {busy ? "Saving…" : "Save and continue"}
+          {busy ? "Building your first post…" : stage === "niche" ? "Continue" : "Generate my first post"}
         </button>
       </div>
     </form>
