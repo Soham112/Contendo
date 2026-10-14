@@ -69,5 +69,9 @@ evals/results/
 .deepeval-cache.json
 .pytest_cache/
 
-# Local planning docs (never pushed)
+# Local documentation (never pushed)
 docs/
+# Keep local secrets and scratch output private.
+.env.*
+!.env.example
+!**/.env.example

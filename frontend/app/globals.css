@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Noto+Serif:ital,wght@0,400;0,700;1,400&family=Inter:wght@300;400;500;600&display=swap');
+/* Fonts are loaded in app/layout.tsx (next/font) as --font-headline and --font-body. */
 
 @tailwind base;
 @tailwind components;
@@ -14,6 +14,7 @@
   --surface-container-low: #f3f4f3;
   --surface-container: #edeeed;
   --surface-container-high: #e6e9e8;
+  --outline: #777c7b;
   --outline-variant: #aeb3b2;
 }
 
@@ -24,7 +25,7 @@ html {
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: "Inter", system-ui, sans-serif;
+  font-family: var(--font-body), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -32,7 +33,7 @@ body {
 /* ── Typography helpers ─────────────────────────────────── */
 .font-headline,
 .serif-text {
-  font-family: "Noto Serif", Georgia, serif;
+  font-family: var(--font-headline), Georgia, serif;
 }
 
 /* ── Primary gradient button ────────────────────────────── */
@@ -110,7 +111,8 @@ body::before {
 .input-editorial {
   background: var(--surface-container-low);
   border: none;
-  border-bottom: 1.5px solid var(--outline-variant);
+  /* --outline is 3.8:1 on this fill: the field's boundary meets WCAG 1.4.11. */
+  border-bottom: 1.5px solid var(--outline);
   border-radius: 0;
   transition: border-color 0.15s ease;
 }

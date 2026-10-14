@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import supabase from "@/lib/supabase";
 import { QuillIcon } from "@/components/ContendoLogo";
+import NicheLinks from "@/components/marketing/NicheLinks";
 
 const MOOD_GRADIENTS = [
   { label: "Analytical",   from: "#3a4a35", to: "#58614f", img: "/mood-analytical.png" },
@@ -656,6 +657,8 @@ export default function WelcomePage() {
 
             {/* Link groups */}
             <div className="flex flex-col sm:flex-row gap-10 sm:gap-12">
+
+              <NicheLinks />
 
               <div>
                 <p

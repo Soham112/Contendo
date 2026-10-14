@@ -44,3 +44,9 @@ it("a status this page does not know is a message, never a silent failure", () =
   // even if such a response carried text, a status that is not "ok" is not a finished post
   expect(generateOutcome({ status: "draft_truncated", post: "Half a po" })).toMatchObject({ kind: "no_post" });
 });
+
+
+it("returns a flagged draft for review instead of hiding its text", () => {
+  expect(generateOutcome({ status: "needs_review", post: "A flagged draft." })).toEqual({ kind: "post" });
+  expect(generateOutcome({ status: "needs_review", post: "" })).toMatchObject({ kind: "no_post" });
+});

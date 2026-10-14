@@ -13,7 +13,12 @@ captured with anthropic 0.40.0 on main (commit a5b9d11) before the upgrade to
 bodies, the endpoint and the API version header to be identical. Headers the SDK
 generates about itself (user agent, package version, runtime) are not compared.
 
-If this fails, what pipeline A sends to Claude changed. Do not update the
+The live generation boundary now adds mandatory synchronous grounding and no
+longer schedules the old background-only check. The harness exercises that
+retired helper explicitly; this snapshot still freezes all historical request
+bodies, not the new final grounding calls (covered by test_grounding.py).
+
+If this fails, a historical A request body changed. Do not update the
 snapshot to make it pass.
 """
 
@@ -67,13 +72,22 @@ RUNS = {
 }
 
 
-def render(name: str, claude, sent: list[dict]) -> list[dict]:
-    """Run one frozen run through run_pipeline and its background fact check."""
+def render(name: str, claude, sent: list[dict], fake_db) -> list[dict]:
+    """Freeze legacy call bodies; exercise the retired check explicitly.
+
+    Live generation now performs synchronous final grounding. This test retains
+    its historical SDK request coverage without wiring the old job into production.
+    """
     run = RUNS[name]
     claude.queue(*run["replies"])
     result = _run(**run["request"])
     assert result["status"] == "ok"
-    result["fact_check_job"]()
+    assert result["fact_check_job"] is None
+    from agents.fact_check_agent import log_fact_check
+    trace = fake_db.tables["generation_traces"][-1]
+    log_fact_check({"user_id": trace["user_id"], "topic": trace["topic"], "context": trace["context"],
+                    "profile": trace["profile_snapshot"], "final_post": result["post"],
+                    "retrieval_bundle": {"chunks": trace["retrieved"]}}, result["trace_id"])
     assert len(sent) == len(run["replies"]), "the run made a different number of calls than it has replies"
     return sent
 
@@ -92,7 +106,7 @@ def test_the_snapshot_covers_every_kind_of_pipeline_a_call():
 def test_pipeline_a_sends_the_same_requests_as_before_the_sdk_upgrade(claude, fake_db, seeded_kb, wire, name):
     expected = json.loads(SNAPSHOT_FILE.read_text())[name]
 
-    rendered = render(name, claude, wire)
+    rendered = render(name, claude, wire, fake_db)
 
     assert len(rendered) == len(expected)
     for number, (new, old) in enumerate(zip(rendered, expected), 1):

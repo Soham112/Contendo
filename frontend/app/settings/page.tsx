@@ -498,6 +498,18 @@ export default function SettingsHubPage() {
         Manage your profile, voice, memory, and account preferences.
       </p>
 
+      {/* Publishing and plan */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
+        <Link href="/settings/accounts" className="block bg-surface-container-low hover:bg-surface-container-highest rounded-2xl p-6 transition-colors">
+          <p className="label-caps text-secondary">Connected accounts</p>
+          <p className="mt-2 text-[14px] text-on-surface">Choose where your posts are published.</p>
+        </Link>
+        <Link href="/settings/billing" className="block bg-surface-container-low hover:bg-surface-container-highest rounded-2xl p-6 transition-colors">
+          <p className="label-caps text-secondary">Plan and billing</p>
+          <p className="mt-2 text-[14px] text-on-surface">See your plan, posts left this month and invoices.</p>
+        </Link>
+      </div>
+
       {/* Cards grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         {profileCard}

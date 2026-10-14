@@ -2,16 +2,22 @@ import logging
 from uuid import UUID
 
 from anthropic import APIStatusError, InternalServerError
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
+from agents.ingestion_agent import ingest_content
 from agents.refine_agent import MISSING_SOURCES_MESSAGE, MissingRefineSources, refine_selection
 from agents.scorer_agent import score_text
 from agents.visual_agent import generate_visuals, generate_svg_for_diagram
 from auth.supabase_jwt import get_user_id_dep
+from billing.entitlements import get_entitlements
+from billing.gates import quota_exceeded
 from config import features
+from memory import billing_store
+from memory.account_store import get_account
 from pipeline.graph import run_pipeline
+from utils.business_notes import details_note, find_pillar
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +30,8 @@ _SCORE_FAILED = "Couldn't score this post. Try again."
 # instruction, low enough that one request can't carry an arbitrarily large prompt.
 _MAX_POST_CHARS = 30_000
 _MAX_INSTRUCTION_CHARS = 2_000
+# The details a business user gives for one post (a listing, a sale, an event).
+_MAX_DETAILS_CHARS = 4_000
 
 
 class GenerateRequest(BaseModel):
@@ -35,6 +43,11 @@ class GenerateRequest(BaseModel):
     quality: str = "standard"
     # Skip the coverage gate and write an opinion post without specifics.
     no_specifics: bool = False
+    # Business users only. pillar: the key of one of their niche's content
+    # pillars (GET /niches). pillar_details: what this post is about, in the
+    # user's words; saved to their memory as a note before the post is drafted.
+    pillar: str | None = None
+    pillar_details: str = ""
 
 
 class ClosestSource(BaseModel):
@@ -73,6 +86,7 @@ class GenerateResponse(BaseModel):
     # post is returned (post is ""); message says so. Or "draft_refused": the
     # draft model declined to write it; same shape. "draft_empty" means the
     # completed reply contained no usable post. Single-writer pipeline only.
+    grounding: dict | None = None
     status: str = "ok"
     message: str = ""
     post: str
@@ -153,10 +167,18 @@ def _raise_internal_error(route: str) -> None:
     raise HTTPException(status_code=500, detail=_GENERIC_500)
 
 
+def _release_generation(user_id: str, period: str) -> None:
+    """Give back the generation reserved for a request that made no post. A
+    failure here is logged, never raised: it must not hide the real outcome."""
+    try:
+        billing_store.release_generation(user_id, period)
+    except Exception:
+        logger.exception("could not release a reserved generation for user %s", user_id)
+
+
 @router.post("/generate", response_model=GenerateResponse)
 async def generate(
     req: GenerateRequest,
-    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_user_id_dep),
 ) -> GenerateResponse:
     if not req.topic.strip():
@@ -168,10 +190,39 @@ async def generate(
                    "Add a source about this topic, then generate again.",
         )
 
+    pillar = None
+    if req.pillar:
+        pillar = find_pillar(get_account(user_id), req.pillar)
+        if pillar is None:
+            raise HTTPException(status_code=400, detail="That kind of post isn't available for your business.")
+    details = req.pillar_details.strip()
+    if details and pillar is None:
+        raise HTTPException(status_code=400, detail="pillar is required with pillar_details")
+    if len(details) > _MAX_DETAILS_CHARS:
+        raise HTTPException(status_code=400, detail=f"pillar_details is too long (limit {_MAX_DETAILS_CHARS} characters)")
+
+    # One generation is counted before the pipeline runs and given back if it
+    # produces no post, so requests in parallel cannot go past the limit.
+    entitlements = get_entitlements(user_id)
+    period = entitlements.period
+    if not await run_in_threadpool(
+        billing_store.reserve_generation, user_id, period, entitlements.generation_limit,
+    ):
+        raise quota_exceeded(entitlements)
+
+    result = None
     try:
+        if details:
+            # The author's own account of their work, stored as any note is.
+            title, note = details_note(pillar, details)
+            await run_in_threadpool(
+                ingest_content, note, source_type="personal_note", source_title=title,
+                user_id=user_id, memory_context="work",
+            )
         result = await run_in_threadpool(
             run_pipeline,
             topic=req.topic,
+            pillar=pillar.key if pillar else None,
             format=req.format,
             tone=req.tone,
             length=req.length,
@@ -184,10 +235,9 @@ async def generate(
         _raise_anthropic_error(e)
     except Exception:
         _raise_internal_error("POST /generate")
-
-    # Log-only fact check: runs after the response is sent, adds no latency.
-    if result.get("fact_check_job"):
-        background_tasks.add_task(result["fact_check_job"])
+    finally:
+        if result is None or result.get("status", "ok") not in ("ok", "needs_review"):
+            _release_generation(user_id, period)
 
     return GenerateResponse(
         status=result.get("status", "ok"),
@@ -204,6 +254,7 @@ async def generate(
         trace_id=result.get("trace_id"),
         no_specifics_enabled=features.NO_SPECIFICS_MODE_ENABLED,
         review=result.get("review"),
+        grounding=result.get("grounding"),
     )
 
 

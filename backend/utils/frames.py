@@ -23,7 +23,12 @@ logger = logging.getLogger(__name__)
 
 # Frames for content the user lived or built. Only these chunks can support a
 # first-person incident ("I shipped...", "At Acme, we...").
-SELF_FRAMES = frozenset({"PERSONAL_WORK", "PERSONAL_PROJECT", "PERSONAL"})
+SELF_FRAMES = frozenset({"PERSONAL_WORK", "PERSONAL_PROJECT", "PERSONAL", "BUSINESS_PROFILE"})
+
+# The source a business user's onboarding answers are saved as
+# (utils.business_notes.profile_note). It has its own frame, whatever its
+# memory_context: what the author said about the business, not an event.
+BUSINESS_PROFILE_SOURCE_TYPE = "business_profile"
 
 # Legacy chunks (memory_context NULL, ingested before it existed): source types
 # the user writes themselves. "note" covers typed notes and Obsidian imports.
@@ -90,6 +95,7 @@ def chunk_tags(chunk: dict) -> set[str]:
 def chunk_frame(chunk: dict, profile: dict) -> str:
     """The frame for one chunk (strict priority).
 
+    0. the business profile note     -> BUSINESS_PROFILE
     1. consolidation chunks          -> CONSOLIDATION
     2. memory_context (set at ingest): work -> PERSONAL_WORK,
        personal_project -> PERSONAL_PROJECT, observation -> OBSERVATION,
@@ -98,6 +104,9 @@ def chunk_frame(chunk: dict, profile: dict) -> str:
     4. otherwise EXPERT_OUTSIDER when a tag overlaps the profile's
        topics_of_expertise, else LEARNING_<SENIORITY>
     """
+    if chunk_field(chunk, "source_type") == BUSINESS_PROFILE_SOURCE_TYPE:
+        return "BUSINESS_PROFILE"
+
     node_type = chunk_field(chunk, "node_type") or (chunk.get("metadata") or {}).get("node_id", "")
     if node_type == "consolidation" or chunk_field(chunk, "source_type") == "consolidation":
         return "CONSOLIDATION"
@@ -161,6 +170,12 @@ FRAMES: dict[str, Frame] = {
         "CONSOLIDATED SUMMARY",
         "A summary of what the author's notes say about this topic. Background only: absorb it, "
         "don't quote it. It cannot be the evidence for a first-person event.",
+    ),
+    "BUSINESS_PROFILE": Frame(
+        "BUSINESS PROFILE",
+        "What the author told us about their business: its name, area, website and services. "
+        "These are facts and may be stated as written. "
+        "Never add a listing, sale, price, client, review, award or result that it does not state.",
     ),
     "PERSONAL_WORK": Frame(
         "OWN EXPERIENCE: WORK",

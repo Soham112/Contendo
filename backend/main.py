@@ -16,7 +16,11 @@ from memory.feedback_store import init_db
 from memory.hierarchy_store import init_db as init_hierarchy_db
 from memory.retrieval_stats_store import init_retrieval_stats_db
 from memory.usage_store import set_main_loop
-from routers import admin, analytics, feedback, generate, history, ideas, ingest, library, profile, stats
+from publishing import worker as publish_worker
+from routers import (
+    account, admin, analytics, billing, feedback, generate, history, ideas, ingest, library, profile,
+    publishing, stats,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -61,7 +65,12 @@ async def lifespan(app: FastAPI):
     init_retrieval_stats_db()
     # Agents running in run_in_threadpool workers schedule usage logs onto this loop.
     set_main_loop(asyncio.get_running_loop())
+    # Sends due publish jobs. None when PUBLISHING_PROVIDER is unset; raises
+    # (aborting startup) when it is set but misconfigured.
+    publish_task = publish_worker.start()
     yield
+    if publish_task is not None:
+        publish_task.cancel()
     set_main_loop(None)
 
 
@@ -86,6 +95,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(account.router)
+app.include_router(billing.router)
+app.include_router(publishing.router)
 app.include_router(ingest.router)
 app.include_router(generate.router)
 app.include_router(history.router)

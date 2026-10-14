@@ -49,8 +49,9 @@ class FakeQuery:
         self._op, self._payload = "insert", rows
         return self
 
-    def upsert(self, rows, on_conflict: str | None = None, **_):
+    def upsert(self, rows, on_conflict: str | None = None, ignore_duplicates: bool = False, **_):
         self._op, self._payload = "upsert", rows
+        self._ignore_duplicates = ignore_duplicates
         self._on_conflict = [c.strip() for c in on_conflict.split(",")] if on_conflict else None
         return self
 
@@ -65,6 +66,11 @@ class FakeQuery:
     # --- filters ----------------------------------------------------------
     def eq(self, col, val):
         self._filters.append(lambda r: r.get(col) == val)
+        return self
+
+    def is_(self, col, val):
+        expected = None if val == "null" else val
+        self._filters.append(lambda r: r.get(col) is expected)
         return self
 
     def neq(self, col, val):
@@ -134,6 +140,8 @@ class FakeQuery:
                     if all(k in new for k in keys):
                         existing = next((r for r in rows if all(r.get(k) == new[k] for k in keys)), None)
                 if existing is not None:
+                    if getattr(self, "_ignore_duplicates", False):
+                        continue  # like PostgREST: a skipped row is not returned
                     existing.update(new)
                     written.append(copy.deepcopy(existing))
                 else:
@@ -189,7 +197,7 @@ class FakeSupabase:
 
     # Tables whose primary key is a UUID in the real schema (gen_random_uuid()):
     # their ids are strings, so code that passes an id around as str matches.
-    _UUID_TABLES = {"generation_traces"}
+    _UUID_TABLES = {"generation_traces", "connected_accounts", "publish_jobs", "publish_approvals"}
 
     def next_id(self, table: str) -> int | str:
         if table in self._UUID_TABLES:
@@ -215,4 +223,58 @@ class FakeSupabase:
                 scored.sort(key=lambda r: r["similarity"], reverse=True)
                 return scored[: params.get("match_count", 8)]
             return FakeRpc(run)
+        if name in _SQL_FUNCTIONS:
+            return FakeRpc(lambda: _SQL_FUNCTIONS[name](self, params))
         raise NotImplementedError(f"FakeSupabase has no rpc {name!r}")
+
+
+# --- The SQL functions of migrations 008 and 009, as the fake runs them ---------
+
+def _claim_publish_jobs(db: "FakeSupabase", params: dict) -> list[dict]:
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    stale = now - timedelta(minutes=params["stale_minutes"])
+
+    def due(job: dict) -> bool:
+        if job["status"] == "scheduled":
+            return datetime.fromisoformat(job["next_attempt_at"]) <= now
+        return (job["status"] == "publishing" and not job.get("provider_post_ref")
+                and datetime.fromisoformat(job["locked_at"]) < stale)
+
+    jobs = sorted((j for j in db.tables.get("publish_jobs", []) if due(j)), key=lambda j: j["next_attempt_at"])
+    claimed = jobs[: params["max_jobs"]]
+    for job in claimed:
+        job.update(status="publishing", locked_at=now.isoformat(), attempts=job.get("attempts", 0) + 1)
+    return copy.deepcopy(claimed)
+
+
+def _usage_row(db: "FakeSupabase", params: dict) -> dict | None:
+    return next((r for r in db.tables.get("generation_usage", [])
+                 if r["user_id"] == params["p_user_id"] and r["period"] == params["p_period"]), None)
+
+
+def _reserve_generation(db: "FakeSupabase", params: dict) -> bool:
+    row, limit = _usage_row(db, params), params["max_count"]
+    count = row["count"] if row else 0
+    if limit is not None and count >= limit:
+        return False
+    if row:
+        row["count"] += 1
+    else:
+        db.tables.setdefault("generation_usage", []).append(
+            {"user_id": params["p_user_id"], "period": params["p_period"], "count": 1})
+    return True
+
+
+def _release_generation(db: "FakeSupabase", params: dict) -> None:
+    row = _usage_row(db, params)
+    if row and row["count"] > 0:
+        row["count"] -= 1
+
+
+_SQL_FUNCTIONS = {
+    "claim_publish_jobs": _claim_publish_jobs,
+    "reserve_generation": _reserve_generation,
+    "release_generation": _release_generation,
+}

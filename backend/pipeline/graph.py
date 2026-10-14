@@ -7,12 +7,15 @@ from config import features
 from llm.client import trace_calls
 from llm.models import role_models
 from pipeline.state import PipelineState
+from pipeline.grounding import enforce_grounding
 from pipeline.trace import build_trace_row
 from pipeline.finalise import validation_record
 from pipeline.redraft import review_summary
 from pipeline.single_writer import wire_draft_only, wire_reviewed
 from utils.formatters import normalise_post_punctuation, resolve_length_target
+from utils.business_notes import business_context
 from utils.frames import decide_perspective
+from memory.account_store import get_account
 from memory.profile_store import load_profile
 from memory.feedback_store import get_all_topics_posted
 from memory.trace_store import save_generation_trace
@@ -22,7 +25,7 @@ from agents.critic_agent import critic_node
 from agents.humanizer_agent import humanizer_node
 from agents.predictability_audit_agent import predictability_audit_node
 from agents.word_count_enforcer_agent import word_count_enforcer_node
-from agents.fact_check_agent import fact_check_node, log_fact_check
+from agents.fact_check_agent import fact_check_node
 from agents.scorer_agent import scorer_node
 
 logger = logging.getLogger(__name__)
@@ -34,6 +37,9 @@ MAX_ITERATIONS = 3
 def load_profile_node(state: PipelineState) -> PipelineState:
     user_id = state["user_id"]
     state["profile"] = load_profile(user_id=user_id)
+    business = business_context(get_account(user_id), state.get("pillar"))
+    if business:
+        state["business"] = business
     state["iterations"] = 0
     state["archetype"] = state.get("archetype", "")
     state["critic_brief"] = {}
@@ -219,6 +225,7 @@ def run_pipeline(
     *,
     user_id: str,
     no_specifics: bool = False,
+    pillar: str | None = None,
     variant: str | None = None,
     models: dict[str, str] | None = None,
 ) -> dict:
@@ -240,6 +247,10 @@ def run_pipeline(
     Proper fix: feat/citations-ui exposes per-sentence citations and recorded
     check/review results; the author decides what to change. Refine alignment
     and explicit no-post statuses are implemented here.
+
+    pillar: business users only, the key of the content pillar this post is
+    (config.niches); it adds that pillar's lines to the draft prompt. A key the
+    user's niche does not have is ignored here (/generate rejects it first).
 
     variant: which pipeline to run (config.features.PIPELINE_VARIANTS). None
     uses the configured one (PIPELINE_VARIANT, default C-Opus); evals pass it to
@@ -265,6 +276,7 @@ def run_pipeline(
         "context": context,
         "quality": quality,
         "user_id": user_id,
+        "pillar": pillar,
         "variant": variant,
         **single_writer_models,
         "iterations": 0,
@@ -277,7 +289,10 @@ def run_pipeline(
     }
 
     with trace_calls() as calls:
-        result = PIPELINES[variant].invoke(initial_state)
+        result = enforce_grounding(PIPELINES[variant].invoke(initial_state))
+        # The final synchronous gate supersedes A's retired normal-mode record.
+        if (result.get("fact_check") or {}).get("mode") == "log_only":
+            result.pop("fact_check")
 
     # The trace is diagnostic only: a failed write must never fail generation.
     trace_id: str | None = None
@@ -285,12 +300,6 @@ def run_pipeline(
         trace_id = save_generation_trace(build_trace_row(result, calls))
     except Exception:
         logger.exception("generation trace write failed for user %s", user_id)
-
-    # Log-only fact check (normal mode, see fact_check_agent.enforced): the caller
-    # runs this after responding (/generate: BackgroundTasks; evals: after timing).
-    fact_check_job = None
-    if trace_id and (result.get("fact_check") or {}).get("mode") == "log_only":
-        fact_check_job = lambda: log_fact_check(result, trace_id)  # noqa: E731
 
     gate = result.get("coverage_gate") or {}
     if gate.get("decision") == "low_coverage":
@@ -325,7 +334,7 @@ def run_pipeline(
         }
 
     return {
-        "status": "ok",
+        "status": "needs_review" if (result.get("grounding") or {}).get("outcome") == "needs_review" else "ok",
         "post": result.get("final_post", result.get("current_draft", "")),
         "score": result.get("score", 0),
         "score_feedback": result.get("score_feedback", []),
@@ -334,6 +343,10 @@ def run_pipeline(
         "scored": variant == "A" and quality == "polished" and not result.get("score_error"),
         "retrieval_confidence": result.get("retrieval_confidence", "medium"),
         "trace_id": trace_id,
-        "fact_check_job": fact_check_job,
-        "review": review_summary(result),
+        "fact_check_job": None,
+        "grounding": result.get("grounding"),
+        "review": ({"outcome": "issues_remain", "removed": [], "issues": [
+            {"type": "unsupported_claim", "sentence_text": flag.get("sentence") or result.get("final_post", "")}
+            for flag in result["grounding"]["flags"]
+        ]} if (result.get("grounding") or {}).get("outcome") == "needs_review" else review_summary(result)),
     }

@@ -79,16 +79,28 @@ def _route(review: dict[str, Any] | None) -> str | None:
     return "code-only" if review["fixes"]["route"] == "none" else review["fixes"]["route"]
 
 
+def generation_run_status(result: dict[str, Any]) -> str:
+    """Eval execution status: a flagged returned draft is still a completed run.
+    Its distinct generation status and grounding flags are retained separately.
+    """
+    status = result.get("status", "ok")
+    if status in ("ok", "needs_review"):
+        return "ok" if (result.get("post") or "").strip() else "draft_empty"
+    return status
+
+
 def post_record(outputs: dict[str, Any], calls: list[dict[str, Any]],
                 counters: dict[str, Callable[[str], int]]) -> dict[str, Any]:
     """What the ablation reads from one generation trace (node_outputs and llm_calls)."""
     review = outputs.get("review")
     trim = outputs.get("trim_result")              # traces written before fix/shorten-not-trim
     compress = outputs.get("compress_result")
+    grounding = outputs.get("grounding")
     record: dict[str, Any] = {
         "length": length_record(outputs.get("final_post") or "", outputs.get("length_target"), counters),
         "route": _route(review),
-        "outcome": (review or {}).get("outcome"),
+        "outcome": "issues_remain" if (grounding or {}).get("outcome") == "needs_review" else (review or {}).get("outcome"),
+        "grounding": grounding,
         "redraft_unusable": next((kind for kind in ("redraft_truncated", "redraft_refused") if kind in (review or {})), None),
         "trim": None if trim is None else {"outcome": trim["outcome"], "reason": trim["reason"]},
         "compress": None if compress is None else {

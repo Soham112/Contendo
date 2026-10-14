@@ -1,6 +1,8 @@
 "use client";
 
 import supabase from "@/lib/supabase";
+import { accountApi } from "@/lib/account-api";
+import { commerceApi } from "@/lib/commerce-api";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -41,6 +43,10 @@ export interface GenerateRequest {
   quality?: string;
   /** Skip the coverage gate and write an opinion post without specifics. */
   no_specifics?: boolean;
+  /** Business users: the key of one of their niche's content pillars. */
+  pillar?: string | null;
+  /** Business users: what this post is about; saved to memory before drafting. */
+  pillar_details?: string;
 }
 
 export interface ClosestSource {
@@ -50,12 +56,13 @@ export interface ClosestSource {
 }
 
 export interface GenerateResponse {
+  grounding?: import("@/components/GroundingNotice").Grounding | null;
   /**
    * "low_coverage": the knowledge base doesn't cover the topic; post is "".
    * "draft_truncated" / "draft_refused" / "draft_empty": nothing was written; post is "" and
    * `message` says why. Read it with generateOutcome() (lib/generate-outcome.ts).
    */
-  status?: "ok" | "low_coverage" | "draft_truncated" | "draft_refused" | "draft_empty";
+  status?: "ok" | "needs_review" | "low_coverage" | "draft_truncated" | "draft_refused" | "draft_empty";
   /** Why there is no post, for the statuses that have none. */
   message?: string;
   post: string;
@@ -185,6 +192,9 @@ export function useApi() {
   }
 
   return {
+    ...accountApi(apiFetch),
+    ...commerceApi(apiFetch),
+
     // ── Ingest ────────────────────────────────────────────────────────────
     ingestContent: (body: IngestRequest) =>
       apiFetch("/ingest", {

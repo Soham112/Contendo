@@ -4,14 +4,16 @@ const config: Config = {
   content: [
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
+    "./content/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
     extend: {
       fontFamily: {
-        headline: ["Noto Serif", "Georgia", "serif"],
-        body: ["Inter", "system-ui", "sans-serif"],
-        label: ["Inter", "system-ui", "sans-serif"],
-        sans: ["Inter", "system-ui", "sans-serif"],
+        // The variables are set by next/font in app/layout.tsx.
+        headline: ["var(--font-headline)", "Georgia", "serif"],
+        body: ["var(--font-body)", "system-ui", "sans-serif"],
+        label: ["var(--font-body)", "system-ui", "sans-serif"],
+        sans: ["var(--font-body)", "system-ui", "sans-serif"],
       },
       colors: {
         // Core palette — DESIGN.md tokens

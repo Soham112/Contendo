@@ -45,7 +45,7 @@ export function generateOutcome(data: GenerateOutcomeInput): GenerateOutcome {
       noSpecificsEnabled: data.no_specifics_enabled ?? false,
     };
   }
-  if (status === "ok" && (data.post ?? "").trim() !== "") return { kind: "post" };
+  if ((status === "ok" || status === "needs_review") && (data.post ?? "").trim() !== "") return { kind: "post" };
   const message = (data.message ?? "").trim() || NO_POST_MESSAGES[status] || NO_POST_FALLBACK;
   return { kind: "no_post", status, message };
 }

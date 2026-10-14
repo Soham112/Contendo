@@ -482,3 +482,15 @@ def test_an_unknown_verdict_is_an_error(tmp_path):
 
     with pytest.raises(blind.BlindError, match="F1"):
         blind.score_audit(tmp_path)
+
+
+def test_flagged_drafts_remain_completed_evals_without_being_called_clean():
+    result = {"status": "needs_review", "post": "A flagged draft."}
+    assert ablation.generation_run_status(result) == "ok"
+    assert ablation.generation_run_status({"status": "needs_review", "post": ""}) == "draft_empty"
+    grounding = {"outcome": "needs_review", "flags": [{"id": "claim"}], "repairs": 2}
+    record = ablation.post_record({"final_post": result["post"], "grounding": grounding}, [],
+                                 {"count_words": lambda text: len(text.split()), "prose_word_count": lambda text: len(text.split())})
+    assert record["outcome"] == "issues_remain"
+    assert record["grounding"] == grounding
+    assert ablation.generation_run_status({"status": "draft_truncated", "post": "Half a"}) == "draft_truncated"

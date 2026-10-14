@@ -10,6 +10,10 @@ import pytest
 # Routes that intentionally don't use a user token.
 PUBLIC_ROUTES = {
     ("GET", "/health"): "health check for Railway",
+    ("GET", "/billing/plans"): "plan and price summary, shown on the public landing pages",
+    ("POST", "/billing/webhook"): "called by Stripe; authenticated by Stripe's signature instead",
+    ("POST", "/publishing/webhook"): "called by the publishing provider; authenticated by its signature instead",
+    ("GET", "/niches"): "the niche list, read by the public landing pages before sign-in",
 }
 
 # Known gaps: routes that should have auth but don't yet. Each one is tracked as
