@@ -687,37 +687,40 @@ def get_chunks_for_source(source_id: str, user_id: str) -> list[dict]:
 
 
 def get_adjacent_chunks(
-    source_id: str,
-    chunk_index: int,
+    matches: dict[str, int],
     user_id: str,
     window: int = 1,
-) -> list[str]:
-    """Return texts of chunks adjacent to chunk_index within the same source.
+) -> dict[str, list[str]]:
+    """Texts of the chunks next to each matched chunk, for several sources in one query.
 
-    Fetches indices [chunk_index-window .. chunk_index+window], excluding
-    chunk_index itself. Returns texts in ascending index order.
+    matches maps source_id -> matched chunk_index. Returns source_id -> texts
+    of the chunks within window of the match (the match itself excluded), in
+    ascending index order. The query fetches the union of wanted indices across
+    the sources; rows outside each source's own window are dropped here.
     """
-    lo = max(0, chunk_index - window)
-    hi = chunk_index + window
-
+    if not matches:
+        return {}
+    wanted = {
+        sid: {i for i in range(max(0, idx - window), idx + window + 1) if i != idx}
+        for sid, idx in matches.items()
+    }
+    all_indices = sorted(set().union(*wanted.values()))
+    if not all_indices:
+        return {sid: [] for sid in matches}
     response = (
         supabase.table("embeddings")
-        .select("content,chunk_index")
-        .eq("source_id", source_id)
+        .select("content,chunk_index,source_id")
+        .in_("source_id", list(matches))
+        .in_("chunk_index", all_indices)
         .eq("user_id", user_id)
-        .gte("chunk_index", lo)
-        .lte("chunk_index", hi)
         .execute()
     )
-    rows = response.data or []
-
-    adjacent = [
-        (int(row["chunk_index"]), row.get("content", ""))
-        for row in rows
-        if int(row.get("chunk_index", -1)) != chunk_index
-    ]
-    adjacent.sort(key=lambda t: t[0])
-    return [text for _, text in adjacent]
+    found: dict[str, list[tuple[int, str]]] = {sid: [] for sid in matches}
+    for row in response.data or []:
+        sid, idx = row.get("source_id"), int(row.get("chunk_index", -1))
+        if sid in wanted and idx in wanted[sid]:
+            found[sid].append((idx, row.get("content", "")))
+    return {sid: [text for _, text in sorted(rows)] for sid, rows in found.items()}
 
 
 def get_stats(user_id: str) -> dict:

@@ -77,6 +77,10 @@ import pytest  # noqa: E402
 @pytest.fixture(autouse=True)
 def _isolate_each_test(monkeypatch):
     """Fresh fakes per test, Claude patched, network blocked."""
+    # Background writes from the previous test land before the reset, not after.
+    stats = sys.modules.get("memory.retrieval_stats_store")
+    if stats is not None:
+        stats.flush_pending_retrievals()
     _fake_db.reset()
     _fake_claude.reset()
 

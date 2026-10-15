@@ -17,7 +17,7 @@ from config.startup import validate_environment
 validate_environment()
 from memory.feedback_store import init_db
 from memory.hierarchy_store import init_db as init_hierarchy_db
-from memory.retrieval_stats_store import init_retrieval_stats_db
+from memory.retrieval_stats_store import flush_pending_retrievals, init_retrieval_stats_db
 from memory.usage_store import set_main_loop
 from memory.schema_check import verify_schema
 from starlette.concurrency import run_in_threadpool
@@ -79,6 +79,8 @@ async def lifespan(app: FastAPI):
     yield
     if publish_task is not None:
         publish_task.cancel()
+    # Retrieval stats are written in the background; finish them before exit.
+    await run_in_threadpool(flush_pending_retrievals)
     set_main_loop(None)
 
 

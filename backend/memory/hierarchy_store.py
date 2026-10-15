@@ -51,8 +51,28 @@ def get_source_node(source_id: str, user_id: str) -> dict[str, Any] | None:
     )
     if not result.data:
         return None
-    row = result.data[0]
-    row["tags"] = [t.strip() for t in row.get("tags", "").split(",") if t.strip()]
+    return _parse_source_row(result.data[0])
+
+
+def get_source_nodes(source_ids: list[str], user_id: str) -> dict[str, dict[str, Any]]:
+    """Source nodes for many source_ids in one query, keyed by source_id.
+
+    Ids with no node (pre-migration sources) are absent from the result.
+    """
+    if not source_ids:
+        return {}
+    result = (
+        supabase.table("source_nodes")
+        .select("*")
+        .in_("source_id", list(source_ids))
+        .eq("user_id", user_id)
+        .execute()
+    )
+    return {row["source_id"]: _parse_source_row(row) for row in (result.data or [])}
+
+
+def _parse_source_row(row: dict[str, Any]) -> dict[str, Any]:
+    row["tags"] = [t.strip() for t in (row.get("tags") or "").split(",") if t.strip()]
     return row
 
 
@@ -75,11 +95,7 @@ def get_sources_for_user(user_id: str) -> list[dict[str, Any]]:
         .order("created_at", desc=True)
         .execute()
     )
-    results = []
-    for row in (result.data or []):
-        row["tags"] = [t.strip() for t in row.get("tags", "").split(",") if t.strip()]
-        results.append(row)
-    return results
+    return [_parse_source_row(row) for row in (result.data or [])]
 
 
 # ---------------------------------------------------------------------------
@@ -115,12 +131,29 @@ def get_topic_node(topic_id: str, user_id: str) -> dict[str, Any] | None:
     )
     if not result.data:
         return None
-    row = result.data[0]
+    return _parse_topic_row(result.data[0])
+
+
+def get_topic_nodes(topic_ids: list[str], user_id: str) -> dict[str, dict[str, Any]]:
+    """Topic nodes for many topic_ids in one query, keyed by topic_id."""
+    if not topic_ids:
+        return {}
+    result = (
+        supabase.table("topic_nodes")
+        .select("*")
+        .in_("topic_id", list(topic_ids))
+        .eq("user_id", user_id)
+        .execute()
+    )
+    return {row["topic_id"]: _parse_topic_row(row) for row in (result.data or [])}
+
+
+def _parse_topic_row(row: dict[str, Any]) -> dict[str, Any]:
     row["representative_tags"] = [
-        t.strip() for t in row.get("representative_tags", "").split(",") if t.strip()
+        t.strip() for t in (row.get("representative_tags") or "").split(",") if t.strip()
     ]
     row["child_source_ids"] = [
-        s.strip() for s in row.get("child_source_ids", "").split(",") if s.strip()
+        s.strip() for s in (row.get("child_source_ids") or "").split(",") if s.strip()
     ]
     return row
 
@@ -133,16 +166,7 @@ def get_topics_for_user(user_id: str) -> list[dict[str, Any]]:
         .order("created_at", desc=True)
         .execute()
     )
-    results = []
-    for row in (result.data or []):
-        row["representative_tags"] = [
-            t.strip() for t in row.get("representative_tags", "").split(",") if t.strip()
-        ]
-        row["child_source_ids"] = [
-            s.strip() for s in row.get("child_source_ids", "").split(",") if s.strip()
-        ]
-        results.append(row)
-    return results
+    return [_parse_topic_row(row) for row in (result.data or [])]
 
 
 def find_matching_topic(tags: list[str], user_id: str) -> dict[str, Any] | None:

@@ -12,10 +12,6 @@ def init_db() -> None:
     pass
 
 
-def init_retrieval_stats_db() -> None:
-    pass
-
-
 # ---------------------------------------------------------------------------
 # Posts
 # ---------------------------------------------------------------------------
@@ -265,44 +261,3 @@ def update_latest_version_svg(post_id: int, svg_diagrams: str | None, user_id: s
         .execute()
     )
     return len(result.data) > 0
-
-
-# ---------------------------------------------------------------------------
-# Retrieval stats
-# ---------------------------------------------------------------------------
-
-def increment_retrieval(user_id: str, source_title: str = "") -> None:
-    try:
-        existing = (
-            supabase.table("source_retrieval_stats")
-            .select("retrieval_count")
-            .eq("user_id", user_id)
-            .eq("source_title", source_title)
-            .execute()
-        )
-        now = datetime.now(timezone.utc).isoformat()
-        if existing.data:
-            new_count = existing.data[0]["retrieval_count"] + 1
-            supabase.table("source_retrieval_stats").update({
-                "retrieval_count": new_count,
-                "last_retrieved_at": now,
-            }).eq("user_id", user_id).eq("source_title", source_title).execute()
-        else:
-            supabase.table("source_retrieval_stats").insert({
-                "user_id": user_id,
-                "source_title": source_title,
-                "retrieval_count": 1,
-                "last_retrieved_at": now,
-            }).execute()
-    except Exception:
-        pass  # non-critical stat tracking
-
-
-def get_retrieval_counts(user_id: str) -> dict[str, int]:
-    result = (
-        supabase.table("source_retrieval_stats")
-        .select("source_title,retrieval_count")
-        .eq("user_id", user_id)
-        .execute()
-    )
-    return {row["source_title"]: row["retrieval_count"] for row in (result.data or [])}

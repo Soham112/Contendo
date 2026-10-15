@@ -11,9 +11,9 @@ from memory.vector_store import (
     query_similar,
     query_similar_hybrid,
 )
-from memory.hierarchy_store import get_source_node, get_topic_node
+from memory.hierarchy_store import get_source_nodes, get_topic_nodes
 from pipeline.trace import timed
-from memory.retrieval_stats_store import increment_retrieval
+from memory.retrieval_stats_store import record_retrievals_in_background
 from utils.frames import chunk_field, chunk_frame, chunk_tags, infer_seniority_level  # noqa: F401  (re-exported)
 
 logger = logging.getLogger(__name__)
@@ -99,7 +99,8 @@ def coverage_gate(results: list[dict], bypass: bool = False, first_post: bool = 
 def _build_retrieval_bundle(chunks: list[dict], user_id: str) -> dict:
     """Enrich flat chunk list with source and topic context from hierarchy_store.
 
-    For each unique source_id: fetch source summary + sibling chunks (top 3 sources only).
+    For each unique source_id: source summary, plus sibling chunks for the top 3
+    sources. One query each for source nodes, sibling chunks and topic nodes.
     Falls back gracefully if hierarchy_store has no data for a source (pre-migration).
     """
     bundle: dict = {
@@ -108,33 +109,49 @@ def _build_retrieval_bundle(chunks: list[dict], user_id: str) -> dict:
         "topic_contexts": [],
     }
 
-    # Collect unique source_ids in similarity order; first 3 get sibling fetching
+    # Unique source_ids in similarity order; the first 3 get sibling chunks
     seen_source_ids: dict[str, int] = {}  # source_id -> index of first matching chunk
     for i, chunk in enumerate(chunks):
         sid = chunk.get("source_id", "")
         if sid and sid not in seen_source_ids:
             seen_source_ids[sid] = i
 
-    top_3_source_ids = list(seen_source_ids.keys())[:3]
-    seen_topic_ids: set[str] = set()
+    source_nodes: dict[str, dict] = {}
+    try:
+        source_nodes = get_source_nodes(list(seen_source_ids), user_id=user_id)
+    except Exception as exc:
+        logger.warning("source node lookup failed: %s", exc)
+
+    siblings: dict[str, list[str]] = {}
+    top_3 = list(seen_source_ids.items())[:3]
+    try:
+        siblings = get_adjacent_chunks(
+            {sid: chunks[idx].get("chunk_index", 0) for sid, idx in top_3},
+            user_id=user_id, window=1,
+        )
+    except Exception as exc:
+        logger.warning("sibling chunk lookup failed: %s", exc)
+
+    # Topics in order of the first source that names them
+    topic_ids = list(dict.fromkeys(
+        node.get("topic_id") for sid in seen_source_ids
+        if (node := source_nodes.get(sid)) and node.get("topic_id")
+    ))
+    topic_nodes: dict[str, dict] = {}
+    try:
+        topic_nodes = get_topic_nodes(topic_ids, user_id=user_id)
+    except Exception as exc:
+        logger.warning("topic node lookup failed: %s", exc)
+    for tid in topic_ids:
+        if topic_node := topic_nodes.get(tid):
+            bundle["topic_contexts"].append({
+                "topic_label": topic_node.get("topic_label") or "",
+                "topic_summary": topic_node.get("topic_summary") or "",
+            })
 
     for sid, first_chunk_idx in seen_source_ids.items():
-        source_node = None
-        try:
-            source_node = get_source_node(sid, user_id=user_id)
-        except Exception:
-            pass
-
-        sibling_chunks: list[str] = []
-        if sid in top_3_source_ids:
-            try:
-                matched_chunk_index = chunks[first_chunk_idx].get("chunk_index", 0)
-                sibling_chunks = get_adjacent_chunks(
-                    sid, matched_chunk_index, user_id=user_id, window=1
-                )
-            except Exception:
-                sibling_chunks = []
-
+        source_node = source_nodes.get(sid)
+        sibling_chunks = siblings.get(sid, [])
         if source_node:
             bundle["source_contexts"][sid] = {
                 "source_title": source_node.get("source_title") or "",
@@ -142,24 +159,11 @@ def _build_retrieval_bundle(chunks: list[dict], user_id: str) -> dict:
                 "source_summary": source_node.get("source_summary") or "",
                 "sibling_chunks": sibling_chunks,
             }
-            topic_id = source_node.get("topic_id") or ""
-            if topic_id and topic_id not in seen_topic_ids:
-                seen_topic_ids.add(topic_id)
-                try:
-                    topic_node = get_topic_node(topic_id, user_id=user_id)
-                    if topic_node:
-                        bundle["topic_contexts"].append({
-                            "topic_label": topic_node.get("topic_label") or "",
-                            "topic_summary": topic_node.get("topic_summary") or "",
-                        })
-                except Exception:
-                    pass
         else:
             # Source not yet in hierarchy_store (pre-migration): use chunk metadata as fallback
-            matched_chunk = chunks[first_chunk_idx]
             bundle["source_contexts"][sid] = {
                 "source_title": "",
-                "source_type": matched_chunk.get("source_type") or "",
+                "source_type": chunks[first_chunk_idx].get("source_type") or "",
                 "source_summary": "",
                 "sibling_chunks": sibling_chunks,
             }
@@ -358,17 +362,14 @@ def retrieval_node(state: PipelineState) -> PipelineState:
         state["retrieved_context"] = _format_retrieved_context(bundle)
         state["retrieval_path"] = "hybrid"
 
-        # Track retrieval stats — never let this break retrieval
+        # Retrieval stats are written off the request path; never let them break retrieval
         try:
-            seen_titles: set[str] = set()
             with timed(timings, "retrieval_stats"):
-                for chunk in bundle["chunks"]:
-                    title = chunk.get("source_title", "").strip()
-                    if title and title not in seen_titles:
-                        seen_titles.add(title)
-                        increment_retrieval(user_id, title)
+                record_retrievals_in_background(
+                    user_id, [chunk.get("source_title", "") for chunk in bundle["chunks"]]
+                )
         except Exception as stat_err:
-            print(f"[retrieval_node] stat tracking failed (non-fatal): {stat_err}")
+            logger.warning("retrieval stat tracking failed (non-fatal): %s", stat_err)
     except Exception as e:
         print(f"[retrieval_node] hierarchical retrieval failed ({e}), falling back to flat")
         try:
