@@ -9,7 +9,7 @@ import os
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any, Iterator, TypeVar
+from typing import Any, Callable, Iterator, TypeVar
 
 import anthropic
 from anthropic.types import Message, TextBlock, Usage
@@ -116,6 +116,7 @@ def complete(
     system: Any = None,
     usage_metadata: dict[str, Any] | None = None,
     measure_first_text: bool = False,
+    on_text: Callable[[str], None] | None = None,
     **kwargs: Any,
 ) -> Message:
     """Call Claude and log usage. API errors propagate; logging never raises.
@@ -127,7 +128,11 @@ def complete(
     measure_first_text: send the request streamed and record when its first
     text arrives (first_text_ms in the trace: time to the first visible token,
     thinking before it included). The returned Message is the same final
-    message create() would return; nothing reads the stream but the timer.
+    message create() would return.
+
+    on_text: also streamed; called with each text delta of the reply as it
+    arrives (thinking is not text). An exception it raises is logged and
+    stops further calls to it; the request itself carries on.
     """
     models.spec(model)   # raises for a model llm.models does not list
 
@@ -139,12 +144,19 @@ def complete(
     start = time.perf_counter()
     first_text_ms: float | None = None
     try:
-        if measure_first_text:
+        if measure_first_text or on_text is not None:
             with client.messages.stream(**create_kwargs) as stream:
                 for event in stream:
-                    if (first_text_ms is None and event.type == "content_block_delta"
-                            and event.delta.type == "text_delta"):
+                    if event.type != "content_block_delta" or event.delta.type != "text_delta":
+                        continue
+                    if first_text_ms is None:
                         first_text_ms = round((time.perf_counter() - start) * 1000, 1)
+                    if on_text is not None:
+                        try:
+                            on_text(event.delta.text)
+                        except Exception:
+                            logger.exception("llm.complete: text listener failed for %s", event_type)
+                            on_text = None
                 message = stream.get_final_message()
         else:
             message = client.messages.create(**create_kwargs)

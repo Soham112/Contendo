@@ -255,8 +255,11 @@ export function useApi() {
       }),
 
     // ── Generate ──────────────────────────────────────────────────────────
-    generatePost: (body: GenerateRequest) =>
-      apiFetch("/generate", {
+    /** POST /generate/stream: read an ok response with readGenerateStream()
+     * (lib/generate-stream.ts). A request it rejects (400, 401, 402) is a
+     * plain JSON error, as from /generate. */
+    generatePostStream: (body: GenerateRequest) =>
+      apiFetch("/generate/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
