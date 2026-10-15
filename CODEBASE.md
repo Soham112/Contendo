@@ -2,6 +2,8 @@
 
 > Read this file at the start of every new session before touching any code.
 > It is the complete technical reference for the Contendo system.
+>
+> Diagrams of the system, data model, ingestion, retrieval and generation, with known issues and the build order: `docs/ARCHITECTURE.md` (local only, gitignored like the rest of `docs/`).
 
 ---
 

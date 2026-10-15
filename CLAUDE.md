@@ -85,4 +85,5 @@ Every task summary must end with a "Stopgaps introduced" line: "none", or a list
 
 ## When a task is done
 - Update the matching sections of CODEBASE.md, and PROMPTS.md if any prompt changed.
+- Any PR that changes ingestion, storage, retrieval or generation also updates `docs/ARCHITECTURE.md` (local only, gitignored like the rest of `docs/`): the affected diagram, its status colours (orange to green when a known issue is fixed, purple to green when something planned is built), the known-issues table, and the "Drawn from the code at commit" line.
 - Report: files changed, a short diff summary, anything you were unsure about, and exact commands for me to verify locally.
