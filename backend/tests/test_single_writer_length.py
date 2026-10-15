@@ -13,19 +13,22 @@ from tests.length_fixtures import (
     DRAFT_ONLY, FIRST_POST_USER, KB_USER, _clean, _cut_off, _lines, _outputs, _post, _run, _shorter,
 )
 from tests.test_generation_trace import STANDARD_RUN, seeded_kb  # noqa: F401  (shared fixture)
-from utils.formatters import FIRST_POST_RANGE, WORD_RANGES, count_words, resolve_length_target
+from utils.formatters import WORD_RANGES, count_words, resolve_length_target
+
+FIRST_POST_MAX = resolve_length_target("linkedin post", "", first_post=True)["max_words"]   # the hard limit, 115
 
 
 # --- Through run_pipeline, draft only (C, and B at quality="draft") ---------------
 
 @pytest.mark.parametrize("variant,quality", DRAFT_ONLY)
 def test_a_first_post_made_over_length_by_normalisation_is_compressed(claude, fake_db, variant, quality):
-    # Ten 10-word lines: 100 words, the first-post maximum. One holds "alpha—beta",
-    # which is one word until the em dash is normalised: then the post is 101.
-    lines = _lines(10)
+    # Ten 10-word lines and one of 15: 115 words, the first post's hard limit. One
+    # holds "alpha—beta", which is one word until the em dash is normalised: then
+    # the post is 116.
+    lines = _lines(10) + [_lines(11, 15)[10]]
     lines[4] = lines[4].replace("word", "alpha—beta", 1)
     marked = "\n\n".join(lines)
-    assert count_words(_clean(marked)) == FIRST_POST_RANGE[1]      # 100 before normalisation
+    assert count_words(_clean(marked)) == FIRST_POST_MAX           # 115 before normalisation
     claude.queue(ARCHETYPE_GENERAL, enveloped(marked), _shorter([2]))
 
     result = _run(variant, quality=quality, user_id=FIRST_POST_USER, topic="Forecast intervals",
@@ -33,41 +36,41 @@ def test_a_first_post_made_over_length_by_normalisation_is_compressed(claude, fa
 
     outputs = _outputs(fake_db)
     assert outputs["length_target"]["basis"] == "first_post"
-    assert outputs["compress_result"]["words_before"] == FIRST_POST_RANGE[1] + 1      # validated after normalisation
+    assert outputs["compress_result"]["words_before"] == FIRST_POST_MAX + 1      # validated after normalisation
     assert outputs["compress_result"]["outcome"] == "compressed"
     assert "alpha, beta" in result["post"] and "—" not in result["post"]
-    assert outputs["final_validation"]["words"] == count_words(result["post"]) <= FIRST_POST_RANGE[1]
+    assert outputs["final_validation"]["words"] == count_words(result["post"]) <= FIRST_POST_MAX
     assert outputs["final_post"] == result["post"]
     assert [c["event_type"] for c in fake_db.tables["generation_traces"][0]["llm_calls"]] == ["archetype", "generate", "compress"]
 
 
 @pytest.mark.parametrize("variant,quality", DRAFT_ONLY)
 def test_an_over_length_post_is_compressed_and_the_returned_post_is_the_validated_one(claude, fake_db, seeded_kb, variant, quality):
-    claude.queue(ARCHETYPE_GENERAL, enveloped(_post(36)), _shorter([10, 11, 12, 13]))   # 360 words against 250-350
+    claude.queue(ARCHETYPE_GENERAL, enveloped(_post(21)), _shorter([10, 11, 12, 13]))   # 210 words against a hard limit of 200
 
     result = _run(variant, quality=quality)
 
     outputs = _outputs(fake_db)
     compress = outputs["compress_result"]
     assert compress["outcome"] == "compressed" and compress["rejected"] == []
-    assert (compress["words_before"], compress["words_after"]) == (360, 348)
+    assert (compress["words_before"], compress["words_after"]) == (210, 198)
     assert [entry["sentence"] for entry in compress["accepted"]] == [10, 11, 12, 13]
-    assert compress["accepted"][0] == {"sentence": 10, "before": _lines(36)[9], "after": _lines(10, 7)[9],
+    assert compress["accepted"][0] == {"sentence": 10, "before": _lines(21)[9], "after": _lines(10, 7)[9],
                                        "words_before": 10, "words_after": 7}
     assert result["status"] == "ok"
     assert result["post"] == outputs["final_post"]
-    assert outputs["final_validation"]["words"] == count_words(result["post"]) == 348
+    assert outputs["final_validation"]["words"] == count_words(result["post"]) == 198
     assert [d["node"] for d in outputs["draft_history"]] == ["draft", "compress"]
     # No sentence is gone, and the ones not listed are exactly as the draft had them.
-    lines, before = result["post"].split("\n\n"), _clean(_post(36)).split("\n\n")
-    assert len(outputs["citations"]) == len(lines) == 36
+    lines, before = result["post"].split("\n\n"), _clean(_post(21)).split("\n\n")
+    assert len(outputs["citations"]) == len(lines) == 21
     assert [line for n, line in enumerate(lines, 1) if n not in (10, 11, 12, 13)] == [
         line for n, line in enumerate(before, 1) if n not in (10, 11, 12, 13)]
 
 
 @pytest.mark.parametrize("variant,quality", DRAFT_ONLY)
 def test_a_failed_compress_returns_the_post_with_the_failure_recorded(claude, fake_db, seeded_kb, variant, quality):
-    claude.queue(ARCHETYPE_GENERAL, enveloped(_post(36)), "Here is a shorter post, with no tags around it.")
+    claude.queue(ARCHETYPE_GENERAL, enveloped(_post(21)), "Here is a shorter post, with no tags around it.")
 
     result = _run(variant, quality=quality)
 
@@ -75,28 +78,28 @@ def test_a_failed_compress_returns_the_post_with_the_failure_recorded(claude, fa
     assert outputs["compress_result"]["outcome"] == "compress_failed"
     assert outputs["compress_result"]["reason"] == "malformed_output: fixes_tag_missing"
     assert len(claude.calls) == 3                      # structure, draft, compress: never a second compress call
-    assert result["status"] == "ok" and count_words(result["post"]) == 360
+    assert result["status"] == "ok" and count_words(result["post"]) == 210
     assert outputs["final_validation"]["length"] == "over_length" and outputs["final_validation"]["over_by"] == 10
     assert result["post"] == outputs["final_post"]
 
 
 @pytest.mark.parametrize("variant,quality", DRAFT_ONLY)
 def test_an_under_length_post_is_recorded_and_costs_no_extra_call(claude, fake_db, seeded_kb, variant, quality):
-    claude.queue(ARCHETYPE_GENERAL, enveloped(_post(5)))          # 50 words against 250-350
+    claude.queue(ARCHETYPE_GENERAL, enveloped(_post(5)))          # 50 words, under the floor of 100
 
     result = _run(variant, quality=quality)
 
     outputs = _outputs(fake_db)
     assert len(claude.calls) == 2                      # structure and draft: nothing lengthens a post
     assert outputs["final_validation"]["length"] == "under_length"
-    assert (outputs["final_validation"]["words"], outputs["final_validation"]["under_by"]) == (50, 200)
+    assert (outputs["final_validation"]["words"], outputs["final_validation"]["under_by"]) == (50, 50)
     assert "compress_result" not in outputs
     assert result["post"] == outputs["final_post"] and count_words(result["post"]) == 50
 
 
 @pytest.mark.parametrize("variant,quality", DRAFT_ONLY)
 def test_a_post_within_its_target_is_not_compressed(claude, fake_db, seeded_kb, variant, quality):
-    claude.queue(ARCHETYPE_GENERAL, enveloped(_post(30)))         # 300 words
+    claude.queue(ARCHETYPE_GENERAL, enveloped(_post(19)))         # 190 words: over what the drafter is asked for (150), within the hard limit
 
     _run(variant, quality=quality)
 
@@ -155,7 +158,8 @@ def test_an_ordinary_response_has_an_empty_message(claude, fake_db, seeded_kb, c
 def _every_target():
     targets = [resolve_length_target(fmt, length) for fmt, lengths in WORD_RANGES.items() for length in lengths]
     targets += [resolve_length_target(fmt, length, thin_sources=True) for fmt, lengths in WORD_RANGES.items() for length in lengths]
-    return targets + [resolve_length_target("linkedin post", "standard", first_post=True)]
+    return targets + [resolve_length_target("linkedin post", "", **kwargs)
+                      for kwargs in ({}, {"thin_sources": True}, {"first_post": True})]
 
 
 def test_the_draft_budget_fits_every_length_target_with_markers():
@@ -209,7 +213,7 @@ def test_pipeline_a_returns_the_same_post_and_stores_the_validation_record(claud
     assert result["post"] == "Final text."               # what STANDARD_RUN has always produced
     assert record["words"] == count_words(result["post"]) == 2
     assert (record["length"], record["under_by"]) == ("under_length", 248)
-    assert record["target"] == {"min_words": 250, "max_words": 350, "basis": "length_setting"}
+    assert record["target"] == {"min_words": 250, "max_words": 350, "basis": "length_setting"}   # A keeps the requested length
     assert not {"compress_result", "trim_result"} & set(_outputs(fake_db))
 
 

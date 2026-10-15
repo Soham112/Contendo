@@ -203,17 +203,3 @@ def no_specifics_on(monkeypatch):
     from config import features
 
     monkeypatch.setattr(features, "NO_SPECIFICS_MODE_ENABLED", True)
-
-
-@pytest.fixture(autouse=True)
-def isolate_final_grounding(request, monkeypatch):
-    """Legacy generator tests isolate the new final boundary; its integration
-    tests queue all actual review/repair calls under grounding_integration."""
-    if request.node.get_closest_marker("grounding_integration"):
-        return
-    import pipeline.graph as graph
-    def reviewed(state):
-        if state.get("final_post"):
-            state["grounding"] = {"outcome": "verified", "flags": [], "attempts": [], "repairs": 0}
-        return state
-    monkeypatch.setattr(graph, "enforce_grounding", reviewed)

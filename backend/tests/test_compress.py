@@ -318,15 +318,15 @@ def test_the_run_records_the_result_checks_it_and_logs_usage_with_the_model_id(c
 
     usage: list[dict] = []
     monkeypatch.setattr(llm_client, "schedule_usage_event", lambda **kw: usage.append(kw))
-    claude.queue(ARCHETYPE_GENERAL, enveloped(_post(36)),
-                 fixes_reply({n: SHORT_LINE for n in (10, 11, 12, 13)}))                 # 360 words against 250-350
+    claude.queue(ARCHETYPE_GENERAL, enveloped(_post(21)),
+                 fixes_reply({n: SHORT_LINE for n in (10, 11, 12, 13)}))         # 210 words against a hard limit of 200
 
     result = _run(variant)
 
     outputs = _outputs(fake_db)
     compress = outputs["compress_result"]
     assert (compress["outcome"], compress["model"], compress["stop_reason"]) == ("compressed", model, "end_turn")
-    assert (compress["words_before"], compress["words_after"]) == (360, 348)
+    assert (compress["words_before"], compress["words_after"]) == (210, 198)
     # The usage row and the trace's call both carry the exact model id.
     [row] = [u for u in usage if u["event_type"] == "compress"]
     assert row["model"] == model and row["user_id"]
@@ -336,6 +336,6 @@ def test_the_run_records_the_result_checks_it_and_logs_usage_with_the_model_id(c
     assert outputs["checks_before_trim"]["counts"] == {"over_length": 1}
     assert outputs["checks_final"] == {"issues": [], "counts": {}}
     assert result["post"] == outputs["final_post"] == outputs["draft_history"][-1]["text"]
-    assert outputs["final_validation"]["words"] == count_words(result["post"]) == 348
+    assert outputs["final_validation"]["words"] == count_words(result["post"]) == 198
     assert outputs["final_validation"]["length"] == "ok" and "trim_result" not in outputs
     assert len(claude.calls) == 3                                           # structure, draft, compress

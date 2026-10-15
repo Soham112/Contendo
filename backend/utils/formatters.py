@@ -48,7 +48,26 @@ def normalise_post_punctuation(text: str) -> str:
 
 # ── Length ────────────────────────────────────────────────────────────────────
 
-# (min_words, max_words). Threads are measured in tweets and are not enforced.
+# The only format the platform writes (2026-10-15). /generate, onboarding and
+# ideas always use it; the Medium and thread code below is kept for the evals
+# and for when those formats come back.
+LINKEDIN_POST = "linkedin post"
+
+# LinkedIn posts: the backend sets the length and ignores the request's length
+# (the create screen stopped offering a choice on 2026-10-15).
+# LINKEDIN_MAX_WORDS is the product rule (2026-10-15): a post stays under 200
+# words. It is the hard limit every length check uses; compress runs only past it.
+LINKEDIN_MAX_WORDS = 200
+# What the drafter is asked for (the user's choice, 2026-10-15), below the hard
+# limit. In production (7 C-Opus drafts, 2026-10-14/15) drafts went over the
+# asked maximum by up to about 7%, and compress then spent 5-22 s removing 10-20
+# words each time; the 50 words between 150 and 200 leave room for that.
+LINKEDIN_RANGE = (100, 150)
+
+# By the request's length: (min_words, max_words). Threads are measured in
+# tweets and are not enforced. The LinkedIn ranges are pipeline A's only (the
+# rollback keeps the requests it always sent); every other pipeline uses
+# LINKEDIN_RANGE.
 WORD_RANGES: dict[str, dict[str, tuple[int, int]]] = {
     "linkedin post": {
         "concise":   (100, 180),
@@ -67,7 +86,10 @@ THREAD_TWEETS: dict[str, tuple[int, int]] = {
     "long-form": (10, 15),
 }
 # A user's first post is short on purpose: a quick result that grabs attention.
+# FIRST_POST_RANGE is asked for; a LinkedIn first post's hard limit is
+# FIRST_POST_MAX_WORDS, the same 15% room as above.
 FIRST_POST_RANGE = (70, 100)
+FIRST_POST_MAX_WORDS = 115
 
 
 def _normalise(value: str, default: str) -> str:
@@ -80,18 +102,27 @@ def resolve_length_target(
     *,
     first_post: bool = False,
     thin_sources: bool = False,
+    requested_linkedin_length: bool = False,
 ) -> dict[str, Any] | None:
     """The one length target for a post, or None for formats not measured in
     words (threads).
 
-    {min_words, max_words, may_expand, basis}
+    {min_words, max_words, may_expand, basis}, plus write_max_words for a
+    LinkedIn post. max_words is the hard limit every length check uses;
+    write_max_words, when present, is the maximum the drafter is asked for.
     - basis "first_post": FIRST_POST_RANGE, whatever length was requested.
       Trimmed if over; never expanded.
-    - basis "thin_sources" (low retrieval confidence): the requested range's
-      ceiling with no floor. A short post is complete; never expanded.
-    - basis "length_setting": the requested range; may be expanded up to its floor.
+    - basis "thin_sources" (low retrieval confidence): the range's ceiling with
+      no floor. A short post is complete; never expanded.
+    - basis "linkedin": LINKEDIN_RANGE; may be expanded up to its floor.
+    - basis "length_setting" (other formats, and LinkedIn posts with
+      requested_linkedin_length, pipeline A's): the requested range; may be
+      expanded up to its floor.
     """
-    ranges = WORD_RANGES.get(_normalise(format_type, "linkedin post"))
+    format_type = _normalise(format_type, "linkedin post")
+    if format_type == "linkedin post" and not requested_linkedin_length:
+        return _linkedin_target(first_post=first_post, thin_sources=thin_sources)
+    ranges = WORD_RANGES.get(format_type)
     if ranges is None:
         return None
     if first_post:
@@ -103,15 +134,30 @@ def resolve_length_target(
     return {"min_words": low, "max_words": high, "may_expand": True, "basis": "length_setting"}
 
 
+def _linkedin_target(*, first_post: bool, thin_sources: bool) -> dict[str, Any]:
+    """A LinkedIn post's target: the drafter is asked for the range, and the
+    hard limit sits above it (see LINKEDIN_MAX_WORDS)."""
+    low, high = FIRST_POST_RANGE if first_post else LINKEDIN_RANGE
+    basis = "first_post" if first_post else "thin_sources" if thin_sources else "linkedin"
+    return {
+        "min_words": 0 if basis == "thin_sources" else low,
+        "max_words": FIRST_POST_MAX_WORDS if first_post else LINKEDIN_MAX_WORDS,
+        "write_max_words": high,
+        "may_expand": basis == "linkedin",
+        "basis": basis,
+    }
+
+
 def word_count_rule(target: dict[str, Any] | None) -> str:
     """The length instruction for a writing prompt; "" when there is no target.
 
     The model is told the target, not asked to count: word_count_enforcer_node
-    counts in code and trims or expands afterwards.
+    counts in code and trims or expands afterwards. A LinkedIn post's prompt
+    asks for its write_max_words, below the hard limit.
     """
     if not target:
         return ""
-    high = target["max_words"]
+    high = target.get("write_max_words", target["max_words"])
     if target["min_words"]:
         return f"LENGTH: {target['min_words']}–{high} words. Never go over {high}."
     return (

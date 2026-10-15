@@ -57,12 +57,6 @@ interface Post {
 }
 
 
-const FORMAT_LABELS: Record<string, string> = {
-  "linkedin post": "LinkedIn",
-  "medium article": "Medium",
-  "thread": "Thread",
-};
-
 const TONE_LABELS: Record<string, string> = {
   "casual": "Casual",
   "technical": "Technical",
@@ -212,9 +206,6 @@ function PostCard({
       >
         <div className="flex items-center gap-3 flex-wrap">
           {/* Badges */}
-          <span className="text-[10px] font-semibold tracking-[0.07em] uppercase px-2.5 py-1 rounded-full bg-primary/10 text-primary">
-            {FORMAT_LABELS[post.format] ?? post.format}
-          </span>
           <span className="text-[10px] font-semibold tracking-[0.07em] uppercase px-2.5 py-1 rounded-full bg-secondary/10 text-secondary">
             {TONE_LABELS[post.tone] ?? post.tone}
           </span>
@@ -264,9 +255,6 @@ function PostCard({
 
         {/* Row 1: badges + date + score + three-dot */}
         <div className="flex items-center gap-2 mb-4 flex-wrap">
-          <span className="text-[10px] font-semibold tracking-[0.07em] uppercase px-2.5 py-1 rounded-full bg-primary/10 text-primary">
-            {FORMAT_LABELS[post.format] ?? post.format}
-          </span>
           <span className="text-[10px] font-semibold tracking-[0.07em] uppercase px-2.5 py-1 rounded-full bg-secondary/10 text-secondary">
             {TONE_LABELS[post.tone] ?? post.tone}
           </span>

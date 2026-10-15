@@ -8,6 +8,9 @@ from memory.feedback_store import get_all_topics_posted
 from memory.profile_store import load_profile, profile_to_context_string
 from memory.experience_store import get_experience_nodes, experience_nodes_exist, experience_nodes_to_context_string
 
+# Every idea is a LinkedIn post: the platform writes LinkedIn posts only (2026-10-15).
+IDEA_FORMAT = "linkedin post"
+
 # KB is considered sparse below this chunk count
 SPARSE_KB_THRESHOLD = 10
 
@@ -24,14 +27,14 @@ def _source_label(source_type: str) -> str:
     return "[from: general knowledge]"
 
 
-SYSTEM_PROMPT = """You are a content strategist who generates specific, fresh content ideas for a creator.
+SYSTEM_PROMPT = """You are a content strategist who generates specific, fresh LinkedIn post ideas for a creator.
 
 You will be given:
 1. A sample of their knowledge base — labelled by source type so you know where each piece of knowledge came from
 2. Topics they have already written about — do not repeat these angles
 3. Their profile — who they are, their expertise, their voice
 
-Your job: generate exactly {count} content ideas grounded in their actual knowledge.
+Your job: generate exactly {count} LinkedIn post ideas grounded in their actual knowledge.
 
 GROUNDING RULE — this is the most important rule and overrides everything else:
 Every idea you generate must be directly traceable to a specific chunk or experience entry provided above.
@@ -80,23 +83,15 @@ TITLE RULES:
 - No "I read / I watched / I came across" in absorbed_insight titles
 - The title should be publishable as-is
 
-FORMAT MATCHING:
-- personal_experience → linkedin post
-- absorbed_insight → linkedin post or thread depending on depth
-- observed_pattern → thread or medium article
-- contrarian_take → linkedin post or thread
-- forward_prediction → medium article or thread
-
 Return ONLY a valid JSON array with exactly {count} objects. Each object:
 - "title": string
 - "angle": string — the unique hook in one sentence
-- "format": string — exactly one of: "linkedin post", "medium article", "thread"
 - "frame": string — exactly one of: "personal_experience", "absorbed_insight", "observed_pattern", "contrarian_take", "forward_prediction"
 - "reasoning": string — one sentence on why this will resonate
 
 Return nothing outside the JSON array."""
 
-RESUME_SYSTEM_PROMPT = """You are a content strategist who generates specific, fresh content ideas for a creator who is just getting started.
+RESUME_SYSTEM_PROMPT = """You are a content strategist who generates specific, fresh LinkedIn post ideas for a creator who is just getting started.
 
 You will be given:
 1. Their structured work and project history — extracted from their resume
@@ -143,7 +138,6 @@ TITLE RULES:
 Return ONLY a valid JSON array with exactly {count} objects. Each object:
 - "title": string
 - "angle": string — the unique hook in one sentence
-- "format": string — exactly one of: "linkedin post", "medium article", "thread"
 - "frame": string — exactly one of: "personal_experience", "absorbed_insight", "observed_pattern", "contrarian_take", "forward_prediction"
 - "reasoning": string — one sentence on why this will resonate
 
@@ -277,7 +271,7 @@ def generate_suggestions(count: int = 8, topic: str | None = None, *, user_id: s
         else ""
     )
 
-    user_message = f"""Generate {count} content ideas.{topic_instruction}
+    user_message = f"""Generate {count} LinkedIn post ideas.{topic_instruction}
 
 USER PROFILE:
 {profile_context}
@@ -318,7 +312,7 @@ def _generate_from_resume(
         else ""
     )
 
-    user_message = f"""Generate {count} content ideas.{topic_instruction}
+    user_message = f"""Generate {count} LinkedIn post ideas.{topic_instruction}
 
 USER PROFILE:
 {profile_context}
@@ -356,11 +350,11 @@ def _parse_ideas(raw: str, count: int) -> list[dict]:
             raise ValueError("Expected a JSON array")
         valid = []
         for idea in ideas:
-            if all(k in idea for k in ("title", "angle", "format", "frame", "reasoning")):
+            if all(k in idea for k in ("title", "angle", "frame", "reasoning")):
                 valid.append({
                     "title": str(idea["title"]),
                     "angle": str(idea["angle"]),
-                    "format": str(idea["format"]).lower(),
+                    "format": IDEA_FORMAT,
                     "frame": str(idea["frame"]).lower(),
                     "reasoning": str(idea["reasoning"]),
                 })

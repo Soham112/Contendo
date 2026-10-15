@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { Input, Label, Textarea } from '@/components/ui/field';
 
 // A native select styled like the other controls: no hooks, so this step renders as a plain function in tests.
-const SELECT = 'w-full min-h-11 rounded-t-md bg-surface-container-low px-3 text-[1rem] text-on-surface border-0 border-b-[1.5px] border-outline focus:outline-none focus:border-b-2 focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/30';
 
 export default function IndividualBrief({ brief, onChange, takes, suggesting, busy, onSuggest, onGenerate }: {
   brief: FirstPostBrief; onChange: (value: FirstPostBrief) => void; takes: string[];
@@ -17,12 +16,6 @@ export default function IndividualBrief({ brief, onChange, takes, suggesting, bu
     <div>
       <Label htmlFor="brief-topic">Topic</Label>
       <Input id="brief-topic" required maxLength={500} value={brief.topic} onChange={e => onChange({ ...brief, topic: e.target.value, take: '' })} />
-    </div>
-    <div>
-      <Label htmlFor="brief-format">Format</Label>
-      <select id="brief-format" className={SELECT} value={brief.format} onChange={e => onChange({ ...brief, format: e.target.value })}>
-        <option value="linkedin post">LinkedIn post</option><option value="medium article">Medium article</option><option value="twitter thread">Thread</option>
-      </select>
     </div>
     <div>
       <Label htmlFor="brief-story">One sentence about it</Label>

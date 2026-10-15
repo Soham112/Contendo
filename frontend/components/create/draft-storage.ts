@@ -6,7 +6,7 @@ import type { Grounding } from "@/components/GroundingNotice";
 import {
   SS_CURRENT_POST_ID, SS_FEEDBACK, SS_FORMAT, SS_IDEAS, SS_ITERATIONS, SS_LENGTH, SS_POST, SS_RAW_POST, SS_SCORE,
   SS_SCORED, SS_SHOW_ANALYSIS, SS_TONE, SS_TOPIC, SS_VISUALS,
-  type Format, type GenerateResult, type Length, type Suggestion, type Tone, type Visual,
+  type Format, type GenerateResult, type Suggestion, type Tone, type Visual,
 } from "./config";
 
 const SS_GROUNDING = "contentOS_last_grounding";
@@ -19,15 +19,6 @@ export const START_FRESH_KEYS = [SS_POST, SS_SCORE, SS_FEEDBACK, SS_ITERATIONS, 
 
 export function removeKeys(keys: string[]): void {
   keys.forEach((key) => sessionStorage.removeItem(key));
-}
-
-function isLength(value: string | null): value is Length {
-  return value === "concise" || value === "standard" || value === "long-form";
-}
-
-export function readSavedLength(): Length | null {
-  const saved = sessionStorage.getItem(SS_LENGTH);
-  return isLength(saved) ? saved : null;
 }
 
 /** The ideas list saved with the draft; [] when there is none or it is unreadable. */
@@ -64,7 +55,6 @@ export interface DraftSnapshot {
   topic: string;
   format: Format;
   tone: Tone;
-  length: Length;
 }
 
 export function saveDraft(d: DraftSnapshot): void {
@@ -80,7 +70,6 @@ export function saveDraft(d: DraftSnapshot): void {
     sessionStorage.setItem(SS_TOPIC, d.topic);
     sessionStorage.setItem(SS_FORMAT, d.format);
     sessionStorage.setItem(SS_TONE, d.tone);
-    sessionStorage.setItem(SS_LENGTH, d.length);
     sessionStorage.setItem(SS_SCORED, String(d.result.scored));
   } catch {
     // ignore
@@ -97,7 +86,6 @@ export interface SavedDraft {
   topic: string | null;
   format: Format | null;
   tone: Tone | null;
-  length: Length | null;
   postId: number | null;
 }
 
@@ -135,7 +123,6 @@ export function readDraft(): SavedDraft | null {
     topic: sessionStorage.getItem(SS_TOPIC) || null,
     format: (sessionStorage.getItem(SS_FORMAT) as Format | null) || null,
     tone: (sessionStorage.getItem(SS_TONE) as Tone | null) || null,
-    length: readSavedLength(),
     postId: postId ? Number(postId) : null,
   };
 }

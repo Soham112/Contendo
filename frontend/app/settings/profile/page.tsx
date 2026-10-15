@@ -584,24 +584,6 @@ export default function ProfileSettingsPage() {
                     onChange={(e) => set("linkedin_style_notes", e.target.value)}
                   />
                 </Field>
-                <Field label="Medium style notes">
-                  <textarea
-                    className={inputCls}
-                    rows={3}
-                    placeholder="e.g. Start in the middle of the story. Technical depth is welcome."
-                    value={form.medium_style_notes}
-                    onChange={(e) => set("medium_style_notes", e.target.value)}
-                  />
-                </Field>
-                <Field label="Thread style notes">
-                  <textarea
-                    className={inputCls}
-                    rows={3}
-                    placeholder="e.g. Each tweet stands alone. Number tweets. Last tweet is the payoff."
-                    value={form.thread_style_notes}
-                    onChange={(e) => set("thread_style_notes", e.target.value)}
-                  />
-                </Field>
               </div>
             )}
           </div>

@@ -11,25 +11,20 @@ import type { ClosestSource } from "@/lib/api";
 import type { Entitlements } from "@/lib/billing";
 import type { useTracking } from "@/lib/useTracking";
 import BusinessPostFields, { type BusinessPost } from "./BusinessPostFields";
-import {
-  FORMATS, LENGTH_META, LENGTHS, TONE_DESCRIPTIONS, TONE_DISPLAY_LABELS, TONES, type Format, type Length, type Tone,
-} from "./config";
+import { TONE_DESCRIPTIONS, TONE_DISPLAY_LABELS, TONES, type Tone } from "./config";
 
-/** The form a post starts from: topic, format, tone and length. */
+/** The form a post starts from: topic and tone. Posts are LinkedIn posts, and
+ *  the backend sets their length. */
 export default function ConfigureForm({
-  business, topicRef, topic, onTopicChange, format, onFormatChange, tone, onToneChange, length, onLengthChange,
+  business, topicRef, topic, onTopicChange, tone, onToneChange,
   toneDescOpacity, error, lowCoverage, loading, opinionEnabled, entitlements, onGenerate, logEvent,
 }: {
   business: BusinessPost;
   topicRef: RefObject<HTMLTextAreaElement>;
   topic: string;
   onTopicChange: (value: string) => void;
-  format: Format;
-  onFormatChange: (value: Format) => void;
   tone: Tone;
   onToneChange: (value: Tone) => void;
-  length: Length;
-  onLengthChange: (value: Length) => void;
   toneDescOpacity: number;
   error: string;
   lowCoverage: ClosestSource[] | null;
@@ -81,42 +76,20 @@ export default function ConfigureForm({
           />
         </div>
 
-        <div className="flex flex-col items-start gap-8 md:flex-row md:gap-12">
-          <div className="w-full md:w-[38%] md:shrink-0">
-            <ChoiceGroup
-              legend="Format"
-              value={format}
-              onChange={onFormatChange}
-              options={FORMATS.map((f) => ({ value: f.id, label: f.label }))}
-              className="flex-col flex-nowrap"
-            />
-          </div>
-
-          <div className="w-full md:w-[62%] md:shrink-0">
-            <ChoiceGroup
-              legend="Tone"
-              value={tone}
-              onChange={onToneChange}
-              options={TONES.map((t) => ({ value: t.id, label: TONE_DISPLAY_LABELS[t.id] }))}
-            />
-            <p
-              aria-live="polite"
-              className="mt-2 max-w-[420px] text-[0.8125rem] leading-normal text-on-surface-variant"
-              style={{ opacity: toneDescOpacity, transition: "opacity 0.2s ease-out" }}
-            >
-              {TONE_DESCRIPTIONS[tone]}
-            </p>
-
-            <div className="mt-6">
-              <ChoiceGroup
-                legend="Length"
-                value={length}
-                onChange={onLengthChange}
-                options={LENGTHS.map((l) => ({ value: l.id, label: l.label, hint: LENGTH_META[format][l.id] }))}
-                className="grid grid-cols-3 gap-2"
-              />
-            </div>
-          </div>
+        <div>
+          <ChoiceGroup
+            legend="Tone"
+            value={tone}
+            onChange={onToneChange}
+            options={TONES.map((t) => ({ value: t.id, label: TONE_DISPLAY_LABELS[t.id] }))}
+          />
+          <p
+            aria-live="polite"
+            className="mt-2 max-w-[420px] text-[0.8125rem] leading-normal text-on-surface-variant"
+            style={{ opacity: toneDescOpacity, transition: "opacity 0.2s ease-out" }}
+          >
+            {TONE_DESCRIPTIONS[tone]}
+          </p>
         </div>
 
         {error && <div id="post-error"><ErrorState message={error} onRetry={hasTopic ? () => onGenerate() : undefined} /></div>}

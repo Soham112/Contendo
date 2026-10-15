@@ -20,7 +20,7 @@ export default function ApprovalReview({ content, postId, traceId, media, onAppr
   const [busy, setBusy] = useState(false);
   function fail(error: unknown) {
     if (error instanceof PaywallError && onPaywall) onPaywall(error.paywall);
-    else setError(error instanceof Error ? error.message : "Couldn't check this text. Try again.");
+    else setError(error instanceof Error ? error.message : "Couldn't prepare this text for approval. Try again.");
   }
   useEffect(() => {
     let active = true;
@@ -50,7 +50,7 @@ export default function ApprovalReview({ content, postId, traceId, media, onAppr
   return <section aria-label="Review and approve final text" className="mt-6 rounded-2xl bg-surface-container-lowest p-5">
     <h4 className="font-headline text-lg">Read the final text</h4>
     <p className="mt-3 whitespace-pre-wrap text-base leading-relaxed">{content}</p>
-    {!review && !error && <p role="status" className="mt-4 text-sm text-on-surface-variant">Checking the details against your sources…</p>}
+    {!review && !error && <p role="status" className="mt-4 text-sm text-on-surface-variant">Preparing your text for approval…</p>}
     {review && <>
       {review.flags.length > 0 && <div className="mt-5">
         <p className="text-sm text-tertiary">Edit the post to correct these details, or accept each one after checking it yourself.</p>

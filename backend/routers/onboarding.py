@@ -30,7 +30,6 @@ class Brief(BaseModel):
     topic: str = Field(min_length=1, max_length=500)
     story: str = Field(min_length=1, max_length=4000)
     take: str = Field(default='', max_length=1000)
-    format: Literal['linkedin post', 'medium article', 'twitter thread'] = 'linkedin post'
 
 
 @router.post('/events')
@@ -67,7 +66,7 @@ async def first_post(body: Brief, user_id: str = Depends(get_user_id_dep)) -> Ge
                                     source_title='First post: ' + body.topic.strip(), user_id=user_id,
                                     memory_context='work')
         result = await generate(GenerateRequest(
-            topic=body.topic, format=body.format, tone=(account.get('business_profile') or {}).get('tone', 'casual'),
+            topic=body.topic, tone=(account.get('business_profile') or {}).get('tone', 'casual'),
             context='Author’s account: ' + body.story + ('\nChosen viewpoint: ' + body.take if body.take else ''),
         ), user_id=user_id)
         if result.post.strip():

@@ -9,14 +9,14 @@ from tests.test_generation_trace import seeded_kb  # noqa: F401  (shared fixture
 from tests.test_pipeline_b import MADE_UP, UNSUPPORTED, _distinct, _events, _review
 
 def test_the_full_redraft_is_reviewed_only_where_it_changed(claude, fake_db, seeded_kb):
-    first = _distinct(37)                                             # 370 words: over, whatever code deletes
-    second = _distinct(35).replace("Plainaa", "Plainzz")              # one sentence new, 34 as they were
+    first = _distinct(22)                                             # 220 words: over, whatever code deletes
+    second = _distinct(20).replace("Plainaa", "Plainzz")              # one sentence new, 19 as they were
     answer_pipeline(claude, [first, second])
 
     result = _run("B")
 
     review = _outputs(fake_db)["review_second"]
-    assert (review["reused"], review["reviewed"]) == (34, 1) and _review(result) == ("fixed", [])
+    assert (review["reused"], review["reviewed"]) == (19, 1) and _review(result) == ("fixed", [])
     assert [d["node"] for d in _outputs(fake_db)["draft_history"]] == ["draft", "redraft"]
 
 
@@ -45,7 +45,7 @@ def test_a_sentence_compress_shortened_is_still_in_the_post_and_still_counts(cla
 
 def test_a_cut_off_redraft_keeps_the_post_which_is_then_compressed_and_reported(claude, fake_db, seeded_kb):
     cut = "<post>\nPlain word"
-    over = f"{_post(36)}\n\nNo marker on this line."                 # 365 words
+    over = f"{_post(21)}\n\nNo marker on this line."                 # 215 words against a hard limit of 200
     answer_pipeline(claude, [over, _cut_off(cut)], compress=fixes_reply({n: SHORT_LINE for n in range(10, 15)}))
 
     result = _run("B")
@@ -54,7 +54,7 @@ def test_a_cut_off_redraft_keeps_the_post_which_is_then_compressed_and_reported(
     assert result["status"] == "ok" and outputs["review"]["redraft_truncated"] == {"max_tokens": 2000, "output_tokens": 2000}
     assert _events(fake_db)[-2:] == ["redraft", "compress"] and "draft_truncated" not in outputs
     assert [d["node"] for d in outputs["draft_history"]] == ["draft", "redraft_truncated", "compress"]
-    assert outputs["final_validation"]["words"] == 350 and result["post"] == outputs["final_post"]
+    assert outputs["final_validation"]["words"] == 200 and result["post"] == outputs["final_post"]
     assert _review(result) == ("issues_remain", [("uncited_span", "No marker on this line.")])
 
 
@@ -68,7 +68,7 @@ def test_a_cut_off_first_draft_still_returns_no_post(claude, fake_db, seeded_kb)
 
 
 def test_an_under_length_post_triggers_nothing(claude, fake_db, seeded_kb):
-    answer_pipeline(claude, [_post(5)])                 # 50 words against 250-350
+    answer_pipeline(claude, [_post(5)])                 # 50 words, under the floor of 100
 
     result = _run("B")
 
@@ -79,9 +79,9 @@ def test_an_under_length_post_triggers_nothing(claude, fake_db, seeded_kb):
 def test_code_fixes_run_again_on_a_full_redraft_with_no_extra_call(claude, fake_db, seeded_kb):
     stated = {**UNSUPPORTED, "supported_by": ["S1"], "evidence": "pgvector makes retrieval fast"}
     wrong = "pgvector makes retrieval fast. [[V]]"
-    first = f"{wrong}\n\n{_distinct(37)}"                            # over length whatever code does: the full redraft
+    first = f"{wrong}\n\n{_distinct(22)}"                            # over length whatever code does: the full redraft
     # The redraft keeps that sentence and marks it [[V]] again, and adds a sentence nothing states.
-    second = f"{wrong}\n\nEveryone felt relieved. [[V]]\n\n{_distinct(30)}"
+    second = f"{wrong}\n\nEveryone felt relieved. [[V]]\n\n{_distinct(18)}"
     answer_pipeline(claude, [first, second], reviews=[{"changes": {1: stated}}, {"changes": {2: UNSUPPORTED}}])
 
     result = _run("B")

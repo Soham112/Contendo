@@ -8,8 +8,6 @@ import { Label, Textarea } from "@/components/ui/field";
 
 const PLATFORMS = [
   { id: "linkedin", label: "LinkedIn" },
-  { id: "twitter", label: "X" },
-  { id: "medium", label: "Medium" },
   { id: "other", label: "Other" },
 ];
 

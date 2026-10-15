@@ -45,6 +45,6 @@ describe("platform config", () => {
       expect(Object.keys(platform.colors).sort()).toEqual(["dark", "light"]);
     }
     expect(new Set(PLATFORMS.map((p) => p.id)).size).toBe(PLATFORMS.length);
-    expect(platformById("x").counting).toBe("x-weighted");
+    expect(PLATFORMS.map((p) => p.id)).toEqual(["linkedin"]);
   });
 });

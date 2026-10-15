@@ -12,14 +12,14 @@ def test_finalise_normalises_then_measures_the_normalised_text():
     from pipeline.finalise import finalise
 
     target = resolve_length_target("linkedin post", "standard", first_post=True)
-    text = " ".join(["word"] * 99) + " alpha—beta"
-    assert count_words(text) == 100
+    text = " ".join(["word"] * 114) + " alpha—beta"
+    assert count_words(text) == 115
 
     finalised = finalise(text, target)
 
     assert finalised.text.endswith("alpha, beta")
     assert finalised.record == {
-        "words": 101, "target": {"min_words": 70, "max_words": 100, "basis": "first_post"},
+        "words": 116, "target": {"min_words": 70, "max_words": 115, "basis": "first_post"},
         "length": "over_length", "over_by": 1, "under_by": 0,
         "leftover_markers": [], "em_dashes_remaining": 0,
     }
@@ -27,7 +27,7 @@ def test_finalise_normalises_then_measures_the_normalised_text():
 
 
 @pytest.mark.parametrize("words,length,over_by,under_by", [
-    (250, "ok", 0, 0), (350, "ok", 0, 0), (351, "over_length", 1, 0), (249, "under_length", 0, 1), (3, "under_length", 0, 247),
+    (100, "ok", 0, 0), (200, "ok", 0, 0), (201, "over_length", 1, 0), (99, "under_length", 0, 1), (3, "under_length", 0, 97),
 ])
 def test_the_record_says_how_far_over_or_under(words, length, over_by, under_by):
     from pipeline.finalise import finalise

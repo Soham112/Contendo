@@ -19,15 +19,9 @@ export const SS_SCORED = "contentOS_last_scored";
 export const SS_RAW_POST = "contentOS_raw_post";
 
 
-export type Format = "linkedin post" | "medium article" | "thread";
+// The platform writes LinkedIn posts only.
+export type Format = "linkedin post";
 export type Tone = "casual" | "technical" | "storytelling";
-export type Length = "concise" | "standard" | "long-form";
-
-export const FORMATS: { id: Format; label: string }[] = [
-  { id: "linkedin post", label: "LinkedIn post" },
-  { id: "medium article", label: "Medium article" },
-  { id: "thread", label: "Thread" },
-];
 
 export const TONES: { id: Tone; label: string; description: string }[] = [
   { id: "casual", label: "Casual", description: "Like texting a smart friend" },
@@ -45,30 +39,6 @@ export const TONE_DESCRIPTIONS: Record<Tone, string> = {
   casual: "Conversational and direct. First-person, short sentences. Focus on clarity and utility.",
   technical: "Precise and substantive. Uses domain language without over-explaining. Respects expertise.",
   storytelling: "Narrative-first. Opens with a moment, builds tension, lands on a lesson.",
-};
-
-export const LENGTHS: { id: Length; label: string }[] = [
-  { id: "concise", label: "Concise" },
-  { id: "standard", label: "Standard" },
-  { id: "long-form", label: "Long-form" },
-];
-
-export const LENGTH_META: Record<Format, Record<Length, string>> = {
-  "linkedin post": {
-    concise: "~100-150 words",
-    standard: "~200-300 words",
-    "long-form": "~400-600 words",
-  },
-  "medium article": {
-    concise: "~350-500 words",
-    standard: "~700-900 words",
-    "long-form": "~1200-1600 words",
-  },
-  thread: {
-    concise: "4-5 tweets",
-    standard: "7-9 tweets",
-    "long-form": "11-14 tweets",
-  },
 };
 
 export interface GenerateResult {
@@ -100,9 +70,3 @@ export interface Visual {
   svg_code: string | null;
   reminder_text: string | null;
 }
-
-export const FORMAT_BADGE: Record<string, string> = {
-  "linkedin post": "LinkedIn",
-  "medium article": "Medium",
-  "thread": "Thread",
-};

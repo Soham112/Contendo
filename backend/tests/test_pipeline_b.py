@@ -100,8 +100,8 @@ def test_sentence_level_issues_take_the_targeted_path_and_never_a_redraft(claude
 
 
 def test_a_post_still_over_length_after_the_code_fixes_takes_the_full_redraft(claude, fake_db, seeded_kb):
-    over = f"{_post(36)}\n\nNo marker on this line."                 # 365 words against 250-350, and an uncited line
-    answer_pipeline(claude, [over, _post(36)], compress=fixes_reply({n: SHORT_LINE for n in (10, 11, 12, 13)}))
+    over = f"{_post(21)}\n\nNo marker on this line."                 # 215 words against a hard limit of 200, and an uncited line
+    answer_pipeline(claude, [over, _post(21)], compress=fixes_reply({n: SHORT_LINE for n in (10, 11, 12, 13)}))
 
     result = _run("B")
 
@@ -111,17 +111,17 @@ def test_a_post_still_over_length_after_the_code_fixes_takes_the_full_redraft(cl
     assert _types(record["redraft"]["entries"]) == ["uncited_span", "over_length"]
     events = _events(fake_db)
     assert events.count("redraft") == 1 and "targeted_fix" not in events and events[-2:] == ["redraft", "compress"]
-    assert _outputs(fake_db)["final_validation"]["words"] == 348 and _review(result) == ("fixed", [])
+    assert _outputs(fake_db)["final_validation"]["words"] == 198 and _review(result) == ("fixed", [])
 
 
 def test_over_length_that_the_code_deletions_fix_needs_no_model(claude, fake_db, seeded_kb):
-    answer_pipeline(claude, [_distinct(36)], reviews=[{"changes": {5: UNSUPPORTED}}])     # 360 words; one sentence goes
+    answer_pipeline(claude, [_distinct(21)], reviews=[{"changes": {5: UNSUPPORTED}}])     # 210 words; one sentence goes
 
     result = _run("B")
 
     outputs = _outputs(fake_db)
     assert _types(outputs["review"]["first"]["acting"]) == ["over_length", "not_in_sources"]
-    assert outputs["review"]["fixes"]["route"] == "none" and outputs["final_validation"]["words"] == 350
+    assert outputs["review"]["fixes"]["route"] == "none" and outputs["final_validation"]["words"] == 200
     # A deletion in the middle of the post asks nothing of a model: its neighbours are left as they are.
     assert {"redraft", "targeted_fix", "compress"} & set(_events(fake_db)) == set()
     assert _review(result) == ("fixed", [])
@@ -129,12 +129,12 @@ def test_over_length_that_the_code_deletions_fix_needs_no_model(claude, fake_db,
 
 def test_placeholder_lines_do_not_make_a_post_over_length(claude, fake_db, seeded_kb):
     diagram = "[DIAGRAM: " + " ".join(["box"] * 40) + "]"
-    answer_pipeline(claude, [f"## A heading of five words\n\n{_post(34)}\n\n{diagram}"])     # 340 words of prose
+    answer_pipeline(claude, [f"## A heading of five words\n\n{_post(19)}\n\n{diagram}"])     # 190 words of prose
 
     result = _run("B")
 
     outputs = _outputs(fake_db)
-    assert (outputs["final_validation"]["words"], outputs["final_validation"]["length"]) == (340, "ok")
+    assert (outputs["final_validation"]["words"], outputs["final_validation"]["length"]) == (190, "ok")
     assert outputs["review"]["first"]["acting"] == [] and diagram in result["post"]
     assert {"redraft", "targeted_fix", "compress"} & set(_events(fake_db)) == set()
 

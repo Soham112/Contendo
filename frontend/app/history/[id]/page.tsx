@@ -51,12 +51,6 @@ interface Post {
 }
 
 
-const FORMAT_LABELS: Record<string, string> = {
-  "linkedin post": "LinkedIn",
-  "medium article": "Medium",
-  "thread": "Thread",
-};
-
 const TONE_LABELS: Record<string, string> = {
   "casual": "Casual",
   "technical": "Technical",
@@ -245,7 +239,6 @@ export default function PostDetailPage() {
       <div>
         <h1 className="font-headline text-[1.75rem] leading-snug text-on-surface">{post.topic}</h1>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <span className="text-[0.75rem] px-2.5 py-1 rounded-full bg-surface-container text-on-surface-variant">{FORMAT_LABELS[post.format] ?? post.format}</span>
           <span className="text-[0.75rem] px-2.5 py-1 rounded-full bg-surface-container text-on-surface-variant">{TONE_LABELS[post.tone] ?? post.tone}</span>
           <span className="text-[0.75rem] text-on-surface-variant">{date}</span>
           {post.published_at && (

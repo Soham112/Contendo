@@ -23,13 +23,6 @@ interface Idea {
   reasoning: string;
 }
 
-// Display badge labels for format (uppercase pill)
-const FORMAT_BADGE: Record<string, string> = {
-  "linkedin post": "LinkedIn Post",
-  "medium article": "Feature Story",
-  thread: "Thread",
-};
-
 function lsGet(key: string): string | null {
   try { return localStorage.getItem(key); } catch { return null; }
 }
@@ -55,13 +48,8 @@ function IdeaCard({
   onSave: () => void;
   onUnsave: () => void;
 }) {
-  const badge = FORMAT_BADGE[idea.format] ?? idea.format;
-
   return (
     <Card className="flex flex-col gap-3">
-      <span className="w-fit text-[0.6875rem] font-semibold tracking-[0.06em] uppercase px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant">
-        {badge}
-      </span>
       <h3 className="font-headline text-[1rem] text-on-surface leading-snug font-semibold flex-1">{idea.title}</h3>
       <p className="text-[0.875rem] text-secondary leading-relaxed">{idea.angle}</p>
       <div className="mt-1 flex gap-2">
@@ -83,12 +71,9 @@ function ArchiveRow({
   onUseThis: () => void;
   onUnsave: () => void;
 }) {
-  const badge = FORMAT_BADGE[idea.format] ?? idea.format;
-
   return (
     <li className="flex items-center gap-3 py-3">
       <div className="flex-1 min-w-0">
-        <p className="label-caps text-on-surface-variant mb-0.5">{badge}</p>
         <p className="text-[0.9375rem] font-medium text-on-surface leading-snug truncate">{idea.title}</p>
       </div>
       <Button variant="ghost" size="icon" onClick={onUnsave} aria-label={`Remove "${idea.title}" from saved ideas`} className="text-error hover:text-error">
@@ -193,7 +178,6 @@ export default function IdeasPage() {
   const handleUseThis = (idea: Idea) => {
     try {
       sessionStorage.setItem("contentOS_last_topic", idea.title);
-      sessionStorage.setItem("contentOS_prefill_format", idea.format);
     } catch { /* ignore */ }
     router.push("/create");
   };
