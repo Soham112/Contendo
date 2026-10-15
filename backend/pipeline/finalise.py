@@ -31,7 +31,7 @@ from typing import Any
 
 from pipeline.state import PipelineState
 from utils.citations import StrippedPost, leftover_markers, prose_word_count, strip_citations
-from utils.draft_output import parse_draft_output
+from utils.draft_output import parse_draft_output, read_structure_tag
 from utils.sentences import multi_sentence_span_count
 from utils.formatters import GENERAL_ARCHETYPE, STORY_ARCHETYPES, count_words, normalise_post_punctuation
 from utils.text_spans import protected_spans
@@ -99,6 +99,34 @@ def finalise_marked(marked: str, target: dict[str, Any] | None) -> tuple[Finalis
 
 
 # ── Single-writer nodes (variants B and C) ────────────────────────────────────
+
+def read_structure_node(state: PipelineState) -> PipelineState:
+    """Variant D: read the structure the drafter named in its <structure> part
+    and remove the part. The choice stands only when it is one of the types
+    archetype_decision["allowed"] lists (the code's rule, set by
+    one_call_draft_node); otherwise the post is General and the decision says
+    why, as when C's structure call answers outside the allowed set. A missing
+    or repeated part is also a draft format failure."""
+    chosen, rest, parts = read_structure_tag(state.get("current_draft", ""))
+    decision = state.get("archetype_decision") or {}
+    failures = [{"kind": "structure_missing", "text": ""}] if parts == 0 else \
+        [{"kind": "structure_repeated", "text": ""}] * (parts - 1)
+    if failures:
+        history = state.get("draft_history") or [{}]
+        state["draft_format"] = [*state.get("draft_format", []),
+                                 *({"draft": history[-1].get("node", ""), **f} for f in failures)]
+    if chosen in decision.get("allowed", []):
+        archetype, reason = chosen, None
+    else:
+        archetype = GENERAL_ARCHETYPE
+        reason = "no structure named" if chosen is None else "not an allowed type for these sources"
+        logger.warning("read_structure: %s (%r)", reason, chosen)
+    state["archetype"] = archetype
+    state["archetype_decision"] = {**decision, "archetype": archetype, "chosen": chosen,
+                                   "downgraded_from": chosen if reason else None, "reason": reason}
+    state["current_draft"] = rest.strip()
+    return state
+
 
 def strip_draft_node(state: PipelineState) -> PipelineState:
     """Read the draft's envelope: keep what is inside <post>, read the <event>

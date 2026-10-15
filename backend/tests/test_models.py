@@ -59,12 +59,13 @@ def test_an_unknown_role_or_model_is_refused(overrides):
 
 def test_variant_tables_agree_and_every_model_has_a_price():
     from config import features
-    from llm.models import MODELS, VARIANT_ROLE_MODELS
+    from llm.models import MODELS, VARIANT_DRAFT_EFFORT, VARIANT_ROLE_MODELS
     from llm.pricing import PRICES
 
     assert set(VARIANT_ROLE_MODELS) <= set(features.PIPELINE_VARIANTS)
+    assert set(VARIANT_DRAFT_EFFORT) <= set(features.PIPELINE_VARIANTS)
     assert set(features.VARIANT_GRAPH) == set(features.PIPELINE_VARIANTS)
-    assert set(features.VARIANT_GRAPH.values()) <= {"A", "B", "C"}
+    assert set(features.VARIANT_GRAPH.values()) <= {"A", "B", "C", "D"}
     assert set(MODELS) == set(PRICES)
 
 
@@ -182,19 +183,53 @@ def test_the_sdk_parses_a_thinking_reply_into_the_types_the_code_reads(claude, f
     import llm.client as llm_client
 
     parsed = []
-    real_create = llm_client.client.messages.create
-    llm_client.client.messages.create = lambda **kwargs: parsed.append(real_create(**kwargs)) or parsed[-1]
+    real_stream = llm_client.client.messages.stream
+
+    class Capture:                        # the draft is streamed: keep the message the SDK assembles
+        def __init__(self, **kwargs):
+            self._manager = real_stream(**kwargs)
+
+        def __enter__(self):
+            self._stream = self._manager.__enter__()
+            return self
+
+        def __exit__(self, *exc):
+            return self._manager.__exit__(*exc)
+
+        def __iter__(self):
+            return iter(self._stream)
+
+        def get_final_message(self):
+            parsed.append(self._stream.get_final_message())
+            return parsed[-1]
+
+    llm_client.client.messages.stream = Capture
     draft = _reply(_thinking_block(), TextBlock(type="text", text=enveloped(CLEAN)), thinking_tokens=400)
     answer_pipeline(claude, [draft])
 
     result = _run("B-Opus")
 
     [message] = [m for m in parsed if m.model == OPUS_5_5]
-    assert [type(block) for block in message.content] == [SdkThinkingBlock, TextBlock]
+    # Streamed, the SDK assembles a ParsedTextBlock, a TextBlock subclass: message_text reads it by isinstance.
+    assert [isinstance(b, kind) for b, kind in zip(message.content, (SdkThinkingBlock, TextBlock))] == [True, True]
+    assert len(message.content) == 2
     assert message.usage.output_tokens_details.thinking_tokens == 400
     assert result["post"] == "pgvector makes retrieval fast.\n\nThat is most of the argument."
     [trace] = fake_db.tables["generation_traces"]
     assert [c["thinking_tokens"] for c in trace["llm_calls"] if c["event_type"] == "generate"] == [400]
+
+
+def test_the_draft_call_is_streamed_and_records_when_its_first_text_arrived(claude, fake_db, seeded_kb, wire):
+    draft = _reply(_thinking_block(), TextBlock(type="text", text=enveloped(CLEAN)), thinking_tokens=400)
+    answer_pipeline(claude, [draft])
+
+    result = _run("C-Opus")
+
+    assert result["post"] == "pgvector makes retrieval fast.\n\nThat is most of the argument."
+    assert [(r["body"]["model"], r["body"].get("stream", False)) for r in wire] == [(HAIKU_4_5, False), (OPUS_5_5, True)]
+    structure, generate = fake_db.tables["generation_traces"][0]["llm_calls"]
+    assert structure["first_text_ms"] is None
+    assert 0 <= generate["first_text_ms"] <= generate["latency_ms"] and generate["thinking_tokens"] == 400
 
 
 def test_an_opus_draft_sends_its_effort_and_no_other_call_does(claude, fake_db, seeded_kb, wire):

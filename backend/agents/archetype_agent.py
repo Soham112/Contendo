@@ -117,6 +117,12 @@ def _offer(state: PipelineState) -> tuple[list[dict], list[dict], list[str], lis
     return own, external, allowed, [key for key in allowed if key in STORY_ARCHETYPES]
 
 
+def structure_offer(state: PipelineState) -> list[str]:
+    """The structure keys these sources allow (allowed_archetypes), for a
+    drafter that chooses the structure itself (variant D)."""
+    return _offer(state)[2]
+
+
 def _ask(state: PipelineState, schema, own: list[dict], external: list[dict],
          allowed: list[str], story_rule: str, model: str, material: str | None = None):
     """The one call both choices make, to the model given (pipeline A: HAIKU;

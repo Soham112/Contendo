@@ -6,12 +6,13 @@ From the evals folder, with the backend venv:
     python ablate.py --name smoke2 --only pm-05 --only ds-01 --variants A C --spend-cap 1
 
 In order:
-  1. run.py for each variant (eval_config.ABLATION_VARIANTS: A, C, B-Opus,
-     C-Opus), every golden;
+  1. run.py for each variant of the ablation's plan (eval_config.plan_for:
+     the full ablation's A, C, B-Opus, C-Opus on every golden; phase1's
+     C-Opus, D-Opus, D-Opus-low on its 10 goldens);
   2. judge.py on each run: unsupported_specifics with SONNET, then
      answer_relevancy with the default judge (eval_config.ABLATION_JUDGES);
   3. review_regression.py once, on REVIEW_MODEL (development set; not part of
-     the decision);
+     the decision; skipped when the plan says so, as phase1's does);
   4. report.py --variants: results/ablations/<name>/ablation.md.
 The instrument (instrument.py) is not part of it: it uses B's own reviewer, so
 it favours B by construction and cannot decide between the variants.
@@ -64,11 +65,14 @@ def run_steps(name: str, variants: list[str], only: list[str], cap: float,
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--name", required=True, help="the ablation's folder in results/ablations/")
-    parser.add_argument("--variants", nargs="+", default=list(config.ABLATION_VARIANTS))
-    parser.add_argument("--only", action="append", default=[], help="golden id (repeatable); default: all")
+    parser.add_argument("--variants", nargs="+", help="default: the ablation's plan (eval_config.plan_for)")
+    parser.add_argument("--only", action="append", default=[], help="golden id (repeatable); default: the plan's")
     parser.add_argument("--spend-cap", type=float, default=config.EVAL_SPEND_CAP_USD, metavar="USD")
     parser.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
     args = parser.parse_args(argv)
+    plan = config.plan_for(args.name)
+    args.variants = args.variants or list(plan.variants)
+    args.only = args.only or list(plan.goldens)
 
     from llm.pricing import call_cost
 
@@ -77,7 +81,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Ablation {args.name!r}: variants {', '.join(args.variants)}; "
           f"{'goldens ' + ', '.join(args.only) if args.only else 'all goldens'}.\n"
           f"Judges: unsupported_specifics ({config.ABLATION_JUDGES['unsupported_specifics']}), "
-          f"answer_relevancy ({config.ABLATION_JUDGES['answer_relevancy']}); then the review regression set.\n"
+          f"answer_relevancy ({config.ABLATION_JUDGES['answer_relevancy']})"
+          f"{'; then the review regression set' if plan.run_regression else ''}.\n"
           f"Spend cap ${args.spend_cap:.2f}; already spent ${cap.spent_usd:.2f}. "
           f"Runs already made: {existing or 'none'}. Project {env.CONFIG.project_ref}.")
     if cap.reached:
@@ -89,7 +94,16 @@ def main(argv: list[str] | None = None) -> int:
 
     common = ["--ablation", args.name, "--spend-cap", str(args.spend_cap)]
     stopped = False
-    for description, step_args in run_steps(args.name, args.variants, args.only, args.spend_cap, existing):
+    if plan.interleave and existing:
+        print(f"== runs: already in this ablation, reused ({', '.join(existing.values())})")
+    elif plan.interleave:
+        print(f"== runs, interleaved golden by golden (seed {plan.seed})")
+        code, _ = run.run_interleaved(args.variants, args.only, "standard", args.name, args.spend_cap, plan.seed)
+        if code not in (0, spend.STOPPED_EXIT):
+            return code
+        stopped = code == spend.STOPPED_EXIT
+    for description, step_args in ([] if plan.interleave else
+                                   run_steps(args.name, args.variants, args.only, args.spend_cap, existing)):
         if step_args is None:
             print(f"== {description}: already in this ablation, reused")
             continue
@@ -119,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
 
     regression = config.ABLATIONS_DIR / args.name / review_regression.ABLATION_FILE
     cases = sum(1 for line in review_regression.CASES_FILE.read_text().splitlines() if line.strip())
-    if not stopped and len(read_jsonl(regression)) < cases:
+    if plan.run_regression and not stopped and len(read_jsonl(regression)) < cases:
         print("== review regression set")
         regression.unlink(missing_ok=True)          # a set the cap cut short is run again whole
         code = review_regression.main(["--yes", *common])

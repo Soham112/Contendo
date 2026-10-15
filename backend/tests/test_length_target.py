@@ -4,8 +4,7 @@ import re
 
 import pytest
 
-from tests.conftest import ARCHETYPE_GENERAL, CRITIC_ALL_STRONG
-from tests.generation_fixtures import USER, agent_sources, draft_prompt, last_prompt, make_state, BACKEND
+from tests.generation_fixtures import USER, agent_sources, draft_prompt, last_prompt, make_state, one_call_reply, BACKEND
 
 
 # --- One length table, one target per post -------------------------------------------
@@ -174,8 +173,7 @@ def test_first_post_runs_to_its_own_target_and_is_never_expanded(claude, fake_db
     from pipeline.graph import run_pipeline
 
     # No posts and no notes: a first post. Seven words is far under 70, and stays that way.
-    claude.queue(ARCHETYPE_GENERAL, "A short first post that stays short.", CRITIC_ALL_STRONG,
-                 "A short first post that stays short.", "CLEAN", "A short first post that stays short.")
+    claude.queue(one_call_reply("A short first post that stays short."))
     result = run_pipeline(topic="Forecast intervals", format="linkedin post", tone="storytelling",
                           context="Core opinion/take: intervals beat point forecasts", user_id=USER)
 
@@ -186,5 +184,6 @@ def test_first_post_runs_to_its_own_target_and_is_never_expanded(claude, fake_db
     assert outputs["perspective"] == "opinion"
     assert outputs["archetype_decision"]["allowed"] == ["contrarian_take", "teach_me_something", "general"]
     assert "word_count_enforcer" not in [c["event_type"] for c in trace["llm_calls"]]
-    draft_prompt = claude.calls[1]["messages"][-1]["content"]
+    assert len(claude.calls) == 1                      # the default (D-Opus-low): one call, no structure call
+    draft_prompt = claude.calls[0]["messages"][-1]["content"]
     assert "LENGTH: 70–100 words." in draft_prompt and "PERSPECTIVE: opinion." in draft_prompt

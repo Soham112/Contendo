@@ -115,6 +115,7 @@ def complete(
     event_type: str,
     system: Any = None,
     usage_metadata: dict[str, Any] | None = None,
+    measure_first_text: bool = False,
     **kwargs: Any,
 ) -> Message:
     """Call Claude and log usage. API errors propagate; logging never raises.
@@ -122,6 +123,11 @@ def complete(
     `usage_metadata` goes to the usage_events row only. Any other kwargs are
     passed to messages.create() unchanged (so Anthropic's own `metadata` stays
     available).
+
+    measure_first_text: send the request streamed and record when its first
+    text arrives (first_text_ms in the trace: time to the first visible token,
+    thinking before it included). The returned Message is the same final
+    message create() would return; nothing reads the stream but the timer.
     """
     models.spec(model)   # raises for a model llm.models does not list
 
@@ -131,8 +137,17 @@ def complete(
     create_kwargs.update(kwargs)
 
     start = time.perf_counter()
+    first_text_ms: float | None = None
     try:
-        message = client.messages.create(**create_kwargs)
+        if measure_first_text:
+            with client.messages.stream(**create_kwargs) as stream:
+                for event in stream:
+                    if (first_text_ms is None and event.type == "content_block_delta"
+                            and event.delta.type == "text_delta"):
+                        first_text_ms = round((time.perf_counter() - start) * 1000, 1)
+                message = stream.get_final_message()
+        else:
+            message = client.messages.create(**create_kwargs)
     except ValidationError as exc:
         # SDK validation can also fail before a caller validates its tool input.
         raise StructuredOutputError(_validation_summary(exc, Message)) from None
@@ -168,6 +183,8 @@ def complete(
             "thinking_tokens": _thinking_tokens(message.usage),
             "stop_reason": message.stop_reason,
             "latency_ms": latency_ms,
+            # Time to the first text of the reply; None when the call was not streamed.
+            "first_text_ms": first_text_ms,
             # The speed settings this request sent: None means the model's own default.
             "effort": (create_kwargs.get("output_config") or {}).get("effort"),
             "thinking": create_kwargs.get("thinking"),

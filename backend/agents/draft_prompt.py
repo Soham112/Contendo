@@ -340,7 +340,7 @@ CITED_PROMPT = (
     + SOURCES_ARE_DATA_RULE + "\n"
     "{sources_block}\n\n"
     + _TOPIC + "\n\n"
-    + _STRUCTURE + "\n\n"
+    "{structure}\n\n"
     + _SOURCE_RULES + "\n\n"
     "---\n"
     "STYLE RULES (mandatory):\n"
@@ -359,24 +359,36 @@ def build_cited_prompt(state: PipelineState) -> tuple[str, SourcesBlock]:
     index says what each S-id is). A story archetype also gets the EVENT rule,
     with the General structure as the way out when no event fits. Every draft
     is asked for the output envelope (<post>, and <event> for a story)."""
-    profile = state["profile"]
     archetype_key = (state.get("archetype") or "").lower().strip()
     archetype = get_archetype(archetype_key)
-    bundle_chunks = (state.get("retrieval_bundle") or {}).get("chunks", [])
-    sources = build_sources_block(bundle_chunks, profile)
     is_story = archetype_key in STORY_ARCHETYPES
     event_rule = _EVENT_RULE.format(
         archetype_name=archetype.name,
         fallback_structure=ARCHETYPES[GENERAL_ARCHETYPE].structure,
     ) + "\n\n" if is_story else ""
+    return render_cited_prompt(
+        state,
+        structure=_STRUCTURE.format(archetype_name=archetype.name, archetype_instructions=archetype.structure),
+        event_rule=event_rule,
+        output_format=_OUTPUT_FORMAT_WITH_EVENT if is_story else _OUTPUT_FORMAT,
+    )
+
+
+def render_cited_prompt(state: PipelineState, *, structure: str, event_rule: str,
+                        output_format: str) -> tuple[str, SourcesBlock]:
+    """CITED_PROMPT with its structure section, EVENT rule ("" for none) and
+    output format given; the rest filled from state. build_cited_prompt gives
+    the chosen structure; agents/one_call_prompt.py gives the choice (variant D)."""
+    profile = state["profile"]
+    bundle_chunks = (state.get("retrieval_bundle") or {}).get("chunks", [])
+    sources = build_sources_block(bundle_chunks, profile)
     prompt = CITED_PROMPT.format(
         **_shared_fields(state),
         sources_block=sources.text,
-        archetype_name=archetype.name,
-        archetype_instructions=archetype.structure,
+        structure=structure,
         source_rules=_source_rules(bundle_chunks, profile, _SOURCE_KINDS),
         style_rules=STYLE_RULES.format(words_to_avoid=", ".join(profile.get("words_to_avoid", []))),
         event_rule=event_rule,
-        output_format=_OUTPUT_FORMAT_WITH_EVENT if is_story else _OUTPUT_FORMAT,
+        output_format=output_format,
     )
     return prompt, sources

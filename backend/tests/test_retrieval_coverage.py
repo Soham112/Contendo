@@ -3,6 +3,7 @@
 import pytest
 
 from tests.conftest import ARCHETYPE_GENERAL, CRITIC_ALL_STRONG
+from tests.generation_fixtures import one_call_reply
 
 USER = "user-coverage"
 
@@ -319,11 +320,11 @@ def test_entity_linked_chunks_do_not_count_toward_confidence_or_the_gate(entity_
 
 # --- no-specifics mode -------------------------------------------------------------
 
-STANDARD = [ARCHETYPE_GENERAL, "Draft text.", CRITIC_ALL_STRONG, "Humanized text.", "CLEAN", "Audited text.", "Final text."]
+STANDARD = [one_call_reply("Draft text. [[V]]")]     # the default (D-Opus-low): one draft call
 
 
 def _generate_prompt(claude):
-    return claude.calls[1]["messages"][-1]["content"]  # call 0 is the archetype, call 1 the draft
+    return claude.calls[0]["messages"][-1]["content"]
 
 
 def test_drafter_gets_the_no_specifics_rule_only_in_that_mode(claude, fake_db, pgvector_kb, no_specifics_on):

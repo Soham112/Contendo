@@ -71,6 +71,8 @@ ROLE_MODELS: dict[str, str] = {"draft": DRAFT_MODEL, "review": REVIEW_MODEL, "sm
 VARIANT_ROLE_MODELS: dict[str, dict[str, str]] = {
     "B-Opus": {"draft": OPUS_5_5},
     "C-Opus": {"draft": OPUS_5_5},
+    "D-Opus": {"draft": OPUS_5_5},
+    "D-Opus-low": {"draft": OPUS_5_5},
 }
 
 
@@ -81,10 +83,16 @@ VARIANT_ROLE_MODELS: dict[str, dict[str, str]] = {
 # setting instead of implying it. A model not listed sends no effort.
 OPUS_5_5_DRAFT_EFFORT = "medium"
 DRAFT_EFFORT: dict[str, str] = {OPUS_5_5: OPUS_5_5_DRAFT_EFFORT}
+# What a variant changes from DRAFT_EFFORT. Opus 5.5 cannot turn thinking off
+# (thinking {"type": "disabled"} is a 400 at every effort), so effort is the
+# only lever on its thinking. Keys are names in config.features.PIPELINE_VARIANTS.
+VARIANT_DRAFT_EFFORT: dict[str, str] = {"D-Opus-low": "low"}
 
 
-def draft_effort(model: str) -> str | None:
-    """The effort a drafter call sends for this model; None when it sends none."""
+def draft_effort(model: str, variant: str | None = None) -> str | None:
+    """The effort a drafter call sends for this model under this variant; None when it sends none."""
+    if model in DRAFT_EFFORT and variant in VARIANT_DRAFT_EFFORT:
+        return VARIANT_DRAFT_EFFORT[variant]
     return DRAFT_EFFORT.get(model)
 
 

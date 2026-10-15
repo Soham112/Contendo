@@ -19,19 +19,36 @@ NO_SPECIFICS_MODE_ENABLED = False
 #   C  draft only:       draft → compress
 #   B-Opus, C-Opus  B's and C's pipelines with another draft model
 #           (llm.models.VARIANT_ROLE_MODELS)
-# The default is C-Opus (decided 2026-10-10 from the pre-registered ablation
-# "full": in the blind read C-Opus was ranked above B-Opus in 10 of 10 goldens
-# and above A in 10 of 10). Under C and C-Opus every quality setting runs the
-# same pipeline: there is no review, scorer or rewrite loop to switch.
+#   D-Opus  one call: C without the separate structure call. The drafter (Opus)
+#           chooses the structure among the types the code allows and names it
+#           in its output (pipeline/single_writer.wire_one_call)
+#   D-Opus-low  D-Opus with the draft call at effort "low"
+#           (llm.models.VARIANT_DRAFT_EFFORT)
+# D-Opus and D-Opus-low are the Phase 1 latency experiment's arms
+# (docs/GENERATION_ARCHITECTURE.md, section 15; evals ablation "phase1").
+# The default is D-Opus-low (decided 2026-10-15 from the pre-registered evals
+# ablation "phase1", 10 goldens, arms run interleaved with identical inputs;
+# docs/GENERATION_ARCHITECTURE.md section 17):
+#   rule 1 (eligible): D-Opus and D-Opus-low both, unsupported_specifics 10 of
+#     10 passes like C-Opus, deterministic check issues 5 and 8 against 9.
+#   rule 2 (speed: p50 at least 15% lower, p95 not higher than C-Opus's 14.9 /
+#     46.9 s): D-Opus-low qualifies at 7.0 / 18.2 s; D-Opus does not (14.3 s p50).
+#   rule 3 (blind read): C-Opus was ranked above D-Opus-low in 3 of 10 goldens,
+#     below the 7 that would keep it. Mean rank D-Opus-low 1.70, D-Opus 2.10,
+#     C-Opus 2.20; D-Opus-low first in 6 of 10.
+# The previous default was C-Opus (2026-10-10, ablation "full"). Under C and D
+# every quality setting runs the same pipeline: there is no review, scorer or
+# rewrite loop to switch.
 # The PIPELINE_VARIANT environment variable overrides the default. Unset or
-# empty means the default. PIPELINE_VARIANT=A is the rollback switch: it stays
-# valid until pipeline A's code is removed (chore/remove-pipeline-a). Evals
+# empty means the default. Rollback switches: PIPELINE_VARIANT=C-Opus (the
+# previous default) and PIPELINE_VARIANT=A, which stays valid until pipeline
+# A's code is removed (chore/remove-pipeline-a). Evals
 # pass a variant to run_pipeline directly; it is never a /generate request field.
-PIPELINE_VARIANTS = ("A", "B", "C", "B-Opus", "C-Opus")
+PIPELINE_VARIANTS = ("A", "B", "C", "B-Opus", "C-Opus", "D-Opus", "D-Opus-low")
 # The graph each variant runs (pipeline.graph). A variant that differs from
 # another only in its models shares that one's graph.
-VARIANT_GRAPH = {"A": "A", "B": "B", "C": "C", "B-Opus": "B", "C-Opus": "C"}
-DEFAULT_PIPELINE_VARIANT = "C-Opus"
+VARIANT_GRAPH = {"A": "A", "B": "B", "C": "C", "B-Opus": "B", "C-Opus": "C", "D-Opus": "D", "D-Opus-low": "D"}
+DEFAULT_PIPELINE_VARIANT = "D-Opus-low"
 PIPELINE_VARIANT_ENV = "PIPELINE_VARIANT"
 
 

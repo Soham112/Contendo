@@ -3,7 +3,6 @@
 import pytest
 from anthropic.types import TextBlock
 
-from tests.conftest import ARCHETYPE_GENERAL
 from tests.length_fixtures import KB_USER, _outputs
 from tests.test_generation_trace import seeded_kb  # noqa: F401
 from tests.test_models import _reply, _thinking_block
@@ -13,14 +12,14 @@ from tests.test_refine_selection import post_refine  # noqa: F401
 
 @pytest.mark.parametrize("reply", ["<post></post>", "<post> \n </post>", _reply(_thinking_block()), _reply()])
 def test_default_generate_rejects_empty_completed_output(client, auth_headers, claude, fake_db, seeded_kb, reply):
-    claude.queue(ARCHETYPE_GENERAL, reply)
+    claude.queue(reply)                                 # the default (D-Opus-low): one draft call
     response = client.post("/generate", headers=auth_headers(KB_USER), json={
         "topic": "pgvector retrieval", "format": "linkedin post", "tone": "casual"})
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "draft_empty" and body["post"] == ""
     assert _outputs(fake_db)["draft_empty"]["reason"] == "empty_output"
-    assert len(claude.calls) == 2
+    assert len(claude.calls) == 1
 
 
 def test_blank_cited_refine_retries_and_accepts_valid_reply(refine, claude, fake_db):

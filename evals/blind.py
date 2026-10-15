@@ -180,13 +180,13 @@ def head_to_head(first: str, second: str, first_above: int, ranked: int, checks:
                         "met": None if share is None else holds[kind](limit)} for decides, kind, limit in checks]}
 
 
-def score_read(read_text: str, key: dict[str, Any]) -> dict[str, Any]:
+def score_read(read_text: str, key: dict[str, Any], pairs_read: tuple = config.BLIND_HEAD_TO_HEAD) -> dict[str, Any]:
     """Join the marked read.md with its key: per variant, mean rank (1 is
     best), times ranked first and last; the head-to-head counts the decision
-    rules read (eval_config.BLIND_HEAD_TO_HEAD: in how many ranked goldens the
+    rules read (pairs_read, the ablation plan's pairs: in how many ranked goldens the
     first variant was placed above the second); and every note, with the labels named."""
     ranks: dict[str, list[int]] = {variant: [] for variant in key["runs"]}
-    pairs = [(first, second, checks) for first, second, checks in config.BLIND_HEAD_TO_HEAD
+    pairs = [(first, second, checks) for first, second, checks in pairs_read
              if {first, second} <= set(key["runs"])]
     above = {(first, second): 0 for first, second, _ in pairs}
     notes, ranked = [], 0
@@ -241,7 +241,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"Judge audit: {audit['correct']} of {audit['marked']} marked findings correct ({audit['of']} to mark)")
                 done = True
             if (ablation_dir / "read.md").exists():
-                blind = score_read((ablation_dir / "read.md").read_text(), json.loads((ablation_dir / "key.json").read_text()))
+                blind = score_read((ablation_dir / "read.md").read_text(), json.loads((ablation_dir / "key.json").read_text()),
+                                   config.plan_for(args.ablation).head_to_head)
                 (ablation_dir / "blind.json").write_text(json.dumps(blind, indent=2) + "\n")
                 print(f"Blind read: {blind['ranked']} of {blind['goldens']} goldens ranked")
                 for variant, stats in blind["variants"].items():

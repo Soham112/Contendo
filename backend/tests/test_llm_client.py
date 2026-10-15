@@ -187,7 +187,7 @@ def test_trace_collects_calls_when_set(claude, usage_calls):
         assert c["latency_ms"] >= 0
     assert set(calls[0]) == {"event_type", "model", "input_tokens", "output_tokens", "thinking_tokens",
                              "stop_reason", "latency_ms", "effort", "thinking", "cache_read_input_tokens",
-                             "cache_creation_input_tokens", "started_ms"}
+                             "cache_creation_input_tokens", "started_ms", "first_text_ms"}
     assert (calls[0]["thinking_tokens"], calls[0]["stop_reason"]) == (0, "end_turn")
     # Sequential calls: the second starts after the first began.
     assert 0 <= calls[0]["started_ms"] <= calls[1]["started_ms"]

@@ -11,7 +11,7 @@ from pipeline.state import PipelineState
 from pipeline.trace import build_trace_row, timed_node
 from pipeline.finalise import validation_record
 from pipeline.redraft import review_summary
-from pipeline.single_writer import wire_draft_only, wire_reviewed
+from pipeline.single_writer import wire_draft_only, wire_one_call, wire_reviewed
 from utils.formatters import normalise_post_punctuation, resolve_length_target
 from utils.business_notes import business_context
 from utils.frames import decide_perspective
@@ -184,6 +184,7 @@ _AFTER_PLAN: dict[str, Callable[[StateGraph], None]] = {
     "A": _wire_rewrite_chain,
     "B": wire_reviewed,
     "C": wire_draft_only,
+    "D": wire_one_call,
 }
 
 
@@ -256,7 +257,7 @@ def run_pipeline(
     user's niche does not have is ignored here (/generate rejects it first).
 
     variant: which pipeline to run (config.features.PIPELINE_VARIANTS). None
-    uses the configured one (PIPELINE_VARIANT, default C-Opus); evals pass it to
+    uses the configured one (PIPELINE_VARIANT, default D-Opus-low); evals pass it to
     compare variants. An unknown variant raises PipelineConfigError.
 
     models: evals only. Role models that replace the variant's own

@@ -70,6 +70,14 @@ def enveloped(draft, event: str | None = None):
     return ("" if event is None else f"<event>{event}</event>\n") + f"<post>\n{draft}\n</post>"
 
 
+def one_call_reply(post: str, structure: str | None = "general", event: str | None = None) -> str:
+    """A variant D (one-call) draft as the drafter returns it: the <structure>
+    part (none when structure is None), the <event> part when given, then the post."""
+    parts = [] if structure is None else [f"<structure>{structure}</structure>"]
+    parts += [] if event is None else [f"<event>{event}</event>"]
+    return "\n".join([*parts, f"<post>\n{post}\n</post>"])
+
+
 def last_prompt(claude, call=-1) -> str:
     return claude.calls[call]["messages"][-1]["content"]
 

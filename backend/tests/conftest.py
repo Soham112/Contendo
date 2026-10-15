@@ -50,7 +50,7 @@ os.environ.update({
 })
 
 # --- 2. Fakes installed in place of real modules.
-from tests.fakes.claude import FakeClaude  # noqa: E402
+from tests.fakes.claude import FakeClaude, sse_body  # noqa: E402
 from tests.fakes.embedder import FakeSentenceTransformer  # noqa: E402
 from tests.fakes.supabase import FakeSupabase  # noqa: E402
 
@@ -94,7 +94,11 @@ def _isolate_each_test(monkeypatch):
     async def _acreate(self, **kwargs):
         return _fake_claude.create(**kwargs)
 
+    def _stream(self, **kwargs):
+        return _fake_claude.stream(**kwargs)
+
     monkeypatch.setattr(_anthropic_messages.Messages, "create", _create)
+    monkeypatch.setattr(_anthropic_messages.Messages, "stream", _stream)
     monkeypatch.setattr(_anthropic_messages.AsyncMessages, "create", _acreate)
 
     real_connect = socket.socket.connect
@@ -122,6 +126,7 @@ def claude() -> FakeClaude:
 
 # The SDK's own Messages.create, kept before any test replaces it.
 _SDK_MESSAGES_CREATE = _anthropic_messages.Messages.create
+_SDK_MESSAGES_STREAM = _anthropic_messages.Messages.stream
 
 
 @pytest.fixture
@@ -138,9 +143,13 @@ def wire(monkeypatch, claude):
         body = json.loads(request.content)
         sent.append({"method": request.method, "path": request.url.path,
                      "anthropic-version": request.headers["anthropic-version"], "body": body})
+        if body.get("stream"):                   # messages.stream(): the reply as server-sent events
+            reply = _fake_claude.create(**{k: v for k, v in body.items() if k != "stream"})
+            return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=sse_body(reply).encode())
         return httpx2.Response(200, json=_fake_claude.create(**body).model_dump(mode="json"))
 
     monkeypatch.setattr(_anthropic_messages.Messages, "create", _SDK_MESSAGES_CREATE)
+    monkeypatch.setattr(_anthropic_messages.Messages, "stream", _SDK_MESSAGES_STREAM)
     monkeypatch.setattr(llm_client, "client", anthropic.Anthropic(
         api_key="test-anthropic-key", max_retries=0,
         http_client=httpx2.Client(transport=httpx2.MockTransport(handler))))

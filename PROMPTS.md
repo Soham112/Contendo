@@ -404,7 +404,7 @@ Write the post again without them, and add no other specifics.
 
 **Purpose:** The one writer of the single-writer pipeline (`cited_draft_node`, `build_cited_prompt()`). One call, no guard retry and no sentence removal. Its output is an envelope: the post between `<post>` tags, with a citation marker on every sentence, and for a story archetype an `<event>` part before it; the envelope and the markers are read and removed (`strip_draft_node`, `finalise_draft_node`) before the user sees the post. Model: `claude-sonnet-4-6`. `max_tokens` comes from the length target (`utils.formatters.draft_max_tokens`): the target's maximum words × `TOKENS_PER_WORD` (1.9, measured) × `DRAFT_TOKEN_MARGIN` (1.25), never below 2000; that is 2000 for every LinkedIn target, 2138 for a standard Medium article and 4275 for a long-form one. A draft that stops at `max_tokens` is not returned (`status: draft_truncated`).
 
-It shares these blocks with pipeline A's prompt above, word for word: the opening line, the author-voice block, format and tone, the topic block (topic rule, posted topics, perspective, grounding, first-post instruction), POST STRUCTURE, SOURCE RULES with the FABRICATION RULE, and the VISUAL PLACEHOLDER RULES. What differs: the sources are a delimited data block with ids instead of the grouped knowledge base; the style rules are in the prompt; the citation rules and (for story archetypes) the EVENT line rule are added; the "write now" line is last.
+It shares these blocks with pipeline A's prompt above, word for word: the opening line, the author-voice block, format and tone, the topic block (topic rule, posted topics, perspective, grounding, first-post instruction), POST STRUCTURE, SOURCE RULES with the FABRICATION RULE, and the VISUAL PLACEHOLDER RULES. What differs: the sources are a delimited data block with ids instead of the grouped knowledge base; the style rules are in the prompt; the citation rules and (for story archetypes) the EVENT line rule are added; the "write now" line is last. In code the POST STRUCTURE block fills `CITED_PROMPT`'s `{structure}` slot (`render_cited_prompt()`), so variant D can put its structure choice there instead; the text below is what B and C send.
 
 **Prompt (`CITED_PROMPT`):**
 ```
@@ -537,6 +537,72 @@ Write nothing before <event>, nothing between </event> and <post>, and nothing a
 ```
 
 **Reading the output (code):** `utils.draft_output.parse_draft_output()` reads the envelope by its tags. The post is what stands between `<post>` and `</post>`. The `<event>` part gives `cited` (source and quote), `none`, or a failure (`missing`, `malformed`, `unexpected`). Anything outside the tags is dropped and recorded in `draft_format` (`text_outside_tags`), so a preamble or a separator line never reaches the post; a second `<event>` (`event_repeated`), a `<post>` with no closing tag (`post_unclosed`: the post runs to the end) and no `<post>` at all (`post_tag_missing`: everything outside `<event>` is taken as the post) are recorded the same way. There is no "first line" convention. `strip_citations()` then removes the markers and returns the post's spans and any marker failures. `<event>none</event>` makes the post a General Post (`archetype_decision.downgraded_from` is set). Whether the quoted sentence is really in the cited source is a deterministic check (`event_unverified`); whether the event fits the topic is the review's (`off_topic`).
+
+---
+
+### Draft prompt, one call (variant D: D-Opus, D-Opus-low; D-Opus-low is the default) — agents/one_call_prompt.py
+
+**Purpose:** Variant D's drafter (`one_call_draft_node`, `build_one_call_prompt()`). D-Opus-low is the default pipeline since 2026-10-15 (evals ablation "phase1"); the drafter of every `/generate` post unless `PIPELINE_VARIANT` says otherwise. There is no structure call before it: the drafter gets every structure the code allows for these sources (`archetype_agent.structure_offer()`, the same `allowed_archetypes()` rule C's structure call uses) and names the one it chose in a `<structure>` part. Everything else is `CITED_PROMPT` above, word for word (`draft_prompt.render_cited_prompt()`): only its `{structure}` slot, the EVENT rule and the OUTPUT FORMAT differ. Model: `claude-opus-5-5`, effort `medium` (D-Opus) or `low` (D-Opus-low, `llm.models.VARIANT_DRAFT_EFFORT`; Opus 5.5 rejects thinking disabled at every effort). `max_tokens` as C.
+
+**Structure slot (`_CHOOSE_STRUCTURE`, one `_OPTION` per allowed key; `_STORY_RULE` only when a story type is allowed):**
+```
+---
+POST STRUCTURE: choose one of these post types and write the post to its structure.
+Choose by what the sources can fill, not by how the topic is phrased. Choose "{general}" when no other type clearly fits.
+The structure is a shape, not a checklist: leave out any section the sources cannot fill.
+
+{options}{story_rule}
+---
+```
+```
+<type key="{key}">
+{name}: fits {fits}.
+{structure}
+</type>
+```
+```
+These types tell something that happened to the author: {story_keys}. Choose one only if a source whose kind begins OWN EXPERIENCE describes the event this post is about.
+```
+
+**EVENT rule (`_EVENT_RULE`, only when a story type is allowed):**
+```
+---
+EVENT (mandatory when you chose {story_keys}):
+Those types tell something that happened to the author. After the <structure> part, you name that event inside <event> tags, in exactly this form:
+<event><id of the source that describes the event> | "<one sentence copied word for word from that source, describing the event>"</event>
+- The source must be one whose kind begins OWN EXPERIENCE, and the event must be the one the topic is about.
+- Copy the sentence exactly: the same words, numbers and punctuation.
+For any other type, write no <event> part.
+The <event> part is removed before the author sees the post.
+---
+```
+
+**Output format (`_OUTPUT_FORMAT`; `_OUTPUT_FORMAT_WITH_EVENT` when a story type is allowed):**
+```
+---
+OUTPUT FORMAT (mandatory):
+Your whole output is the <structure> part, then the post between <post> and </post>, and nothing else:
+<structure><the key of the post type you chose></structure>
+<post>
+<the post, with its markers>
+</post>
+Write nothing before <structure>, nothing between </structure> and <post>, and nothing after </post>: no preamble, no explanation, no separator line.
+---
+```
+```
+---
+OUTPUT FORMAT (mandatory):
+Your whole output is the <structure> part, the <event> part when the EVENT rule asks for one, then the post between <post> and </post>, and nothing else:
+<structure><the key of the post type you chose></structure>
+<event><only for {story_keys}: as the EVENT rule above says></event>
+<post>
+<the post, with its markers>
+</post>
+Write nothing before <structure>, nothing between the parts, and nothing after </post>: no preamble, no explanation, no separator line.
+---
+```
+
+**Reading the output (code):** `pipeline/finalise.read_structure_node` reads the first `<structure>` part (`utils.draft_output.read_structure_tag`) and removes every one. The choice stands only when it is in `archetype_decision.allowed`; otherwise the post is General and `archetype_decision.reason` says why (`not an allowed type for these sources`, `no structure named`). A missing or repeated part is recorded in `draft_format` (`structure_missing`, `structure_repeated`). Then `strip_draft_node` reads `<event>` and `<post>` exactly as for C, with the chosen type deciding whether an event is required.
 
 ---
 
@@ -1263,7 +1329,7 @@ Your previous reply contained no rewrite or note. Return the rewritten section o
 
 **Purpose:** The same job as the selection refine above, for a post whose generation trace stored a source index (every post the single-writer pipeline wrote, which is the default since 2026-10-10). Posts without one keep the prompt above.
 
-**Model:** the model that drafted the post (`node_outputs.models.draft` in its trace; Claude Opus 5.5 for the default C-Opus, sent with `output_config.effort` = `medium`). `max_tokens` = 500 plus the thinking allowance for a model that thinks. Event types: `refine_selection`, and `refine_selection_retry` for the second attempt.
+**Model:** the model that drafted the post (`node_outputs.models.draft` in its trace; Claude Opus 5.5 for the default D-Opus-low and for C-Opus; refine sends `output_config.effort` = `medium` whatever the draft used). `max_tokens` = 500 plus the thinking allowance for a model that thinks. Event types: `refine_selection`, and `refine_selection_retry` for the second attempt.
 
 **After the call (code):** the reply is normalised and its markers are stripped (`pipeline.finalise.finalise_marked`); `pipeline.checks.run_passage_checks` runs the citation grammar, `specific_not_in_cited_source`, `view_contains_specific` and `banned_text` on it. Any issue triggers one retry with the retry section below; a second failure, a refusal or a cut-off reply returns the selection unchanged.
 
