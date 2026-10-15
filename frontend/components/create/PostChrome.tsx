@@ -5,7 +5,6 @@
 
 import { useState, type MouseEvent } from "react";
 import type { PostStats } from "@/lib/post-text";
-import type { Format } from "./config";
 import { Button } from "@/components/ui/button";
 
 /** The page's breadcrumb bar (desktop only). */
@@ -98,7 +97,7 @@ export function DraftHeading({ topic, tone, onStartOver }: { topic: string; tone
   );
 }
 
-export function PostMetaBar({ stats: postStats, format }: { stats: PostStats; format: Format }) {
+export function PostMetaBar({ stats: postStats }: { stats: PostStats }) {
   return (
     <div className="mt-4 flex flex-wrap items-center gap-2 text-[12px] text-on-surface-variant">
       <span className="rounded-full bg-surface-container-low px-3 py-1">
@@ -107,11 +106,6 @@ export function PostMetaBar({ stats: postStats, format }: { stats: PostStats; fo
       <span className="rounded-full bg-surface-container-low px-3 py-1">
         ~{postStats.readingTime} min read
       </span>
-      {format === "thread" && (
-        <span className="rounded-full bg-surface-container-low px-3 py-1">
-          ~{postStats.tweetCount} tweets
-        </span>
-      )}
     </div>
   );
 }

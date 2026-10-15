@@ -18,6 +18,7 @@ from memory import billing_store
 from memory.account_store import get_account
 from pipeline.graph import run_pipeline
 from utils.business_notes import details_note, find_pillar
+from utils.formatters import LINKEDIN_POST
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,8 @@ _MAX_DETAILS_CHARS = 4_000
 
 class GenerateRequest(BaseModel):
     topic: str
-    format: str
+    # Ignored: every post is a LinkedIn post (utils.formatters.LINKEDIN_POST).
+    format: str = LINKEDIN_POST
     tone: str
     # Ignored for a LinkedIn post, whose length the backend sets
     # (utils.formatters.LINKEDIN_RANGE), except under pipeline A, the rollback.
@@ -225,7 +227,7 @@ async def generate(
             run_pipeline,
             topic=req.topic,
             pillar=pillar.key if pillar else None,
-            format=req.format,
+            format=LINKEDIN_POST,
             tone=req.tone,
             length=req.length,
             context=req.context,

@@ -1,41 +1,19 @@
-"""Approval of the final text, with explicit resolution of each claim flag."""
-import logging
+"""Approval of the final text, with explicit resolution of each claim flag.
 
-import anthropic
-
-from agents.grounding_agent import check_grounding
-from llm.client import StructuredOutputError
+No model checks the text here (removed 2026-10-15, with the generation-time
+grounding pass): approval locks the exact text, and the user reads and approves
+it. The only flags are those a post generated before then stored with its
+trace, shown while its text is unchanged."""
 from memory import approval_store
 from memory.trace_store import get_trace_sources
-
-logger = logging.getLogger(__name__)
-
-
-def verification_flag() -> dict:
-    """The flag for text that could not be checked against its sources."""
-    return {"id": "verification_unavailable", "sentence": "", "text": "",
-            "reason": "We couldn't verify this text against its sources. Review its facts before approving."}
 
 
 def review_text(user_id: str, content: str, media: list, post_id: int | None, trace_id: str | None) -> dict:
     trace = get_trace_sources(user_id, trace_id=trace_id, post_id=post_id)
-    if trace is None:
-        flags = [verification_flag()]
-    else:
-        outputs = trace.get("node_outputs") or {}
-        grounding = outputs.get("grounding")
-        if grounding and outputs.get("final_post") == content:
-            flags = grounding["flags"]
-        else:
-            state = {"user_id": user_id, "profile": trace.get("profile_snapshot") or {},
-                     "topic": trace.get("topic", ""), "context": trace.get("context", ""),
-                     "retrieval_bundle": {"chunks": trace.get("retrieved") or []},
-                     "models": outputs.get("models")}
-            try:
-                flags = check_grounding(state, content)
-            except (anthropic.APIError, StructuredOutputError) as exc:
-                logger.warning("approval grounding incomplete category=%s", type(exc).__name__)
-                flags = [verification_flag()]
+    outputs = (trace or {}).get("node_outputs") or {}
+    grounding = outputs.get("grounding")
+    stored = bool(grounding) and outputs.get("final_post") == content
+    flags = grounding["flags"] if stored else []
     return approval_store.create_review(user_id, content=content, media=media, post_id=post_id, flags=flags)
 
 

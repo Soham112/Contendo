@@ -49,7 +49,7 @@ export default function CreatePost() {
   const [paywall, setPaywall] = useState<Paywall | null>(null);
   const { logEvent } = useTracking();
   const [topic, setTopic] = useState("");
-  // LinkedIn only for now: Medium and threads come back once LinkedIn posts are right.
+  // Every post is a LinkedIn post.
   const format: Format = "linkedin post";
   const [tone, setTone] = useState<Tone>("casual");
   const [context, setContext] = useState("");
@@ -647,7 +647,6 @@ export default function CreatePost() {
           grounding={result?.grounding}
           postId={currentPostId}
           traceId={currentTraceIdRef.current}
-          format={format}
           postStats={postStats}
           saveStatus={lastSaved ? saveStatusText : "Auto-saved to history"}
           analysisOpen={analysisOpen}

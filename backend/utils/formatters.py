@@ -48,6 +48,11 @@ def normalise_post_punctuation(text: str) -> str:
 
 # ── Length ────────────────────────────────────────────────────────────────────
 
+# The only format the platform writes (2026-10-15). /generate, onboarding and
+# ideas always use it; the Medium and thread code below is kept for the evals
+# and for when those formats come back.
+LINKEDIN_POST = "linkedin post"
+
 # LinkedIn posts: the backend sets the length and ignores the request's length
 # (the create screen stopped offering a choice on 2026-10-15).
 # LINKEDIN_MAX_WORDS is the product rule (2026-10-15): a post stays under 200

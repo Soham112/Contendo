@@ -1,12 +1,12 @@
 // Everything the post preview knows about a platform. PostPreview and
-// PostMockup render any entry here, so adding Instagram or Threads is one more
-// entry, not a new component.
+// PostMockup render any entry here, so adding a platform is one more entry,
+// not a new component. LinkedIn only for now: the platform writes LinkedIn posts.
 //
 // Icons are neutral lucide icons and colours are plain greys and text colours:
 // no platform logos or marks.
 
 import type { LucideIcon } from "lucide-react";
-import { BarChart2, Heart, MessageCircle, MessageSquare, Repeat2, Send, ThumbsUp } from "lucide-react";
+import { MessageSquare, Repeat2, Send, ThumbsUp } from "lucide-react";
 import type { CountingRule } from "@/lib/post-length";
 
 export type Device = "desktop" | "mobile";
@@ -74,28 +74,6 @@ export const PLATFORMS: PlatformConfig[] = [
     colors: {
       light: { page: "#f4f2ee", card: "#ffffff", text: "rgba(0,0,0,0.9)", muted: "rgba(0,0,0,0.6)", overflow: "rgba(204,16,22,0.18)" },
       dark: { page: "#000000", card: "#1b1f23", text: "rgba(255,255,255,0.9)", muted: "rgba(255,255,255,0.6)", overflow: "rgba(242,92,84,0.3)" },
-    },
-  },
-  {
-    id: "x",
-    label: "X",
-    maxCharacters: 280,
-    counting: "x-weighted",
-    cardWidth: { desktop: 598, mobile: 375 },
-    feedPadding: { desktop: 0, mobile: 0 },
-    font: { size: 15, lineHeight: 20 },
-    byline: "handle",
-    timestamp: "now",
-    actions: [
-      { label: "Reply", icon: MessageCircle },
-      { label: "Repost", icon: Repeat2 },
-      { label: "Like", icon: Heart },
-      { label: "Views", icon: BarChart2 },
-    ],
-    actionLabels: false,
-    colors: {
-      light: { page: "#ffffff", card: "#ffffff", text: "#0f1419", muted: "#536471", overflow: "rgba(244,33,46,0.18)" },
-      dark: { page: "#000000", card: "#000000", text: "#e7e9ea", muted: "#71767b", overflow: "rgba(244,33,46,0.35)" },
     },
   },
 ];

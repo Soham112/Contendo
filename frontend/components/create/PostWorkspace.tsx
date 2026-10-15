@@ -8,7 +8,6 @@ import { OpinionPostLabel } from "@/components/LowCoverageNotice";
 import PostPreviewPanel from "@/components/preview/PostPreviewPanel";
 import PublishPanel from "@/components/publishing/PublishPanel";
 import type { PostStats } from "@/lib/post-text";
-import type { Format } from "./config";
 import { DraftHeading, DragHandle, PostMetaBar, SplitHeading } from "./PostChrome";
 
 /**
@@ -22,7 +21,7 @@ import { DraftHeading, DragHandle, PostMetaBar, SplitHeading } from "./PostChrom
 export default function PostWorkspace({
   splitActive, splitRatio, isWide, containerRef, onDragStart, topic, tone, onStartOver, actions, mobileActions,
   editorRef, opinionMode, hinted, onEditorFocus, onEditorInput, onEditorSelect,
-  text, grounding, postId, traceId, format, postStats, saveStatus, analysisOpen, analysisRef, analysisPanel, visualsPanel,
+  text, grounding, postId, traceId, postStats, saveStatus, analysisOpen, analysisRef, analysisPanel, visualsPanel,
 }: {
   splitActive: boolean;
   splitRatio: number;
@@ -47,7 +46,6 @@ export default function PostWorkspace({
   grounding: Grounding | null | undefined;
   postId: number | null;
   traceId: string | null;
-  format: Format;
   postStats: PostStats;
   saveStatus: string;
   analysisOpen: boolean;
@@ -215,7 +213,6 @@ export default function PostWorkspace({
                     <div className="mt-6 flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-1 sm:relative sm:justify-center">
                       <span style={{ fontSize: 12, color: "#5b605f", letterSpacing: "0.03em" }}>
                         {postStats.wordCount} words · ~{postStats.readingTime} min read
-                        {format === "thread" && ` · ~${postStats.tweetCount} tweets`}
                       </span>
                       <span className="sm:absolute sm:right-0" style={{ fontSize: 12, color: "#5b605f", fontStyle: "italic" }}>
                         {saveStatus}
@@ -251,7 +248,7 @@ export default function PostWorkspace({
             {splitActive && (
               <>
                 <div className="xl:hidden">{actions}</div>
-                <PostMetaBar stats={postStats} format={format} />
+                <PostMetaBar stats={postStats} />
                 <p className="text-xs text-on-surface-variant shrink-0 mt-2">
                   {saveStatus}
                 </p>

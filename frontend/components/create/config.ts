@@ -19,9 +19,8 @@ export const SS_SCORED = "contentOS_last_scored";
 export const SS_RAW_POST = "contentOS_raw_post";
 
 
-// The create screen writes LinkedIn posts only. The backend also knows
-// "medium article" and "thread"; they come back to this screen later.
-export type Format = "linkedin post" | "medium article" | "thread";
+// The platform writes LinkedIn posts only.
+export type Format = "linkedin post";
 export type Tone = "casual" | "technical" | "storytelling";
 
 export const TONES: { id: Tone; label: string; description: string }[] = [

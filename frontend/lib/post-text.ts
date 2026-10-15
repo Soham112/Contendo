@@ -39,14 +39,11 @@ export interface PostStats {
   charCount: number;
   /** Minutes at 200 words a minute, to the nearest half minute. */
   readingTime: number;
-  /** How many 280-character tweets the text would fill. */
-  tweetCount: number;
 }
 
 export function getPostStats(text: string): PostStats {
   const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
   const charCount = text.length;
   const readingTime = Math.round((wordCount / 200) * 2) / 2;
-  const tweetCount = Math.ceil(charCount / 280);
-  return { wordCount, charCount, readingTime, tweetCount };
+  return { wordCount, charCount, readingTime };
 }
