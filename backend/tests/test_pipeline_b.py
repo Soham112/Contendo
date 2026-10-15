@@ -263,7 +263,7 @@ def test_the_trace_records_both_passes_the_fixes_and_each_step(claude, fake_db, 
     assert (record["targeted"]["input_tokens"], record["targeted"]["output_tokens"]) == (10, 10)
     assert outputs["review_first"]["input_tokens"] == outputs["review_second"]["input_tokens"] == 10
     assert [t["step"] for t in outputs["step_timings"]] == [
-        "structure", "draft", "strip", "finalise", "checks", "review_draft", "decide",
+        "load_profile", "retrieval", "plan", "structure", "draft", "strip", "finalise", "checks", "review_draft", "decide",
         "code_fix", "targeted_fix", "review_fixed", "outcome"]
     assert outputs["checks_final"] == {"issues": [], "counts": {}}       # the returned post's checks
     assert record["first"]["checks"]["counts"] == {"uncited_span": 1}
@@ -298,7 +298,9 @@ def test_variant_c_makes_no_review_call_and_no_fix(claude, fake_db, seeded_kb):
 
     assert _events(fake_db) == ["archetype", "generate"]
     assert result["review"] is None and result["post"] == _clean(UNCITED)    # C reads the same envelope
-    assert not {"review", "review_first", "step_timings"} & set(_outputs(fake_db))
+    assert not {"review", "review_first"} & set(_outputs(fake_db))
+    assert [t["step"] for t in _outputs(fake_db)["step_timings"]] == [
+        "load_profile", "retrieval", "plan", "structure", "draft", "strip", "finalise", "checks"]
 
 
 @pytest.mark.parametrize("variant", ["B", "C"])

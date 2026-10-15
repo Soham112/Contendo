@@ -80,6 +80,9 @@ client = anthropic.Anthropic(
 # ContextVars, so calls made from executor threads (e.g. the parallel entity
 # extraction in ingestion_agent._store_entities_for_chunks) are not traced.
 _trace: ContextVar[list[dict] | None] = ContextVar("llm_trace", default=None)
+# When the outermost trace_calls() block started, so each call records when it
+# began within the run (started_ms): sequential and parallel calls can be told apart.
+_trace_started: ContextVar[float | None] = ContextVar("llm_trace_started", default=None)
 
 
 @contextmanager
@@ -92,10 +95,13 @@ def trace_calls() -> Iterator[list[dict]]:
     outer = _trace.get()
     calls: list[dict] = []
     token = _trace.set(calls)
+    started = _trace_started.set(time.perf_counter()) if outer is None else None
     try:
         yield calls
     finally:
         _trace.reset(token)
+        if started is not None:
+            _trace_started.reset(started)
         if outer is not None:
             outer.extend(calls)
 
@@ -153,6 +159,7 @@ def complete(
 
     calls = _trace.get()
     if calls is not None:
+        trace_started = _trace_started.get()
         calls.append({
             "event_type": event_type,
             "model": model,
@@ -161,6 +168,12 @@ def complete(
             "thinking_tokens": _thinking_tokens(message.usage),
             "stop_reason": message.stop_reason,
             "latency_ms": latency_ms,
+            # The speed settings this request sent: None means the model's own default.
+            "effort": (create_kwargs.get("output_config") or {}).get("effort"),
+            "thinking": create_kwargs.get("thinking"),
+            "cache_read_input_tokens": getattr(message.usage, "cache_read_input_tokens", None) or 0,
+            "cache_creation_input_tokens": getattr(message.usage, "cache_creation_input_tokens", None) or 0,
+            "started_ms": None if trace_started is None else round((start - trace_started) * 1000, 1),
         })
 
     return message

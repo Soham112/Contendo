@@ -257,7 +257,7 @@ def test_variant_b_reviews_the_draft_and_stops_when_nothing_acts(run_graph, qual
     assert visited == REVIEWED_NODE_ORDER                       # no redraft, no second review, no scorer
     assert result["review"]["outcome"] == "clean"
     assert [t["step"] for t in result["step_timings"]] == [
-        "structure", "draft", "strip", "finalise", "checks", "review_draft", "decide", "outcome"]
+        "load_profile", "retrieval", "plan", "structure", "draft", "strip", "finalise", "checks", "review_draft", "decide", "outcome"]
 
 
 @pytest.mark.parametrize("variant,quality", DRAFT_ONLY)

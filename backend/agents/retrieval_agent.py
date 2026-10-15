@@ -12,6 +12,7 @@ from memory.vector_store import (
     query_similar_hybrid,
 )
 from memory.hierarchy_store import get_source_node, get_topic_node
+from pipeline.trace import timed
 from memory.retrieval_stats_store import increment_retrieval
 from utils.frames import chunk_field, chunk_frame, chunk_tags, infer_seniority_level  # noqa: F401  (re-exported)
 
@@ -325,12 +326,16 @@ def retrieval_node(state: PipelineState) -> PipelineState:
 
     query = f"{topic}. {context}" if context else topic
     state["retrieval_query"] = query
+    # Wall time of each part, {step, seconds} (pipeline.trace.timed).
+    timings: list[dict] = []
+    state["retrieval_timings"] = timings
 
     # Load experience nodes once: the fact checker reads the entity names from state
     experience_nodes: list[dict] = []
     try:
         from memory.experience_store import get_experience_nodes
-        experience_nodes = get_experience_nodes(user_id)
+        with timed(timings, "experience_nodes"):
+            experience_nodes = get_experience_nodes(user_id)
     except Exception as exc:
         logger.debug("experience_nodes load failed (non-fatal): %s", exc)
     state["experience_nodes"] = experience_nodes
@@ -341,11 +346,14 @@ def retrieval_node(state: PipelineState) -> PipelineState:
         # STOPGAP: topic excerpts are logged. Proper fix: fix/retrieval-failure-status
         # replaces content logging with request IDs, categories and counts.
         logger.info(f"Hybrid retrieval used for user {user_id}, topic: {topic[:50]}")
-        raw_results = query_similar_hybrid(query, user_id=user_id, n_results=8)
+        with timed(timings, "hybrid_search"):
+            raw_results = query_similar_hybrid(query, user_id=user_id, n_results=8)
         chunks = [r for r in raw_results if _is_relevant(r)]
         # Phase 4: enrich with entity-linked chunks not in top-8 (up to 4 additional, total ≤ 12)
-        chunks = _enrich_with_entity_chunks(chunks, query_topic=query, user_id=user_id, max_additional=4)
-        bundle = _build_retrieval_bundle(chunks, user_id)
+        with timed(timings, "entity_enrichment"):
+            chunks = _enrich_with_entity_chunks(chunks, query_topic=query, user_id=user_id, max_additional=4)
+        with timed(timings, "source_context"):
+            bundle = _build_retrieval_bundle(chunks, user_id)
         state["retrieval_bundle"] = bundle
         state["retrieved_context"] = _format_retrieved_context(bundle)
         state["retrieval_path"] = "hybrid"
@@ -353,11 +361,12 @@ def retrieval_node(state: PipelineState) -> PipelineState:
         # Track retrieval stats — never let this break retrieval
         try:
             seen_titles: set[str] = set()
-            for chunk in bundle["chunks"]:
-                title = chunk.get("source_title", "").strip()
-                if title and title not in seen_titles:
-                    seen_titles.add(title)
-                    increment_retrieval(user_id, title)
+            with timed(timings, "retrieval_stats"):
+                for chunk in bundle["chunks"]:
+                    title = chunk.get("source_title", "").strip()
+                    if title and title not in seen_titles:
+                        seen_titles.add(title)
+                        increment_retrieval(user_id, title)
         except Exception as stat_err:
             print(f"[retrieval_node] stat tracking failed (non-fatal): {stat_err}")
     except Exception as e:

@@ -1,10 +1,14 @@
 """Generation trace: what one pipeline run retrieved, wrote, and called.
 
 Nodes call record_draft() after rewriting current_draft; run_pipeline turns the
-final state into a generation_traces row with build_trace_row().
+final state into a generation_traces row with build_trace_row(). timed() and
+timed_node() record wall time as {step, seconds}: per graph step in
+step_timings, per part of retrieval in retrieval_timings.
 """
 
-from typing import Any
+import time
+from contextlib import contextmanager
+from typing import Any, Callable, Iterator
 
 from pipeline.state import PipelineState
 from utils.frames import authorship, chunk_field, chunk_frame
@@ -20,6 +24,27 @@ def record_draft(state: PipelineState, node: str) -> None:
             "text": state.get("current_draft", ""),
         },
     ]
+
+
+@contextmanager
+def timed(timings: list[dict[str, Any]], step: str) -> Iterator[None]:
+    """Append {step, seconds} to timings when the block ends, also when it raises."""
+    started = time.perf_counter()
+    try:
+        yield
+    finally:
+        timings.append({"step": step, "seconds": round(time.perf_counter() - started, 3)})
+
+
+def timed_node(step: str, node: Callable[[PipelineState], PipelineState]) -> Callable[[PipelineState], PipelineState]:
+    """node, with its wall time appended to state["step_timings"]."""
+    def run(state: PipelineState) -> PipelineState:
+        timings: list[dict[str, Any]] = []
+        with timed(timings, step):
+            result = node(state)
+        result["step_timings"] = [*result.get("step_timings", []), *timings]
+        return result
+    return run
 
 
 def _chunk_snapshot(chunk: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:
@@ -49,7 +74,7 @@ def _chunk_snapshot(chunk: dict[str, Any], profile: dict[str, Any]) -> dict[str,
 # (variants B and C).
 _OPTIONAL_OUTPUTS = ("models", "business", "source_index", "event", "citations", "citation_failures", "multi_sentence_spans",
                      "draft_format", "draft_truncated", "draft_refused", "draft_empty", "compress_result", "checks_before_trim", "checks_final",
-                     "review_first", "review_second", "review", "step_timings",
+                     "review_first", "review_second", "review", "step_timings", "retrieval_timings", "run_seconds",
                      "final_validation")
 
 

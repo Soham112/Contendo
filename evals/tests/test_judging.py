@@ -255,3 +255,22 @@ def test_comparison_uses_only_pairs_both_judges_scored():
     assert "| faithfulness | 1 | 0.90 | 0.50 | 100% | 0% | g1 |" in text
     assert "answer_relevancy" not in text.split("## Per golden")[0].split("|---|")[1]
     assert "0.90 / 0.50 ⚠" in text
+
+
+def test_report_has_a_latency_section_from_the_runs_timings():
+    timings = lambda draft: {"steps": [{"step": "retrieval", "seconds": 0.4}, {"step": "draft", "seconds": draft}],
+                             "retrieval": [{"step": "hybrid_search", "seconds": 0.3}], "run_seconds": draft + 1}
+    runs = [{"golden_id": f"g{n}", "status": "ok", "timings": timings(float(n))} for n in range(1, 21)]
+    runs.append({"golden_id": "gated", "status": "gated"})
+    text = report.build_report({"run_id": "r", "quality": "standard", "project_ref": "p"}, runs, [],
+                               {}, judge_model="HAIKU")
+    assert "## Latency (seconds)" in text
+    assert "| draft | 20 | 10.00 | 19.00 | 20.00 |" in text
+    assert "| whole run | 20 | 11.00 | 20.00 | 21.00 |" in text
+    assert "| retrieval: hybrid_search | 20 | 0.30 | 0.30 | 0.30 |" in text
+
+
+def test_report_without_timings_has_no_latency_section():
+    text = report.build_report({"run_id": "r", "quality": "standard", "project_ref": "p"},
+                               [{"golden_id": "g1", "status": "ok"}], [], {}, judge_model="HAIKU")
+    assert "## Latency" not in text

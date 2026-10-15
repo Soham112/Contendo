@@ -27,10 +27,9 @@ In both, a first draft cut off at its output limit goes straight to
 (structure only; "archetype" is a state key, so the node cannot have that name;
 "review_draft" is the first review for the same reason).
 
-Every B step records how long it took (state["step_timings"]).
+Every B and C step records how long it took (state["step_timings"]).
 """
 
-import time
 from typing import Callable
 
 from langgraph.graph import END, StateGraph
@@ -47,21 +46,25 @@ from pipeline.finalise import (
 from pipeline.fixes import code_fix_node, code_fix_redraft_node, route_after_fix
 from pipeline.redraft import decide_node, outcome_node, route_after_decide
 from pipeline.state import PipelineState
+from pipeline.trace import timed_node
 
 Node = Callable[[PipelineState], PipelineState]
 
 
 def wire_draft_only(graph: StateGraph) -> None:
     """Variant C."""
-    graph.add_node("structure", structure_node)
-    graph.add_node("draft", cited_draft_node)
-    graph.add_node("truncated", truncated_node)
-    graph.add_node("strip", strip_draft_node)
-    graph.add_node("finalise", finalise_draft_node)
-    graph.add_node("checks", checks_node)
-    graph.add_node("compress", compress_node)
-    graph.add_node("finalise_compressed", refinalise_node)
-    graph.add_node("recheck", recheck_node)
+    def add(step: str, node: Node) -> None:
+        graph.add_node(step, timed_node(step, node))
+
+    add("structure", structure_node)
+    add("draft", cited_draft_node)
+    add("truncated", truncated_node)
+    add("strip", strip_draft_node)
+    add("finalise", finalise_draft_node)
+    add("checks", checks_node)
+    add("compress", compress_node)
+    add("finalise_compressed", refinalise_node)
+    add("recheck", recheck_node)
 
     graph.add_edge("plan", "structure")
     graph.add_edge("structure", "draft")
@@ -73,17 +76,6 @@ def wire_draft_only(graph: StateGraph) -> None:
     graph.add_edge("compress", "finalise_compressed")
     graph.add_edge("finalise_compressed", "recheck")
     graph.add_edge("recheck", END)
-
-
-def _timed(step: str, node: Node) -> Node:
-    """node, with its wall time appended to state["step_timings"] as {step, seconds}."""
-    def run(state: PipelineState) -> PipelineState:
-        started = time.perf_counter()
-        result = node(state)
-        result["step_timings"] = [*result.get("step_timings", []),
-                                  {"step": step, "seconds": round(time.perf_counter() - started, 3)}]
-        return result
-    return run
 
 
 def route_after_checks(state: PipelineState) -> str:
@@ -104,7 +96,7 @@ def route_after_redraft(state: PipelineState) -> str:
 def wire_reviewed(graph: StateGraph) -> None:
     """Variant B."""
     def add(step: str, node: Node) -> None:
-        graph.add_node(step, _timed(step, node))
+        graph.add_node(step, timed_node(step, node))
 
     add("structure", structure_node)
     add("draft", cited_draft_node)
