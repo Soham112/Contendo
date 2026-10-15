@@ -5,13 +5,12 @@ functions (the price table, the two word counts) and stores the result in
 runs.jsonl; report.py --variants reads those files and writes ablation.md.
 """
 
-import math
 from collections import Counter
 from statistics import mean
 from typing import Any, Callable, Iterable
 
 import eval_config as config
-from reporting import _fmt, _latest, _stats
+from reporting import _fmt, _latest, _stats, percentile
 
 # An issue type that only exists where a post has citations. Pipeline A's posts
 # have none, and B corrects citations in code, so it is kept out of the count
@@ -20,14 +19,6 @@ CITATION_ONLY_ISSUES = ("wrong_citation",)
 ROUTES = ("none", "code-only", "targeted", "full")
 OUTCOMES = ("clean", "fixed", "issues_remain", "not_reviewed")
 NO_POST_STATUSES = ("draft_truncated", "draft_refused")
-
-
-def percentile(values: Iterable[float], p: float) -> float | None:
-    """Nearest-rank percentile (p in 0-100); None for no values."""
-    ordered = sorted(values)
-    if not ordered:
-        return None
-    return ordered[max(0, math.ceil(p / 100 * len(ordered)) - 1)]
 
 
 def summarize_llm_calls(calls: list[dict[str, Any]], call_cost: Callable[[str, int, int], float]) -> dict[str, Any]:

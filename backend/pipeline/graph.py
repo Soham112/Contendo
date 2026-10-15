@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Callable
 
 from langgraph.graph import StateGraph, END
@@ -7,7 +8,7 @@ from config import features
 from llm.client import trace_calls
 from llm.models import role_models
 from pipeline.state import PipelineState
-from pipeline.trace import build_trace_row
+from pipeline.trace import build_trace_row, timed_node
 from pipeline.finalise import validation_record
 from pipeline.redraft import review_summary
 from pipeline.single_writer import wire_draft_only, wire_reviewed
@@ -192,9 +193,10 @@ def build_graph(variant: str):
     wire_after_plan = _AFTER_PLAN[features.VARIANT_GRAPH[features.validate_pipeline_variant(variant)]]
     graph = StateGraph(PipelineState)
 
-    graph.add_node("load_profile", load_profile_node)
-    graph.add_node("retrieval", retrieval_node)
-    graph.add_node("plan", plan_node)
+    # Every variant times the shared steps (state["step_timings"]).
+    graph.add_node("load_profile", timed_node("load_profile", load_profile_node))
+    graph.add_node("retrieval", timed_node("retrieval", retrieval_node))
+    graph.add_node("plan", timed_node("plan", plan_node))
     graph.add_node("low_coverage", low_coverage_node)
 
     graph.set_entry_point("load_profile")
@@ -289,8 +291,11 @@ def run_pipeline(
         "no_specifics": no_specifics,
     }
 
+    started = time.perf_counter()
     with trace_calls() as calls:
         result = PIPELINES[variant].invoke(initial_state)
+        # The whole run, graph and model calls included; the trace write is not.
+        result["run_seconds"] = round(time.perf_counter() - started, 3)
         # A's normal-mode fact check only marks itself pending, and nothing runs
         # it any more, so the pending record is dropped.
         if (result.get("fact_check") or {}).get("mode") == "log_only":
@@ -298,10 +303,12 @@ def run_pipeline(
 
     # The trace is diagnostic only: a failed write must never fail generation.
     trace_id: str | None = None
+    write_started = time.perf_counter()
     try:
         trace_id = save_generation_trace(build_trace_row(result, calls))
     except Exception:
         logger.exception("generation trace write failed for user %s", user_id)
+    logger.info("generation run %.3fs, trace write %.3fs", result["run_seconds"], time.perf_counter() - write_started)
 
     gate = result.get("coverage_gate") or {}
     if gate.get("decision") == "low_coverage":

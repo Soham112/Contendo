@@ -186,8 +186,45 @@ def test_trace_collects_calls_when_set(claude, usage_calls):
         assert c["input_tokens"] == 10 and c["output_tokens"] == 10
         assert c["latency_ms"] >= 0
     assert set(calls[0]) == {"event_type", "model", "input_tokens", "output_tokens", "thinking_tokens",
-                             "stop_reason", "latency_ms"}
+                             "stop_reason", "latency_ms", "effort", "thinking", "cache_read_input_tokens",
+                             "cache_creation_input_tokens", "started_ms"}
     assert (calls[0]["thinking_tokens"], calls[0]["stop_reason"]) == (0, "end_turn")
+    # Sequential calls: the second starts after the first began.
+    assert 0 <= calls[0]["started_ms"] <= calls[1]["started_ms"]
+
+
+def test_the_trace_records_the_speed_settings_each_call_sent(claude, usage_calls):
+    from llm.client import SONNET, trace_calls
+
+    claude.queue("a", "b", "c")
+    with trace_calls() as calls:
+        _complete(model=SONNET, event_type="defaults")
+        _complete(model=SONNET, event_type="low", output_config={"effort": "low"})
+        _complete(model=SONNET, event_type="off", thinking={"type": "disabled"})
+
+    assert [(c["effort"], c["thinking"]) for c in calls] == [
+        (None, None), ("low", None), (None, {"type": "disabled"})]
+    assert all(c["cache_read_input_tokens"] == c["cache_creation_input_tokens"] == 0 for c in calls)
+
+
+def test_a_nested_trace_keeps_the_outer_runs_start_time(claude, usage_calls):
+    from llm.client import SONNET, trace_calls
+
+    claude.queue("a", "b")
+    with trace_calls() as outer:
+        _complete(model=SONNET, event_type="outer")
+        with trace_calls():
+            _complete(model=SONNET, event_type="inner")
+
+    assert [c["event_type"] for c in outer] == ["outer", "inner"]
+    assert outer[0]["started_ms"] <= outer[1]["started_ms"]
+
+
+def test_a_call_outside_a_trace_records_nothing_and_still_works(claude, usage_calls):
+    from llm.client import SONNET, message_text
+
+    claude.queue("a")
+    assert message_text(_complete(model=SONNET, event_type="untraced")) == "a"
 
 
 def test_trace_does_nothing_when_unset(claude, usage_calls):

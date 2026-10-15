@@ -80,6 +80,9 @@ def trace_fields(trace: dict[str, Any]) -> dict[str, Any]:
         "sources": [{"id": source_id(position), "title": chunk.get("source_title", ""), "text": chunk.get("text", "")}
                     for position, chunk in enumerate(trace.get("retrieved") or [])],
         "profile_text": metrics.profile_text(trace.get("profile_snapshot") or {}),
+        # Wall time per graph step and per part of retrieval, and of the whole run.
+        "timings": {"steps": outputs.get("step_timings") or [], "retrieval": outputs.get("retrieval_timings") or [],
+                    "run_seconds": outputs.get("run_seconds")},
     }
 
 

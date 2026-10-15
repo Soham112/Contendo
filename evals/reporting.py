@@ -1,6 +1,7 @@
 """Pure report building and results-file helpers. No env, no backend, no network."""
 
 import json
+import math
 from collections import defaultdict
 from pathlib import Path
 from statistics import mean
@@ -86,6 +87,34 @@ def _fact_check_section(runs: list[dict[str, Any]]) -> list[str]:
     return lines + [""]
 
 
+def percentile(values: Iterable[float], p: float) -> float | None:
+    """Nearest-rank percentile (p in 0-100); None for no values."""
+    ordered = sorted(values)
+    if not ordered:
+        return None
+    return ordered[max(0, math.ceil(p / 100 * len(ordered)) - 1)]
+
+
+def _latency_section(runs: list[dict[str, Any]]) -> list[str]:
+    """p50 and p95 seconds per step, per part of retrieval and per run, over the
+    drafted runs that recorded timings (runs.jsonl rows' "timings")."""
+    timed = [r["timings"] for r in runs if r.get("status") == "ok" and (r.get("timings") or {}).get("steps")]
+    if not timed:
+        return []
+    rows: dict[str, list[float]] = defaultdict(list)
+    for timings in timed:
+        if timings.get("run_seconds") is not None:
+            rows["whole run"].append(timings["run_seconds"])
+        for kind in ("steps", "retrieval"):
+            for t in timings.get(kind) or []:
+                rows[t["step"] if kind == "steps" else f"retrieval: {t['step']}"].append(t["seconds"])
+    lines = ["## Latency (seconds)", "", "| step | n | p50 | p95 | max |", "|---|---|---|---|---|"]
+    for step, values in rows.items():
+        lines.append(f"| {step} | {len(values)} | {percentile(values, 50):.2f} | {percentile(values, 95):.2f} "
+                     f"| {max(values):.2f} |")
+    return [*lines, ""]
+
+
 def build_report(meta: dict[str, Any], runs: list[dict[str, Any]], scores: list[dict[str, Any]],
                  goldens: dict[str, dict[str, Any]], judge_model: str = config.JUDGE_MODEL,
                  metric_judges: dict[str, str] | None = None) -> str:
@@ -151,6 +180,7 @@ def build_report(meta: dict[str, Any], runs: list[dict[str, Any]], scores: list[
         lines.append("")
 
     lines += _fact_check_section(runs)
+    lines += _latency_section(runs)
 
     # Cost.
     pipeline = [r["pipeline"] for r in runs if r.get("status") == "ok" and r.get("pipeline")]

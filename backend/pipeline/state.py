@@ -162,11 +162,17 @@ class PipelineState(TypedDict, total=False):
     #    remaining: acting issues on the returned post,
     #    unreviewed: sentences of the returned post with no valid review record,
     #    outcome: clean | fixed | issues_remain | not_reviewed}
-    # step_timings: [{step, seconds}], one per graph step that ran, in order.
+    # step_timings: [{step, seconds}], one per timed graph step that ran, in
+    # order (the shared load_profile, retrieval and plan, and every B and C step).
+    # retrieval_timings: [{step, seconds}] for the parts of retrieval
+    # (experience_nodes, hybrid_search, entity_enrichment, source_context,
+    # retrieval_stats). run_seconds: the whole run, set by run_pipeline.
     review_first: dict[str, Any]
     review_second: dict[str, Any]
     review: dict[str, Any]
     step_timings: list[dict[str, Any]]
+    retrieval_timings: list[dict[str, Any]]
+    run_seconds: float
 
     # The validation record of the returned post (pipeline.finalise), all
     # variants: {words, target, length: ok | over_length | under_length |
