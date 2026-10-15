@@ -13,7 +13,7 @@ Order, after the first review found acting issues:
    The post is then finalised and checked again, in code. A deletion can
    leave the next sentence leaning on words that are gone. Nothing repairs
    that: asking the drafter to look at such neighbours made posts worse
-   (decided 2026-10-10, docs/plans/single-writer.md section 6), so occasional
+   (decided 2026-10-10, CODEBASE.md §5 "No repair of the sentence after a code deletion"), so occasional
    orphans are accepted and measured in the blind read.
 
 2. The routing rule (choose_route), on the issues that are left:

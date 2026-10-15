@@ -52,8 +52,8 @@ logger = logging.getLogger(__name__)
 Line = tuple[str, str]                      # (label, value) as shown in the redraft prompt
 
 # Derived and stored in the trace; they never trigger a redraft.
-# Decided 2026-10-09 from the 6a-4 live check (docs/plans/single-writer.md,
-# section 5): changed_detail was right on 3 of 12, arguable on 3 and wrong on 6
+# Decided 2026-10-09 from the 6a-4 live check (CODEBASE.md §5, "Review issue
+# types ... are record-only"): changed_detail was right on 3 of 12, arguable on 3 and wrong on 6
 # (synonyms, rewordings, punctuation); ai_rhythm was 9 of the 18 issues on the
 # two drafts, mostly judgement calls. Acting on either would spend the one
 # redraft on a false positive about half the time. Revisit after the ablation,

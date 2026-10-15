@@ -24,7 +24,7 @@ THRESHOLDS = {
 }
 METRIC_ORDER = tuple(THRESHOLDS)
 
-# ── Ablation (docs/plans/single-writer.md, section 7) ─────────────────────────
+# ── Ablation (CODEBASE.md §5, "C-Opus chosen by the full ablation") ─────────
 ABLATIONS_DIR = RESULTS_DIR / "ablations"
 # The variants of the full ablation, in the order they are run and reported.
 # B (Sonnet draft with review) is left out (Soham, 2026-10-10): in the smoke it
@@ -33,7 +33,7 @@ ABLATIONS_DIR = RESULTS_DIR / "ablations"
 ABLATION_VARIANTS = ("A", "C", "B-Opus", "C-Opus")
 # The decision rules, fixed before the full run (Soham, 2026-10-10). The one
 # copy: ablation.md prints these (ablation.decision_rules_lines), and
-# docs/plans/single-writer.md quotes them.
+# CODEBASE.md §5 summarises the result.
 # "the 10 goldens" are the blind read's (BLIND_GOLDENS, below).
 DECISION_RULES_DATE = "2026-10-10"
 DECISION_RULES = (
@@ -95,7 +95,7 @@ FULL_PLAN = AblationPlan(
 )
 
 # Phase 1 latency experiment (docs/GENERATION_ARCHITECTURE.md, section 15;
-# design in docs/GENERATION_PHASE0_REPORT.md, section 6). Arms: a = C-Opus
+# result in CODEBASE.md §5, "One Opus call at effort low is the default"). Arms: a = C-Opus
 # (today), b = D-Opus (structure folded into the Opus call), c = D-Opus-low
 # (b at effort low; Opus 5.5 rejects thinking disabled at every effort). The
 # 10 goldens are the full ablation's blind read (results/ablations/full/key.json).

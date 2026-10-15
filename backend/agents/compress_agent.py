@@ -2,8 +2,8 @@
 maximum by shortening sentences. No sentence is deleted and the post is never
 written again.
 
-Why not the other two ways (docs/plans/single-writer.md, decision of
-2026-10-10): deleting ranked sentences reversed a post's meaning in production
+Why not the other two ways (CODEBASE.md §5, "An over-length post is
+compressed", 2026-10-10): deleting ranked sentences reversed a post's meaning in production
 (the sentences that framed an opposing argument were the cheapest to delete),
 and a whole-post rewrite re-generates text nobody asked to change.
 
