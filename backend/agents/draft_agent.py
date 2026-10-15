@@ -4,7 +4,8 @@ draft_node is pipeline A's drafter: it picks the archetype, drafts, and runs
 the specifics guard (one retry, then sentence removal).
 cited_draft_node is the single-writer drafter for variants B and C: after the
 structure is chosen (agents/archetype_agent.structure_node), one draft call
-whose output carries citation markers. No guard retry and no sentence removal run
+whose output carries citation markers. one_call_draft_node is variant D's: the
+same call, choosing the structure itself (agents/one_call_prompt.py). No guard retry and no sentence removal run
 there; what the draft got wrong is for the checks after it to find.
 targeted_fix_node and redraft_node are variant B's two ways of having the
 drafter deal with the problems the checks and the review found, of which a run
@@ -20,8 +21,9 @@ the model declined (stop_reason "refusal") is never treated as text to use.
 
 import logging
 
-from agents.archetype_agent import choose_archetype
+from agents.archetype_agent import choose_archetype, structure_offer
 from agents.draft_prompt import build_cited_prompt, build_prompt, format_retrieval_context
+from agents.one_call_prompt import build_one_call_prompt
 from agents.redraft_prompt import build_fix_prompt, build_redraft_prompt
 from anthropic.types import Message
 
@@ -33,6 +35,7 @@ from pipeline.state import PipelineState
 from pipeline.trace import record_draft
 from utils.citations import Span, with_markers
 from utils.formatters import draft_max_tokens
+from utils.frames import SourcesBlock
 from utils.sentences import split_spans
 from utils.specifics import find_violations, guard_entry, guard_sources, remove_sentences, retry_note
 
@@ -108,11 +111,11 @@ def _refusal(message: Message) -> dict:
     return {"category": None if details is None else details.category}
 
 
-def _effort(model: str) -> dict:
-    """The effort setting a drafter call sends for this model, as the keyword
-    complete() passes on to the API; nothing for a model with no setting
-    (llm.models.DRAFT_EFFORT)."""
-    effort = draft_effort(model)
+def _effort(state: PipelineState, model: str) -> dict:
+    """The effort setting a drafter call sends for this model under the run's
+    variant, as the keyword complete() passes on to the API; nothing for a
+    model with no setting (llm.models.DRAFT_EFFORT, VARIANT_DRAFT_EFFORT)."""
+    effort = draft_effort(model, state.get("variant"))
     return {} if effort is None else {"output_config": {"effort": effort}}
 
 
@@ -127,7 +130,23 @@ def cited_draft_node(state: PipelineState) -> PipelineState:
     ({max_tokens, output_tokens}); the pipeline then returns no post. A draft
     the model declined to write sets state["draft_refused"] ({category}) and
     the pipeline returns no post either."""
-    prompt, sources = build_cited_prompt(state)
+    return _write_cited_draft(state, *build_cited_prompt(state))
+
+
+def one_call_draft_node(state: PipelineState) -> PipelineState:
+    """Variant D: no structure call before this one. The drafter gets every
+    structure the sources allow (archetype_agent.structure_offer, the rule C's
+    structure call uses) and names its choice in the output's <structure> part;
+    pipeline/finalise.read_structure_node reads and checks it. Otherwise as
+    cited_draft_node."""
+    allowed = structure_offer(state)
+    state["archetype"] = ""
+    state["archetype_decision"] = {"archetype": None, "chosen": None, "allowed": allowed,
+                                   "downgraded_from": None, "reason": None, "chosen_by": "drafter"}
+    return _write_cited_draft(state, *build_one_call_prompt(state, allowed))
+
+
+def _write_cited_draft(state: PipelineState, prompt: str, sources: SourcesBlock) -> PipelineState:
     state["draft_frame_block"] = sources.text
     state["source_index"] = sources.index
 
@@ -140,7 +159,8 @@ def cited_draft_node(state: PipelineState) -> PipelineState:
         user_id=state["user_id"],
         event_type="generate",
         usage_metadata=_usage_metadata(state),
-        **_effort(model),
+        measure_first_text=True,
+        **_effort(state, model),
     )
     state["current_draft"] = message_text(message).strip()
     record_draft(state, "draft")
@@ -172,7 +192,7 @@ def targeted_fix_node(state: PipelineState) -> PipelineState:
         user_id=state["user_id"],
         event_type="targeted_fix",
         usage_metadata=_usage_metadata(state),
-        **_effort(model),
+        **_effort(state, model),
     )
     answer = message_text(message).strip()
     targeted.update(answer=answer, input_tokens=message.usage.input_tokens, output_tokens=message.usage.output_tokens)
@@ -211,7 +231,7 @@ def redraft_node(state: PipelineState) -> PipelineState:
         user_id=state["user_id"],
         event_type="redraft",
         usage_metadata=_usage_metadata(state),
-        **_effort(model),
+        **_effort(state, model),
     )
     redraft["input_tokens"] = message.usage.input_tokens
     redraft["output_tokens"] = message.usage.output_tokens

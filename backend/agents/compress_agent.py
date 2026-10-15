@@ -95,7 +95,7 @@ def compress_node(state: PipelineState) -> PipelineState:
             user_id=state["user_id"],
             event_type="compress",
             usage_metadata=_usage_metadata(state),
-            **_effort(model),
+            **_effort(state, model),
         )
     except StructuredOutputError:
         result["reason"] = "response_invalid"

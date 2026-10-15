@@ -5,6 +5,10 @@ when over the maximum) → finalise → checks again → end. The checks are rec
 and nothing acts on them. Compress shortens sentences and never deletes one
 (agents/compress_agent.py); the earlier trim by deletion is not wired in.
 
+D (one call): C without the structure call. The drafter chooses the structure
+among the types the code allows: draft → read_structure (keeps the choice only
+when allowed) → strip → and on as C.
+
 B (reviewed): the same first draft, then review → decide. With no acting issue
 it ends there. Otherwise code_fix makes the fixes that need no model and
 chooses one path for what is left (pipeline/fixes.py):
@@ -36,12 +40,12 @@ from langgraph.graph import END, StateGraph
 
 from agents.archetype_agent import structure_node
 from agents.compress_agent import compress_node
-from agents.draft_agent import cited_draft_node, redraft_node, targeted_fix_node
+from agents.draft_agent import cited_draft_node, one_call_draft_node, redraft_node, targeted_fix_node
 from agents.review_agent import review_fixed_node, review_node, review_redraft_node, review_refixed_node
 from pipeline.checks import checks_node, recheck_node
 from pipeline.finalise import (
-    finalise_draft_node, refinalise_node, route_after_cited_draft, route_to_compress,
-    strip_draft_node, truncated_node,
+    finalise_draft_node, read_structure_node, refinalise_node, route_after_cited_draft,
+    route_to_compress, strip_draft_node, truncated_node,
 )
 from pipeline.fixes import code_fix_node, code_fix_redraft_node, route_after_fix
 from pipeline.redraft import decide_node, outcome_node, route_after_decide
@@ -53,11 +57,24 @@ Node = Callable[[PipelineState], PipelineState]
 
 def wire_draft_only(graph: StateGraph) -> None:
     """Variant C."""
+    _wire_draft_and_checks(graph, one_call=False)
+
+
+def wire_one_call(graph: StateGraph) -> None:
+    """Variant D: C without the structure call."""
+    _wire_draft_and_checks(graph, one_call=True)
+
+
+def _wire_draft_and_checks(graph: StateGraph, *, one_call: bool) -> None:
     def add(step: str, node: Node) -> None:
         graph.add_node(step, timed_node(step, node))
 
-    add("structure", structure_node)
-    add("draft", cited_draft_node)
+    if one_call:
+        add("draft", one_call_draft_node)
+        add("read_structure", read_structure_node)
+    else:
+        add("structure", structure_node)
+        add("draft", cited_draft_node)
     add("truncated", truncated_node)
     add("strip", strip_draft_node)
     add("finalise", finalise_draft_node)
@@ -66,9 +83,15 @@ def wire_draft_only(graph: StateGraph) -> None:
     add("finalise_compressed", refinalise_node)
     add("recheck", recheck_node)
 
-    graph.add_edge("plan", "structure")
-    graph.add_edge("structure", "draft")
-    graph.add_conditional_edges("draft", route_after_cited_draft, {"truncated": "truncated", "strip": "strip"})
+    if one_call:
+        graph.add_edge("plan", "draft")
+        graph.add_conditional_edges("draft", route_after_cited_draft,
+                                    {"truncated": "truncated", "strip": "read_structure"})
+        graph.add_edge("read_structure", "strip")
+    else:
+        graph.add_edge("plan", "structure")
+        graph.add_edge("structure", "draft")
+        graph.add_conditional_edges("draft", route_after_cited_draft, {"truncated": "truncated", "strip": "strip"})
     graph.add_edge("truncated", END)
     graph.add_conditional_edges("strip", route_after_cited_draft, {"truncated": "truncated", "strip": "finalise"})
     graph.add_edge("finalise", "checks")

@@ -27,14 +27,13 @@ def test_a_draft_is_returned_without_a_grounding_check_or_repair(claude, fake_db
 
 
 def test_generate_responds_without_a_grounding_field(client, claude, fake_db, seeded_kb, auth_headers):
-    from tests.conftest import ARCHETYPE_GENERAL
-    from tests.generation_fixtures import enveloped
+    from tests.generation_fixtures import one_call_reply
     from tests.test_generation_trace import USER
 
-    claude.queue(ARCHETYPE_GENERAL, enveloped("pgvector makes retrieval fast. [[R]]"))
+    claude.queue(one_call_reply("pgvector makes retrieval fast. [[R]]"))
     response = client.post("/generate", headers=auth_headers(USER),
                            json={"topic": "pgvector makes retrieval fast", "format": "linkedin post", "tone": "casual"})
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok" and "grounding" not in response.json()
-    assert len(claude.calls) == 2
+    assert len(claude.calls) == 1                     # the default (D-Opus-low) makes one call

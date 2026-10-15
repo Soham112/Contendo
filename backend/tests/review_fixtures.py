@@ -63,6 +63,10 @@ def is_compress_prompt(prompt: str) -> bool:
     return prompt.startswith(COMPRESS_DATA.split("\n", 1)[0])
 
 
+# What the one-call draft prompt (variant D) asks for first (agents/one_call_prompt.py).
+ONE_CALL_STRUCTURE_ASK = "<structure><the key of the post type you chose></structure>"
+
+
 def answer_pipeline(claude, drafts, reviews=(), compress=None, fixes=None, structure=ARCHETYPE_GENERAL) -> list[str]:
     """Make the fake model play every call of a single-writer run, whatever
     order the parallel review calls arrive in.
@@ -103,6 +107,10 @@ def answer_pipeline(claude, drafts, reviews=(), compress=None, fixes=None, struc
             assert fixes is not None, "an unexpected targeted-fix call"
             return fixes
         assert drafts, "a draft call with no draft left to return: a third draft?"
-        return enveloped(drafts.pop(0))
+        draft = enveloped(drafts.pop(0))
+        if ONE_CALL_STRUCTURE_ASK in prompt and isinstance(draft, str) and "<structure>" not in draft:
+            # A one-call drafter (variant D) names its structure first: the one `structure` names.
+            draft = f"<structure>{json.loads(structure)['archetype']}</structure>\n{draft}"
+        return draft
     claude.respond_with(reply)
     return prompts

@@ -1,6 +1,7 @@
 """Production-safety behaviour: auth on LLM routes, no event-loop blocking,
 usage logging from worker threads, JWKS caching, generic 500s, and CORS."""
 
+import base64
 import threading
 import time
 
@@ -10,7 +11,6 @@ import jwt
 import pytest
 from anthropic import InternalServerError
 from cryptography.hazmat.primitives.asymmetric import ec
-from jwt.algorithms import ECAlgorithm
 
 
 # --- Auth on routes that had none ---------------------------------------------
@@ -192,6 +192,20 @@ def test_schedule_usage_event_without_any_loop_is_a_silent_no_op(recorded_usage)
 
 # --- JWKS caching -------------------------------------------------------------
 
+def _published_jwk(public_key: ec.EllipticCurvePublicKey) -> dict:
+    """The JWK a JWKS endpoint publishes for a P-256 key. RFC 7518 (6.2.1.2)
+    requires each coordinate at the curve's full length, 32 bytes, as Supabase
+    sends it. PyJWT 2.9's ECAlgorithm.to_jwk drops leading zero bytes instead,
+    and its own from_jwk then rejects about 1 random key in 140 ("Coords should
+    be 32 bytes"), which made the tests using this fixture fail at random."""
+    numbers = public_key.public_numbers()
+
+    def coordinate(value: int) -> str:
+        return base64.urlsafe_b64encode(value.to_bytes(32, "big")).rstrip(b"=").decode()
+
+    return {"kty": "EC", "crv": "P-256", "x": coordinate(numbers.x), "y": coordinate(numbers.y)}
+
+
 @pytest.fixture
 def es256(monkeypatch):
     """Point auth at a fake JWKS endpoint; returns helpers to sign tokens and rotate keys."""
@@ -217,7 +231,7 @@ def es256(monkeypatch):
         fetches["count"] += 1
         jwks = []
         for kid in published:
-            jwk = ECAlgorithm.to_jwk(keys[kid].public_key(), as_dict=True)
+            jwk = _published_jwk(keys[kid].public_key())
             jwk["kid"] = kid
             jwks.append(jwk)
         return {"keys": jwks}
@@ -235,7 +249,7 @@ def es256(monkeypatch):
         pass
 
     h = Helpers()
-    h.add_key, h.publish, h.token, h.fetches, h.supabase_jwt = add_key, publish, token, fetches, supabase_jwt
+    h.add_key, h.publish, h.token, h.fetches, h.supabase_jwt, h.keys = add_key, publish, token, fetches, supabase_jwt, keys
     yield h
     supabase_jwt._clear_jwks_cache()
 
@@ -245,6 +259,28 @@ def test_jwks_is_fetched_once_across_requests(production, es256):
     for _ in range(3):
         assert es256.supabase_jwt.get_user_id(f"Bearer {es256.token('user-a', 'k1')}") == "user-a"
     assert es256.fetches["count"] == 1
+
+
+def _key_with_a_short_coordinate() -> ec.EllipticCurvePrivateKey:
+    """A P-256 key whose x or y has a leading zero byte (about 1 key in 128)."""
+    while True:
+        key = ec.generate_private_key(ec.SECP256R1())
+        numbers = key.public_key().public_numbers()
+        if min(numbers.x, numbers.y) < 1 << 248:
+            return key
+
+
+def test_a_key_with_a_leading_zero_coordinate_is_published_at_full_length_and_verifies(production, es256):
+    from jwt.algorithms import ECAlgorithm
+
+    key = _key_with_a_short_coordinate()
+    jwk = _published_jwk(key.public_key())
+    assert all(len(base64.urlsafe_b64decode(jwk[c] + "==")) == 32 for c in ("x", "y"))
+    assert ECAlgorithm.from_jwk(jwk).public_numbers() == key.public_key().public_numbers()
+
+    es256.add_key("short")
+    es256.keys["short"] = key
+    assert es256.supabase_jwt.get_user_id(f"Bearer {es256.token('user-a', 'short')}") == "user-a"
 
 
 def test_jwks_is_refetched_after_ttl(production, es256):

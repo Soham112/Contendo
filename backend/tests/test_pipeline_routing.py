@@ -17,6 +17,8 @@ SINGLE_WRITER_NODE_ORDER = ["load_profile", "retrieval", "structure", "cited_dra
 # Variant B: the first draft is reviewed. With nothing to act on, it ends there.
 # What the review leads to is tested with the real nodes in test_pipeline_b.py.
 REVIEWED_NODE_ORDER = [*SINGLE_WRITER_NODE_ORDER, "review"]
+# Variant D (one call): no structure call; the drafter names the structure and read_structure checks it.
+ONE_CALL_NODE_ORDER = ["load_profile", "retrieval", "one_call_draft", "read_structure", "strip", "finalise", "checks"]
 NO_ISSUES = {"issues": [], "counts": {}}
 
 
@@ -59,6 +61,8 @@ def stub_nodes(monkeypatch):
         monkeypatch.setattr(graph, "fact_check_node", stub("fact_checker"))
         monkeypatch.setattr(single_writer, "structure_node", stub("structure"))
         monkeypatch.setattr(single_writer, "cited_draft_node", stub("cited_draft", draft))
+        monkeypatch.setattr(single_writer, "one_call_draft_node", stub("one_call_draft", draft))
+        monkeypatch.setattr(single_writer, "read_structure_node", stub("read_structure"))
         monkeypatch.setattr(single_writer, "strip_draft_node", stub("strip"))
         monkeypatch.setattr(single_writer, "finalise_draft_node", stub("finalise", lambda s: s.update(
             final_post=s["current_draft"], final_validation={"length": finalise_length})))
@@ -168,14 +172,22 @@ def _run_pipeline(**kwargs):
     return run_pipeline(topic="t", format="linkedin post", tone="casual", user_id="u", **kwargs)
 
 
-def test_the_default_variant_is_c_opus(monkeypatch):
+def test_the_default_variant_is_d_opus_low(monkeypatch):
     from config import features
 
-    assert features.DEFAULT_PIPELINE_VARIANT == "C-Opus"
+    assert features.DEFAULT_PIPELINE_VARIANT == "D-Opus-low"
     monkeypatch.delenv("PIPELINE_VARIANT", raising=False)
-    assert features.pipeline_variant() == "C-Opus"
+    assert features.pipeline_variant() == "D-Opus-low"
     monkeypatch.setenv("PIPELINE_VARIANT", "")
-    assert features.pipeline_variant() == "C-Opus"
+    assert features.pipeline_variant() == "D-Opus-low"
+
+
+def test_c_opus_stays_selectable_as_the_rollback_switch(stubbed_pipelines, fake_db, monkeypatch):
+    monkeypatch.setenv("PIPELINE_VARIANT", "C-Opus")
+    _run_pipeline()
+
+    assert _recorded_variant(fake_db) == "C-Opus"
+    assert stubbed_pipelines == SINGLE_WRITER_NODE_ORDER
 
 
 def test_pipeline_a_stays_selectable_as_the_rollback_switch(stubbed_pipelines, fake_db, monkeypatch):
@@ -186,7 +198,7 @@ def test_pipeline_a_stays_selectable_as_the_rollback_switch(stubbed_pipelines, f
     assert stubbed_pipelines == A_NODE_ORDER
 
 
-@pytest.mark.parametrize("variant", ["A", "B", "C"])
+@pytest.mark.parametrize("variant", ["A", "B", "C", "C-Opus", "D-Opus-low"])
 def test_the_environment_variable_selects_the_variant(monkeypatch, variant):
     from config import features
 
@@ -303,13 +315,13 @@ def test_a_run_takes_the_targeted_path_or_the_full_redraft_never_both_and_never_
 
 
 @pytest.mark.parametrize("quality", ["draft", "standard", "polished"])
-def test_run_pipeline_defaults_to_c_opus_at_every_quality(stubbed_pipelines, fake_db, quality):
+def test_run_pipeline_defaults_to_d_opus_low_at_every_quality(stubbed_pipelines, fake_db, quality):
     result = _run_pipeline(quality=quality)
 
     [trace] = fake_db.tables["generation_traces"]
-    assert trace["node_outputs"]["variant"] == "C-Opus"
+    assert trace["node_outputs"]["variant"] == "D-Opus-low"
     assert trace["node_outputs"]["models"]["draft"] == "claude-opus-5-5"
-    assert stubbed_pipelines == SINGLE_WRITER_NODE_ORDER          # one draft; no review, critic, scorer or rewrite
+    assert stubbed_pipelines == ONE_CALL_NODE_ORDER               # one call; no structure call, review, critic, scorer or rewrite
     assert result["scored"] is False and result["review"] is None
 
 
@@ -345,4 +357,4 @@ def test_a_generate_request_cannot_choose_the_variant(stubbed_pipelines, fake_db
     )
 
     assert resp.status_code == 200
-    assert _recorded_variant(fake_db) == "C-Opus"       # the configured default, not the "B" in the request
+    assert _recorded_variant(fake_db) == "D-Opus-low"   # the configured default, not the "B" in the request

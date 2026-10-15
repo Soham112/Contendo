@@ -156,6 +156,16 @@ python review_regression.py     # the review development set on REVIEW_MODEL; no
 - `PIPELINE_VARIANT` may be set in `evals/.env` as the default for `run.py`; an unknown value stops every script.
 - Costs everywhere come from `backend/llm/pricing.py`.
 
+### Phase 1: the latency experiment
+
+`python ablate.py --name phase1 --spend-cap 3.5` runs the plan in `eval_config.PHASE1_PLAN`: C-Opus (today)
+against D-Opus (structure folded into the Opus call) and D-Opus-low (the same at effort low; Opus 5.5 cannot turn
+thinking off) on the full ablation's 10 blind-read goldens, once each, with the same two judges and no review
+regression set. The runs are interleaved: golden by golden, the three arms in a seeded random order per golden
+(`run.run_interleaved`), and the report checks per golden that every arm drafted from the same inputs. Then `python blind.py make phase1`, rank the three posts per golden in `read.md`,
+`python blind.py score phase1` and `python report.py --variants <the three run ids> --name phase1`.
+`ablation.md` opens with the rules fixed before the run; any other ablation name keeps the full ablation's plan.
+
 ## Known retrieval gaps
 
 - **pm-04** ("How to say no to sales without becoming the villain"): the knowledge base

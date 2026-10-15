@@ -235,7 +235,7 @@ def test_every_call_of_the_default_pipeline_and_of_refine_is_logged_with_its_exa
                 json={"selected_text": SELECTION, "instruction": "tighten", "full_post": POST, "trace_id": trace_id})
 
     assert [(e["event_type"], e["model"]) for e in logged] == [
-        ("archetype", "claude-haiku-4-5-20251001"), ("generate", OPUS_5_5),
+        ("generate", OPUS_5_5),                             # the default (D-Opus-low): no structure call
         ("refine_selection", OPUS_5_5), ("refine_selection_retry", OPUS_5_5)]
     assert {e["user_id"] for e in logged} == {KB_USER}
     for event in logged:

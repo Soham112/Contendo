@@ -13,6 +13,9 @@ the topic. Everything outside the tags is not part of the post: it is dropped
 and reported as a format failure, so a preamble or a separator line the model
 adds can never reach the author.
 
+A variant D draft starts with the structure the drafter chose,
+<structure>key</structure>, before the <event> part (read_structure_tag).
+
 A targeted fix (variant B) is a list of replacements for numbered sentences:
 
     <fixes>
@@ -32,6 +35,7 @@ from utils.citations import SOURCE_ID_PATTERN
 EVENT_NONE = "none"
 _POST_OPEN, _POST_CLOSE = "<post>", "</post>"
 _EVENT = re.compile(r"<event>(.*?)</event>", re.DOTALL)
+_STRUCTURE = re.compile(r"<structure>(.*?)</structure>", re.DOTALL)
 # Straight or curly double quotes around the copied sentence: a deliberate
 # tolerance. The sentence itself may contain quotation marks.
 _EVENT_CITED = re.compile(rf"(?P<source>{SOURCE_ID_PATTERN})[ \t]*\|[ \t]*[\"“](?P<quote>.*\S.*)[\"”]")
@@ -84,6 +88,15 @@ def _event(parts: list[str], story: bool) -> tuple[str, str | None, str | None, 
     if not cited:
         return "malformed", None, None, line
     return "cited", cited.group("source"), cited.group("quote").strip(), line
+
+
+def read_structure_tag(text: str) -> tuple[str | None, str, int]:
+    """(the key in the first <structure> part, lowercased and stripped, or None
+    when there is none; the text with every <structure> part removed; how many
+    parts there were). Whether the key is an allowed type is the caller's check."""
+    found = _STRUCTURE.findall(text)
+    key = found[0].strip().lower() if found else None
+    return key, _STRUCTURE.sub("", text), len(found)
 
 
 def parse_draft_output(text: str, *, story: bool) -> DraftOutput:

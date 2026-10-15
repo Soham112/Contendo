@@ -19,6 +19,7 @@ call fail ("the model did not call the tool").
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from typing import Callable
 
 from anthropic.types import Message, TextBlock, ToolUseBlock, Usage
@@ -57,6 +58,10 @@ class FakeClaude:
             f"Queue a response with claude.queue(...). Prompt starts: {preview!r}"
         )
 
+    def stream(self, **kwargs) -> "FakeStream":
+        """messages.stream(): the same answer as create(), as text deltas."""
+        return FakeStream(self.create(**kwargs))
+
     def create(self, **kwargs) -> Message:
         self.calls.append(kwargs)
         text = self._next_text(kwargs)
@@ -83,3 +88,53 @@ class FakeClaude:
             stop_sequence=None,
             usage=Usage(input_tokens=10, output_tokens=10),
         )
+
+
+class FakeStream:
+    """A messages.stream() context: one text delta per text block, then the final message."""
+
+    def __init__(self, message: Message):
+        self._message = message
+
+    def __enter__(self) -> "FakeStream":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        return None
+
+    def __iter__(self):
+        for block in self._message.content:
+            if block.type == "text":
+                yield SimpleNamespace(type="content_block_delta", delta=SimpleNamespace(type="text_delta", text=block.text))
+
+    def get_final_message(self) -> Message:
+        return self._message
+
+
+def sse_body(message: Message) -> str:
+    """The server-sent events the Messages API streams for `message`: what the
+    real SDK's messages.stream() reads back into the same Message."""
+    def event(kind: str, data: dict) -> str:
+        return f"event: {kind}\ndata: {json.dumps({'type': kind, **data})}\n\n"
+
+    dumped = message.model_dump(mode="json")
+    start = {**dumped, "content": [], "stop_reason": None, "stop_sequence": None, "stop_details": None}
+    events = [event("message_start", {"message": start})]
+    for index, block in enumerate(dumped["content"]):
+        if block["type"] == "text":
+            opening, deltas = {**block, "text": ""}, [{"type": "text_delta", "text": block["text"]}]
+        elif block["type"] == "thinking":
+            opening = {**block, "thinking": "", "signature": ""}
+            deltas = [{"type": "thinking_delta", "thinking": block["thinking"]},
+                      {"type": "signature_delta", "signature": block["signature"]}]
+        else:
+            opening, deltas = block, []
+        events.append(event("content_block_start", {"index": index, "content_block": opening}))
+        events += [event("content_block_delta", {"index": index, "delta": delta}) for delta in deltas]
+        events.append(event("content_block_stop", {"index": index}))
+    events.append(event("message_delta", {
+        "delta": {"stop_reason": dumped["stop_reason"], "stop_sequence": dumped["stop_sequence"],
+                  "stop_details": dumped.get("stop_details")},
+        "usage": dumped["usage"]}))
+    events.append(event("message_stop", {}))
+    return "".join(events)

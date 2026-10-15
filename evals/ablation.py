@@ -9,6 +9,7 @@ from collections import Counter
 from statistics import mean
 from typing import Any, Callable, Iterable
 
+import ablation_detail
 import eval_config as config
 from reporting import _fmt, _latest, _stats, percentile
 
@@ -102,6 +103,12 @@ def post_record(outputs: dict[str, Any], calls: list[dict[str, Any]],
                                   if issue["origin"] == "review")),
         "unreviewed": len((review or {}).get("unreviewed", [])),
         "multi_sentence_spans": outputs.get("multi_sentence_spans"),
+        "checks": (outputs.get("checks_final") or {}).get("counts"),
+        "archetype": (outputs.get("archetype_decision") or {}).get("archetype"),
+        # The structure first chosen (C: the small model; D: the drafter), and why it was not kept, if it was not.
+        "archetype_chosen": (outputs.get("archetype_decision") or {}).get("chosen"),
+        "archetype_reason": (outputs.get("archetype_decision") or {}).get("reason"),
+        "chosen_by": (outputs.get("archetype_decision") or {}).get("chosen_by", "small_model"),
         "draft": None,
     }
     drafts = [entry for entry in outputs.get("draft_history", []) if entry["node"] == "draft"]
@@ -112,7 +119,8 @@ def post_record(outputs: dict[str, Any], calls: list[dict[str, Any]],
         record["draft"] = {"model": call["model"], "output_tokens": call["output_tokens"],
                            "thinking_tokens": call.get("thinking_tokens", 0), "marked_words": words,
                            "tokens_per_word": round(written / words, 3) if words else None,
-                           "stop_reason": call.get("stop_reason")}
+                           "stop_reason": call.get("stop_reason"),
+                           "first_text_ms": call.get("first_text_ms")}
     return record
 
 
@@ -174,7 +182,11 @@ def _decision_rows(variants: list[dict[str, Any]], audit: dict[str, Any] | None)
     return [
         [f"unsupported_specifics, Sonnet judge ({audit_label(audit)})", *(_judged(v, "unsupported_specifics") for v in variants)],
         ["answer relevancy (topic adherence)", *(_judged(v, "answer_relevancy") for v in variants)],
-        ["wall time p50 / p90, s", *(f"{_num(percentile(s, 50), 1)} / {_num(percentile(s, 90), 1)}" for s in seconds)],
+        ["wall time p50 / p90 / p95, s",
+         *(f"{_num(percentile(s, 50), 1)} / {_num(percentile(s, 90), 1)} / {_num(percentile(s, 95), 1)}" for s in seconds)],
+        ["deterministic check issues, final posts", *(ablation_detail.check_issues(_posts(v)) for v in variants)],
+        ["structures used", *(_counts(Counter(row["record"].get("archetype") for row in _posts(v)
+                                              if row["record"].get("archetype"))) for v in variants)],
         ["cost per post", *per_post("cost_usd", 4, "$")],
         ["Claude calls per post", *per_post("calls", 1)],
         ["input tokens per post", *per_post("input_tokens")],
@@ -310,14 +322,14 @@ def audit_failed(audit: dict[str, Any] | None) -> bool:
     return audit is not None and audit["marked"] == audit["of"] and audit["correct"] < config.AUDIT_MIN_CORRECT
 
 
-def decision_rules_lines(audit: dict[str, Any] | None) -> list[str]:
+def decision_rules_lines(audit: dict[str, Any] | None, plan: config.AblationPlan = config.FULL_PLAN) -> list[str]:
     """The pre-registered rules as ablation.md opens with them (eval_config holds
-    the one copy), and, once the judge audit has failed, what that changes."""
-    lines = [f"## Decision rules (fixed {config.DECISION_RULES_DATE}, before the full run)", "",
-             *(f"{number}. {rule}" for number, rule in enumerate(config.DECISION_RULES, 1)), "",
-             config.DECISION_TIEBREAK, "", config.DECISION_NOTE, "",
-             config.DECISION_FEWER_RANKED, "", config.DECISION_AUDIT_BELOW, ""]
-    if audit_failed(audit):
+    the one copy, per ablation), and, once the judge audit has failed, what that
+    changes for the full ablation."""
+    lines = [f"## Decision rules (fixed {plan.rules_date}, before the run)", "",
+             *(f"{number}. {rule}" for number, rule in enumerate(plan.rules, 1)), "",
+             *(line for note in plan.notes for line in (note, ""))]
+    if plan is config.FULL_PLAN and audit_failed(audit):
         lines += [f"**The judge audit came back at {audit['correct']} of {audit['of']}, below {config.AUDIT_MIN_CORRECT}: "
                   "rule 1's judge criterion is dropped. Rules 1 and 2 are decided by the blind read alone, and the "
                   "tiebreak does not apply.**", ""]
@@ -343,7 +355,7 @@ def build_ablation(name: str, variants: list[dict[str, Any]], audit: dict[str, A
     spend the ablation's ledger, regression the review regression set's rows."""
     names = [v["meta"]["variant"] for v in variants]
     lines = [f"# Ablation: {name}", "",
-             *decision_rules_lines(audit),
+             *decision_rules_lines(audit, config.plan_for(name)),
              "Judges are the same for every variant: `unsupported_specifics` from "
              f"{config.ABLATION_JUDGES['unsupported_specifics']}, answer relevancy from "
              f"{config.ABLATION_JUDGES['answer_relevancy']} (`eval_config.py`). Per-post figures are means over "
@@ -383,6 +395,7 @@ def build_ablation(name: str, variants: list[dict[str, Any]], audit: dict[str, A
                   f"{passed} of {len(regression)} cases passed on `{regression[0]['model']}` (failed: {failed}). "
                   "The development set the review prompt was written against: it shows regressions and is "
                   "**not part of the decision**.", ""]
+    lines += ablation_detail.detail_lines(variants)
     lines += ["## Blind read", ""]
     if blind is None:
         lines += ["Not scored yet (`python blind.py make`, then `score`). Orphaned sentences and flatness are judged there.", ""]

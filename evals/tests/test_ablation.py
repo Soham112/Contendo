@@ -13,7 +13,9 @@ import eval_config as config
 import guard
 from guard import EnvGuardError
 
-VARIANTS = ("A", "B", "C", "B-Opus", "C-Opus")
+VARIANTS = ("A", "B", "C", "B-Opus", "C-Opus", "D-Opus", "D-Opus-low")
+# The blind read fixtures: one variant per label (eval_config.BLIND_LABELS).
+BLIND_VARIANTS = ("A", "B", "C", "B-Opus", "C-Opus")
 
 
 # --- The env guard and PIPELINE_VARIANT ----------------------------------------------------
@@ -133,7 +135,7 @@ def test_the_report_gives_route_rates_outcomes_removed_content_and_the_labels():
     assert "clean 1, fixed 2, issues_remain 1, not_reviewed 0" in report
     assert "redraft_truncated 1" in report
     assert "feeling_or_reaction 1, motive 2" in report
-    assert "| wall time p50 / p90, s | 2.0 / 4.0 |" in report
+    assert "| wall time p50 / p90 / p95, s | 2.0 / 4.0 / 4.0 |" in report
     assert "2 on 1 post(s) | not_in_sources 2 | wrong_citation 5 |" in report
     assert "same reviewer as B, so biased in B's favour" in report
     assert "low precision, not decisive" in report
@@ -194,7 +196,7 @@ def test_the_full_ablation_leaves_b_out_and_the_report_opens_with_the_decision_r
 
     report = ablation.build_ablation("full", [_variant("A", [_row("g1", _reviewed(None, "clean"))])])
 
-    rules = report.index("## Decision rules (fixed 2026-10-10, before the full run)")
+    rules = report.index("## Decision rules (fixed 2026-10-10, before the run)")
     assert report.index("# Ablation: full") < rules < report.index("Judges are the same") < report.index("## Runs")
     assert len(config.DECISION_RULES) == 3
     for number, rule in enumerate(config.DECISION_RULES, 1):
@@ -373,7 +375,7 @@ def _blind_variants(scores=None):
              "posts": {gid: {"golden_id": gid, "post": f"## A heading in the post\n\nnote: by {name} for {gid}",
                              "sources": [{"id": "S1", "title": "T", "text": "source text"}], "profile_text": "profile"}
                        for gid in GOLDENS},
-             "scores": (scores or {}).get(name, {})} for name in VARIANTS]
+             "scores": (scores or {}).get(name, {})} for name in BLIND_VARIANTS]
 
 
 def test_make_is_seeded_and_hides_the_variant(monkeypatch):
@@ -383,9 +385,9 @@ def test_make_is_seeded_and_hides_the_variant(monkeypatch):
 
     assert (text, key) == (again, same_key) and key != other_key
     assert len(key["goldens"]) == config.BLIND_GOLDENS
-    assert key["labels"] == list(config.BLIND_LABELS) and len(config.BLIND_LABELS) == len(VARIANTS)
+    assert key["labels"] == list(config.BLIND_LABELS) and len(config.BLIND_LABELS) == len(BLIND_VARIANTS)
     for labels in key["goldens"].values():
-        assert tuple(labels) == config.BLIND_LABELS and sorted(labels.values()) == sorted(VARIANTS)
+        assert tuple(labels) == config.BLIND_LABELS and sorted(labels.values()) == sorted(BLIND_VARIANTS)
     assert len({tuple(labels.values()) for labels in key["goldens"].values()}) > 1     # shuffled per golden
     assert not any(f"### {name}" in text for name in VARIANTS)
 
@@ -494,3 +496,56 @@ def test_flagged_drafts_remain_completed_evals_without_being_called_clean():
     assert record["outcome"] == "issues_remain"
     assert record["grounding"] == grounding
     assert ablation.generation_run_status({"status": "draft_truncated", "post": "Half a"}) == "draft_truncated"
+
+
+# ── Phase 1 (latency experiment) plan ─────────────────────────────────────────
+
+def _phase1_record(checks=None, archetype="general"):
+    outputs = {"final_post": "One two three.", "length_target": TARGET,
+               "archetype_decision": {"archetype": archetype}}
+    if checks is not None:
+        outputs["checks_final"] = {"issues": [], "counts": checks}
+    return ablation.post_record(outputs, [], {"count_words": lambda t: len(t.split()),
+                                              "prose_word_count": lambda t: len(t.split())})
+
+
+def test_phase1_has_its_own_arms_goldens_and_rules_and_other_names_keep_the_full_plan():
+    plan = config.plan_for("phase1")
+    assert plan.variants == ("C-Opus", "D-Opus", "D-Opus-low") and set(plan.variants) <= set(VARIANTS)
+    full_read = json.loads((config.ABLATIONS_DIR / "full" / "key.json").read_text())
+    assert sorted(plan.goldens) == sorted(full_read["goldens"])      # the full ablation's blind read
+    assert plan.run_regression is False and plan.interleave and len(plan.rules) == 3
+    assert [(first, second) for first, second, _ in plan.head_to_head] == [
+        ("C-Opus", "D-Opus"), ("C-Opus", "D-Opus-low"), ("D-Opus", "D-Opus-low")]
+    assert config.plan_for("full") is config.plan_for("smoke") is config.FULL_PLAN
+
+
+def test_the_phase1_report_prints_its_rules_check_issues_and_structures():
+    rows_c = [_row("g1", _phase1_record({"unsupported_specific": 1}, "teach_me_something"), seconds=20.0),
+              _row("g2", _phase1_record({}, "general"), seconds=30.0)]
+    rows_d = [_row("g1", _phase1_record({}, "contrarian_take"), seconds=8.0),
+              _row("g2", _phase1_record(None), seconds=9.0)]       # a record from before checks were kept
+    report = ablation.build_ablation("phase1", [_variant("C-Opus", rows_c), _variant("D-Opus", rows_d)])
+
+    assert "## Decision rules (fixed 2026-10-14, before the run)" in report
+    assert config.PHASE1_PLAN.rules[1] in report and config.DECISION_TIEBREAK not in report
+    assert "| deterministic check issues, final posts | 1 (unsupported_specific 1) | 0 |" in report
+    assert "| structures used | general 1, teach_me_something 1 | contrarian_take 1, general 1 |" in report
+    assert "| wall time p50 / p90 / p95, s | 20.0 / 30.0 / 30.0 | 8.0 / 9.0 / 9.0 |" in report
+
+
+def test_phase1_scoring_reads_its_own_pairs():
+    variants = [v for v in _blind_variants() if v["variant"] in ("A", "C", "C-Opus")]
+    for v in variants:                     # stand-ins named as the phase1 arms
+        v["variant"] = {"A": "D-Opus", "C": "D-Opus-low"}.get(v["variant"], v["variant"])
+    text, key = blind.make_read(variants, GOLDENS, seed=3)
+    for golden_id, labels in key["goldens"].items():
+        by_variant = {variant: label for label, variant in labels.items()}
+        ranking = " > ".join(by_variant[v] for v in ("C-Opus", "D-Opus", "D-Opus-low"))
+        text = text.replace(f"ranking[{golden_id}]: ", f"ranking[{golden_id}]: {ranking}")
+
+    result = blind.score_read(text, key, config.PHASE1_PLAN.head_to_head)
+
+    first = result["head_to_head"][0]
+    assert (first["first"], first["second"], first["first_share"]) == ("C-Opus", "D-Opus", 1.0)
+    assert first["checks"][0]["met"] is True and result["head_to_head"][2]["checks"] == []

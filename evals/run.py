@@ -28,6 +28,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import ablation
+import ablation_detail
 import eval_config as config
 import spend
 from guard import EnvGuardError
@@ -86,6 +87,122 @@ def trace_fields(trace: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def load_targets(only: list[str] | None) -> tuple[dict[str, str], list[dict[str, Any]]]:
+    """(persona -> user id, the goldens to run), with the auth users and the
+    Anthropic key verified. Raises EnvGuardError or FixtureError."""
+    users = load_users()
+    personas = {s: load_persona(s) for s in persona_slugs()}
+    goldens = load_goldens(personas=personas)
+    if only:
+        unknown = sorted(set(only) - {g["id"] for g in goldens})
+        if unknown:
+            raise FixtureError(f"unknown golden id(s): {unknown}")
+        goldens = [g for g in goldens if g["id"] in only]
+    env.verify_auth_users({g["persona"]: users[g["persona"]] for g in goldens})
+    env.verify_anthropic_key()
+    return users, goldens
+
+
+def run_settings(variant_arg: str | None, model_items: list[str]) -> tuple[str, dict[str, str], dict[str, Any]]:
+    """(variant, role-model overrides, the models the run uses). Raises
+    FixtureError, PipelineConfigError or ModelConfigError."""
+    from config import features
+    from llm import client as llm_client
+    from llm import models
+
+    variant = features.pipeline_variant() if variant_arg is None else features.validate_pipeline_variant(variant_arg)
+    overrides = parse_role_models(model_items)
+    if features.VARIANT_GRAPH[variant] == "A":
+        if overrides:
+            raise FixtureError("--model applies to the single-writer variants; pipeline A uses fixed models")
+        return variant, overrides, {"pipeline_a": [llm_client.SONNET, llm_client.HAIKU]}
+    return variant, overrides, models.role_models(variant, overrides)
+
+
+def open_run(variant: str, overrides: dict[str, str], run_models: dict[str, Any], model_items: list[str],
+             quality: str, ablation_name: str | None, goldens: list[dict[str, Any]],
+             interleaved: dict[str, Any] | None = None) -> tuple[str, Any]:
+    """Create results/<run_id>/ with its meta.json; (run_id, folder)."""
+    from llm import models
+
+    tag = variant + "".join(f"-{role}-{constant}" for role, _, constant in (item.partition("=") for item in model_items))
+    run_id = f"{datetime.now(timezone.utc):%Y%m%d-%H%M%S}-{quality}-{tag}"
+    out_dir = config.RESULTS_DIR / run_id
+    out_dir.mkdir(parents=True)
+    meta = {
+        "run_id": run_id,
+        "quality": quality,
+        "variant": variant,
+        "ablation": ablation_name,
+        "models": run_models,
+        "model_overrides": overrides,
+        # output_config.effort of the drafter calls; None means none is sent (the API default applies).
+        "draft_effort": models.draft_effort(run_models["draft"], variant) if "draft" in run_models else None,
+        "project_ref": env.CONFIG.project_ref,
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "git": git_state(),
+        "golden_ids": [g["id"] for g in goldens],
+        # Runs made golden by golden with other arms (run_interleaved): the seed and the arms.
+        "interleaved": interleaved,
+    }
+    (out_dir / "meta.json").write_text(json.dumps(meta, indent=2) + "\n")
+    return run_id, out_dir
+
+
+def run_golden(g: dict[str, Any], user_id: str, client: Any, variant: str, overrides: dict[str, str],
+               quality: str) -> tuple[dict[str, Any], list[dict]]:
+    """One golden through run_pipeline: (its runs.jsonl row, every Claude call it made)."""
+    from llm.client import trace_calls
+    from pipeline.graph import run_pipeline
+
+    row: dict[str, Any] = {"golden_id": g["id"], "persona": g["persona"], "difficulty": g["difficulty"],
+                           "variant": variant}
+    start = time.perf_counter()
+    spent_calls: list[dict] = []
+    try:
+        with trace_calls() as spent_calls:      # every call of this golden, the fact check included
+            result = run_pipeline(
+                topic=g["topic"], format=g["format"], tone=g["tone"], length=g["length"],
+                context=g["context"], quality=quality, user_id=user_id,
+                variant=variant, models=overrides or None,
+            )
+            row["seconds"] = round(time.perf_counter() - start, 1)
+            row["trace_id"] = result.get("trace_id")
+            if result.get("status") == "low_coverage":
+                row["status"] = "gated"
+                row["closest_sources"] = [s["title"] for s in result.get("closest_sources", [])]
+                print(f"  {g['id']} {variant}: GATED (low coverage) in {row['seconds']}s")
+            elif not row["trace_id"]:
+                row["status"] = "no_trace"
+                print(f"  {g['id']} {variant}: SKIPPED, trace was not saved (trace_id None)")
+            else:
+                trace = (client.table("generation_traces")
+                         .select("llm_calls,node_outputs,retrieved,profile_snapshot,retrieval_confidence")
+                         .eq("id", row["trace_id"]).eq("user_id", user_id).execute().data or [{}])[0]
+                # "ok", or a single-writer run that returned no post: draft_truncated, draft_refused.
+                row["generation_status"] = result.get("status", "ok")
+                row["status"] = ablation.generation_run_status(result)
+                row.update(trace_fields(trace))
+                row["inputs"] = ablation_detail.input_fingerprints(trace)
+                # Historical A metadata; new final grounding is in record.grounding.
+                fc = (trace.get("node_outputs") or {}).get("fact_check") or {}
+                row["fact_check"] = {
+                    "mode": fc.get("mode"), "outcome": fc.get("outcome"),
+                    "flagged": [{"type": f.get("type"), "why": f.get("why"), "sentence": f.get("sentence")}
+                                for f in fc.get("flagged") or []],
+                }
+                row["score"] = result.get("score")
+                row["retrieval_confidence"] = result.get("retrieval_confidence")
+                print(f"  {g['id']} {variant}: {row['generation_status']} in {row['seconds']}s, "
+                      f"{row['pipeline']['calls']} Claude calls, ${row['pipeline']['cost_usd']:.4f}")
+    except Exception as exc:  # one failing golden must not stop the run
+        row["seconds"] = round(time.perf_counter() - start, 1)
+        row["status"] = "error"
+        row["error"] = f"{type(exc).__name__}: {exc}"
+        print(f"  {g['id']} {variant}: ERROR {row['error']}")
+    return row, spent_calls
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--quality", choices=["standard", "polished"], required=True)
@@ -99,30 +216,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     from config import features
-    from llm import client as llm_client
     from llm import models
 
     try:
-        users = load_users()
-        personas = {s: load_persona(s) for s in persona_slugs()}
-        goldens = load_goldens(personas=personas)
-        if args.only:
-            unknown = sorted(set(args.only) - {g["id"] for g in goldens})
-            if unknown:
-                raise FixtureError(f"unknown golden id(s): {unknown}")
-            goldens = [g for g in goldens if g["id"] in args.only]
-        targets = {g["persona"]: users[g["persona"]] for g in goldens}
-        env.verify_auth_users(targets)
-        env.verify_anthropic_key()
+        users, goldens = load_targets(args.only)
         client = env.backend_client()
-        variant = features.pipeline_variant() if args.variant is None else features.validate_pipeline_variant(args.variant)
-        overrides = parse_role_models(args.model)
-        if features.VARIANT_GRAPH[variant] == "A":
-            if overrides:
-                raise FixtureError("--model applies to the single-writer variants; pipeline A uses fixed models")
-            run_models = {"pipeline_a": [llm_client.SONNET, llm_client.HAIKU]}
-        else:
-            run_models = models.role_models(variant, overrides)
+        variant, overrides, run_models = run_settings(args.variant, args.model)
     except (EnvGuardError, FixtureError, features.PipelineConfigError, models.ModelConfigError) as exc:
         print(f"refusing to run: {exc}", file=sys.stderr)
         return 2
@@ -135,89 +234,66 @@ def main(argv: list[str] | None = None) -> int:
             print("Aborted.")
             return 1
 
-    from llm.client import trace_calls
     from llm.pricing import call_cost
-    from pipeline.graph import run_pipeline
 
     cap = spend.open_cap(args.ablation, args.spend_cap, call_cost)
-
-    tag = variant + "".join(f"-{role}-{constant}" for role, _, constant in (item.partition("=") for item in args.model))
-    run_id = f"{datetime.now(timezone.utc):%Y%m%d-%H%M%S}-{args.quality}-{tag}"
-    out_dir = config.RESULTS_DIR / run_id
-    out_dir.mkdir(parents=True)
-    meta = {
-        "run_id": run_id,
-        "quality": args.quality,
-        "variant": variant,
-        "ablation": args.ablation,
-        "models": run_models,
-        "model_overrides": overrides,
-        # output_config.effort of the drafter calls; None means none is sent (the API default applies).
-        "draft_effort": models.draft_effort(run_models["draft"]) if "draft" in run_models else None,
-        "project_ref": env.CONFIG.project_ref,
-        "started_at": datetime.now(timezone.utc).isoformat(),
-        "git": git_state(),
-        "golden_ids": [g["id"] for g in goldens],
-    }
-    (out_dir / "meta.json").write_text(json.dumps(meta, indent=2) + "\n")
+    run_id, out_dir = open_run(variant, overrides, run_models, args.model, args.quality, args.ablation, goldens)
     print(f"Run {run_id}: {len(goldens)} golden(s), variant {variant} -> {out_dir}")
 
     ok = 0
     with (out_dir / "runs.jsonl").open("a") as runs:
         for g in cap.guard(goldens, lambda g, done: f"run {run_id} (variant {variant}) before {g['id']}: "
                                                     f"{done} of {len(goldens)} goldens run"):
-            user_id = users[g["persona"]]
-            row: dict[str, Any] = {"golden_id": g["id"], "persona": g["persona"], "difficulty": g["difficulty"],
-                                   "variant": variant}
-            start = time.perf_counter()
-            spent_calls: list[dict] = []
-            try:
-                with trace_calls() as spent_calls:      # every call of this golden, the fact check included
-                    result = run_pipeline(
-                        topic=g["topic"], format=g["format"], tone=g["tone"], length=g["length"],
-                        context=g["context"], quality=args.quality, user_id=user_id,
-                        variant=variant, models=overrides or None,
-                    )
-                    row["seconds"] = round(time.perf_counter() - start, 1)
-                    row["trace_id"] = result.get("trace_id")
-                    if result.get("status") == "low_coverage":
-                        row["status"] = "gated"
-                        row["closest_sources"] = [s["title"] for s in result.get("closest_sources", [])]
-                        print(f"  {g['id']}: GATED (low coverage) in {row['seconds']}s")
-                    elif not row["trace_id"]:
-                        row["status"] = "no_trace"
-                        print(f"  {g['id']}: SKIPPED, trace was not saved (trace_id None)")
-                    else:
-                        trace = (client.table("generation_traces")
-                                 .select("llm_calls,node_outputs,retrieved,profile_snapshot")
-                                 .eq("id", row["trace_id"]).eq("user_id", user_id).execute().data or [{}])[0]
-                        # "ok", or a single-writer run that returned no post: draft_truncated, draft_refused.
-                        row["generation_status"] = result.get("status", "ok")
-                        row["status"] = ablation.generation_run_status(result)
-                        row.update(trace_fields(trace))
-                        # Historical A metadata; new final grounding is in record.grounding.
-                        fc = (trace.get("node_outputs") or {}).get("fact_check") or {}
-                        row["fact_check"] = {
-                            "mode": fc.get("mode"), "outcome": fc.get("outcome"),
-                            "flagged": [{"type": f.get("type"), "why": f.get("why"), "sentence": f.get("sentence")}
-                                        for f in fc.get("flagged") or []],
-                        }
-                        row["score"] = result.get("score")
-                        row["retrieval_confidence"] = result.get("retrieval_confidence")
-                        ok += row["status"] == "ok"
-                        print(f"  {g['id']}: {row['generation_status']} in {row['seconds']}s, {row['pipeline']['calls']} Claude calls, "
-                              f"${row['pipeline']['cost_usd']:.4f}")
-            except Exception as exc:  # one failing golden must not stop the run
-                row["seconds"] = round(time.perf_counter() - start, 1)
-                row["status"] = "error"
-                row["error"] = f"{type(exc).__name__}: {exc}"
-                print(f"  {g['id']}: ERROR {row['error']}")
+            row, spent_calls = run_golden(g, users[g["persona"]], client, variant, overrides, args.quality)
+            ok += row["status"] == "ok"
             cap.record(spent_calls, f"run {variant} {g['id']}")
             runs.write(json.dumps(row) + "\n")
             runs.flush()
 
     print(f"Done: {ok}/{len(goldens)} ok. Next: python judge.py {run_id}")
     return spend.STOPPED_EXIT if cap.stopped_at else 0
+
+
+def run_interleaved(variants: list[str], only: list[str], quality: str, ablation_name: str, spend_cap: float,
+                    seed: int) -> tuple[int, dict[str, str]]:
+    """Run every arm golden by golden (golden 1: all arms, then golden 2, ...),
+    the arms in a seeded random order per golden (arm_orders), so the API's
+    speed at a given time of day falls on every arm alike. One run folder per
+    arm, as run.py makes. (exit code, variant -> run id)."""
+    from config import features
+    from llm import models
+    from llm.pricing import call_cost
+
+    try:
+        users, goldens = load_targets(only)
+        client = env.backend_client()
+        settings = {variant: run_settings(variant, []) for variant in variants}
+    except (EnvGuardError, FixtureError, features.PipelineConfigError, models.ModelConfigError) as exc:
+        print(f"refusing to run: {exc}", file=sys.stderr)
+        return 2, {}
+
+    cap = spend.open_cap(ablation_name, spend_cap, call_cost)
+    orders = ablation_detail.arm_orders([g["id"] for g in goldens], variants, seed)
+    plan = {"seed": seed, "arms": variants, "orders": orders}
+    runs, files = {}, {}
+    for variant, (_, overrides, run_models) in settings.items():
+        runs[variant], out_dir = open_run(variant, overrides, run_models, [], quality, ablation_name, goldens, plan)
+        files[variant] = (out_dir / "runs.jsonl").open("a")
+    print(f"Interleaved: {len(goldens)} goldens x {len(variants)} arms -> {', '.join(runs.values())}")
+
+    pairs = ablation_detail.interleaved_pairs(goldens, orders)
+    try:
+        for g, variant in cap.guard(pairs, lambda pair, done: f"interleaved run before {pair[0]['id']} "
+                                                             f"{pair[1]}: {done} of {len(pairs)} runs made"):
+            row, spent_calls = run_golden(g, users[g["persona"]], client, variant, settings[variant][1], quality)
+            row["arm_position"] = orders[g["id"]].index(variant) + 1
+            cap.record(spent_calls, f"run {variant} {g['id']}")
+            files[variant].write(json.dumps(row) + "\n")
+            files[variant].flush()
+    finally:
+        for handle in files.values():
+            handle.close()
+    return (spend.STOPPED_EXIT if cap.stopped_at else 0), runs
 
 
 if __name__ == "__main__":
