@@ -9,10 +9,15 @@ A subscription that is trialing or active is pro. One that is past_due is in
 Stripe's grace period (Stripe is retrying the payment): the user keeps their
 generation limit and their connected accounts, but publishing is paused until
 the payment succeeds. Any other status, or none, is free.
+
+Admins (ADMIN_USER_IDS, auth.supabase_jwt.is_admin) have no generation limit:
+generation_limit and generations_remaining are None. Their posts are still
+counted, and their plan and publishing still follow their subscription.
 """
 
 from dataclasses import asdict, dataclass
 
+from auth.supabase_jwt import is_admin
 from memory.billing_store import current_period, get_generation_count, get_subscription
 
 PLAN_FREE = "free"
@@ -34,9 +39,10 @@ ENDED_STATUSES = frozenset({"canceled", "unpaid", "incomplete_expired"})
 class Entitlements:
     plan: str
     subscription_status: str | None
-    generation_limit: int
+    # None: no limit (admins).
+    generation_limit: int | None
     generations_used: int
-    generations_remaining: int
+    generations_remaining: int | None
     can_generate: bool
     can_publish: bool
     # True in Stripe's grace period: a pro user whose payment failed.
@@ -57,7 +63,8 @@ def get_entitlements(user_id: str) -> Entitlements:
     status = subscription.get("status")
     paid, grace = status in _PAID, status in _GRACE
     pro = paid or grace
-    limit = PRO_GENERATIONS_PER_MONTH if pro else FREE_GENERATIONS_PER_MONTH
+    admin = is_admin(user_id)
+    limit = None if admin else PRO_GENERATIONS_PER_MONTH if pro else FREE_GENERATIONS_PER_MONTH
     period = current_period()
     used = get_generation_count(user_id, period)
     return Entitlements(
@@ -65,8 +72,8 @@ def get_entitlements(user_id: str) -> Entitlements:
         subscription_status=status,
         generation_limit=limit,
         generations_used=used,
-        generations_remaining=max(limit - used, 0),
-        can_generate=used < limit,
+        generations_remaining=None if limit is None else max(limit - used, 0),
+        can_generate=limit is None or used < limit,
         can_publish=paid,
         publishing_paused=grace,
         max_accounts_per_platform=PRO_MAX_ACCOUNTS_PER_PLATFORM if pro else 0,

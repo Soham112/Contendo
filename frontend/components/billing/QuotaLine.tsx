@@ -10,7 +10,7 @@ export default function QuotaLine({ entitlements }: { entitlements: Entitlements
   return (
     <p className={`text-[0.8125rem] ${out ? "text-error" : "text-secondary"}`}>
       {quotaLine(entitlements)}
-      {entitlements.plan === "free" && (
+      {entitlements.plan === "free" && entitlements.generation_limit !== null && (
         <>
           {" · "}
           <Link href="/settings/billing" className="text-tertiary underline underline-offset-4 hover:text-tertiary-dim">

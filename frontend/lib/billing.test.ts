@@ -37,4 +37,10 @@ describe("quotaLine", () => {
       "290 of 300 posts left this month"
     );
   });
+
+  it("says there is no limit for an admin", () => {
+    const admin = { ...FREE, generation_limit: null, generations_remaining: null, generations_used: 41 };
+    expect(quotaLine(admin)).toBe("No monthly limit · 41 posts this month");
+    expect(quotaLine({ ...admin, generations_used: 1 })).toBe("No monthly limit · 1 post this month");
+  });
 });

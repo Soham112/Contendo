@@ -263,7 +263,7 @@ Review-fix additions: `backend/agents/refine_cited_agent.py` owns cited refineme
 | `backend/publishing/worker.py` | The loop started in `main.py`'s lifespan: every 15 s claims due jobs and confirms quiet ones, in the threadpool |
 | `backend/memory/publish_store.py` | `connected_accounts` and `publish_jobs` tables, and the provider tenant reference on `accounts`. `claim_due_jobs` calls the `claim_publish_jobs` SQL function |
 | `backend/routers/publishing.py` | `/publishing/*` endpoints and the provider webhook. Handlers are sync functions, so FastAPI runs them in the threadpool |
-| `backend/billing/entitlements.py` | `get_entitlements(user_id)`: the one place a plan is read. Plan limits live here |
+| `backend/billing/entitlements.py` | `get_entitlements(user_id)`: the one place a plan is read. Plan limits live here Admins (`ADMIN_USER_IDS`) have no generation limit (2026-10-15): `generation_limit` and `generations_remaining` are `None`, `reserve_generation` gets no limit, and their posts are still counted; plan and publishing still follow the subscription. The quota line reads "No monthly limit · N posts this month". |
 | `backend/billing/gates.py` | Turns an entitlement refusal into a 402 with `{code, message, entitlements}` |
 | `backend/billing/stripe_gateway.py` | Every Stripe SDK call (customer, Checkout, portal, subscription and price fetch, signature check). Nothing else imports `stripe` |
 | `backend/billing/webhooks.py` | `handle_event`: idempotent, and always re-fetches the subscription from Stripe rather than trusting the event's payload |

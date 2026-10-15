@@ -5,9 +5,10 @@
 export interface Entitlements {
   plan: "free" | "pro";
   subscription_status: string | null;
-  generation_limit: number;
+  /** null: no monthly limit (admins). */
+  generation_limit: number | null;
   generations_used: number;
-  generations_remaining: number;
+  generations_remaining: number | null;
   can_generate: boolean;
   can_publish: boolean;
   /** A Pro user whose payment failed: publishing waits until it succeeds. */
@@ -86,7 +87,8 @@ export function formatPrice(price: Price, locale = "en-US"): string {
 
 /** "3 of 10 free posts left this month", for the quota line. */
 export function quotaLine(entitlements: Entitlements): string {
-  const { generations_remaining: left, generation_limit: limit, plan } = entitlements;
+  const { generations_remaining: left, generation_limit: limit, generations_used: used, plan } = entitlements;
+  if (limit === null) return `No monthly limit · ${used} ${used === 1 ? "post" : "posts"} this month`;
   const kind = plan === "free" ? "free posts" : "posts";
   return `${left} of ${limit} ${kind} left this month`;
 }

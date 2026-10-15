@@ -233,6 +233,25 @@ def test_a_pro_user_has_the_higher_limit(client, a_headers, pipeline, fake_db):
     assert "resets at the start of next month" in resp.json()["detail"]["message"]
 
 
+def test_an_admin_has_no_generation_limit_and_is_still_counted(client, auth_headers, pipeline, fake_db):
+    from memory.billing_store import current_period
+    from tests.conftest import TEST_ADMIN_USER_ID
+
+    headers = auth_headers(TEST_ADMIN_USER_ID)
+    fake_db.tables["generation_usage"] = [{"user_id": TEST_ADMIN_USER_ID, "period": current_period(), "count": 300}]
+    assert client.post("/generate", headers=headers, json=REQUEST).status_code == 200
+
+    body = client.get("/billing/entitlements", headers=headers).json()
+    assert body["generation_limit"] is None and body["generations_remaining"] is None and body["can_generate"]
+    assert body["generations_used"] == 301
+    assert body["plan"] == "free" and body["can_publish"] is False      # publishing still follows the subscription
+
+
+def test_a_non_admin_keeps_the_free_limit(client, a_headers, fake_db):
+    body = client.get("/billing/entitlements", headers=a_headers).json()
+    assert body["generation_limit"] == 10
+
+
 def test_reserve_never_goes_past_the_limit(fake_db):
     from memory import billing_store
 
