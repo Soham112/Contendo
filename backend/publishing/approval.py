@@ -7,9 +7,14 @@ from agents.grounding_agent import check_grounding
 from llm.client import StructuredOutputError
 from memory import approval_store
 from memory.trace_store import get_trace_sources
-from pipeline.grounding import verification_flag
 
 logger = logging.getLogger(__name__)
+
+
+def verification_flag() -> dict:
+    """The flag for text that could not be checked against its sources."""
+    return {"id": "verification_unavailable", "sentence": "", "text": "",
+            "reason": "We couldn't verify this text against its sources. Review its facts before approving."}
 
 
 def review_text(user_id: str, content: str, media: list, post_id: int | None, trace_id: str | None) -> dict:

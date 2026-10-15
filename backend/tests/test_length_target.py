@@ -17,12 +17,16 @@ def test_word_ranges_live_in_one_place():
     assert not (BACKEND / "utils" / "post_cleanup.py").exists()
 
 
+LINKEDIN = {"min_words": 100, "max_words": 200, "write_max_words": 150, "may_expand": True, "basis": "linkedin"}
+FIRST_POST = {"min_words": 70, "max_words": 115, "write_max_words": 100, "may_expand": False, "basis": "first_post"}
+THIN = {"min_words": 0, "max_words": 200, "write_max_words": 150, "may_expand": False, "basis": "thin_sources"}
+
+
 @pytest.mark.parametrize("kwargs,expected", [
-    ({}, {"min_words": 250, "max_words": 350, "may_expand": True, "basis": "length_setting"}),
-    ({"first_post": True}, {"min_words": 70, "max_words": 100, "may_expand": False, "basis": "first_post"}),
-    ({"thin_sources": True}, {"min_words": 0, "max_words": 350, "may_expand": False, "basis": "thin_sources"}),
-    ({"first_post": True, "thin_sources": True},
-     {"min_words": 70, "max_words": 100, "may_expand": False, "basis": "first_post"}),
+    ({}, LINKEDIN),
+    ({"first_post": True}, FIRST_POST),
+    ({"thin_sources": True}, THIN),
+    ({"first_post": True, "thin_sources": True}, FIRST_POST),
 ])
 def test_resolve_length_target(kwargs, expected):
     from utils.formatters import resolve_length_target
@@ -30,11 +34,36 @@ def test_resolve_length_target(kwargs, expected):
     assert resolve_length_target("linkedin post", "standard", **kwargs) == expected
 
 
+@pytest.mark.parametrize("length", ["", "concise", "standard", "long-form", "anything"])
+def test_a_linkedin_post_ignores_the_requested_length(length):
+    from utils.formatters import resolve_length_target
+
+    assert resolve_length_target("linkedin post", length) == LINKEDIN
+    assert resolve_length_target("", length) == LINKEDIN     # no format: a LinkedIn post
+
+
+def test_a_post_stays_under_200_words_and_the_drafter_is_asked_for_less():
+    from utils.formatters import LINKEDIN_MAX_WORDS, LINKEDIN_RANGE, resolve_length_target, word_count_rule
+
+    target = resolve_length_target("linkedin post", "")
+    assert target["max_words"] == LINKEDIN_MAX_WORDS == 200
+    assert target["write_max_words"] == LINKEDIN_RANGE[1] < LINKEDIN_MAX_WORDS
+    assert word_count_rule(target) == f"LENGTH: {LINKEDIN_RANGE[0]}–{LINKEDIN_RANGE[1]} words. Never go over {LINKEDIN_RANGE[1]}."
+
+
+def test_other_formats_still_follow_the_requested_length():
+    from utils.formatters import WORD_RANGES, resolve_length_target
+
+    low, high = WORD_RANGES["medium article"]["long-form"]
+    assert resolve_length_target("medium article", "long-form") == {
+        "min_words": low, "max_words": high, "may_expand": True, "basis": "length_setting"}
+
+
 def test_length_target_ignores_the_requested_length_for_a_first_post_and_skips_threads():
     from utils.formatters import resolve_length_target
 
     assert resolve_length_target("medium article", "long-form", first_post=True)["max_words"] == 100
-    assert resolve_length_target("linkedin post", "", first_post=False)["min_words"] == 250  # default: standard
+    assert resolve_length_target("linkedin post", "", first_post=False)["min_words"] == 100
     assert resolve_length_target("thread", "standard", first_post=True) is None
 
 
@@ -59,7 +88,7 @@ def test_thin_sources_rule_has_a_ceiling_and_no_floor():
     from utils.formatters import resolve_length_target, word_count_rule
 
     rule = word_count_rule(resolve_length_target("linkedin post", "standard", thin_sources=True))
-    assert "at most 350 words" in rule and "250" not in rule
+    assert "at most 150 words" in rule and "100" not in rule
     assert "Never pad" in rule
     assert word_count_rule(None) == ""
 
@@ -86,12 +115,12 @@ def test_enforcer_still_expands_a_normal_post(claude):
     claude.queue("An expanded post.")
     state = _enforce("A short post.")
     assert state["current_draft"] == "An expanded post."
-    assert "at least 250 words" in last_prompt(claude)
+    assert "at least 100 words" in last_prompt(claude)
 
 
 @pytest.mark.parametrize("target_kwargs,target_text", [
-    ({"first_post": True}, "70–100 words"),
-    ({"thin_sources": True}, "at most 350 words"),
+    ({"first_post": True}, "70–115 words"),       # pipeline A trims only past the hard limit
+    ({"thin_sources": True}, "at most 200 words"),
 ])
 def test_enforcer_still_trims_a_first_or_thin_source_post(claude, target_kwargs, target_text):
     claude.queue("A trimmed post.")
@@ -124,7 +153,7 @@ def test_plan_node_sets_one_target_and_every_node_reads_it(monkeypatch):
     first = plan_node(make_state(first_post=True, length="long-form", length_target=None))
     assert first["length_target"]["basis"] == "first_post"
     thin = plan_node(make_state(retrieval_confidence="low", length_target=None))
-    assert thin["length_target"] == {"min_words": 0, "max_words": 350, "may_expand": False, "basis": "thin_sources"}
+    assert thin["length_target"] == THIN
     for name in ("draft_prompt.py", "humanizer_agent.py", "word_count_enforcer_agent.py"):
         source = agent_sources()[name]
         assert 'state.get("length_target")' in source, name
@@ -153,7 +182,7 @@ def test_first_post_runs_to_its_own_target_and_is_never_expanded(claude, fake_db
     assert result["post"] == "A short first post that stays short."
     [trace] = fake_db.tables["generation_traces"]
     outputs = trace["node_outputs"]
-    assert outputs["length_target"] == {"min_words": 70, "max_words": 100, "may_expand": False, "basis": "first_post"}
+    assert outputs["length_target"] == FIRST_POST
     assert outputs["perspective"] == "opinion"
     assert outputs["archetype_decision"]["allowed"] == ["contrarian_take", "teach_me_something", "general"]
     assert "word_count_enforcer" not in [c["event_type"] for c in trace["llm_calls"]]

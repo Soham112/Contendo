@@ -274,12 +274,12 @@ def test_spans_citing_sources_of_one_kind_are_not_mixed():
 # --- 8. over_length ----------------------------------------------------------------
 
 def test_over_length_is_an_issue_and_under_length_is_not():
-    over = _check(_post(36))                                       # 360 words against 250-350
-    under = _check(_post(5))                                       # 50 words
-    within = _check(_post(30))
+    over = _check(_post(21))                                       # 210 words against a hard limit of 200
+    under = _check(_post(5))                                       # 50 words, under the floor of 100
+    within = _check(_post(15))
 
     [issue] = _of(over, "over_length")
-    assert (issue["span"], issue["detail"]) == (None, {"words": 360, "max_words": 350, "over_by": 10})
+    assert (issue["span"], issue["detail"]) == (None, {"words": 210, "max_words": 200, "over_by": 10})
     assert under == {"issues": [], "counts": {}}
     assert within == {"issues": [], "counts": {}}
 
@@ -370,7 +370,7 @@ def test_a_word_to_avoid_in_a_heading_is_reported_without_a_span():
 
 @pytest.mark.parametrize("variant,quality", DRAFT_ONLY)
 def test_checks_are_recorded_and_add_no_call_and_change_no_post(claude, fake_db, seeded_kb, variant, quality):
-    marked = "\n\n".join([*_lines(28), "Latency fell 37 percent on a Tuesday. [[S1]]", "No marker on this line."])
+    marked = "\n\n".join([*_lines(14), "Latency fell 37 percent on a Tuesday. [[S1]]", "No marker on this line."])
     claude.queue(ARCHETYPE_GENERAL, enveloped(marked))
 
     result = _run(variant, quality=quality)
@@ -386,8 +386,8 @@ def test_checks_are_recorded_and_add_no_call_and_change_no_post(claude, fake_db,
 
 @pytest.mark.parametrize("variant,quality", DRAFT_ONLY)
 def test_checks_run_again_on_the_compressed_post(claude, fake_db, seeded_kb, variant, quality):
-    claude.queue(ARCHETYPE_GENERAL, enveloped(_post(36)),
-                 fixes_reply({n: SHORT_LINE for n in (7, 8, 9, 10)}))                          # 360 words, compressed to 348
+    claude.queue(ARCHETYPE_GENERAL, enveloped(_post(21)),
+                 fixes_reply({n: SHORT_LINE for n in (7, 8, 9, 10)}))                   # 210 words, compressed to 198
 
     _run(variant, quality=quality)
 

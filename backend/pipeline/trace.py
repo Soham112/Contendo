@@ -47,7 +47,7 @@ def _chunk_snapshot(chunk: dict[str, Any], profile: dict[str, Any]) -> dict[str,
 # Outputs a run may or may not set, left out of the trace when it did not. All
 # but final_validation are written only by the single-writer pipeline
 # (variants B and C).
-_OPTIONAL_OUTPUTS = ("grounding", "models", "business", "source_index", "event", "citations", "citation_failures", "multi_sentence_spans",
+_OPTIONAL_OUTPUTS = ("models", "business", "source_index", "event", "citations", "citation_failures", "multi_sentence_spans",
                      "draft_format", "draft_truncated", "draft_refused", "draft_empty", "compress_result", "checks_before_trim", "checks_final",
                      "review_first", "review_second", "review", "step_timings",
                      "final_validation")

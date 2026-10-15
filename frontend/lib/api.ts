@@ -39,7 +39,6 @@ export interface GenerateRequest {
   topic: string;
   format: string;
   tone: string;
-  length?: "concise" | "standard" | "long-form";
   context?: string;
   quality?: string;
   /** Skip the coverage gate and write an opinion post without specifics. */

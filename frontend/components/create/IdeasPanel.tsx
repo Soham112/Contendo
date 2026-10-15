@@ -1,6 +1,6 @@
 "use client";
 
-import { FORMAT_BADGE, type Suggestion } from "./config";
+import { type Suggestion } from "./config";
 import { Button } from "@/components/ui/button";
 
 /** Post ideas drawn from the user's memory, each with a "Use this" button. */
@@ -70,11 +70,6 @@ export default function IdeasPanel({ loading, suggestions, focus, selectedIndex,
                               <span className="text-primary text-xs font-medium">✓</span>
                             )}
                             <p className="text-sm font-medium text-on-surface leading-snug">{s.title}</p>
-                          </div>
-                          <div className="mt-1 flex items-center gap-2">
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-surface-container-low border border-surface-container-high text-on-surface-variant">
-                              {FORMAT_BADGE[s.format] ?? s.format}
-                            </span>
                           </div>
                           <p className="mt-1 text-xs text-on-surface-variant leading-relaxed">{s.angle}</p>
                         </div>

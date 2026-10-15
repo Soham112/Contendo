@@ -19,10 +19,10 @@ const actionBtnStyle = (disabled?: boolean): CSSProperties => ({
   minWidth: 52,
 });
 
-/** The column of post actions: regenerate, analyse, visuals and the copy buttons. */
+/** The column of post actions: regenerate, analyse, visuals and the LinkedIn copy button. */
 export default function PostActionButtons({
-  compact, row = false, loading, visualsLoading, visualsVisible, hasVisuals, copiedLinkedIn, copiedMedium,
-  onRegenerate, onAnalyse, onShowVisuals, onHideVisuals, onGenerateVisuals, onCopyLinkedIn, onCopyMedium,
+  compact, row = false, loading, visualsLoading, visualsVisible, hasVisuals, copiedLinkedIn,
+  onRegenerate, onAnalyse, onShowVisuals, onHideVisuals, onGenerateVisuals, onCopyLinkedIn,
 }: {
   /** Split view: smaller, borderless buttons. */
   compact: boolean;
@@ -33,14 +33,12 @@ export default function PostActionButtons({
   visualsVisible: boolean;
   hasVisuals: boolean;
   copiedLinkedIn: boolean;
-  copiedMedium: boolean;
   onRegenerate: () => void;
   onAnalyse: () => void;
   onShowVisuals: () => void;
   onHideVisuals: () => void;
   onGenerateVisuals: () => void;
   onCopyLinkedIn: () => void;
-  onCopyMedium: () => void;
 }) {
   const iconSize = compact ? 16 : 22;
   const btnGap = compact ? 16 : 32;
@@ -115,18 +113,6 @@ export default function PostActionButtons({
           <path d="M8 8v8" />
         </svg>
         <span style={btnLabelStyle}>{copiedLinkedIn ? "Copied!" : "LinkedIn"}</span>
-      </button>
-
-      <button
-        onClick={onCopyMedium}
-        title="Copy for Medium"
-        style={compact ? { display: "flex", flexDirection: "column", alignItems: "center", gap: 5, background: "none", border: "none", cursor: "pointer", padding: "4px 6px", borderRadius: 8 } : actionBtnStyle()}
-      >
-        <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke="#2f3333" strokeWidth="2">
-          <path d="M4 4h16v16H4z" />
-          <path d="M8 8l3.5 5L15 8" />
-        </svg>
-        <span style={btnLabelStyle}>{copiedMedium ? "Copied!" : "Medium"}</span>
       </button>
     </div>
   );

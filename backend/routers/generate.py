@@ -38,6 +38,9 @@ class GenerateRequest(BaseModel):
     topic: str
     format: str
     tone: str
+    # Ignored for a LinkedIn post, whose length the backend sets
+    # (utils.formatters.LINKEDIN_RANGE), except under pipeline A, the rollback.
+    # The create screen no longer sends it.
     length: str = "standard"
     context: str = ""
     quality: str = "standard"
@@ -86,7 +89,6 @@ class GenerateResponse(BaseModel):
     # post is returned (post is ""); message says so. Or "draft_refused": the
     # draft model declined to write it; same shape. "draft_empty" means the
     # completed reply contained no usable post. Single-writer pipeline only.
-    grounding: dict | None = None
     status: str = "ok"
     message: str = ""
     post: str
@@ -236,7 +238,7 @@ async def generate(
     except Exception:
         _raise_internal_error("POST /generate")
     finally:
-        if result is None or result.get("status", "ok") not in ("ok", "needs_review"):
+        if result is None or result.get("status", "ok") != "ok":
             _release_generation(user_id, period)
 
     return GenerateResponse(
@@ -254,7 +256,6 @@ async def generate(
         trace_id=result.get("trace_id"),
         no_specifics_enabled=features.NO_SPECIFICS_MODE_ENABLED,
         review=result.get("review"),
-        grounding=result.get("grounding"),
     )
 
 

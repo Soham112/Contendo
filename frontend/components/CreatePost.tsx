@@ -11,7 +11,7 @@ import { getPostStats, pastedText, stripPlaceholders } from "@/lib/post-text";
 import UpgradeScreen from "@/components/billing/UpgradeScreen";
 import { useEntitlements } from "@/hooks/useEntitlements";
 import { readPaywall, type Paywall } from "@/lib/billing";
-import { type Format, FORMATS, type GenerateResult, type Length, SS_CURRENT_POST_ID, SS_FEEDBACK, SS_POST, SS_SCORE, SS_SCORED, SS_SHOW_ANALYSIS, SS_TOPIC, type Tone } from "@/components/create/config";
+import { type Format, type GenerateResult, SS_CURRENT_POST_ID, SS_FEEDBACK, SS_POST, SS_SCORE, SS_SCORED, SS_SHOW_ANALYSIS, SS_TOPIC, type Tone } from "@/components/create/config";
 import { extractTextFromEditor, getSelectionOffsetsWithin, setEditorContent } from "@/components/create/editor-dom";
 import { VisualsPanel } from "@/components/create/VisualCards";
 import SettingsDrawer from "@/components/create/SettingsDrawer";
@@ -33,7 +33,7 @@ const GENERATION_STEPS = [
   "Polishing the wording",
 ];
 import {
-  GENERATION_KEYS, readDraft, readSavedIdeas, readSavedLength, readShowAnalysis, removeKeys, saveDraft, START_FRESH_KEYS, storedPostId,
+  GENERATION_KEYS, readDraft, readSavedIdeas, readShowAnalysis, removeKeys, saveDraft, START_FRESH_KEYS, storedPostId,
 } from "@/components/create/draft-storage";
 import { useSaveStatus, useSplitLayout } from "@/components/create/layout-hooks";
 import { useIdeas } from "@/components/create/useIdeas";
@@ -49,9 +49,9 @@ export default function CreatePost() {
   const [paywall, setPaywall] = useState<Paywall | null>(null);
   const { logEvent } = useTracking();
   const [topic, setTopic] = useState("");
-  const [format, setFormat] = useState<Format>("linkedin post");
+  // LinkedIn only for now: Medium and threads come back once LinkedIn posts are right.
+  const format: Format = "linkedin post";
   const [tone, setTone] = useState<Tone>("casual");
-  const [length, setLength] = useState<Length>("standard");
   const [context, setContext] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<GenerateResult | null>(null);
@@ -63,7 +63,6 @@ export default function CreatePost() {
   // True when the current post was generated in no-specifics mode.
   const [opinionMode, setOpinionMode] = useState(false);
   const [copiedLinkedIn, setCopiedLinkedIn] = useState(false);
-  const [copiedMedium, setCopiedMedium] = useState(false);
 
 
   const { showToast } = useToast();
@@ -114,8 +113,6 @@ export default function CreatePost() {
   const saveStatusText = useSaveStatus(lastSaved);
   const ideas = useIdeas((s) => {
     setTopic(s.title);
-    const fmt = s.format as Format;
-    if (FORMATS.find((f) => f.id === fmt)) setFormat(fmt);
     topicRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     topicRef.current?.focus();
   });
@@ -143,8 +140,6 @@ export default function CreatePost() {
   // On mount: show interstitial if a saved post exists, else go to idle with prefill
   useEffect(() => {
     try {
-      const savedLength = readSavedLength();
-      if (savedLength) setLength(savedLength);
       // Non-post preferences come back either way (ideas panel, analysis open state)
       ideas.restore(readSavedIdeas());
       const showAnalysis = readShowAnalysis();
@@ -158,9 +153,7 @@ export default function CreatePost() {
       } else {
         // No saved post: idle state; apply any prefill from Ideas screen
         const prefillTopic = sessionStorage.getItem("contentOS_last_topic");
-        const prefillFormat = sessionStorage.getItem("contentOS_prefill_format");
         if (prefillTopic) setTopic(prefillTopic);
-        if (prefillFormat) setFormat(prefillFormat as Format);
         sessionStorage.removeItem("contentOS_last_topic");
         sessionStorage.removeItem("contentOS_prefill_format");
       }
@@ -173,8 +166,8 @@ export default function CreatePost() {
   // Persist session whenever result or visuals change
   useEffect(() => {
     if (!result) return;
-    saveDraft({ result, traceId: currentTraceIdRef.current, post: editedPost, rawPost: rawPostRef.current, visuals, topic, format, tone, length });
-  }, [result, editedPost, visuals, topic, format, tone, length]);
+    saveDraft({ result, traceId: currentTraceIdRef.current, post: editedPost, rawPost: rawPostRef.current, visuals, topic, format, tone });
+  }, [result, editedPost, visuals, topic, format, tone]);
 
   // Persist analysisOpen preference
   useEffect(() => {
@@ -237,9 +230,7 @@ export default function CreatePost() {
         rawPostRef.current = draft.rawPost;
         if (draft.visuals) visualsState.restore(draft.visuals);
         if (draft.topic) setTopic(draft.topic);
-        if (draft.format) setFormat(draft.format);
         if (draft.tone) setTone(draft.tone);
-        if (draft.length) setLength(draft.length);
         if (draft.postId !== null) setCurrentPostId(draft.postId);
       }
     } catch {
@@ -254,16 +245,10 @@ export default function CreatePost() {
     rawPostRef.current = "";
     currentTraceIdRef.current = null;
     sessionStorage.removeItem("contentOS_last_topic");
-
-    const prefillFormat = sessionStorage.getItem("contentOS_prefill_format");
-    if (prefillFormat) {
-      setFormat(prefillFormat as Format);
-      sessionStorage.removeItem("contentOS_prefill_format");
-    }
+    sessionStorage.removeItem("contentOS_prefill_format");
 
     setResult(null);
     setEditedPost("");
-    setLength("standard");
     visualsState.reset();
     setAnalysisOpen(false);
     setCurrentPostId(null);
@@ -346,15 +331,12 @@ export default function CreatePost() {
 
   const generate = async (overrides?: {
     topic?: string;
-    format?: Format;
     tone?: Tone;
-    length?: Length;
     context?: string;
   }, opts?: { noSpecifics?: boolean }) => {
     const t = overrides?.topic ?? topic;
-    const f = overrides?.format ?? format;
+    const f = format;
     const tn = overrides?.tone ?? tone;
-    const len = overrides?.length ?? length;
     const ctx = overrides?.context ?? context;
 
     if (!t.trim()) {
@@ -373,14 +355,13 @@ export default function CreatePost() {
 
     // Apply overrides to main state
     if (overrides?.topic !== undefined) setTopic(overrides.topic);
-    if (overrides?.format !== undefined) setFormat(overrides.format);
     if (overrides?.tone !== undefined) setTone(overrides.tone);
-    if (overrides?.length !== undefined) setLength(overrides.length);
     if (overrides?.context !== undefined) setContext(overrides.context);
 
     try {
+      // No length: the backend sets the length of a LinkedIn post.
       const res = await api.generatePost({
-        topic: t, format: f, tone: tn, length: len, context: ctx,
+        topic: t, format: f, tone: tn, context: ctx,
         no_specifics: opts?.noSpecifics ?? false,
         ...businessPost.requestFields(),
       });
@@ -534,15 +515,7 @@ export default function CreatePost() {
     setTimeout(() => setCopiedLinkedIn(false), 1500);
   };
 
-  const handleCopyMedium = async () => {
-    await navigator.clipboard.writeText(stripPlaceholders(editedPost));
-    setCopiedMedium(true);
-    showToast("Copied for Medium", "success");
-    logEvent({ event_type: "button_click", page_url: "/create", button_name: "publish_btn", metadata: { platform: "medium" } });
-    setTimeout(() => setCopiedMedium(false), 1500);
-  };
-
-  const handleDrawerRegenerate = (overrides: { topic: string; format: Format; tone: Tone; length: Length; context: string }) => {
+  const handleDrawerRegenerate = (overrides: { topic: string; tone: Tone; context: string }) => {
     setDrawerOpen(false);
     generate(overrides);
   };
@@ -596,14 +569,12 @@ export default function CreatePost() {
       visualsVisible={visualsVisible}
       hasVisuals={visuals.length > 0}
       copiedLinkedIn={copiedLinkedIn}
-      copiedMedium={copiedMedium}
       onRegenerate={openDrawer}
       onAnalyse={openAnalysis}
       onShowVisuals={() => setVisualsVisible(true)}
       onHideVisuals={() => setVisualsVisible(false)}
       onGenerateVisuals={handleGenerateVisuals}
       onCopyLinkedIn={handleCopyLinkedIn}
-      onCopyMedium={handleCopyMedium}
     />
   );
 
@@ -616,14 +587,12 @@ export default function CreatePost() {
       visualsVisible={visualsVisible}
       hasVisuals={visuals.length > 0}
       copiedLinkedIn={copiedLinkedIn}
-      copiedMedium={copiedMedium}
       onRegenerate={openDrawer}
       onAnalyse={openAnalysis}
       onShowVisuals={() => setVisualsVisible(true)}
       onHideVisuals={() => setVisualsVisible(false)}
       onGenerateVisuals={handleGenerateVisuals}
       onCopyLinkedIn={handleCopyLinkedIn}
-      onCopyMedium={handleCopyMedium}
     />
   );
 
@@ -732,12 +701,8 @@ export default function CreatePost() {
                 topicRef={topicRef}
                 topic={topic}
                 onTopicChange={setTopic}
-                format={format}
-                onFormatChange={setFormat}
                 tone={tone}
                 onToneChange={setTone}
-                length={length}
-                onLengthChange={setLength}
                 toneDescOpacity={toneDescOpacity}
                 error={error}
                 lowCoverage={lowCoverage}
@@ -761,9 +726,7 @@ export default function CreatePost() {
         <SettingsDrawer
           open={drawerOpen}
           initialTopic={topic}
-          initialFormat={format}
           initialTone={tone}
-          initialLength={length}
           initialContext={context}
           onCancel={() => setDrawerOpen(false)}
           onRegenerate={handleDrawerRegenerate}

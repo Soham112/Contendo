@@ -7,7 +7,6 @@ from config import features
 from llm.client import trace_calls
 from llm.models import role_models
 from pipeline.state import PipelineState
-from pipeline.grounding import enforce_grounding
 from pipeline.trace import build_trace_row
 from pipeline.finalise import validation_record
 from pipeline.redraft import review_summary
@@ -61,6 +60,8 @@ def plan_node(state: PipelineState) -> PipelineState:
         state.get("length", ""),
         first_post=bool(state.get("first_post")),
         thin_sources=state.get("retrieval_confidence") == "low",
+        # Pipeline A, the rollback, keeps the length the request asks for.
+        requested_linkedin_length=state.get("variant") == "A",
     )
     # The notes don't cover the topic, but a post is written anyway (a first
     # post from the onboarding answers, or an opinion post without specifics).
@@ -289,8 +290,9 @@ def run_pipeline(
     }
 
     with trace_calls() as calls:
-        result = enforce_grounding(PIPELINES[variant].invoke(initial_state))
-        # The final synchronous gate supersedes A's retired normal-mode record.
+        result = PIPELINES[variant].invoke(initial_state)
+        # A's normal-mode fact check only marks itself pending, and nothing runs
+        # it any more, so the pending record is dropped.
         if (result.get("fact_check") or {}).get("mode") == "log_only":
             result.pop("fact_check")
 
@@ -334,7 +336,7 @@ def run_pipeline(
         }
 
     return {
-        "status": "needs_review" if (result.get("grounding") or {}).get("outcome") == "needs_review" else "ok",
+        "status": "ok",
         "post": result.get("final_post", result.get("current_draft", "")),
         "score": result.get("score", 0),
         "score_feedback": result.get("score_feedback", []),
@@ -344,9 +346,5 @@ def run_pipeline(
         "retrieval_confidence": result.get("retrieval_confidence", "medium"),
         "trace_id": trace_id,
         "fact_check_job": None,
-        "grounding": result.get("grounding"),
-        "review": ({"outcome": "issues_remain", "removed": [], "issues": [
-            {"type": "unsupported_claim", "sentence_text": flag.get("sentence") or result.get("final_post", "")}
-            for flag in result["grounding"]["flags"]
-        ]} if (result.get("grounding") or {}).get("outcome") == "needs_review" else review_summary(result)),
+        "review": review_summary(result),
     }

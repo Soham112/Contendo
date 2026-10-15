@@ -149,14 +149,14 @@ def test_the_prompt_carries_the_perspective_and_one_rule_per_source_kind(claude,
 def test_the_prompt_carries_the_structure_only_and_the_one_length_rule(claude):
     from utils.formatters import ARCHETYPES, resolve_length_target, word_count_rule
 
-    target = resolve_length_target("linkedin post", "concise")
-    _, prompt = _draft(claude, make_state([OWN], archetype="contrarian_take", length="concise", length_target=target))
+    target = resolve_length_target("linkedin post", "")
+    _, prompt = _draft(claude, make_state([OWN], archetype="contrarian_take", length_target=target))
 
     assert ARCHETYPES["contrarian_take"].structure in prompt
     assert ARCHETYPES["contrarian_take"].fits not in prompt
-    assert word_count_rule(target) in prompt
-    assert sum(word_count_rule(resolve_length_target("linkedin post", length)) in prompt
-               for length in ("concise", "standard", "long-form")) == 1
+    assert prompt.count("LENGTH:") == 1 and word_count_rule(target) in prompt
+    # The drafter is asked for the range, never told the hard limit above it.
+    assert f"{target['write_max_words']} words" in prompt and str(target["max_words"]) not in prompt
 
 
 def test_the_prompt_uses_the_voice_only_profile(claude):
