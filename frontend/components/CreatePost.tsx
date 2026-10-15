@@ -5,6 +5,7 @@ import { useToast } from "@/components/ui/ToastProvider";
 import { useApi } from "@/lib/api";
 import type { ClosestSource, ScoreResponse } from "@/lib/api";
 import { generateOutcome } from "@/lib/generate-outcome";
+import { readGenerateStream } from "@/lib/generate-stream";
 import { useTracking } from "@/lib/useTracking";
 import { useBusinessPost } from "@/components/create/BusinessPostFields";
 import { getPostStats, pastedText, stripPlaceholders } from "@/lib/post-text";
@@ -24,6 +25,7 @@ import { WorkspaceBar } from "@/components/create/PostChrome";
 import ResumeDraftPrompt from "@/components/create/ResumeDraftPrompt";
 import PostWorkspace from "@/components/create/PostWorkspace";
 import { ProgressSteps } from "@/components/ui/states";
+import DraftPreview from "@/components/create/DraftPreview";
 
 // What happens while a post is written, in the order the pipeline does it.
 const GENERATION_STEPS = [
@@ -54,6 +56,8 @@ export default function CreatePost() {
   const [tone, setTone] = useState<Tone>("casual");
   const [context, setContext] = useState("");
   const [loading, setLoading] = useState(false);
+  // The first draft as it streams in; shown while loading, cleared when the run ends.
+  const [draftPreview, setDraftPreview] = useState("");
   const [result, setResult] = useState<GenerateResult | null>(null);
   const [editedPost, setEditedPost] = useState("");
   const [error, setError] = useState("");
@@ -346,6 +350,7 @@ export default function CreatePost() {
     logEvent({ event_type: "button_click", page_url: "/create", button_name: "generate_btn", metadata: { format: f, tone: tn } });
     setError("");
     setLoading(true);
+    setDraftPreview("");
     setResult(null);
     setLowCoverage(null);
     setOpinionMode(false);
@@ -360,7 +365,7 @@ export default function CreatePost() {
 
     try {
       // No length: the backend sets the length of a LinkedIn post.
-      const res = await api.generatePost({
+      const res = await api.generatePostStream({
         topic: t, format: f, tone: tn, context: ctx,
         no_specifics: opts?.noSpecifics ?? false,
         ...businessPost.requestFields(),
@@ -378,7 +383,11 @@ export default function CreatePost() {
         throw new Error(await errorDetail(res, "We couldn't write that post. Please try again."));
       }
 
-      const data: GenerateResult = await res.json();
+      const end = res.body
+        ? await readGenerateStream<GenerateResult>(res.body, (text) => setDraftPreview((shown) => shown + text))
+        : { kind: "final" as const, data: (await res.json()) as GenerateResult };
+      if (end.kind === "error") throw new Error(end.detail || "We couldn't write that post. Please try again.");
+      const data = end.data;
       refreshEntitlements();
       const outcome = generateOutcome(data);
       if (outcome.kind === "low_coverage") {
@@ -409,6 +418,7 @@ export default function CreatePost() {
       setError(e instanceof TypeError ? "We couldn't reach Contendo. Check your connection and try again." : e instanceof Error ? e.message : "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
+      setDraftPreview("");
     }
   };
 
@@ -714,7 +724,9 @@ export default function CreatePost() {
             )}
 
             {/* ── Generating spinner ──────────────────────────────────────── */}
-            {loading && <ProgressSteps title="Writing your post" steps={GENERATION_STEPS} stepMs={6000} />}
+            {loading && (draftPreview
+              ? <DraftPreview text={draftPreview} />
+              : <ProgressSteps title="Writing your post" steps={GENERATION_STEPS} stepMs={6000} />)}
 
           </div>
         </div>

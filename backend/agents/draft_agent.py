@@ -20,6 +20,9 @@ the model declined (stop_reason "refusal") is never treated as text to use.
 """
 
 import logging
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Callable, Iterator
 
 from agents.archetype_agent import choose_archetype, structure_offer
 from agents.draft_prompt import build_cited_prompt, build_prompt, format_retrieval_context
@@ -40,6 +43,23 @@ from utils.sentences import split_spans
 from utils.specifics import find_violations, guard_entry, guard_sources, remove_sentences, retry_note
 
 logger = logging.getLogger(__name__)
+
+# Who hears the single-writer first draft's text as it streams (a /generate/stream
+# request): set for one run with listen_to_draft, None otherwise.
+_draft_listener: ContextVar[Callable[[str], None] | None] = ContextVar("draft_listener", default=None)
+
+
+@contextmanager
+def listen_to_draft(listener: Callable[[str], None]) -> Iterator[None]:
+    """Within this block, the first draft call (cited_draft_node,
+    one_call_draft_node) passes each text delta of its raw reply, envelope and
+    markers included, to listener. Nothing else is streamed: pipeline A's
+    drafter, fixes, redrafts and compress run as usual."""
+    token = _draft_listener.set(listener)
+    try:
+        yield
+    finally:
+        _draft_listener.reset(token)
 
 # Output budget for pipeline A's draft call. The single-writer draft takes its
 # budget from the length target (utils.formatters.draft_max_tokens).
@@ -160,6 +180,7 @@ def _write_cited_draft(state: PipelineState, prompt: str, sources: SourcesBlock)
         event_type="generate",
         usage_metadata=_usage_metadata(state),
         measure_first_text=True,
+        on_text=_draft_listener.get(),
         **_effort(state, model),
     )
     state["current_draft"] = message_text(message).strip()

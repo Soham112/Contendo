@@ -1,4 +1,5 @@
 import logging
+from typing import Callable
 from uuid import UUID
 
 from anthropic import APIStatusError, InternalServerError
@@ -6,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
+from agents.draft_agent import listen_to_draft
 from agents.ingestion_agent import ingest_content
 from agents.refine_agent import MISSING_SOURCES_MESSAGE, MissingRefineSources, refine_selection
 from agents.scorer_agent import score_text
@@ -14,6 +16,7 @@ from auth.supabase_jwt import get_user_id_dep
 from billing.entitlements import get_entitlements
 from billing.gates import quota_exceeded
 from config import features
+from config.niches import Pillar
 from memory import billing_store
 from memory.account_store import get_account
 from pipeline.graph import run_pipeline
@@ -156,19 +159,28 @@ class RefineVisualRequest(BaseModel):
 
 def _raise_anthropic_error(e: Exception) -> None:
     """Convert Anthropic API errors into appropriate HTTP responses."""
-    if isinstance(e, InternalServerError) and "overloaded" in str(e).lower():
-        raise HTTPException(
-            status_code=503,
-            detail="Our writing service is overloaded right now. Wait 30 seconds and try again.",
-        )
-    logger.exception("Anthropic API error")
-    raise HTTPException(status_code=500, detail=_GENERIC_500)
+    raise generation_error(e, "")
 
 
 def _raise_internal_error(route: str) -> None:
     """Log the active exception and return a generic 500 (never str(e) to the client)."""
     logger.exception("%s failed", route)
     raise HTTPException(status_code=500, detail=_GENERIC_500)
+
+
+def generation_error(e: Exception, route: str) -> HTTPException:
+    """The HTTP error for an exception a model-backed route raised, logged
+    here: 503 when the API is overloaded, else a generic 500 (never str(e))."""
+    if isinstance(e, InternalServerError) and "overloaded" in str(e).lower():
+        return HTTPException(
+            status_code=503,
+            detail="Our writing service is overloaded right now. Wait 30 seconds and try again.",
+        )
+    if isinstance(e, (InternalServerError, APIStatusError)):
+        logger.exception("Anthropic API error")
+    else:
+        logger.exception("%s failed", route)
+    return HTTPException(status_code=500, detail=_GENERIC_500)
 
 
 def _release_generation(user_id: str, period: str) -> None:
@@ -185,6 +197,19 @@ async def generate(
     req: GenerateRequest,
     user_id: str = Depends(get_user_id_dep),
 ) -> GenerateResponse:
+    pillar = validate_generate_request(req, user_id)
+    period = await reserve_generation(user_id)
+    try:
+        result = await run_generation(req, user_id, pillar, period)
+    except (InternalServerError, APIStatusError) as e:
+        _raise_anthropic_error(e)
+    except Exception:
+        _raise_internal_error("POST /generate")
+    return generate_response(result)
+
+
+def validate_generate_request(req: GenerateRequest, user_id: str) -> Pillar | None:
+    """Reject a request /generate cannot run (HTTP 400); return its pillar."""
     if not req.topic.strip():
         raise HTTPException(status_code=400, detail="topic is required")
     if req.no_specifics and not features.NO_SPECIFICS_MODE_ENABLED:
@@ -204,18 +229,34 @@ async def generate(
         raise HTTPException(status_code=400, detail="pillar is required with pillar_details")
     if len(details) > _MAX_DETAILS_CHARS:
         raise HTTPException(status_code=400, detail=f"pillar_details is too long (limit {_MAX_DETAILS_CHARS} characters)")
+    return pillar
 
-    # One generation is counted before the pipeline runs and given back if it
-    # produces no post, so requests in parallel cannot go past the limit.
+
+async def reserve_generation(user_id: str) -> str:
+    """Count one generation before the pipeline runs, so requests in parallel
+    cannot go past the limit (HTTP 402 at the limit). Returns the billing
+    period; run_generation gives the generation back if no post is made."""
     entitlements = get_entitlements(user_id)
-    period = entitlements.period
     if not await run_in_threadpool(
-        billing_store.reserve_generation, user_id, period, entitlements.generation_limit,
+        billing_store.reserve_generation, user_id, entitlements.period, entitlements.generation_limit,
     ):
         raise quota_exceeded(entitlements)
+    return entitlements.period
 
+
+async def run_generation(
+    req: GenerateRequest,
+    user_id: str,
+    pillar: Pillar | None,
+    period: str,
+    on_draft_text: Callable[[str], None] | None = None,
+) -> dict:
+    """Save the pillar details, if any, and run the pipeline. Errors propagate;
+    the reserved generation is given back whenever no post comes out.
+    on_draft_text hears the first draft's raw text as it streams."""
     result = None
     try:
+        details = req.pillar_details.strip()
         if details:
             # The author's own account of their work, stored as any note is.
             title, note = details_note(pillar, details)
@@ -224,7 +265,7 @@ async def generate(
                 user_id=user_id, memory_context="work",
             )
         result = await run_in_threadpool(
-            run_pipeline,
+            _run_pipeline, on_draft_text,
             topic=req.topic,
             pillar=pillar.key if pillar else None,
             format=LINKEDIN_POST,
@@ -235,14 +276,21 @@ async def generate(
             user_id=user_id,
             no_specifics=req.no_specifics,
         )
-    except (InternalServerError, APIStatusError) as e:
-        _raise_anthropic_error(e)
-    except Exception:
-        _raise_internal_error("POST /generate")
+        return result
     finally:
         if result is None or result.get("status", "ok") != "ok":
             _release_generation(user_id, period)
 
+
+def _run_pipeline(on_draft_text: Callable[[str], None] | None, **kwargs) -> dict:
+    """run_pipeline in the worker thread, with the draft listener set there."""
+    if on_draft_text is None:
+        return run_pipeline(**kwargs)
+    with listen_to_draft(on_draft_text):
+        return run_pipeline(**kwargs)
+
+
+def generate_response(result: dict) -> GenerateResponse:
     return GenerateResponse(
         status=result.get("status", "ok"),
         message=result.get("message", ""),
