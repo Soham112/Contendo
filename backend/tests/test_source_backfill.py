@@ -85,11 +85,47 @@ def test_missing_chunk_is_incomplete():
 @pytest.mark.parametrize("mutate", [
     lambda rows: rows.append(dict(rows[0])),                  # duplicated index
     lambda rows: rows[0].update(total_chunks=9),              # rows disagree on the total
-    lambda rows: [r.update(total_chunks=None) for r in rows],  # no total recorded
+    lambda rows: rows[0].update(total_chunks=0),              # some rows record it, some don't
+    lambda rows: rows[0].update(chunk_index=None),            # position not recorded
 ])
 def test_inconsistent_indexes_are_incomplete(mutate):
     rows = _rows(_words(1200))
     mutate(rows)
+    assert rebuild_source(rows).check == "incomplete"
+
+
+@pytest.mark.parametrize("unrecorded", [0, None])
+@pytest.mark.parametrize("n_words", [1, 499, 700, 1300])
+def test_unrecorded_total_is_complete_when_the_last_chunk_is_short(unrecorded, n_words):
+    # Legacy rows moved from ChromaDB carry total_chunks 0: the last chunk being
+    # shorter than a full window proves nothing follows it.
+    rows = _rows(_words(n_words))
+    for r in rows:
+        r["total_chunks"] = unrecorded
+    assert rebuild_source(rows).check == "rechunk_exact"
+
+
+@pytest.mark.parametrize("n_words", [500, 1400])  # last chunk exactly 500 words
+def test_unrecorded_total_with_a_full_last_chunk_cannot_be_proven(n_words):
+    rows = _rows(_words(n_words))
+    assert len(rows[-1]["content"].split()) == 500
+    for r in rows:
+        r["total_chunks"] = 0
+    assert rebuild_source(rows).check == "incomplete"
+
+
+def test_unrecorded_total_with_the_tail_missing_is_incomplete():
+    rows = _rows(_words(1300))[:-1]  # drop the short last chunk: chunk 1 is a full window
+    for r in rows:
+        r["total_chunks"] = 0
+    assert rebuild_source(rows).check == "incomplete"
+
+
+def test_unrecorded_total_with_a_gap_is_incomplete():
+    rows = _rows(_words(1300))
+    del rows[1]
+    for r in rows:
+        r["total_chunks"] = 0
     assert rebuild_source(rows).check == "incomplete"
 
 
@@ -119,6 +155,16 @@ def test_plan_marks_every_source_rebuilt_and_leaves_authorship_unknown():
     assert planned["s3"]["user_id"] == "user-b"
     assert planned["s1"]["content_hash"] == _hash(_words(900))
     assert planned["s1"]["created_at"] == "2026-05-01T00:00:00+00:00"
+
+
+def test_every_planned_row_has_the_same_keys():
+    # A bulk insert sends the union of keys; a missing one would be NULL, not the default.
+    no_date = [{**r, "ingested_at": None} for r in _rows("an old note", "s2")]
+    planned = backfill.plan(_rows(_words(30), "s1") + no_date, now="2026-10-16T00:00:00+00:00")
+    assert len({frozenset(r) for r in planned}) == 1
+    by_id = {r["source_id"]: r for r in planned}
+    assert by_id["s2"]["created_at"] == by_id["s2"]["extracted_at"] == "2026-10-16T00:00:00+00:00"
+    assert by_id["s1"]["created_at"] == "2026-05-01T00:00:00+00:00"
 
 
 def test_plan_skips_consolidation_rows():
@@ -156,4 +202,4 @@ def test_apply_reads_past_the_page_limit_and_is_idempotent(fake_db, monkeypatch)
 
 def test_apply_on_production_needs_explicit_confirmation():
     with pytest.raises(SystemExit):
-        backfill.main(["--target", "production", "--apply"])
+        backfill.main(["--apply"])

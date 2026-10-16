@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 
-from utils.chunker import OVERLAP_WORDS, _join, _tokenize, chunk_text
+from utils.chunker import CHUNK_SIZE_WORDS, OVERLAP_WORDS, _join, _tokenize, chunk_text
 
 CHUNKER_VERSION = "chunker_v1"
 
@@ -29,13 +29,26 @@ def _content_hash(text: str) -> str:
     return hashlib.sha256(text.strip().lower().encode()).hexdigest()
 
 
+def total_recorded(chunks: list[dict]) -> bool:
+    """False when total_chunks is NULL or 0 on every row. A source with stored
+    chunks can't have 0 of them: rows moved from ChromaDB (2026-04-19, commit
+    b9c0d91) got 0 when the old metadata had no total."""
+    return any((c.get("total_chunks") or 0) > 0 for c in chunks)
+
+
 def _complete(chunks: list[dict]) -> bool:
-    """Indexes 0..total_chunks-1 each exactly once, and every row agrees on total_chunks."""
-    totals = {c.get("total_chunks") for c in chunks}
-    indexes = sorted(c.get("chunk_index") for c in chunks)
-    if len(totals) != 1 or None in totals:
+    """Indexes 0..n-1 each exactly once, and n is known to be the whole source:
+    every row records the same total n, or (total not recorded) the last chunk
+    is shorter than a full window, which chunker_v1 only produces at the end."""
+    if any(c.get("chunk_index") is None for c in chunks):
         return False
-    return indexes == list(range(totals.pop()))
+    indexes = sorted(c["chunk_index"] for c in chunks)
+    if indexes != list(range(len(chunks))):
+        return False
+    if not total_recorded(chunks):
+        last = max(chunks, key=lambda c: c["chunk_index"])
+        return len(_tokenize(last.get("content") or "")) < CHUNK_SIZE_WORDS
+    return {c.get("total_chunks") for c in chunks} == {len(chunks)}
 
 
 def rebuild_source(chunks: list[dict]) -> Rebuild:

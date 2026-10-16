@@ -4,11 +4,11 @@ Each source is rebuilt from its stored chunks (utils.source_rebuild) and marked
 origin_status = 'rebuilt_from_chunks'; authorship and title_origin stay NULL.
 Consolidation rows are derived data, not sources, and are skipped.
 
-    cd backend
-    venv/bin/python -m scripts.backfill_sources --target eval              # report only (read-only)
-    venv/bin/python -m scripts.backfill_sources --target eval --apply
-    venv/bin/python -m scripts.backfill_sources --target production        # report only
-    venv/bin/python -m scripts.backfill_sources --target production --apply --confirm-production
+Production, from backend/ (reads backend/.env):
+    venv/bin/python -m scripts.backfill_sources                                # report only (read-only)
+    venv/bin/python -m scripts.backfill_sources --apply --confirm-production
+Eval, from the repo root, through the evals env guard:
+    backend/venv/bin/python evals/backfill_sources.py [--apply]
 
 The report lists per-user counts, the rebuild_check and hash-match
 distribution, and duplicate content (two sources of one user with the same
@@ -18,12 +18,12 @@ Re-running --apply skips sources that already have a row.
 from __future__ import annotations
 
 import argparse
-import sys
 from collections import Counter, defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from utils.source_rebuild import CHUNKER_VERSION, content_hash_for, rebuild_source
+from utils.source_rebuild import CHUNKER_VERSION, content_hash_for, rebuild_source, total_recorded
 
 PAGE = 1000  # PostgREST's maximum rows per request
 CHUNK_COLUMNS = ("user_id,source_id,content,chunk_index,total_chunks,content_hash,"
@@ -60,8 +60,11 @@ def _is_source_chunk(row: dict) -> bool:
     return row["node_type"] == "chunk"
 
 
-def plan(rows: list[dict]) -> list[dict]:
-    """The sources rows to write, one per (user_id, source_id) of source chunks."""
+def plan(rows: list[dict], now: str | None = None) -> list[dict]:
+    """The sources rows to write, one per (user_id, source_id) of source chunks.
+    Every row has the same keys: a bulk insert sends the union, and a missing
+    key arrives as NULL, not the column default."""
+    now = now or datetime.now(timezone.utc).isoformat()
     groups: dict[tuple[str, str], list[dict]] = defaultdict(list)
     for row in rows:
         if _is_source_chunk(row) and row.get("source_id"):
@@ -84,9 +87,9 @@ def plan(rows: list[dict]) -> list[dict]:
             "origin_status": "rebuilt_from_chunks",
             "rebuild_check": rebuilt.check,
             "rebuild_hash_match": rebuilt.hash_match,
+            "extracted_at": now,  # the rebuild is the extraction that produced extracted_text
+            "created_at": ingested_at or now,
         }
-        if ingested_at:
-            row |= {"extracted_at": ingested_at, "created_at": ingested_at}
         planned.append(row)
     return planned
 
@@ -113,6 +116,12 @@ def report(rows: list[dict], planned: list[dict], existing: set[str]) -> str:
     chunks_per_user = Counter(r["user_id"] for r in rows if _is_source_chunk(r) and r.get("source_id"))
     for user_id, n in sorted(Counter(r["user_id"] for r in planned).items()):
         lines.append(f"  {user_id}: {n} sources, {chunks_per_user[user_id]} chunks")
+    by_source: dict[str, list[dict]] = defaultdict(list)
+    for r in rows:
+        if _is_source_chunk(r) and r.get("source_id"):
+            by_source[r["source_id"]].append(r)
+    lines.append(f"total_chunks not recorded (legacy rows; completeness from the last chunk's length): "
+                 f"{sum(not total_recorded(c) for c in by_source.values())} sources")
     lines.append("rebuild_check x content_hash match:")
     for (check, match), n in sorted(Counter((r["rebuild_check"], str(r["rebuild_hash_match"]))
                                             for r in planned).items()):
@@ -133,34 +142,30 @@ def apply(client: Any, planned: list[dict], existing: set[str]) -> int:
     return len(new)
 
 
-def _client(target: str) -> Any:
-    """Load the target's environment, then the backend's client (import order matters)."""
-    if target == "eval":
-        sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "evals"))
-        import env  # noqa: F401  (guard: refuses anything but the eval project)
-        return env.backend_client()
-    from dotenv import load_dotenv
-    load_dotenv(Path(__file__).resolve().parents[1] / ".env")
-    from db.supabase_client import supabase
-    return supabase
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--target", choices=("eval", "production"), required=True)
-    parser.add_argument("--apply", action="store_true", help="write the planned rows (default: report only)")
-    parser.add_argument("--confirm-production", action="store_true")
-    args = parser.parse_args(argv)
-    if args.apply and args.target == "production" and not args.confirm_production:
-        parser.error("--apply on production needs --confirm-production")
-
-    client = _client(args.target)
+def run(client: Any, *, write: bool) -> None:
+    """Print the report; with write, insert the planned rows. Shared by both entry points."""
     rows = fetch_chunk_rows(client)
     planned = plan(rows)
     existing = fetch_source_ids(client)
     print(report(rows, planned, existing))
-    if args.apply:
+    if write:
         print(f"inserted {apply(client, planned, existing)} sources rows")
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Production entry point. Eval runs go through evals/backfill_sources.py, which
+    loads the eval environment behind the guard before any backend module."""
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--apply", action="store_true", help="write the planned rows (default: report only)")
+    parser.add_argument("--confirm-production", action="store_true")
+    args = parser.parse_args(argv)
+    if args.apply and not args.confirm_production:
+        parser.error("--apply on production needs --confirm-production")
+
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+    from db.supabase_client import supabase
+    run(supabase, write=args.apply)
     return 0
 
 
