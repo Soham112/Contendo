@@ -76,10 +76,17 @@ DEEPEVAL_ENV = {
     "DEEPEVAL_DISABLE_DOTENV": "1",
 }
 
-# Tables in backend/migrations/000_baseline_schema.sql that hold per-user rows,
-# with the column that holds the user id. Ordered for deletion: traces before
-# posts, links before entities. tests/test_guard.py checks this against the schema.
+# Tables in backend/migrations/*.sql that hold per-user rows, with the column
+# that holds the user id. Ordered for deletion: publishing before posts, traces
+# before posts, links before entities. tests/test_guard.py checks this against
+# every migration.
 RESET_TABLES: tuple[tuple[str, str], ...] = (
+    ("publish_approvals", "user_id"),
+    ("publish_jobs", "user_id"),
+    ("connected_accounts", "user_id"),
+    ("generation_usage", "user_id"),
+    ("subscriptions", "user_id"),
+    ("accounts", "user_id"),
     ("generation_traces", "user_id"),
     ("posts", "user_id"),  # post_versions cascade on delete
     ("chunk_entities", "user_id"),

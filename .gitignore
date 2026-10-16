@@ -65,6 +65,8 @@ CLAUDE.local.md
 
 # Evals: run outputs and DeepEval caches (evals/.env is covered by .env above)
 evals/results/
+# Labels and snapshot manifests drawn from real production libraries (the repo is public)
+evals/private/
 .deepeval/
 .deepeval-cache.json
 .pytest_cache/

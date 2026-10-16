@@ -155,12 +155,13 @@ def test_backend_env_keys_match_backend_source():
     )
 
 
-def test_reset_tables_match_baseline_schema():
-    sql = (guard.BACKEND_DIR / "migrations" / "000_baseline_schema.sql").read_text()
+def test_reset_tables_match_every_migration():
     tables_with_user_id = set()
-    for name, body in re.findall(r"CREATE TABLE public\.(\w+) \((.*?)\n\);", sql, re.S):
-        if re.search(r"^\s+user_id\s", body, re.M):
-            tables_with_user_id.add(name)
+    for path in sorted((guard.BACKEND_DIR / "migrations").glob("*.sql")):
+        sql = path.read_text()
+        for name, body in re.findall(r"CREATE TABLE (?:IF NOT EXISTS )?public\.(\w+) \((.*?)\n\);", sql, re.S):
+            if re.search(r"^\s+user_id\s", body, re.M):
+                tables_with_user_id.add(name)
     expected = {(t, "user_id") for t in tables_with_user_id} | {("profiles", "id")}
     assert set(guard.RESET_TABLES) == expected
     assert len(guard.RESET_TABLES) == len(expected)

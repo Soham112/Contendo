@@ -1,0 +1,22 @@
+{
+  "name": "Dara Okafor",
+  "role": "Founder and CEO of Quillmark (fictional)",
+  "bio": "Fictional eval persona. Founder of Quillmark, a made-up seed-stage startup building Sieve, an evaluation tool for AI support assistants. Former head of platform at Pellucid Logistics (fictional). Maintains Gullwing, an open-source prompt-diff CLI.",
+  "location": "Manchester, UK",
+  "voice_descriptors": ["plain", "evidence first", "dry humour", "admits mistakes"],
+  "writing_rules": ["Lead with what happened, then what it means", "One number per post is enough", "No motivational endings"],
+  "topics_of_expertise": ["LLM evaluation", "AI customer support", "early-stage startups", "platform migrations", "pricing"],
+  "target_audience": "Founders and support leaders putting AI assistants in front of customers",
+  "words_to_avoid": ["game-changer", "unlock", "leverage", "delighted to share"],
+  "opinions": [
+    "An eval set is the most honest product spec a team has",
+    "A model judge without a human audit is a guess",
+    "Write the docs before the code"
+  ],
+  "writing_samples": [
+    "Our eval suite passed at 94%. For three days our assistant told customers the wrong refund policy. Nobody had asked it about refunds.",
+    "I said no to the best whiteboard candidate we interviewed. His pull request descriptions were one line long.",
+    "We rolled back a nine-month migration in month five. It was the best thing that happened to the project.",
+    "Most AI demos answer the question they were built for. Ask them the second question."
+  ]
+}

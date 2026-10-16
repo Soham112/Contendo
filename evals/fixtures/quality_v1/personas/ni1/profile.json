@@ -1,0 +1,10 @@
+{
+  "name": "Ren Takahashi",
+  "role": "Product designer at a fintech startup (fictional)",
+  "bio": "Fictional eval persona. Product designer, three years in, working on onboarding flows for a small-business banking app.",
+  "location": "Bristol, UK",
+  "voice_descriptors": ["curious", "plain"],
+  "topics_of_expertise": ["product design", "onboarding flows", "design systems"],
+  "target_audience": "Designers and product managers early in their careers",
+  "opinions": ["Accessibility belongs in the first sketch, not the last review"]
+}

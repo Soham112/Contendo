@@ -196,3 +196,38 @@ cd evals && ../backend/venv/bin/python -m pytest
 ```
 
 These tests need no network and no `.env`, and never import backend code.
+
+## Quality test set v1 (retrieval baseline)
+
+The multi-persona set for `docs/QUALITY.md`: 8 synthetic personas plus persona `me`
+(Soham's production library, kept in gitignored `evals/private/`). Separate users
+(`fixtures/quality_v1/users.json`), fixtures and cases (`goldens/quality_v1/`), so
+the goldens above are unchanged. Run from the repo root:
+
+```bash
+backend/venv/bin/python evals/quality_seed.py --estimate          # expected Claude cost; writes nothing
+backend/venv/bin/python evals/quality_seed.py --create-users      # one eval auth user per persona (free)
+backend/venv/bin/python evals/quality_export_me.py                # read-only production export to evals/private/
+backend/venv/bin/python evals/quality_seed.py --persona me        # load that export (no Claude calls)
+backend/venv/bin/python evals/quality_seed.py                     # seed the synthetic personas (asks; --spend-cap 1.00)
+backend/venv/bin/python evals/quality_retrieval.py --name baseline  # B1 retrieval scores, no draft call
+backend/venv/bin/python evals/reset.py --quality                  # delete the quality personas' rows
+```
+
+- Business personas are seeded the way `PUT /account/segment` saves them, so the
+  profile note is built and ingested by the real code.
+- `quality_export_me.py` reads production through a select-only client and never
+  imports backend code; the eval import copies rows as they are today (provenance
+  `copied_from_production_chunks`), flaws included.
+- Seeding and the retrieval run refuse to start unless `usage_events.model` exists
+  (migration 006): the spend cap prices calls from it.
+- `quality_retrieval.py` runs the pipeline's `load_profile` and `retrieval` nodes per
+  case and observes keyword search from the eval side; the backend is unchanged.
+  It writes nothing: a case with `pillar_details` (re-02, nb-02) runs as its own eval
+  user, seeded as its persona plus that note, so no case changes a library another reads.
+  A dropped connection (or a silent fallback off the hybrid path) retries the case up
+  to 3 times; `attempts` is in each row.
+- Spend is read from `usage_events`. Scripts have no server event loop, so the backend
+  would skip those writes; `UsageLog` runs one on a background thread for the run.
+  Reports go to `results/quality_v1/<name>/`; persona `me`'s per-case rows to
+  `private/quality_v1/results/<name>/`.

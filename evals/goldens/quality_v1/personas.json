@@ -1,0 +1,74 @@
+{
+ "rf": {
+  "n": 1,
+  "segment": "individual",
+  "library": "large (20 sources)",
+  "own_share": "50% (10 own notes)",
+  "distractors": "high (near-miss article per own project, competitor, industry stats)",
+  "split": "dev (rf-09 held out)"
+ },
+ "tc": {
+  "n": 2,
+  "segment": "individual",
+  "library": "small (6)",
+  "own_share": "17% (1 own note)",
+  "distractors": "medium",
+  "split": "holdout (whole persona)"
+ },
+ "ni0": {
+  "n": 3,
+  "segment": "individual",
+  "library": "empty, no profile",
+  "own_share": "-",
+  "distractors": "none",
+  "split": "dev"
+ },
+ "ni1": {
+  "n": 3,
+  "segment": "individual",
+  "library": "1 (the onboarding story note)",
+  "own_share": "100%",
+  "distractors": "none",
+  "split": "dev (ni1-03 held out)"
+ },
+ "me": {
+  "n": 4,
+  "segment": "individual",
+  "library": "large real (51 sources, 149 chunks)",
+  "own_share": "about 35% notes; memory_context missing on 90%",
+  "distractors": "high, plus real mislabels",
+  "split": "dev (me-06 held out)"
+ },
+ "re": {
+  "n": 5,
+  "segment": "business real_estate",
+  "library": "medium (9 + profile note)",
+  "own_share": "67%",
+  "distractors": "high (other agency's listing, national article)",
+  "split": "dev (re-05 held out)"
+ },
+ "fs": {
+  "n": 6,
+  "segment": "business fitness_studio",
+  "library": "small (5 + profile note)",
+  "own_share": "60%",
+  "distractors": "medium (competitor offer)",
+  "split": "holdout (whole persona)"
+ },
+ "bo": {
+  "n": 7,
+  "segment": "business other ('Mobile bike repair')",
+  "library": "1 + thin profile note",
+  "own_share": "100%",
+  "distractors": "none",
+  "split": "dev (bo-03 held out)"
+ },
+ "nb": {
+  "n": 8,
+  "segment": "business restaurant",
+  "library": "profile note only",
+  "own_share": "100%",
+  "distractors": "none",
+  "split": "dev (nb-03 held out)"
+ }
+}
