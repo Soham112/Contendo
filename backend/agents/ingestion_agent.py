@@ -22,6 +22,11 @@ from utils.chunker import chunk_text
 
 logger = logging.getLogger(__name__)
 
+
+class ReplaceMismatch(ValueError):
+    """A replace whose new text isn't the target source's text, when that is
+    what made it replaceable (an exact-text match)."""
+
 TAG_SYSTEM_PROMPT = """You are a tag extraction assistant. Given a passage of text, extract 3–8 short, lowercase topic tags that best describe what this content is about.
 
 Rules:
@@ -331,6 +336,8 @@ def ingest_content(
     memory_context: str | None = None,
     replace_source_id: str | None = None,
     reported_lang: str | None = None,
+    refresh_unchanged: bool = False,
+    replace_requires_same_text: bool = False,
 ) -> dict:
     """Ingest content into the knowledge base.
 
@@ -349,6 +356,15 @@ def ingest_content(
     reported_lang: the language a provider reported for this text (Supadata's
         `lang`), used only when the text is too short to identify.
 
+    refresh_unchanged: the user chose Replace, so replace_source_id is replaced
+        even when its text is unchanged (new title, URL, author, extractor).
+        Without it an unchanged text is a duplicate and nothing is paid for (the
+        business profile note saved with the same answers).
+
+    replace_requires_same_text: replace_source_id was offered because its text
+        matched (no file or URL to compare), so the new text must still be that
+        source's text; otherwise ReplaceMismatch, before any model call or write.
+
     Raises utils.language.UnsupportedLanguage, before any model call or write,
     when the text is in a language the embedder can't search.
 
@@ -362,7 +378,10 @@ def ingest_content(
     # Deduplication check — skip Claude call entirely if content already exists
     content_hash = compute_content_hash(content)
     existing = query_by_hash(content_hash, user_id=user_id)
-    if existing:
+    is_target = bool(existing and replace_source_id and existing["source_id"] == replace_source_id)
+    if replace_requires_same_text and not is_target:
+        raise ReplaceMismatch("This source can't be replaced with different content.")
+    if existing and not (is_target and refresh_unchanged):
         return {
             "chunks_stored": existing["chunk_count"],
             "tags": existing["tags"],

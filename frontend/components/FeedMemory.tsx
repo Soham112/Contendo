@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Puzzle } from "lucide-react";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useApi, type MemoryContext } from "@/lib/api";
-import { ingestOutcome, keepsInput, type IngestResult } from "@/lib/ingest-result";
+import { duplicateMatch, ingestOutcome, keepsInput, type IngestResult } from "@/lib/ingest-result";
 import { useTracking } from "@/lib/useTracking";
 import ExtensionInstallModal from "@/components/ExtensionInstallModal";
 import Link from "next/link";
@@ -680,6 +680,8 @@ export default function FeedMemory() {
     activeTab === "obsidian" ? "VAULT PATH" :
     "CONTENT FRAGMENT";
 
+  const match = result ? duplicateMatch(result) : null;
+
   return (
     <div className="flex flex-col md:flex-row gap-8 max-w-7xl max-md:!max-w-none w-full max-md:!w-full px-4 md:px-0">
       {/* ── Left: main form ───────────────────────────────────── */}
@@ -1231,21 +1233,25 @@ export default function FeedMemory() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-[15px] font-medium text-on-surface">Already in your library</p>
-                {result.replaceable && result.existing_source_id ? (
-                  <>
-                    <p className="text-sm text-secondary mt-0.5">
-                      You added this {activeTab === "url" || activeTab === "youtube" ? "link" : activeTab === "image" ? "image" : "file"} before
-                      {result.existing_title ? <> as &ldquo;{result.existing_title}&rdquo;</> : null}. Replace it to read it again with the latest extraction.
-                    </p>
-                    <div className="mt-3">
-                      <Button variant="secondary" size="sm" loading={loading} onClick={() => handleSubmit(result.existing_source_id ?? undefined)}>
-                        Replace
-                      </Button>
-                    </div>
-                  </>
+                {match ? (
+                  <p className="text-sm text-secondary mt-0.5">
+                    Matches{" "}
+                    <Link href={match.libraryHref} className="text-on-surface underline underline-offset-2">
+                      {match.title ? <>&ldquo;{match.title}&rdquo;</> : "an untitled source"}
+                    </Link>
+                    {match.details ? ` (${match.details})` : null}.
+                    {result.replaceable ? " Replace it to read it again with the latest extraction." : null}
+                  </p>
                 ) : (
                   <p className="text-sm text-secondary mt-0.5">You added this before, so there was nothing new to save.</p>
                 )}
+                {result.replaceable && result.existing_source_id ? (
+                  <div className="mt-3">
+                    <Button variant="secondary" size="sm" loading={loading} onClick={() => handleSubmit(result.existing_source_id ?? undefined)}>
+                      Replace
+                    </Button>
+                  </div>
+                ) : null}
                 {result.tags.length > 0 && (
                   <div className="mt-3 flex flex-wrap gap-1.5">
                     {result.tags.map((tag) => (

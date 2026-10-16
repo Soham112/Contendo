@@ -102,3 +102,11 @@ def test_other_scripts_are_identified_at_the_same_floor():
               "لا يقرؤون التلميحات، بل ينقرون على أول زر يرونه ويمضون قدما. لذلك حذفنا معظم الشروح ووضعنا الخطوات "
               "الأساسية في نص الأزرار مباشرة.")
     assert (detect(chinese).lang, detect(arabic).lang) == ("zh", "ar")
+
+
+def test_repetition_is_not_evidence():
+    """A short English sentence repeated twenty times read as Italian at 0.99999:
+    each distinct sentence counts once, so it is too short to judge."""
+    from utils.language import detect
+    assert detect("A different file entirely. " * 20).lang is None
+    assert detect((ENGLISH + "\n") * 3).lang == "en"

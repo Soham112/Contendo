@@ -15,6 +15,12 @@ export function sourceKey(source: SourceRef): string {
   return source.source_id;
 }
 
+/** The Library opened from a duplicate on Feed memory (/library?source=<id>):
+ * only that source. No id: every source. */
+export function focusOn<T extends SourceRef>(sources: T[], focusId: string | null): T[] {
+  return focusId ? sources.filter((s) => s.source_id === focusId) : sources;
+}
+
 /** The list without the one deleted source. Other sources, same title or not, stay. */
 export function removeSource<T extends SourceRef>(sources: T[], sourceId: string): T[] {
   return sources.filter((s) => s.source_id !== sourceId);

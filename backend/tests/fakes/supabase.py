@@ -16,6 +16,7 @@ import copy
 import math
 import re
 import uuid
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -160,6 +161,8 @@ class FakeQuery:
                         new["id"] = self._db.next_id(self._table)
                     for col in self._db.UUID_DEFAULTS.get(self._table, ()):
                         new.setdefault(col, str(uuid.uuid4()))
+                    for col in self._db.NOW_DEFAULTS.get(self._table, ()):
+                        new.setdefault(col, datetime.now(timezone.utc).isoformat())
                     rows.append(new)
                     written.append(copy.deepcopy(new))
             return FakeResponse(written)
@@ -244,6 +247,8 @@ class FakeSupabase:
     _UUID_TABLES = {"generation_traces", "connected_accounts", "publish_jobs", "publish_approvals"}
     # Other columns with DEFAULT gen_random_uuid().
     UUID_DEFAULTS = {"entities": ("entity_id",)}
+    # Columns with DEFAULT now().
+    NOW_DEFAULTS = {"sources": ("created_at",)}
 
     def next_id(self, table: str) -> int | str:
         if table in self._UUID_TABLES:

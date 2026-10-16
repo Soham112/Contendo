@@ -230,6 +230,9 @@ def test_same_url_is_a_duplicate_found_before_fetching(client, headers, fake_db,
     assert client.post("/scrape-and-ingest", headers=headers, json={"url": "https://en.wikipedia.org/wiki/R"}).status_code == 200
     again = client.post("/scrape-and-ingest", headers=headers, json={"url": "https://EN.wikipedia.org/wiki/R#x"}).json()
     assert again["duplicate"] and again["replaceable"] and len(fetched) == 1
+    [row] = fake_db.tables["sources"]
+    assert (again["existing_title"], again["existing_type"], again["existing_added_at"]) == (
+        row["title"], "url", row["created_at"])
 
 
 def test_same_image_is_a_duplicate_found_before_the_vision_call(client, headers, fake_db, ingestion, monkeypatch):
@@ -242,11 +245,34 @@ def test_same_image_is_a_duplicate_found_before_the_vision_call(client, headers,
     assert again["duplicate"] and again["replaceable"]
 
 
-def test_same_text_from_new_bytes_is_a_duplicate_replace_would_not_change(client, headers, fake_db, ingestion):
+def test_same_text_from_new_bytes_names_the_match_and_can_replace_it(client, headers, fake_db, ingestion):
     _upload(client, headers, NOTE.encode())
-    again = _upload(client, headers, NOTE.encode() + b"\n\n").json()   # new bytes, same text after stripping
-    assert again["duplicate"] and not again["replaceable"]
-    assert again["existing_source_id"] == fake_db.tables["sources"][0]["source_id"]
+    [row] = fake_db.tables["sources"]
+    old_chunks = {r["id"] for r in fake_db.tables["embeddings"]}
+    newer = NOTE.encode() + b"\n\n"                                    # new bytes, same text after stripping
+    again = _upload(client, headers, newer, name="plan-v2.txt").json()
+    assert again["duplicate"] and again["replaceable"] and again["existing_source_id"] == row["source_id"]
+    assert (again["existing_title"], again["existing_type"], again["existing_added_at"]) == (
+        row["title"], "file", row["created_at"])
+
+    replaced = _upload(client, headers, newer, name="plan-v2.txt", replace_source_id=row["source_id"])
+    assert replaced.status_code == 200 and not replaced.json()["duplicate"]
+    [after] = fake_db.tables["sources"]
+    assert after["source_id"] == row["source_id"] and after["title"] == "plan-v2"
+    assert not old_chunks & {r["id"] for r in fake_db.tables["embeddings"]}
+
+
+def test_another_users_identical_text_is_never_matched_or_replaceable(client, headers, fake_db, ingestion,
+                                                                      auth_headers):
+    _upload(client, headers, NOTE.encode())
+    [mine] = fake_db.tables["sources"]
+    other = auth_headers("user-b")
+    theirs = _upload(client, other, NOTE.encode())
+    assert theirs.status_code == 200 and not theirs.json()["duplicate"]
+    hijack = _upload(client, other, NOTE.encode(), replace_source_id=mine["source_id"])
+    assert hijack.status_code == 409
+    assert {r["user_id"] for r in fake_db.tables["sources"]} == {USER, "user-b"}
+    assert fake_db.tables["sources"][0]["extracted_text"] == mine["extracted_text"]
 
 
 # --- the current chunker and BM25 with structured text (until step 3.4) -------------------

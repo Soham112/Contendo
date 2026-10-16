@@ -181,3 +181,36 @@ def test_a_service_failure_is_not_cached(services, monkeypatch):
         youtube.transcript(VID)
     services(native="supadata_native_en.json")
     assert youtube.transcript(VID)["path"] == "native"
+
+
+def test_a_video_saved_before_its_url_was_kept_is_named_and_replaced(client, headers, fake_db, ingestion, services):
+    """The April case: the transcript was stored as text, with its first line as
+    the title and no URL, so only the exact-text check finds it."""
+    from extractors import youtube
+    fake = services(native="supadata_native_en.json")
+    transcript = youtube.extract_video(URL).text
+    youtube._cache.clear()
+    pasted = client.post("/ingest", headers=headers, json={"source_type": "youtube", "content": transcript})
+    assert pasted.status_code == 200
+    [old] = fake_db.tables["sources"]
+    old["lang"] = None                                           # stored before the language column
+    old_chunks = {r["id"] for r in fake_db.tables["embeddings"]}
+
+    again = client.post("/ingest", headers=headers, json={"source_type": "youtube", "video_url": URL}).json()
+    assert again["duplicate"] and again["replaceable"] and again["existing_source_id"] == old["source_id"]
+    assert again["existing_title"].startswith("In today's video")
+    assert (again["existing_type"], again["existing_added_at"]) == ("youtube", old["created_at"])
+
+    replaced = client.post("/ingest", headers=headers, json={"source_type": "youtube", "video_url": URL,
+                                                              "replace_source_id": old["source_id"]})
+    assert replaced.status_code == 200 and not replaced.json()["duplicate"]
+    [row] = fake_db.tables["sources"]
+    assert row["source_id"] == old["source_id"]
+    assert (row["title"], row["title_origin"]) == ("How to Build a Custom Shopify Store using AI (Claude Code)",
+                                                   "provided")
+    assert (row["source_url"], row["author"], row["lang"]) == (f"https://www.youtube.com/watch?v={VID}",
+                                                              "Kyle Skelly", "en")
+    new_chunks = [r for r in fake_db.tables["embeddings"] if r["source_id"] == old["source_id"]]
+    assert new_chunks and not old_chunks & {r["id"] for r in new_chunks}
+    assert {r["source_title"] for r in new_chunks} == {row["title"]}
+    assert fake.calls.count("native") == 2                       # the save read the preview's cache
