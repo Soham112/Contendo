@@ -120,7 +120,7 @@ def test_recall_counts_an_any_of_group_as_one_unit():
 def test_recall_reports_the_cutoff_and_diagnostic_k():
     r = qm.recall(_case(must_use_all=["a", "b"]), ["x", "a", "y", "z", "b"])
     assert r["cutoff"] == 5 and r["at_cutoff"] == 1.0 and r["pass"] is True
-    assert r["at"] == {1: 0.0, 3: 0.5, 5: 1.0}
+    assert r["at"] == {"1": 0.0, "3": 0.5, "5": 1.0}
 
 
 def test_mrr_and_its_pass_limit_depend_on_phrasing():

@@ -85,8 +85,9 @@ ATTEMPTS = 3  # a dropped connection is retried; the attempts are recorded
 
 def _retrieve(case: dict[str, Any], user_id: str, client: Any, probe: KeywordProbe) -> tuple[dict, int]:
     """Run load_profile and retrieval as the pipeline does. retrieval_node turns a
-    failed query into a silent fallback, so a run that didn't take the hybrid path
-    is retried like a raised transport error, up to ATTEMPTS; the last one stands."""
+    failed query into a silent fallback (flat search, or hybrid without BM25), so a
+    run that left the hybrid path or whose BM25 raised is retried like a transport
+    error, up to ATTEMPTS; the last one stands and the attempts are recorded."""
     import httpx
     from agents.retrieval_agent import retrieval_node
     from pipeline.graph import load_profile_node
@@ -105,7 +106,8 @@ def _retrieve(case: dict[str, Any], user_id: str, client: Any, probe: KeywordPro
             if attempt == ATTEMPTS:
                 raise
             continue
-        if state.get("retrieval_path") == "hybrid" or attempt == ATTEMPTS:
+        clean = state.get("retrieval_path") == "hybrid" and not probe.state.get("error")
+        if clean or attempt == ATTEMPTS:
             return state, attempt
     raise AssertionError("unreachable")
 

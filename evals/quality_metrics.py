@@ -48,7 +48,7 @@ def recall(case: dict[str, Any], labels: list[str]) -> dict[str, Any]:
     """Required-source Recall@K: at the cutoff (pass: every unit), and @1/@3/@5 for diagnosis."""
     value = recall_at(case, labels)
     return {"at_cutoff": value, "cutoff": len(labels),
-            "at": {k: recall_at(case, labels, k) for k in DIAGNOSTIC_K},
+            "at": {str(k): recall_at(case, labels, k) for k in DIAGNOSTIC_K},  # str keys: stable through JSON
             "pass": None if value is None else value == 1.0}
 
 
@@ -162,7 +162,7 @@ def _mean(values: list[float | None]) -> float | None:
 
 def means(scores: list[dict[str, Any]]) -> dict[str, float | None]:
     """Mean Recall@1/3/5/cutoff, MRR, Precision@cutoff and off-topic rate over cases where each applies."""
-    out = {f"recall@{k}": _mean([s["recall"]["at"][k] for s in scores]) for k in DIAGNOSTIC_K}
+    out = {f"recall@{k}": _mean([s["recall"]["at"][str(k)] for s in scores]) for k in DIAGNOSTIC_K}
     out["recall@cutoff"] = _mean([s["recall"]["at_cutoff"] for s in scores])
     out["mrr"] = _mean([s["mrr"]["value"] for s in scores])
     out["precision@cutoff"] = _mean([s["precision"]["value"] for s in scores])
