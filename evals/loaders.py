@@ -69,7 +69,7 @@ class Source:
 @dataclass(frozen=True)
 class Persona:
     slug: str
-    profile: dict[str, Any]
+    profile: dict[str, Any] | None  # None: a new user with no profile row
     experience_nodes: list[dict[str, Any]]
     posts: list[dict[str, Any]]
     sources: list[Source]

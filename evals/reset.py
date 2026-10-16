@@ -3,9 +3,11 @@
 From the repo root, with the backend venv:
     backend/venv/bin/python evals/reset.py                 # every eval persona
     backend/venv/bin/python evals/reset.py --persona ds    # one persona (slug or uuid)
+    backend/venv/bin/python evals/reset.py --quality       # the quality_v1 personas instead
 
-Only deletes rows whose user id is one of the uuids in fixtures/users.json, in
-every table of the baseline schema that has a user id (guard.RESET_TABLES).
+Only deletes rows whose user id is one of the uuids in fixtures/users.json (or
+fixtures/quality_v1/users.json with --quality), in
+every migration table that has a user id (guard.RESET_TABLES).
 Auth users are kept. Refuses to start if the env guard fails, and asks you to
 type the project ref before deleting.
 """
@@ -19,6 +21,7 @@ from postgrest.types import ReturnMethod
 
 from guard import RESET_TABLES, EnvGuardError, resolve_reset_targets
 from loaders import FixtureError, load_users
+from quality_fixtures import USERS_FILE as QUALITY_USERS_FILE
 
 
 def count_rows(client, table: str, column: str, user_id: str) -> int:
@@ -29,10 +32,11 @@ def count_rows(client, table: str, column: str, user_id: str) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--persona", action="append", default=[], help="persona slug or uuid (repeatable); default: all")
+    parser.add_argument("--quality", action="store_true", help="target the quality_v1 users instead")
     args = parser.parse_args(argv)
 
     try:
-        users = load_users()
+        users = load_users(QUALITY_USERS_FILE) if args.quality else load_users()
         targets = resolve_reset_targets(args.persona, users)
         client = env.backend_client()
     except (EnvGuardError, FixtureError) as exc:

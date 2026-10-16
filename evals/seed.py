@@ -29,15 +29,19 @@ def _experience_id(slug: str, node: dict[str, Any]) -> str:
     return str(uuid.uuid5(_EXPERIENCE_NS, key))
 
 
-def seed_persona(persona: Persona, user_id: str, client: Any) -> str:
-    """Write one persona's profile, experience nodes, sources and posts. Returns a summary line."""
+def seed_persona(persona: Persona, user_id: str, client: Any, extra_titles: frozenset[str] = frozenset()) -> str:
+    """Write one persona's profile, experience nodes, sources and posts. Returns a summary line.
+
+    A persona whose profile is None gets no profile row (a new user). extra_titles:
+    sources seeded another way (a business profile note), so not reported as stale."""
     from agents.ingestion_agent import ingest_content
     from memory.experience_store import save_experience_nodes
     from memory.feedback_store import log_post
     from memory.profile_store import save_profile
 
     slug = persona.slug
-    save_profile(persona.profile, user_id=user_id)
+    if persona.profile is not None:
+        save_profile(persona.profile, user_id=user_id)
 
     nodes = [{**n, "experience_id": n.get("experience_id") or _experience_id(slug, n)} for n in persona.experience_nodes]
     save_experience_nodes(user_id, nodes)
@@ -79,7 +83,7 @@ def seed_persona(persona: Persona, user_id: str, client: Any) -> str:
     rows = (
         client.table("embeddings").select("source_title,node_type").eq("user_id", user_id).execute().data or []
     )
-    fixture_titles = {s.title for s in persona.sources}
+    fixture_titles = {s.title for s in persona.sources} | extra_titles
     stale = sorted({
         r["source_title"] for r in rows
         if (r.get("node_type") or "chunk") == "chunk" and r["source_title"] not in fixture_titles
@@ -89,7 +93,7 @@ def seed_persona(persona: Persona, user_id: str, client: Any) -> str:
               f"Run reset.py --persona {slug}, then seed again.")
 
     return (
-        f"{slug}: profile ok · {len(nodes)} experience nodes · "
+        f"{slug}: profile {'ok' if persona.profile is not None else 'none'} · {len(nodes)} experience nodes · "
         f"{len(persona.sources)} sources ({ingested} ingested, {duplicate} duplicate) · "
         f"{len(persona.posts)} posts ({added} added, {len(persona.posts) - added} existing)"
     )

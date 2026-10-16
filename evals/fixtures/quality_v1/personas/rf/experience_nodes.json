@@ -1,0 +1,5 @@
+[
+  {"node_type": "work", "entity_name": "Quillmark", "role": "Founder and CEO", "start_date": "2024-09", "end_date": null, "domain_areas": ["LLM evaluation", "customer support", "startups"], "description": "Building Sieve, an evaluation tool for AI support assistants."},
+  {"node_type": "work", "entity_name": "Pellucid Logistics", "role": "Head of Platform", "start_date": "2019-03", "end_date": "2024-06", "domain_areas": ["platform engineering", "data migrations"], "description": "Led the Ledger migration to an event log."},
+  {"node_type": "personal_project", "entity_name": "Gullwing", "role": "Maintainer", "start_date": "2024-02", "end_date": null, "domain_areas": ["developer tools", "prompt engineering"], "description": "Open-source CLI that diffs the outputs of two prompts."}
+]

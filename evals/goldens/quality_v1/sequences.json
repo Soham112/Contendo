@@ -1,0 +1,122 @@
+{
+ "rf": [
+  "Why we started Sieve",
+  "The bug our evals didn't catch",
+  "Why I changed my mind about LLM-as-judge",
+  "Moving Sieve from per-seat to usage pricing",
+  "What the Brightline pilot taught us about deflection",
+  "Writing docs before code on Gullwing",
+  "Hiring our first engineer",
+  "Every AI demo shows the happy path"
+ ],
+ "tc": [
+  "How we cut changeover time by 22% at a packaging plant",
+  "Why OEE comparisons between plants are meaningless",
+  "Why lean fails in high-mix plants",
+  "Is AI demand forecasting worth it for mid-size manufacturers?",
+  "Nearshoring",
+  "Credit the operators"
+ ],
+ "ni1": [
+  "Cutting our signup form in half",
+  "Accessibility belongs in the first sketch",
+  "Designing onboarding for small business owners",
+  "What I learned in three years as a designer",
+  "Why every form field needs a reason",
+  "Accessibility checklists are not enough"
+ ],
+ "re": [
+  {
+   "topic": "New listing: 14 Mill Lane",
+   "pillar": "new_listing"
+  },
+  {
+   "topic": "Living in Ashby",
+   "pillar": "neighborhood_spotlight"
+  },
+  {
+   "topic": "Kelso Vale market update",
+   "pillar": "market_update"
+  },
+  {
+   "topic": "How to price your home to sell",
+   "pillar": "buyer_seller_tips"
+  },
+  {
+   "topic": "Just sold on Church Row",
+   "pillar": "just_sold"
+  },
+  {
+   "topic": "Coming soon: The Old Forge, Kelso",
+   "pillar": "new_listing"
+  },
+  {
+   "topic": "Why we go to every viewing",
+   "pillar": null
+  },
+  {
+   "topic": "Free valuations this spring",
+   "pillar": null
+  }
+ ],
+ "fs": [
+  {
+   "topic": "Strong Over 40",
+   "pillar": "class_spotlight"
+  },
+  {
+   "topic": "Meet Ana, our head coach",
+   "pillar": "meet_the_coach"
+  },
+  {
+   "topic": "Do you need protein straight after training?",
+   "pillar": "training_tips"
+  },
+  {
+   "topic": "Our row-a-thon for the food bank",
+   "pillar": "studio_community"
+  },
+  {
+   "topic": "Autumn timetable",
+   "pillar": "schedule_and_offers"
+  },
+  {
+   "topic": "Foundations Barbell for beginners",
+   "pillar": "class_spotlight"
+  }
+ ],
+ "bo": [
+  "Spring service prices",
+  "We come to you: how mobile bike repair works",
+  "Why e-bike brakes wear faster",
+  "Getting your bike ready for winter",
+  "Puncture-proof tyres: worth it?",
+  "Book your spring service"
+ ],
+ "nb": [
+  {
+   "topic": "Friday pizza nights",
+   "pillar": "menu_highlight"
+  },
+  {
+   "topic": "Our new autumn pizza",
+   "pillar": "menu_highlight"
+  },
+  {
+   "topic": "Live music night",
+   "pillar": "specials_and_events"
+  },
+  {
+   "topic": "Where our ingredients come from",
+   "pillar": "behind_the_scenes"
+  },
+  {
+   "topic": "Meet our chef",
+   "pillar": "meet_the_team"
+  },
+  {
+   "topic": "Supporting the Castlegate school fair",
+   "pillar": "local_community"
+  }
+ ]
+}

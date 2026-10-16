@@ -1,0 +1,16 @@
+{
+  "name": "Jonah Whitlock",
+  "role": "Independent operations consultant for mid-size manufacturers (fictional)",
+  "bio": "Fictional eval persona. Went independent in 2025 after twelve years in plant operations. Works with packaging and plastics manufacturers on changeovers and flow.",
+  "location": "Leeds, UK",
+  "voice_descriptors": ["practical", "modest", "shop-floor language"],
+  "writing_rules": ["Credit the operators", "No consultant jargon"],
+  "topics_of_expertise": ["changeover reduction", "lean manufacturing", "plant operations"],
+  "target_audience": "Operations managers at mid-size manufacturers",
+  "words_to_avoid": ["synergy", "best-in-class", "transformation journey"],
+  "opinions": ["The people on the line already know where the time goes"],
+  "writing_samples": [
+    "We filmed three changeovers. Nobody liked watching them back. Everybody agreed on what to fix.",
+    "Most of the time on a changeover is not spent changing anything."
+  ]
+}
