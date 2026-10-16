@@ -242,7 +242,7 @@ def _crash_mid_replace(fake_db, sid, *, switched: bool):
     finished (switched: after the row moved to the new set)."""
     from memory.vector_store import upsert_chunks
     write = source_store.begin_replace(USER, sid, typed_text(text="new", title_provided=False),
-                                       title="t", extracted_text="new", content_hash="h2")
+                                       title="t", extracted_text="new", content_hash="h2", lang=None)
     upsert_chunks(["new text"], source_id=sid, user_id=USER, ingest_id=write.ingest_id)
     if switched:
         fake_db.tables["sources"][0]["ingest_id"] = write.ingest_id
@@ -266,7 +266,7 @@ def test_sweep_undoes_or_finishes_a_crashed_replace(fake_db, ingestion, switched
 def test_one_replace_at_a_time_and_a_crashed_one_does_not_block_the_next(fake_db, ingestion):
     sid = _ingest(_text("old", "kafka"))
     source_store.begin_replace(USER, sid, typed_text(text="x", title_provided=False),
-                               title="t", extracted_text="x", content_hash="h2")
+                               title="t", extracted_text="x", content_hash="h2", lang=None)
     with pytest.raises(source_store.ReplaceInProgress):
         _ingest(_text("new", "redis"), replace=sid)
 

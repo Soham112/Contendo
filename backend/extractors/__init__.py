@@ -3,7 +3,7 @@ into the text that is chunked, plus its title and its original.
 
     url.py       a web page, through Jina Reader's JSON mode
     file.py      an uploaded PDF, DOCX, TXT or Markdown file
-    youtube.py   a video's transcript, through Supadata (cached between preview and save)
+    youtube.py   a video's transcript, through Supadata in English, and its title, through oEmbed
     image.py     an image, through the vision call in agents/vision_agent.py
     obsidian.py  an Obsidian note
 
