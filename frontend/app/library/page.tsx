@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useApi } from "@/lib/api";
 import type { ClusterItem, ClusterSourceItem } from "@/lib/api";
-import { DELETE_FAILED_MESSAGE, deleteOutcome, removeSource, sourceKey } from "@/lib/library";
+import { DELETE_FAILED_MESSAGE, deleteOutcome, focusOn, removeSource, sourceKey } from "@/lib/library";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/card";
@@ -544,6 +544,15 @@ export default function LibraryPage() {
   const [filter, setFilter] = useState<FilterType>("all");
   const [sort, setSort] = useState<SortOrder>("newest");
   const [search, setSearch] = useState("");
+  // ?source=<id>: show only that source (a link from a duplicate on Feed memory).
+  const [focusId, setFocusId] = useState<string | null>(null);
+  useEffect(() => {
+    setFocusId(new URLSearchParams(window.location.search).get("source"));
+  }, []);
+  const clearFocus = () => {
+    setFocusId(null);
+    router.replace("/library");
+  };
 
 
   // Main view toggle
@@ -619,7 +628,7 @@ export default function LibraryPage() {
 
   const allTags = Array.from(new Set(sources.flatMap((s) => s.tags))).sort();
 
-  const filtered = sources
+  const filtered = focusOn(sources, focusId)
     .filter((s) => filter === "all" || s.source_type === filter ||
       (filter === "note" && ["personal_note", "saved_content"].includes(s.source_type)))
     .filter((s) => {
@@ -761,7 +770,14 @@ export default function LibraryPage() {
                   />
                 )}
 
-                {sources.length > 0 && filtered.length === 0 && (
+                {focusId && sources.length > 0 && (
+                  <div className="mb-4 flex items-center justify-between gap-3 rounded-xl bg-surface-container px-4 py-3 text-sm text-secondary">
+                    <span>{filtered.length > 0 ? "Showing the source you tried to add again." : "That source is no longer in your library."}</span>
+                    <Button variant="secondary" size="sm" onClick={clearFocus}>Show all sources</Button>
+                  </div>
+                )}
+
+                {!focusId && sources.length > 0 && filtered.length === 0 && (
                   <EmptyState
                     title="Nothing matches"
                     body={search.trim() ? "Try a different search." : `You haven't added any ${(TYPE_LABELS[filter] ?? filter).toLowerCase()} sources yet.`}

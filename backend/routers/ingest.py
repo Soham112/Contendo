@@ -5,11 +5,15 @@ check for a duplicate, extract, and store through ingest_content.
 
 Duplicates. A file or image with the same bytes (sha256), or a page or video
 with the same normalised URL, is already in the library: the route answers at
-once, before any paid call, with the existing source and `replaceable: true`,
-so the frontend can offer to replace it. Resubmitting with `replace_source_id`
-re-extracts and replaces that source in place (unique chunk ids, old content
-intact until the new one is stored). Content whose text is already stored
-(content_hash) is a duplicate that replacing would not change.
+once, before any paid call. Content whose extracted text is already stored
+(content_hash, e.g. a video saved before its URL was recorded) is found after
+extraction. Either way the answer names the existing source (title, input type,
+date added) with `replaceable: true`, so the frontend can offer to replace it.
+Resubmitting with `replace_source_id` re-extracts and replaces that source in
+place (unique chunk ids, old content intact until the new one is stored), even
+when its text is unchanged: the user chose to refresh it. A replace may only
+target the source that has the same file or URL, or, when none has, the same
+text (checked after extraction); anything else is a 409.
 
 Language. ingest_content refuses text in a language the embedder can't search
 (utils/language.py); every route returns that as a 422 with the message.
@@ -18,13 +22,14 @@ import base64
 import binascii
 import logging
 import mimetypes
-from typing import Callable
+from typing import Callable, NamedTuple
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from agents.ingestion_agent import ingest_content, _classify_memory_context, _crossref_experience_context
+from agents.ingestion_agent import (ReplaceMismatch, ingest_content, _classify_memory_context,
+                                    _crossref_experience_context)
 from auth.supabase_jwt import get_user_id_dep
 from extractors import Extraction, ExtractionError, ServiceUnavailable
 from extractors.file import extract_file
@@ -63,7 +68,9 @@ class IngestResponse(BaseModel):
     message: str = ""
     existing_source_id: str | None = None  # the source a duplicate matched
     existing_title: str | None = None
-    replaceable: bool = False  # same file or URL: re-extracting may change it
+    existing_type: str | None = None  # its sources.input_type
+    existing_added_at: str | None = None  # when it was first added
+    replaceable: bool = False  # the user's own source: Replace re-extracts it in place
     title: str | None = None
     word_count: int | None = None
 
@@ -83,23 +90,43 @@ class YouTubeTranscriptResponse(BaseModel):
     title: str
 
 
-def _already_stored(existing: dict) -> IngestResponse:
+_CANT_REPLACE = "This source can't be replaced with different content."
+
+
+def _already_stored(existing: dict, *, chunks_stored: int = 0, tags: list[str] | None = None) -> IngestResponse:
     return IngestResponse(
-        chunks_stored=0, tags=[], duplicate=True, replaceable=True,
+        chunks_stored=chunks_stored, tags=tags or [], duplicate=True, replaceable=True,
         existing_source_id=existing["source_id"], existing_title=existing.get("title"),
+        existing_type=existing.get("input_type"), existing_added_at=existing.get("created_at"),
         message="This is already in your knowledge base",
     )
 
 
-def _check_duplicate(user_id: str, replace_source_id: str | None, **key) -> IngestResponse | None:
-    """A response for an existing source with this key, or None to go on. A
-    replace may only target the source that has this key."""
+def _text_duplicate(result: dict, user_id: str) -> IngestResponse:
+    """The answer for content whose text is already stored, naming that source."""
+    existing = source_store.get_source(result["duplicate_source_id"], user_id) if result.get("duplicate_source_id") else None
+    if existing:
+        return _already_stored(existing, chunks_stored=result["chunks_stored"], tags=result["tags"])
+    return IngestResponse(chunks_stored=result["chunks_stored"], tags=result["tags"], duplicate=True,
+                          existing_source_id=result.get("duplicate_source_id"),
+                          message="This content is already in your knowledge base")
+
+
+class DuplicateCheck(NamedTuple):
+    duplicate: IngestResponse | None = None  # this file or URL is stored: answer now
+    replace_by_text: bool = False            # the replace target must have the same text
+
+
+def _check_duplicate(user_id: str, replace_source_id: str | None, **key) -> DuplicateCheck:
+    """Before extraction: an existing source with this file or URL, or for a
+    replace, how its target is confirmed. The target is the source with this
+    file or URL; when no source has it, the target must have the same text."""
     existing = source_store.find_duplicate(user_id, **key)
     if replace_source_id:
-        if not existing or existing["source_id"] != replace_source_id:
-            raise HTTPException(status_code=409, detail="This source can't be replaced with different content.")
-        return None
-    return _already_stored(existing) if existing else None
+        if existing and existing["source_id"] != replace_source_id:
+            raise HTTPException(status_code=409, detail=_CANT_REPLACE)
+        return DuplicateCheck(replace_by_text=existing is None)
+    return DuplicateCheck(duplicate=_already_stored(existing) if existing else None)
 
 
 async def _extract(extract: Callable[[], Extraction], error_status: int) -> Extraction:
@@ -112,27 +139,32 @@ async def _extract(extract: Callable[[], Extraction], error_status: int) -> Extr
 
 
 async def _ingest(**kwargs) -> dict:
+    """ingest_content in the threadpool. A replace chosen by the user refreshes
+    its source even when the text is unchanged."""
+    if kwargs.get("replace_source_id"):
+        kwargs["refresh_unchanged"] = True
     try:
         return await run_in_threadpool(ingest_content, **kwargs)
     except UnsupportedLanguage as e:
         raise HTTPException(status_code=422, detail=str(e))
+    except ReplaceMismatch:
+        raise HTTPException(status_code=409, detail=_CANT_REPLACE)
 
 
 async def _store(extract: Callable[[], Extraction], *, user_id: str, source_type: str, error_status: int,
-                 replace_source_id: str | None = None, memory_context: str | None = None) -> IngestResponse:
+                 check: DuplicateCheck = DuplicateCheck(), replace_source_id: str | None = None,
+                 memory_context: str | None = None) -> IngestResponse:
     extraction = await _extract(extract, error_status)
     result = await _ingest(
         content=extraction.text, source_type=source_type, source_title=extraction.title,
         user_id=user_id, memory_context=memory_context, original=extraction.original,
-        replace_source_id=replace_source_id, reported_lang=extraction.metadata.get("lang"),
+        replace_source_id=replace_source_id, replace_requires_same_text=check.replace_by_text,
+        reported_lang=extraction.metadata.get("lang"),
     )
-    response = IngestResponse(chunks_stored=result["chunks_stored"], tags=result["tags"],
-                              title=extraction.title, word_count=extraction.metadata.get("word_count"))
     if result.get("duplicate"):
-        response.duplicate = True
-        response.existing_source_id = result.get("duplicate_source_id")
-        response.message = "This content is already in your knowledge base"
-    return response
+        return _text_duplicate(result, user_id)
+    return IngestResponse(chunks_stored=result["chunks_stored"], tags=result["tags"],
+                          title=extraction.title, word_count=extraction.metadata.get("word_count"))
 
 
 def _image_input(raw_image: str) -> tuple[bytes, str]:
@@ -166,19 +198,21 @@ async def ingest(req: IngestRequest, user_id: str = Depends(get_user_id_dep)) ->
         if not req.raw_image:
             raise HTTPException(status_code=400, detail="raw_image is required for image source_type")
         data, media_type = _image_input(req.raw_image)
-        if dup := _check_duplicate(user_id, req.replace_source_id, raw_sha256=source_store.bytes_sha256(data)):
-            return dup
+        check = _check_duplicate(user_id, req.replace_source_id, raw_sha256=source_store.bytes_sha256(data))
+        if check.duplicate:
+            return check.duplicate
         return await _store(lambda: extract_image(data, req.raw_image, media_type, user_id=user_id),
                             user_id=user_id, source_type="image", error_status=422,
-                            replace_source_id=req.replace_source_id)
+                            check=check, replace_source_id=req.replace_source_id)
     if req.source_type == "youtube" and req.video_url:
         vid = youtube.video_id(req.video_url)
         if not vid:
             raise HTTPException(status_code=400, detail="Invalid YouTube URL.")
-        if dup := _check_duplicate(user_id, req.replace_source_id, source_url=youtube.canonical_url(vid)):
-            return dup
+        check = _check_duplicate(user_id, req.replace_source_id, source_url=youtube.canonical_url(vid))
+        if check.duplicate:
+            return check.duplicate
         return await _store(lambda: youtube.extract_video(req.video_url), user_id=user_id, source_type="youtube",
-                            error_status=422, replace_source_id=req.replace_source_id,
+                            error_status=422, check=check, replace_source_id=req.replace_source_id,
                             memory_context=req.memory_context)
 
     if not req.content or not req.content.strip():
@@ -193,11 +227,11 @@ async def ingest(req: IngestRequest, user_id: str = Depends(get_user_id_dep)) ->
             "youtube" if req.source_type == "youtube" else "note",   # a transcript pasted by hand
             text=req.content, title_provided=bool(req.source_title),
         ),
+        # typed text has no file or URL: a replace target must have the same text
+        replace_source_id=req.replace_source_id, replace_requires_same_text=bool(req.replace_source_id),
     )
     if result.get("duplicate"):
-        return IngestResponse(chunks_stored=result["chunks_stored"], tags=result["tags"], duplicate=True,
-                              existing_source_id=result.get("duplicate_source_id"),
-                              message="This content is already in your knowledge base")
+        return _text_duplicate(result, user_id)
     return IngestResponse(chunks_stored=result["chunks_stored"], tags=result["tags"])
 
 
@@ -227,22 +261,24 @@ async def ingest_file(
         raise HTTPException(status_code=413, detail="File exceeds 10 MB limit.")
     if not raw:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
-    if dup := _check_duplicate(user_id, replace_source_id, raw_sha256=source_store.bytes_sha256(raw)):
-        return dup
+    check = _check_duplicate(user_id, replace_source_id, raw_sha256=source_store.bytes_sha256(raw))
+    if check.duplicate:
+        return check.duplicate
     filename = file.filename or ""
     mime = file.content_type or mimetypes.guess_type(filename)[0]
     return await _store(lambda: extract_file(filename, raw, mime), user_id=user_id, source_type="article",
-                        error_status=422, replace_source_id=replace_source_id)
+                        error_status=422, check=check, replace_source_id=replace_source_id)
 
 
 @router.post("/scrape-and-ingest", response_model=IngestResponse)
 async def scrape_and_ingest(req: ScrapeRequest, user_id: str = Depends(get_user_id_dep)) -> IngestResponse:
     if not is_valid_url(req.url):
         raise HTTPException(status_code=400, detail="Invalid URL. Please include https:// at the start.")
-    if dup := _check_duplicate(user_id, req.replace_source_id, source_url=normalize_url(req.url)):
-        return dup
+    check = _check_duplicate(user_id, req.replace_source_id, source_url=normalize_url(req.url))
+    if check.duplicate:
+        return check.duplicate
     return await _store(lambda: extract_url(req.url), user_id=user_id, source_type="article",
-                        error_status=400, replace_source_id=req.replace_source_id)
+                        error_status=400, check=check, replace_source_id=req.replace_source_id)
 
 
 @router.post("/fetch-youtube-transcript", response_model=YouTubeTranscriptResponse)

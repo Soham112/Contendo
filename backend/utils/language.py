@@ -9,7 +9,10 @@ Identification is statistical: py3langid (BSD-3-Clause), a naive Bayes model
 over byte n-grams covering 97 languages, deterministic and local. Code and
 identifiers are removed by syntax first, because the model reads them as Latin
 or Dutch, and symbols (♪, arrows, emoji) are removed and case folded, because
-the model reads bytes and all-caps lyrics between ♪ read as Gujarati. Short text is undetermined rather than guessed: below MIN_BYTES, or
+the model reads bytes and all-caps lyrics between ♪ read as Gujarati. A repeated
+sentence or line counts once: repetition adds no evidence, but it inflates the size
+and the naive Bayes confidence ("A different file entirely." twenty times read as
+Italian at 0.99999). Short text is undetermined rather than guessed: below MIN_BYTES, or
 below MIN_CONFIDENCE, the result is None and the source is accepted. Size is
 counted in UTF-8 bytes, the unit the model reads, so the floor is fair across
 scripts (a Chinese character is 3 bytes and carries more than a Latin letter).
@@ -40,6 +43,7 @@ MIN_CONFIDENCE = 0.9
 _FENCED = re.compile(r"```.*?```", re.S)
 _INLINE_CODE = re.compile(r"`[^`\n]*`")
 _URL = re.compile(r"\S+://\S+")
+_SENTENCE_END = re.compile(r"(?<=[.!?。！？])\s+|\n+")
 # An ASCII token shaped like code: snake_case, digits, camelCase, a.b, a/b.
 _IDENTIFIER = re.compile(r"[A-Za-z0-9_./-]*(?:_|\d|[a-z][A-Z]|[A-Za-z]\.[A-Za-z]|/)[A-Za-z0-9_./-]*")
 
@@ -97,10 +101,16 @@ def normalize(code: str | None) -> str | None:
 
 def prose(text: str) -> str:
     """The text without code blocks, inline code, URLs, identifier-shaped tokens
-    or symbol characters (Unicode category S), case folded."""
+    or symbol characters (Unicode category S), case folded, each distinct
+    sentence or line once."""
     for pattern in (_FENCED, _INLINE_CODE, _URL, _IDENTIFIER):
         text = pattern.sub(" ", text)
-    return "".join(" " if unicodedata.category(c).startswith("S") else c for c in text).casefold()
+    text = "".join(" " if unicodedata.category(c).startswith("S") else c for c in text).casefold()
+    seen: dict[str, None] = {}
+    for sentence in _SENTENCE_END.split(text):
+        if key := " ".join(sentence.split()):
+            seen.setdefault(key)
+    return "\n".join(seen)
 
 
 def detect(text: str) -> Detection:

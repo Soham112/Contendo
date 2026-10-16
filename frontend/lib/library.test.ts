@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { DELETE_FAILED_MESSAGE, deleteOutcome, removeSource, sourceKey } from "./library";
+import { DELETE_FAILED_MESSAGE, deleteOutcome, focusOn, removeSource, sourceKey } from "./library";
 
 const twins = [
   { source_id: "a", source_title: "Untitled", chunk_count: 2 },
@@ -37,4 +37,11 @@ it.each([
   ["200 that isn't JSON", new Response("ok", { status: 200 })],
 ])("%s keeps the card and shows the delete error", async (_label, response) => {
   expect(await deleteOutcome(response)).toEqual({ ok: false, message: DELETE_FAILED_MESSAGE });
+});
+
+it("a link to one source shows only that source; no link shows all", () => {
+  const sources = [{ source_id: "a" }, { source_id: "b" }];
+  expect(focusOn(sources, "b")).toEqual([{ source_id: "b" }]);
+  expect(focusOn(sources, "gone")).toEqual([]);
+  expect(focusOn(sources, null)).toEqual(sources);
 });

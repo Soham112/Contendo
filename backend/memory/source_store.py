@@ -113,7 +113,7 @@ def bytes_sha256(data: bytes) -> str:
 def find_duplicate(user_id: str, *, raw_sha256: str | None = None, source_url: str | None = None) -> dict | None:
     """The user's source with these exact bytes (files, images) or this URL
     (pages, videos; already normalised by the extractor), or None."""
-    query = supabase.table("sources").select("source_id,title,input_type").eq("user_id", user_id)
+    query = supabase.table("sources").select("source_id,title,input_type,created_at").eq("user_id", user_id)
     if raw_sha256:
         query = query.eq("raw_sha256", raw_sha256)
     elif source_url:

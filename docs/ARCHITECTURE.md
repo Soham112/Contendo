@@ -1,6 +1,6 @@
 # Contendo architecture
 
-Drawn from the code at commit `aa173f2` (main, migration 020) on 2026-10-16. **Update the affected diagram in the same PR as any change to ingestion, storage, retrieval or generation.**
+Drawn from the code at commit `6e5ec7c` (main) plus branch `fix/duplicate-shows-match` on 2026-10-16. **Update the affected diagram in the same PR as any change to ingestion, storage, retrieval or generation.**
 
 Legend (flowcharts): green = built and working · orange = built, known issue · purple dashed = planned · blue = storage · grey = external service.
 
@@ -218,15 +218,15 @@ What happens when a user adds anything to their memory. Steps after the chunk in
 flowchart TD
   i1["Typed note or pasted text"] --> ic
   i2["File upload"] & i3["URL"] & i4["YouTube link"] & i5["Image"] --> dupk{"Same bytes or URL already stored?<br/>checked before any paid call"}
-  dupk -->|"yes"| dupr["Duplicate: replaceable<br/>user may resend with replace_source_id"]
-  dupk -->|"no, or replace"| ext["backend/extractors/<br/>file: pdfplumber headers/footers removed · DOCX headings, tables<br/>url: Jina JSON, title field, target status checked<br/>youtube: Supadata native in English · not English and ≤ 60 min: once from the audio · else refused<br/>title and channel from oEmbed · outcome cached from the preview<br/>image: Sonnet vision, text and description apart"]
+  dupk -->|"yes"| dupr["Duplicate, named: title · type · date added<br/>replaceable: user may resend with replace_source_id"]
+  dupk -->|"no, or replace<br/>target: same file or URL, else same text"| ext["backend/extractors/<br/>file: pdfplumber headers/footers removed · DOCX headings, tables<br/>url: Jina JSON, title field, target status checked<br/>youtube: Supadata native in English · not English and ≤ 60 min: once from the audio · else refused<br/>title and channel from oEmbed · outcome cached from the preview<br/>image: Sonnet vision, text and description apart"]
   i6["Obsidian vault or zip"] --> ext
   ext -->|"structured text + SourceOriginal<br/>raw input · extractor and version"| ic["ingest_content"]
   ic --> chunk["Chunk: 500 words, 50 overlap"]
   chunk --> lang{"Language of the text<br/>py3langid on prose, ≥ 300 bytes and 0.9 confidence<br/>provider's code only when undetermined"}
   lang -->|"confidently not English"| langr["Refused before any model call or write<br/>422 naming the language"]
   lang -->|"English or undetermined<br/>stored as sources.lang"| dup{"content_hash already stored?"}
-  dup -->|yes| skip["Return the stored chunk count and tags, no model calls"]
+  dup -->|yes| skip["Duplicate, named and replaceable · no model calls<br/>a user Replace goes on: same source refreshed in place<br/>a text-matched Replace with other text: 409"]
   dup -->|no| tags["Sonnet: 3-8 tags for the whole document<br/>from its first 1,500 words"]
   tags --> ctxq{"valid memory_context chosen by user?"}
   ctxq -->|yes| one["One label for every chunk of the document"]
@@ -279,6 +279,7 @@ Notes:
 - Every ingest keeps its original (`memory/source_store.py`). The row is written before the Storage object and the chunks, so a crash can't leave anything without a record; the sweeper removes what a crash left pending.
 - Every delete goes through one cascade (`memory/derived_store.py`, migration 016's foreign keys). A replace (the business profile note) writes a new chunk set before deleting the old one, so a failure partway keeps the old note; for those seconds retrieval can see both sets. Consolidation chunks of affected entities are removed, not rebuilt.
 - The Library deletes one source by `source_id`; titles are not unique (one production library has 21 sources with no title).
+- A duplicate is found by file or URL before extraction, or by exact text after it (sources saved before their URL was kept, such as videos stored as transcripts). Both answers name the match and offer Replace, which re-extracts into the same source even when the text is unchanged, so a better title, URL, channel or language can be written. A Replace that matched only by text must still have that text.
 - Every source's text is identified before anything is paid for or stored (`utils/language.py`): the embedder is English-only, so a confidently non-English source is refused with its language named; short text is undetermined and accepted. Obsidian skips such a note; the business profile save reports `memory_saved: false`. A multilingual embedder is backlog, only if non-English users are supported.
 - Business answers reach memory only as the profile note; tone is left out of the note and goes to the prompt instead (diagram 5).
 
@@ -576,4 +577,6 @@ Notes:
 | ~~No language check at ingestion: non-English text was stored but can't be found by meaning (the embedder is English-only)~~. **Fixed**: every input type identified with py3langid, refused when confidently not English, stored as `sources.lang`. Existing rows keep `lang` NULL | `backend/utils/language.py · agents/ingestion_agent.py` | `fix/youtube-title-language` |
 | Derived rows (consolidation briefs) sit in the keyword index and change every term's document frequency, re-ranking real sources (quality_v1 re-05: needed source rank 1 with the briefs, 4 without, its own scores unchanged) | `backend/memory/vector_store.py · _fetch_corpus_for_bm25` | Consolidation retirement branch (flag excludes them); retrieval rebuild: keyword index holds only real source chunks (GENERATION_ARCHITECTURE.md §7.2) |
 | BM25 Okapi IDF (`rank_bm25`) is 0 for a word in half the library and 0.25 × the average IDF above that, so in small libraries the user's own recurring terms (town, company, project) get little or no keyword weight | `backend/memory/vector_store.py · BM25Okapi` | Postgres keyword search with the Lucene IDF log(1 + (N − n + 0.5)/(n + 0.5)); re-measure coverage-gate thresholds on quality_v1 before switching (GENERATION_ARCHITECTURE.md §7.2) |
+| ~~An exact-text duplicate said only "you added this before": no title, no way to replace it~~ (a video saved in April as a transcript, no URL, first-line title). **Fixed**: both duplicate answers name the source (title, type, date added) with a Library link and offer Replace; Replace refreshes in place even when the text is unchanged | `backend/routers/ingest.py · agents/ingestion_agent.py · frontend/components/FeedMemory.tsx · app/library/page.tsx` | `fix/duplicate-shows-match` |
+| ~~Repeated text counted as evidence in the language check: a short English sentence repeated twenty times was refused as Italian at 0.99999~~. **Fixed**: each distinct sentence or line counts once | `backend/utils/language.py · prose` | `fix/duplicate-shows-match` |
 | Romanised languages (Hinglish) are mostly undetermined and accepted, and could be refused under a wrong name when long; a statistical identifier's limit | `backend/utils/language.py` | Backlog (with a multilingual embedder, if ever) |
