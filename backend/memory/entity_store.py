@@ -2,6 +2,7 @@ import logging
 import re
 from typing import Any
 
+from db import id_batches
 from db.supabase_client import supabase
 
 logger = logging.getLogger(__name__)
@@ -217,8 +218,7 @@ def get_entities_with_source_count(
 ) -> list[dict[str, Any]]:
     """Return entities that appear in at least min_sources distinct sources.
 
-    chunk_id format is '{source_id}_{chunk_index}' — source_id is extracted
-    by rsplit('_', 1)[0] since source_ids are UUIDs with no trailing underscore.
+    A chunk's source is its embeddings.source_id (chunk ids are opaque).
 
     Returns list of dicts: {entity_id, entity_name, entity_type, source_count}.
     Used by the consolidation agent to find entities ready for synthesis.
@@ -234,13 +234,11 @@ def get_entities_with_source_count(
     if not rows:
         return []
 
-    # Count distinct source_ids per entity_id (source_id = chunk_id without last _N)
+    source_of = _sources_of_chunks([row["chunk_id"] for row in rows], user_id)
     entity_sources: dict[str, set[str]] = {}
     for row in rows:
-        entity_id = row["entity_id"]
-        chunk_id = row["chunk_id"]
-        source_id = chunk_id.rsplit("_", 1)[0]
-        entity_sources.setdefault(entity_id, set()).add(source_id)
+        if row["chunk_id"] in source_of:
+            entity_sources.setdefault(row["entity_id"], set()).add(source_of[row["chunk_id"]])
 
     qualifying_ids = [
         eid for eid, sources in entity_sources.items()
@@ -264,3 +262,41 @@ def get_entities_with_source_count(
         }
         for row in (entity_result.data or [])
     ]
+
+
+# ---------------------------------------------------------------------------
+# Delete cascade (memory/derived_store.py)
+# ---------------------------------------------------------------------------
+
+def _sources_of_chunks(chunk_ids: list[str], user_id: str) -> dict[str, str]:
+    """chunk_id -> source_id for the chunks that exist."""
+    out: dict[str, str] = {}
+    for batch in id_batches(sorted(set(chunk_ids))):
+        rows = (supabase.table("embeddings").select("id,source_id").in_("id", batch)
+                .eq("user_id", user_id).execute().data or [])
+        out.update({r["id"]: r["source_id"] for r in rows if r.get("source_id")})
+    return out
+
+
+def entity_ids_for_chunks(chunk_ids: list[str], user_id: str) -> set[str]:
+    """Entities linked to any of these chunks."""
+    found: set[str] = set()
+    for batch in id_batches(sorted(set(chunk_ids))):
+        rows = (supabase.table("chunk_entities").select("entity_id").in_("chunk_id", batch)
+                .eq("user_id", user_id).execute().data or [])
+        found.update(r["entity_id"] for r in rows)
+    return found
+
+
+def delete_unlinked_entities(entity_ids: set[str], user_id: str) -> set[str]:
+    """Delete those of these entities no chunk links to any more. Returns them."""
+    ids = sorted(entity_ids)
+    linked: set[str] = set()
+    for batch in id_batches(ids):
+        rows = (supabase.table("chunk_entities").select("entity_id").in_("entity_id", batch)
+                .eq("user_id", user_id).execute().data or [])
+        linked.update(r["entity_id"] for r in rows)
+    unlinked = sorted(set(ids) - linked)
+    for batch in id_batches(unlinked):
+        supabase.table("entities").delete().in_("entity_id", batch).eq("user_id", user_id).execute()
+    return set(unlinked)

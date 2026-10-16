@@ -278,13 +278,13 @@ def entity_kb(fake_db):
     upsert_chunks(
         ["weekly retraining kept the plan stable", "depot managers lost trust in jumpy numbers",
          "sourdough starter notes"],
-        source_title="Kestrel notes", source_id="kes", user_id=USER,
+        source_title="Kestrel notes", source_id="kes", user_id=USER, ingest_id="i1",
     )
     invalidate_bm25_cache(USER)
     fake_db.tables.setdefault("entities", []).append(
         {"entity_id": "e1", "user_id": USER, "entity_name": "kestrel", "entity_type": "project"})
     fake_db.tables.setdefault("chunk_entities", []).extend(
-        {"chunk_id": f"kes_{i}", "entity_id": "e1", "user_id": USER, "relationship_type": "mentions"}
+        {"chunk_id": f"kes_i1_{i}", "entity_id": "e1", "user_id": USER, "relationship_type": "mentions"}
         for i in (0, 1))
 
 
@@ -296,7 +296,7 @@ def test_entity_linked_chunks_get_real_similarity_not_a_proxy(entity_kb):
     added = [c for c in _enrich_with_entity_chunks([], query, USER) if c.get("entity_linked")]
     cosine = {h["chunk_id"]: h["similarity"] for h in query_similar(query, USER, n_results=50)}
 
-    assert {c["id"] for c in added} == {"kes_0", "kes_1"}
+    assert {c["id"] for c in added} == {"kes_i1_0", "kes_i1_1"}
     for c in added:
         assert c["similarity"] != 0.35
         assert c["similarity"] == pytest.approx(cosine[c["id"]], abs=1e-3)

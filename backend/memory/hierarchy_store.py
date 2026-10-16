@@ -198,3 +198,14 @@ def add_source_to_topic(topic_id: str, source_id: str, user_id: str) -> None:
     supabase.table("topic_nodes").update({
         "child_source_ids": ",".join(updated),
     }).eq("topic_id", topic_id).eq("user_id", user_id).execute()
+
+
+def remove_sources_from_topics(source_ids: set[str], user_id: str) -> None:
+    """Drop deleted sources from their topics' children. A topic left empty stays:
+    find_matching_topic can give it to the next source with the same tags."""
+    for topic in get_topics_for_user(user_id):
+        kids = topic.get("child_source_ids", [])
+        kept = [k for k in kids if k not in source_ids]
+        if kept != kids:
+            supabase.table("topic_nodes").update({"child_source_ids": ",".join(kept)}) \
+                .eq("topic_id", topic["topic_id"]).eq("user_id", user_id).execute()

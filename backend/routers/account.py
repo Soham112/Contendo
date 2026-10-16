@@ -14,7 +14,7 @@ from config import niches
 from memory import source_store
 from memory.account_store import get_account, mark_segment_skipped, save_segment, should_ask_segment
 from memory.profile_store import DEFAULT_PROFILE, profile_exists, save_profile
-from memory.vector_store import delete_source, invalidate_bm25_cache
+from memory.vector_store import invalidate_bm25_cache
 from utils.business_notes import PROFILE_NOTE_EXTRACTOR, PROFILE_NOTE_TITLE, niche_label, profile_note
 from utils.frames import BUSINESS_PROFILE_SOURCE_TYPE
 
@@ -132,7 +132,7 @@ def _save_profile_to_memory(account: dict, user_id: str) -> None:
     existing = source_store.find_source_id(user_id, "business_profile")
     if existing is None:
         # A note stored before `sources` existed has chunks but no row.
-        delete_source(PROFILE_NOTE_TITLE, user_id=user_id)
+        source_store.delete_by_title(PROFILE_NOTE_TITLE, user_id=user_id)
     invalidate_bm25_cache(user_id)
     ingest_content(
         note,

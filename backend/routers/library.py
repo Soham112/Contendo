@@ -3,7 +3,8 @@ from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from auth.supabase_jwt import get_user_id_dep
-from memory.vector_store import delete_source, get_all_sources, get_total_chunks
+from memory.source_store import delete_by_title
+from memory.vector_store import get_all_sources, get_total_chunks
 from memory.retrieval_stats_store import get_retrieval_counts
 
 router = APIRouter()
@@ -95,7 +96,7 @@ async def delete_library_source(
     req: DeleteSourceRequest,
     user_id: str = Depends(get_user_id_dep),
 ) -> dict:
-    result = await run_in_threadpool(delete_source, req.source_title, user_id=user_id)
+    result = await run_in_threadpool(delete_by_title, req.source_title, user_id=user_id)
     chunks_removed = result["chunks_removed"]
     if chunks_removed == 0:
         raise HTTPException(

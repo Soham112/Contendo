@@ -11,6 +11,7 @@ One row per (user, entity) — upserted each time consolidation reruns.
 import logging
 from typing import Any
 
+from db import id_batches
 from db.supabase_client import supabase
 from memory.vector_store import embed_texts
 
@@ -83,8 +84,15 @@ def get_all_consolidation_chunks(user_id: str) -> list[dict[str, Any]]:
     return result.data or []
 
 
-def delete_consolidation_chunk(entity_id: str, user_id: str) -> None:
-    """Delete the consolidation chunk for an entity (e.g. when entity is removed)."""
-    chunk_id = f"consolidation_{user_id}_{entity_id}"
-    supabase.table("embeddings").delete().eq("id", chunk_id).eq("user_id", user_id).execute()
-    logger.info("delete_consolidation_chunk: entity_id=%s user=%s", entity_id, user_id)
+def delete_consolidation_chunks(entity_ids: set[str], user_id: str) -> int:
+    """Delete the consolidation chunks of these entities (one of their chunks was
+    deleted, so a brief may hold text the user removed). Returns rows deleted."""
+    removed = 0
+    for batch in id_batches(sorted(entity_ids)):
+        removed += len(
+            supabase.table("embeddings").delete().in_("source_id", batch)
+            .eq("user_id", user_id).eq("node_type", CONSOLIDATION_NODE_TYPE).execute().data or []
+        )
+    if removed:
+        logger.info("delete_consolidation_chunks: %d removed for user %s", removed, user_id)
+    return removed

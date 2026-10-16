@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from llm.client import HAIKU, SONNET, complete
 from memory import source_store
 from memory.source_store import SourceOriginal
-from memory.vector_store import invalidate_bm25_cache, query_by_hash, upsert_chunks
+from memory.vector_store import chunk_row_id, invalidate_bm25_cache, query_by_hash, upsert_chunks
 from memory.hierarchy_store import (
     add_source_to_topic,
     find_matching_topic,
@@ -201,13 +201,14 @@ def _extract_entities_for_chunk(chunk_text: str, *, user_id: str) -> list[dict]:
 def _store_entities_for_chunks(
     chunks: list[str],
     source_id: str,
+    ingest_id: str,
     user_id: str,
 ) -> list[str]:
     """Extract entities for all chunks in parallel and persist to entity tables.
 
     Runs Haiku calls concurrently (one per chunk) via ThreadPoolExecutor.
     All failures are caught and logged — never blocks ingestion.
-    chunk_id format mirrors upsert_chunks: f"{source_id}_{chunk_index}"
+    Chunk ids are those upsert_chunks wrote (vector_store.chunk_row_id).
 
     Returns the deduplicated list of entity names that were successfully stored.
     Used by the consolidation trigger to check which entities crossed the threshold.
@@ -216,7 +217,7 @@ def _store_entities_for_chunks(
     names_lock = __import__("threading").Lock()
 
     def process_chunk(index: int, text: str) -> None:
-        chunk_id = f"{source_id}_{index}"
+        chunk_id = chunk_row_id(source_id, ingest_id, index)
         raw_entities = _extract_entities_for_chunk(text, user_id=user_id)
         if not raw_entities:
             return
@@ -339,7 +340,9 @@ def ingest_content(
         automatically. Explicitly provided values are always used as-is.
 
     replace_source_id: an existing source this content replaces in place (same
-        source_id, row updated, old chunks removed). Used for the business profile note.
+        source_id; the new chunks are written first, then the row switches to them
+        and the old chunks are deleted, see source_store.begin_replace). Used for
+        the business profile note.
 
     Returns dict with keys: chunks_stored, tags, suggested_context (when inferred).
     """
@@ -387,8 +390,8 @@ def ingest_content(
     # Generate source_id here so it's accessible for hierarchy persistence
     source_id = replace_source_id or str(uuid.uuid4())
     begin = source_store.begin_replace if replace_source_id else source_store.begin_source
-    begin(user_id, source_id, original, title=source_title,
-          extracted_text=content, content_hash=content_hash)
+    write = begin(user_id, source_id, original, title=source_title,
+                  extracted_text=content, content_hash=content_hash)
     try:
         stored = upsert_chunks(
             chunks,
@@ -400,11 +403,12 @@ def ingest_content(
             user_id=user_id,
             content_hash=content_hash,
             memory_context=memory_context,
+            ingest_id=write.ingest_id,
         )
     except Exception:
-        source_store.discard_source(source_id, user_id)
+        write.abort()
         raise
-    source_store.mark_ready(source_id, user_id)
+    write.commit()
 
     # Invalidate BM25 cache so the next generation request picks up the new
     # corpus. Safe to call even if no cache entry exists yet.
@@ -415,7 +419,7 @@ def ingest_content(
     extracted_entity_names: list[str] = []
     try:
         extracted_entity_names = _store_entities_for_chunks(
-            chunks, source_id=source_id, user_id=user_id
+            chunks, source_id=source_id, ingest_id=write.ingest_id, user_id=user_id
         )
     except Exception as e:
         logger.warning("entity extraction failed for source %s: %s", source_id, e)

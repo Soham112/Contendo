@@ -24,6 +24,7 @@ import json
 import logging
 import math
 import re
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Optional
@@ -32,7 +33,6 @@ from rank_bm25 import BM25Okapi
 from sentence_transformers import SentenceTransformer
 
 from config.retrieval import RELEVANCE_THRESHOLD  # noqa: F401  (re-exported for callers)
-from memory.source_store import delete_sources
 from db.supabase_client import supabase
 
 logger = logging.getLogger(__name__)
@@ -77,6 +77,18 @@ def init_chroma(user_id: str):
     return None
 
 
+def new_ingest_id() -> str:
+    """Names the chunk set one ingest writes."""
+    return uuid.uuid4().hex[:12]
+
+
+def chunk_row_id(source_id: str, ingest_id: str, index: int) -> str:
+    """Row id of a source's chunk. Unique per ingest, so a replace writes new rows
+    (and deleting the old ones cascades their entity links, migration 016). Opaque:
+    read source_id and chunk_index from their columns, never from the id."""
+    return f"{source_id}_{ingest_id}_{index}"
+
+
 def upsert_chunks(
     chunks: list[str],
     source_type: str = "",
@@ -88,6 +100,7 @@ def upsert_chunks(
     user_id: str,
     content_hash: str = "",
     memory_context: str | None = None,
+    ingest_id: str | None = None,
 ) -> int:
     """Embed chunks locally and upsert rows into the embeddings table.
 
@@ -97,6 +110,7 @@ def upsert_chunks(
                       content_hash=..., memory_context=...)
 
     memory_context: "work" | "personal_project" | "learning" | "observation" | None
+    ingest_id: the chunk set (memory.source_store.SourceWrite.ingest_id); a new one when None.
 
     Returns:
         Number of rows upserted.
@@ -104,8 +118,8 @@ def upsert_chunks(
     if not chunks:
         return 0
 
-    import uuid as _uuid
-    resolved_source_id = source_id or str(_uuid.uuid4())
+    resolved_source_id = source_id or str(uuid.uuid4())
+    resolved_ingest_id = ingest_id or new_ingest_id()
     resolved_tags = ",".join(tags) if tags else ""
     total = len(chunks)
 
@@ -114,7 +128,8 @@ def upsert_chunks(
     rows = []
     for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
         rows.append({
-            "id": f"{resolved_source_id}_{i}",
+            "id": chunk_row_id(resolved_source_id, resolved_ingest_id, i),
+            "ingest_id": resolved_ingest_id,
             "user_id": user_id,
             "content": chunk,
             "embedding": embedding,
@@ -158,8 +173,7 @@ def query_similar(
         content = row.get("content", "")
         results.append({
             # Flat fields — retrieval_agent accesses these directly
-            # Row id. Fusion keys every hit by row id (see _chunk_key), which
-            # differs from source_id_chunk_index for consolidation chunks.
+            # Row id. Fusion keys every hit by row id (see _chunk_key).
             "chunk_id": row.get("id", ""),
             "text": content,
             "content": content,
@@ -398,16 +412,8 @@ def _fill_real_similarity(results: list[dict], query_embedding: list[float], use
 
 
 def _chunk_key(result: dict) -> str:
-    """The row id. Vector hits carry it as chunk_id, BM25 and entity hits as id.
-
-    Only legacy dicts without either fall back to source_id_chunk_index (the
-    row id of a regular chunk, but not of a consolidation chunk).
-    """
-    return (
-        result.get("chunk_id")
-        or result.get("id")
-        or f"{result.get('source_id')}_{result.get('chunk_index')}"
-    )
+    """The row id. Vector hits carry it as chunk_id, BM25 and entity hits as id."""
+    return result.get("chunk_id") or result["id"]
 
 
 def _rrf_merge(
@@ -588,30 +594,6 @@ def get_all_sources(user_id: str) -> list[dict]:
 
     sources.sort(key=lambda s: s["ingested_at"] or "", reverse=True)
     return sources
-
-
-def delete_source(source_title: str, user_id: str) -> dict:
-    """Delete all chunks with matching source_title for this user, and the
-    sources rows and stored originals of those sources.
-
-    Returns {"deleted": True, "chunks_removed": int}.
-    """
-    # Fetch matching rows first to get a count
-    count_resp = (
-        supabase.table("embeddings")
-        .select("id,source_id")
-        .eq("source_title", source_title)
-        .eq("user_id", user_id)
-        .execute()
-    )
-    rows = count_resp.data or []
-    count = len(rows)
-
-    if count > 0:
-        supabase.table("embeddings").delete().eq("source_title", source_title).eq("user_id", user_id).execute()
-        delete_sources(sorted({r["source_id"] for r in rows if r.get("source_id")}), user_id)
-
-    return {"deleted": True, "chunks_removed": count}
 
 
 def get_chunks_by_ids(chunk_ids: list[str], user_id: str) -> list[dict]:

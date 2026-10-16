@@ -1,9 +1,10 @@
 """In-memory stand-in for the Supabase client.
 
 Supports the subset of the supabase-py query builder the backend uses:
-table().select/insert/upsert/update/delete, filters eq/neq/in_/gt/gte/lt/lte,
-order, limit, range, execute, rpc("match_embeddings"), and storage.from_(bucket)
-upload/remove (objects kept in `fake_db.objects`).
+table().select/insert/upsert/update/delete, filters eq/neq/in_/gt/gte/lt/lte
+(and not_ before one), order, limit, range, execute, rpc("match_embeddings"), and storage.from_(bucket)
+upload/remove (objects kept in `fake_db.objects`). Deletes follow the schema's
+ON DELETE CASCADE foreign keys (FOREIGN_KEYS below).
 
 Tables start empty for every test (see conftest.py). Inspect them directly
 in assertions via `fake_db.tables["posts"]`.
@@ -41,6 +42,7 @@ class FakeQuery:
         self._limit: int | None = None
         self._offset = 0
         self._count = None
+        self._negate = False
 
     # --- operations -------------------------------------------------------
     def select(self, columns: str = "*", count=None, **_):
@@ -66,39 +68,41 @@ class FakeQuery:
         return self
 
     # --- filters ----------------------------------------------------------
-    def eq(self, col, val):
-        self._filters.append(lambda r: r.get(col) == val)
+    @property
+    def not_(self):
+        self._negate = True
         return self
+
+    def _add(self, test: Callable[[dict], bool]):
+        negate, self._negate = self._negate, False
+        self._filters.append((lambda r: not test(r)) if negate else test)
+        return self
+
+    def eq(self, col, val):
+        return self._add(lambda r: r.get(col) == val)
 
     def is_(self, col, val):
         expected = None if val == "null" else val
-        self._filters.append(lambda r: r.get(col) is expected)
-        return self
+        return self._add(lambda r: r.get(col) is expected)
 
     def neq(self, col, val):
-        self._filters.append(lambda r: r.get(col) != val)
-        return self
+        return self._add(lambda r: r.get(col) != val)
 
     def in_(self, col, vals):
         vals = list(vals)
-        self._filters.append(lambda r: r.get(col) in vals)
-        return self
+        return self._add(lambda r: r.get(col) in vals)
 
     def gt(self, col, val):
-        self._filters.append(lambda r: r.get(col) is not None and r.get(col) > val)
-        return self
+        return self._add(lambda r: r.get(col) is not None and r.get(col) > val)
 
     def gte(self, col, val):
-        self._filters.append(lambda r: r.get(col) is not None and r.get(col) >= val)
-        return self
+        return self._add(lambda r: r.get(col) is not None and r.get(col) >= val)
 
     def lt(self, col, val):
-        self._filters.append(lambda r: r.get(col) is not None and r.get(col) < val)
-        return self
+        return self._add(lambda r: r.get(col) is not None and r.get(col) < val)
 
     def lte(self, col, val):
-        self._filters.append(lambda r: r.get(col) is not None and r.get(col) <= val)
-        return self
+        return self._add(lambda r: r.get(col) is not None and r.get(col) <= val)
 
     def order(self, col, desc: bool = False, **_):
         self._order.append((col, desc))
@@ -154,6 +158,8 @@ class FakeQuery:
                 else:
                     if "id" not in new:
                         new["id"] = self._db.next_id(self._table)
+                    for col in self._db.UUID_DEFAULTS.get(self._table, ()):
+                        new.setdefault(col, str(uuid.uuid4()))
                     rows.append(new)
                     written.append(copy.deepcopy(new))
             return FakeResponse(written)
@@ -171,6 +177,7 @@ class FakeQuery:
             for r in rows:
                 (removed if self._matches(r) else kept).append(r)
             self._db.tables[self._table] = kept
+            self._db.cascade(self._table, removed)
             return FakeResponse(copy.deepcopy(removed))
 
         raise NotImplementedError(self._op)
@@ -235,12 +242,30 @@ class FakeSupabase:
     # Tables whose primary key is a UUID in the real schema (gen_random_uuid()):
     # their ids are strings, so code that passes an id around as str matches.
     _UUID_TABLES = {"generation_traces", "connected_accounts", "publish_jobs", "publish_approvals"}
+    # Other columns with DEFAULT gen_random_uuid().
+    UUID_DEFAULTS = {"entities": ("entity_id",)}
 
     def next_id(self, table: str) -> int | str:
         if table in self._UUID_TABLES:
             return str(uuid.uuid4())
         self._ids[table] = self._ids.get(table, 0) + 1
         return self._ids[table]
+
+    # ON DELETE CASCADE foreign keys: parent table -> (child table, child column, parent column).
+    FOREIGN_KEYS = {
+        "entities": [("chunk_entities", "entity_id", "entity_id")],        # migration 004
+        "embeddings": [("chunk_entities", "chunk_id", "id")],              # migration 016
+        "sources": [("source_nodes", "source_id", "source_id")],           # migration 016
+    }
+
+    def cascade(self, table: str, removed: list[dict]) -> None:
+        for child, col, parent_col in self.FOREIGN_KEYS.get(table, []):
+            gone = {r.get(parent_col) for r in removed}
+            rows = self.tables.get(child, [])
+            dropped = [r for r in rows if r.get(col) in gone]
+            if dropped:
+                self.tables[child] = [r for r in rows if r.get(col) not in gone]
+                self.cascade(child, dropped)
 
     def table(self, name: str) -> FakeQuery:
         return FakeQuery(self, name)

@@ -8,6 +8,7 @@ Exposed API:
     record_retrievals_in_background(user_id, source_titles) — same, queued off the request path
     flush_pending_retrievals()                              — wait for queued writes (shutdown, tests)
     get_retrieval_counts(user_id) -> dict                   — {source_title: count} for all sources
+    delete_retrieval_counts(user_id, source_titles)         — drop the counts of deleted sources
 """
 
 import logging
@@ -83,3 +84,15 @@ def get_retrieval_counts(user_id: str) -> dict[str, int]:
         .execute()
     )
     return {row["source_title"]: row["retrieval_count"] for row in (result.data or [])}
+
+
+def delete_retrieval_counts(user_id: str, source_titles: set[str]) -> None:
+    """Drop the counts of these titles. Runs on the writer, after any queued increment."""
+    titles = sorted(t for t in source_titles if t)
+    if not titles:
+        return
+
+    def run() -> None:
+        supabase.table("source_retrieval_stats").delete() \
+            .eq("user_id", user_id).in_("source_title", titles).execute()
+    _writer.submit(run).result()

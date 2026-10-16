@@ -42,6 +42,7 @@ def seeded_kb(fake_db):
         source_title="Retrieval notes",
         source_id="src1",
         user_id=USER,
+        ingest_id="i1",
     )
 
 
@@ -77,7 +78,7 @@ def test_trace_row_has_inputs_and_retrieved_chunks_with_ids_and_text(claude, fak
     assert trace["retrieval_confidence"] in {"low", "medium", "high"}
 
     top = trace["retrieved"][0]
-    assert top["chunk_id"] == "src1_0"
+    assert top["chunk_id"] == "src1_i1_0"
     assert top["text"] == "pgvector makes retrieval fast"
     assert top["source_title"] == "Retrieval notes"
     assert top["rrf_rank"] == 1
@@ -196,7 +197,7 @@ def test_flat_fallback_path_is_recorded(claude, fake_db, seeded_kb, monkeypatch)
 
     trace = _only_trace(fake_db)
     assert trace["retrieval_path"] == "flat_fallback"
-    assert trace["retrieved"][0]["chunk_id"] == "src1_0"   # vector hits carry their id too
+    assert trace["retrieved"][0]["chunk_id"] == "src1_i1_0"   # vector hits carry their id too
 
 
 # --- Retrieval output unchanged ------------------------------------------------
@@ -236,7 +237,7 @@ def test_hybrid_returns_each_chunk_once_with_a_real_similarity():
          "pgvector index tuning", "a note about cooking"],
         source_title="Notes", source_id="notes", user_id=USER,
     )
-    # Consolidation chunk: its row id differs from source_id_chunk_index, and
+    # Consolidation chunk: its row id is not built from its source_id, and
     # both searches find it.
     upsert_consolidation_chunk(USER, "ent1", "pgvector", "pgvector retrieval summary")
 
@@ -255,10 +256,10 @@ def test_hybrid_returns_each_chunk_once_with_a_real_similarity():
 def test_vector_results_only_gain_chunk_id():
     from memory.vector_store import query_similar, upsert_chunks
 
-    upsert_chunks(["pgvector retrieval basics"], source_id="s", user_id=USER)
+    upsert_chunks(["pgvector retrieval basics"], source_id="s", user_id=USER, ingest_id="i1")
     [hit] = query_similar("pgvector retrieval", user_id=USER)
 
-    assert hit["chunk_id"] == "s_0"
+    assert hit["chunk_id"] == "s_i1_0"
     assert "id" not in hit   # merge keys for vector hits are unchanged
 
 
