@@ -123,6 +123,7 @@ export interface PatchPostRequest {
 }
 
 export interface LibrarySource {
+  source_id: string;
   source_title: string;
   source_type: string;
   ingested_at: string;
@@ -132,6 +133,7 @@ export interface LibrarySource {
 }
 
 export interface ClusterSourceItem {
+  source_id: string;
   source_title: string;
   source_type: string;
   ingested_at: string;
@@ -323,11 +325,12 @@ export function useApi() {
       return res.json();
     },
 
-    deleteSource: (source_title: string) =>
+    /** Deletes one source by id (titles are not unique). See lib/library.ts deleteOutcome. */
+    deleteSource: (source_id: string) =>
       apiFetch("/library/source", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source_title }),
+        body: JSON.stringify({ source_id }),
       }),
 
     // ── History ───────────────────────────────────────────────────────────

@@ -139,11 +139,15 @@ def test_library_only_lists_own_sources(api):
 
 
 def test_cannot_delete_another_users_source(api, fake_db):
+    from memory.vector_store import upsert_chunks
     client, a, b = api
-    _seed_chunks(A, "A's notes", ["vector databases and retrieval"])
+    upsert_chunks(["vector databases and retrieval"], source_title="A's notes", source_id="a-src", user_id=A)
+    fake_db.tables.setdefault("sources", []).append({"source_id": "a-src", "user_id": A, "title": "A's notes"})
 
-    client.request("DELETE", "/library/source", headers=b, json={"source_title": "A's notes"})
+    resp = client.request("DELETE", "/library/source", headers=b, json={"source_id": "a-src"})
+    assert resp.status_code == 404
     assert len([r for r in fake_db.tables["embeddings"] if r["user_id"] == A]) == 1
+    assert [r["source_id"] for r in fake_db.tables["sources"]] == ["a-src"]
 
 
 def test_vector_search_never_returns_another_users_chunks():

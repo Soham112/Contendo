@@ -202,14 +202,6 @@ def test_saving_the_profile_again_updates_its_one_sources_row(client, a_headers,
     assert {r["source_id"] for r in fake_db.tables["embeddings"]} == {row["source_id"]}
 
 
-def test_a_note_saved_before_sources_existed_is_replaced(client, a_headers, fake_db, ingestion):
-    fake_db.tables["embeddings"] = [{"id": "legacy_0", "user_id": "user-a", "source_id": "legacy",
-                                     "source_title": "Business profile", "content": "Old note"}]
-    client.put("/account/segment", headers=a_headers, json=_business())
-    assert "legacy" not in {r["source_id"] for r in fake_db.tables["embeddings"]}
-    assert len(fake_db.tables["sources"]) == 1
-
-
 def test_other_niche_note_uses_the_users_own_words(client, a_headers, fake_db, ingestion):
     client.put("/account/segment", headers=a_headers,
                json=_business(business_niche="other", business_niche_other="Dog groomer"))

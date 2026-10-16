@@ -125,12 +125,12 @@ def test_delete_removes_hierarchy_rows_and_retrieval_counts_no_source_uses(fake_
 
 def test_library_delete_stops_keyword_search_returning_the_text(client, production, auth_headers, fake_db, ingestion):
     from memory.vector_store import _query_bm25
-    _ingest(_text("a", "zeppelin"), title="Airships")
+    airships = _ingest(_text("a", "zeppelin"), title="Airships")
     _ingest(_text("b", "kafka"), title="Queues")
     _ingest(_text("c", "postgres"), title="Databases")
     assert any("zeppelin" in r["text"] for r in _query_bm25("zeppelin", USER))   # index built and cached
 
-    resp = client.request("DELETE", "/library/source", headers=auth_headers(USER), json={"source_title": "Airships"})
+    resp = client.request("DELETE", "/library/source", headers=auth_headers(USER), json={"source_id": airships})
     assert resp.status_code == 200
     assert not any("zeppelin" in r["text"] for r in _query_bm25("zeppelin", USER))
 

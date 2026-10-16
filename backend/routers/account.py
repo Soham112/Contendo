@@ -130,9 +130,6 @@ def _save_profile_to_memory(account: dict, user_id: str) -> None:
         account.get("business_niche_other"),
     )
     existing = source_store.find_source_id(user_id, "business_profile")
-    if existing is None:
-        # A note stored before `sources` existed has chunks but no row.
-        source_store.delete_by_title(PROFILE_NOTE_TITLE, user_id=user_id)
     invalidate_bm25_cache(user_id)
     ingest_content(
         note,
