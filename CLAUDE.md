@@ -30,7 +30,8 @@ Every task summary must end with a "Stopgaps introduced" line: "none", or a list
 - Before creating a new file, check whether the code belongs in an existing module. Create a new file only when it has a clear, separate responsibility that existing modules don't cover. Say in your summary which new files you created and why.
 - Don't create one-off scripts, scratch files, or experiment files in the repo. Use the scratchpad outside the repo, and delete them when the task is done.
 - Don't duplicate helpers: search for existing functions before writing a new one.
-- Keep source files under ~400 lines and functions under ~80 lines. If a change would push a file past that, propose a split instead of growing it.
+- Files over ~400 lines: check whether the file has more than one responsibility. If it does, split it by responsibility as part of the change that touches it, not as a separate cleanup branch. If it is long but cohesive (tests, data definitions, a single well-defined module), leave it and say why in the summary. Never split purely to get under the number.
+- Functions over ~80 lines: check whether the function does more than one thing; if so, split it as part of the change that touches it. Never split purely to get under the number.
 - Every task summary must include a "Files created" line: "none", or each new file with a one-line reason.
 
 ## Stack
