@@ -157,7 +157,7 @@ Review-fix additions: `backend/agents/refine_cited_agent.py` owns cited refineme
 | `backend/tools/obsidian_tool.py` | Obsidian vault reader — `read_vault()` yields cleaned note dicts from a vault directory; `get_vault_stats()` accepts a path and returns stats (total_files, total_words, estimated_chunks, skipped_files, vault_name); `get_vault_stats_from_dir()` is the refactored core that both local and zip endpoints use; `extract_vault_from_zip(zip_bytes)` extracts a zip file to a temp directory, validates for path traversal attacks (rejects paths starting with `/` or containing `..`), and verifies .md files exist; `clean_obsidian_markdown()` strips wikilinks/frontmatter/Dataview/embeds; `read_vault()` also yields `raw_content` (the file as read); `EXTRACTOR` version |
 | `backend/tools/__init__.py` | Empty — tools directory retained for future use |
 | `backend/utils/chunker.py` | 500-word chunks with 50-word overlap |
-| `backend/memory/source_store.py` | Originals of every ingested source: the `sources` table and the private Storage bucket `source-originals` (migration 014). `SourceOriginal` (what the user gave us, extractor and version, title origin, authorship), builders `typed_text`, `uploaded` (bytes; over 10 MB recorded as omitted), `fetched_page` (Jina markdown; over 5 MB omitted). `begin_source` / `begin_replace` return a `SourceWrite` (`ingest_id` for the chunks, then `commit()` or `abort()`). New source: row pending, then object, chunks, `commit` marks ready. Replace (same `source_id`): claims the row via `pending_replace` (one replace at a time, else `ReplaceInProgress`; a stale claim is cleaned up first), uploads the new object, the caller writes the new chunk set, `commit` switches the row to the new content and `ingest_id`, then deletes every other chunk set and the old object; `abort` or a crash leaves the old note intact. `discard_source`, `delete_sources` (objects, chunks via `derived_store`, rows), `delete_by_title` (Library), `delete_all_for_user`, `find_source_id`, `sweep_stale_pending` (pending rows; stale replaces finished or undone) and `start_sweeper` (startup and hourly) |
+| `backend/memory/source_store.py` | Originals of every ingested source: the `sources` table and the private Storage bucket `source-originals` (migration 014). `SourceOriginal` (what the user gave us, extractor and version, title origin, authorship), builders `typed_text`, `uploaded` (bytes; over 10 MB recorded as omitted), `fetched_page` (Jina markdown; over 5 MB omitted). `begin_source` / `begin_replace` return a `SourceWrite` (`ingest_id` for the chunks, then `commit()` or `abort()`). New source: row pending, then object, chunks, `commit` marks ready. Replace (same `source_id`): claims the row via `pending_replace` (one replace at a time, else `ReplaceInProgress`; a stale claim is cleaned up first), uploads the new object, the caller writes the new chunk set, `commit` switches the row to the new content and `ingest_id`, then deletes every other chunk set and the old object; `abort` or a crash leaves the old note intact. `discard_source`, `delete_sources` (objects, chunks via `derived_store`, rows), `delete_source` (Library: one source by id; chunk count, or None when not the user's), `delete_all_for_user`, `find_source_id`, `sweep_stale_pending` (pending rows; stale replaces finished or undone) and `start_sweeper` (startup and hourly) |
 | `backend/memory/derived_store.py` | Delete cascade, used by every delete path: `delete_chunks(chunk_ids, user_id)` reads the entities linked to the chunks, deletes the chunks (migration 016's FK removes their `chunk_entities`), deletes entities left unlinked and the consolidation chunk of every affected entity (removed, not rebuilt), invalidates BM25; `chunk_ids_of_sources(..., only_ingest=, except_ingest=)`; `after_sources_deleted` (topic children, retrieval counts) |
 | `backend/utils/source_rebuild.py` | Pure: rebuild a source's text from its chunks with chunker_v1's tokenization and verify by re-chunking (`rechunk_exact` / `rechunk_mismatch` / `incomplete`, plus whether the stored `content_hash` matches) |
 | `backend/scripts/backfill_sources.py` | One-time data migration for 014: report (read-only, default) or `--apply` the `sources` rows of existing sources as `rebuilt_from_chunks`; per-user counts, rebuild_check distribution, duplicate content per user. Production entry point (`--apply` needs `--confirm-production`); eval runs through `evals/backfill_sources.py`, behind the env guard. Rows moved from ChromaDB have `total_chunks` 0 (not recorded): completeness is then proven by a last chunk shorter than 500 words |
@@ -222,6 +222,7 @@ Review-fix additions: `backend/agents/refine_cited_agent.py` owns cited refineme
 | `frontend/lib/supabase.ts` | Module-level browser Supabase client — `createBrowserClient(NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON)`; exported as default singleton; imported by all client components that need auth or data |
 | `frontend/lib/supabase-server.ts` | Server Supabase client factory — `createClient()` uses `createServerClient` from `@supabase/ssr` with `cookies()` from `next/headers`; used in Server Components and Route Handlers |
 | `frontend/lib/api.ts` | `useApi()` hook — returns all typed API functions with Bearer token pre-attached via `supabase.auth.getSession()` (accesses `session.access_token`); single source of truth for all backend calls; replaces raw `fetch()` in all components; `saveProfile()` throws on non-2xx; `refineSelection(body)` calls `POST /refine-selection` with `selected_text`, `instruction`, `full_post`, `trace_id`, `post_id`, returns `RefineSelectionResponse` and throws an `Error` carrying the backend's message on failure; `extractResume(file: File)` sends `multipart/form-data` to `POST /extract-resume`; `refineVisual(svgCode, refinementInstruction, originalDescription, styleHint?)` calls `POST /refine-visual`; `fetchYoutubeTranscript(url: string)` calls `POST /fetch-youtube-transcript` — returns `{ transcript: string, video_id: string }`; `GenerateRequest.no_specifics` and `GenerateResponse.status` / `closest_sources` / `suggestion` for the coverage gate `GenerateResponse.status` also has `draft_truncated` and `draft_refused`, with `message`. |
+| `frontend/lib/library.ts` | Library page logic, sources identified by `source_id`: `sourceKey` (React keys), `removeSource` (drops one source, same-title twins stay), `deleteOutcome(response)` (deleted only on a 2xx that confirms it; anything else is `DELETE_FAILED_MESSAGE` and the card stays). Tested in `library.test.ts`. |
 | `frontend/lib/generate-outcome.ts` | `generateOutcome(response)`: what a `/generate` response means for a page: `post`, `low_coverage` (closest sources, whether an opinion post may be offered) or `no_post` (status and the message to show). Never `post` for an empty post: `draft_truncated`, `draft_refused`, an unknown status, or an `ok` with no text all become `no_post` with the backend's `message` or a fallback. Used by `CreatePost.tsx` and `app/first-post/page.tsx`; tested in `generate-outcome.test.ts`. |
 | `frontend/lib/generate-stream.ts` | `readGenerateStream(body, onDelta)`: reads `/generate/stream` (SSE over fetch): passes `delta` text on and returns `{kind: "final", data}` or `{kind: "error", status, detail}`; a stream that ends without either is an error (`STREAM_CUT_MESSAGE`), never a post. `parseEvents` splits buffered SSE text. |
 | `frontend/hooks/useProfileCheck.ts` | `useProfileCheck()` hook — resolves auth via `supabase.auth.getUser()`, then calls `GET /profile`; redirects to `/first-post` only if `has_profile === false`; no-op on public routes; exposes `{ loading, hasProfile, profileComplete, profile }` |
@@ -922,7 +923,7 @@ data: {"status_code": 503, "detail": "Our writing service is overloaded right no
 ### DELETE /library/source
 **Request body:**
 ```json
-{ "source_title": "Why RAG fails in production — 3 lessons" }
+{ "source_id": "3f2c9a7e-1b4d-4e8a-9c2f-6d5e4b3a2c1f" }
 ```
 **Response:**
 ```json
@@ -932,7 +933,7 @@ data: {"status_code": 503, "detail": "Our writing service is overloaded right no
   "message": "Removed 5 chunks"
 }
 ```
-**Notes:** Deletes every source with this `source_title` for the current `user_id` via `source_store.delete_by_title()`: rows, stored originals, chunks and their derived data (`memory/derived_store.py`), plus title-matched chunks with no source. Same-title sources are deleted together: a data-loss bug, fixed in the next branch by deleting by `source_id`. The router reads `result["chunks_removed"]` and returns the flat response above: `deleted` is a boolean, `chunks_removed` is an integer, and `message` is a string. Returns 404 if the count is 0. After a successful response, the frontend removes the card and subtracts `chunks_removed` from the displayed total.
+**Notes:** Deletes one source by `source_id` (titles are not unique: one production library has 21 sources with an empty title) via `source_store.delete_source()`: its row, stored original, chunks and their derived data (`memory/derived_store.py`). 404 when the user has no source with that id (another user's id included); 422 without a non-empty `source_id` (also what a pre-change frontend sending `source_title` gets). `chunks_removed` is the source's chunk count. The frontend removes the card only after a confirmed response (`frontend/lib/library.ts deleteOutcome`); on any failure the card stays and shows "Couldn't delete this source. Refresh and try again." Backend and frontend must deploy back to back: in between, deletes fail visibly (nothing is deleted wrongly).
 
 ---
 
@@ -947,12 +948,12 @@ data: {"status_code": 503, "detail": "Our writing service is overloaded right no
       "source_count": 14,
       "total_chunks": 87,
       "sources": [
-        { "source_title": "Why RAG fails in production", "source_type": "article", "ingested_at": "2026-03-18T10:22:01+00:00" }
+        { "source_id": "3f2c9a7e-…", "source_title": "Why RAG fails in production", "source_type": "article", "ingested_at": "2026-03-18T10:22:01+00:00" }
       ]
     }
   ],
   "unclustered_sources": [
-    { "source_title": "My quick note", "source_type": "note", "ingested_at": "2026-03-20T08:00:00+00:00" }
+    { "source_id": "8b1d…", "source_title": "My quick note", "source_type": "note", "ingested_at": "2026-03-20T08:00:00+00:00" }
   ],
   "total_sources": 22,
   "total_tags": 8
@@ -968,6 +969,7 @@ data: {"status_code": 503, "detail": "Our writing service is overloaded right no
 {
   "sources": [
     {
+      "source_id": "3f2c9a7e-1b4d-4e8a-9c2f-6d5e4b3a2c1f",
       "source_title": "Why RAG fails in production — 3 lessons",
       "source_type": "article",
       "ingested_at": "2026-03-18T10:22:01+00:00",
@@ -980,7 +982,7 @@ data: {"status_code": 503, "detail": "Our writing service is overloaded right no
   "total_sources": 9
 }
 ```
-**Notes:** Groups all user-scoped `embeddings` rows by `source_id`. Sources without `ingested_at` (ingested before this feature) sort last. Source titles derived from first 80 chars of ingested content.
+**Notes:** Groups the user's `embeddings` rows by `source_id`; consolidation chunks are not listed (derived briefs, not sources). `retrieval_count` is looked up by title, so same-title sources show one shared count (backlog: stats keyed by `source_id`). Sources without `ingested_at` (ingested before this feature) sort last. Source titles derived from first 80 chars of ingested content.
 
 ---
 
@@ -1316,7 +1318,7 @@ Defined, with column notes, in `backend/migrations/007_add_accounts.sql`, `008_a
 | Uploaded files are ingested as `source_type="article"` | PDF/DOCX/TXT content is plain text after extraction — same chunking and embedding pipeline applies; no need for a new source type |
 | Scanned/image-only PDFs are rejected with 422 | PyMuPDF returns < 100 characters for image-only PDFs; a clear error message is returned rather than silently ingesting empty chunks |
 | File drag-and-drop uses native HTML5 events only | No external DnD library added; `onDragOver`, `onDragLeave`, `onDrop` on the drop zone div are sufficient and keep the bundle small |
-| Library delete removes every source with matching `source_title` | `source_store.delete_by_title()`. Two sources sharing a title are deleted together: a data-loss bug, not a trade-off. Next branch: delete by `source_id`, frontend and backend. |
+| Library delete is by `source_id` | Titles are not unique (21 sources with an empty title in one production library; any two notes can share a title). The card is removed only after the backend confirms. Card keys are `source_id`: with index keys, a card's open confirm panel passed to the next source after a delete, one click from deleting the wrong one. |
 | Delete cascade: foreign keys plus one cleanup module | Relational rows go by `ON DELETE CASCADE` (migration 016), so no path can leave links behind; what a foreign key can't reach (unlinked entities, consolidation chunks, topic children, retrieval counts, BM25 cache) is in `memory/derived_store.py`, called by `delete_sources` and by a replace's commit. A consolidation chunk whose entity lost a chunk is removed, not rebuilt: the brief may repeat deleted text, and consolidation has not been shown to help (quality_v1, 2026-10-15). |
 | Chunk ids unique per ingest | A replace writes a new chunk set (`ingest_id`), switches the row, then deletes the old set, so the old links cascade away and a failure partway keeps the old note. Existing ids were not renamed (still unique). While a replace runs (seconds), retrieval can see both sets of that source. |
 | Captcha/bot-protection detection uses a 2-signal threshold | `detect_captcha()` in `scraper_tool.py` checks for 2+ matches from `CAPTCHA_SIGNALS` before raising an error. A single match (e.g., an article that mentions "Cloudflare") is not flagged; 2+ matches means the page is almost certainly a bot-challenge page. |
@@ -1414,7 +1416,9 @@ First after this merge: `fix/retrieval-failure-status`, to distinguish retrieval
 - **Delete cascade: done** (`feature/delete-cascade`, migration 016, applied to eval and production 2026-10-16; production cleanup removed 25 orphan links, 19 linkless entities, 1 consolidation chunk, 2 `source_nodes` rows, 2 topic children). The code writes `ingest_id`/`pending_replace` and relies on the foreign keys, so it must not run against a database without 016.
   - Stale links on reused profile-note chunk ids from before 016 can't be told apart from valid ones in SQL (eval: 22 links on 6 profile notes, production: 3 on 1). They go when each profile note is next saved (new chunk set); a one-off re-save of those notes is the cleanup, paid (entity extraction, tags, summary), estimate before running.
   - Consolidation: removed on delete, never rebuilt. quality_v1 with and without consolidation chunks (2026-10-15, $0): Recall@cutoff and Precision unchanged; dev MRR 0.633 → 0.640, hold-out Recall@1 0.618 → 0.559 and MRR 0.735 → 0.691 (one case, re-05). Decide retire or keep; if kept, the rebuild after delete is its own branch.
-- **Next branch: Library delete by `source_id`**, frontend and backend, with a test for two sources sharing a title (today they are deleted together).
+- **Library delete by `source_id`: done** (`fix/delete-by-source-id`). Deploy backend and frontend back to back.
+- **Next: retrieval stats keyed by `source_id`** (approved as its own branch): migration adding `source_id` to `source_retrieval_stats`, record by id from the retrieval bundle, backfill by matching titles to sources; where one title maps to several sources the count can't be split, so it is reset to 0, not guessed.
+- **Backlog, title used as identity** (no wrong deletes; wrong or merged display data): low-coverage closest sources deduplicated by title (`agents/retrieval_agent.py` `coverage_gate`), so two different sources with one title show once; Library topic-map click searches by title (`app/library/page.tsx handleClusterSourceClick`), so it also shows same-title and title-containing sources; eval labelling by title (`evals/quality_retrieval.py _labeller`, `evals/quality_seed.py` profile-note lookup, Suite 1 `expected_source_titles`), correct today because no fixture title repeats, should key by fixture id or `source_id` if that ever changes; `total_chunks` counts consolidation rows, so the Library total drifts from the per-source counts.
 - **Provenance classifier** (step 3.3): semantic, measured on quality_v1 labels before anything reads `authorship`. High-confidence results applied automatically, shown and one-click editable; low confidence asks the user; the user's explicit choice always wins.
 - `title_origin` now lives on `sources` (written at ingest; NULL on backfilled rows). The `fix/ingest-attribution` plan below should read it from there instead of adding it to `embeddings`.
 - No self-service account deletion: deletion is by email, using the admin endpoint for sources.

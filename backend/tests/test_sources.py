@@ -135,7 +135,8 @@ def test_library_delete_removes_row_object_and_chunks(client, headers, fake_db, 
     original = source_store.uploaded("file", data=b"bytes", mime="text/plain",
                                      extractor=("file_extractor.txt", "1"), title_provided=True)
     _ingest(NOTE, original, source_title="Billing notes")
-    resp = client.request("DELETE", "/library/source", headers=headers, json={"source_title": "Billing notes"})
+    [row] = _sources(fake_db)
+    resp = client.request("DELETE", "/library/source", headers=headers, json={"source_id": row["source_id"]})
     assert resp.status_code == 200
     assert _sources(fake_db) == [] and fake_db.objects == {} and fake_db.tables["embeddings"] == []
 

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useApi } from "@/lib/api";
 import type { ClusterItem, ClusterSourceItem } from "@/lib/api";
+import { DELETE_FAILED_MESSAGE, deleteOutcome, removeSource, sourceKey } from "@/lib/library";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/card";
@@ -14,6 +15,7 @@ import { EmptyState, ErrorState } from "@/components/ui/states";
 import { chipClass } from "@/components/ui/chip";
 
 interface Source {
+  source_id: string;
   source_title: string;
   source_type: string;
   ingested_at: string;
@@ -123,7 +125,7 @@ function SourceCard({
   onDelete,
 }: {
   source: Source;
-  onDelete: (source_title: string, chunks_removed: number) => void;
+  onDelete: (source_id: string, chunks_removed: number) => void;
 }) {
   const api = useApi();
   const [confirming, setConfirming] = useState(false);
@@ -137,19 +139,20 @@ function SourceCard({
   const handleDelete = async () => {
     setDeleting(true);
     setDeleteError("");
+    // The card is removed only after the backend confirms; on any failure it
+    // stays, with the confirm panel open to show the error.
     try {
-      const res = await api.deleteSource(source.source_title);
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail ?? "Delete failed");
+      const outcome = await deleteOutcome(await api.deleteSource(source.source_id));
+      if (outcome.ok) {
+        onDelete(source.source_id, outcome.chunksRemoved);
+        showToast("Source removed from memory", "success");
+      } else {
+        setDeleteError(outcome.message);
+        showToast(outcome.message, "error");
       }
-      const data = await res.json();
-      onDelete(source.source_title, data.chunks_removed);
-      showToast("Source removed from memory", "success");
-    } catch (e: unknown) {
-      setDeleteError(e instanceof Error ? e.message : "Something went wrong.");
-      showToast("Failed to remove source", "error");
-      setConfirming(false);
+    } catch {
+      setDeleteError(DELETE_FAILED_MESSAGE);
+      showToast(DELETE_FAILED_MESSAGE, "error");
     } finally {
       setDeleting(false);
     }
@@ -450,7 +453,7 @@ function TopicMapView({
                 <div className="px-5 pb-4 flex flex-col" style={{ gap: "1.4rem" }}>
                   {cluster.sources.map(source => (
                     <button
-                      key={source.source_title}
+                      key={sourceKey(source)}
                       onClick={() => onSourceClick(source.source_title)}
                       className="flex items-center gap-3 text-left group"
                     >
@@ -499,7 +502,7 @@ function TopicMapView({
               <div className="px-5 pb-4 flex flex-col" style={{ gap: "1.4rem" }}>
                 {unclustered.map(source => (
                   <button
-                    key={source.source_title}
+                    key={sourceKey(source)}
                     onClick={() => onSourceClick(source.source_title)}
                     className="flex items-center gap-3 text-left group"
                   >
@@ -609,8 +612,8 @@ export default function LibraryPage() {
     setSearch(sourceTitle);
   };
 
-  const handleSourceDeleted = (source_title: string, chunks_removed: number) => {
-    setSources((prev) => prev.filter((s) => s.source_title !== source_title));
+  const handleSourceDeleted = (source_id: string, chunks_removed: number) => {
+    setSources((prev) => removeSource(prev, source_id));
     setTotalChunks((prev) => Math.max(0, prev - chunks_removed));
   };
 
@@ -769,9 +772,9 @@ export default function LibraryPage() {
                 {/* Source grid */}
                 {filtered.length > 0 && viewMode === "grid" && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                    {visibleSources.map((source, i) => (
+                    {visibleSources.map((source) => (
                       <SourceCard
-                        key={i}
+                        key={sourceKey(source)}
                         source={source}
                         onDelete={handleSourceDeleted}
                       />
@@ -783,9 +786,9 @@ export default function LibraryPage() {
                 {/* Source list */}
                 {filtered.length > 0 && viewMode === "list" && (
                   <div className="grid grid-cols-1 gap-3">
-                    {visibleSources.map((source, i) => (
+                    {visibleSources.map((source) => (
                       <SourceCard
-                        key={i}
+                        key={sourceKey(source)}
                         source={source}
                         onDelete={handleSourceDeleted}
                       />

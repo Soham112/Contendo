@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from auth.supabase_jwt import get_user_id_dep
-from memory.source_store import delete_by_title
+from memory.source_store import delete_source
 from memory.vector_store import get_all_sources, get_total_chunks
 from memory.retrieval_stats_store import get_retrieval_counts
 
@@ -11,7 +11,7 @@ router = APIRouter()
 
 
 class DeleteSourceRequest(BaseModel):
-    source_title: str
+    source_id: str = Field(min_length=1)
 
 
 @router.get("/library")
@@ -45,12 +45,6 @@ async def library_clusters(user_id: str = Depends(get_user_id_dep)) -> dict:
     # Only keep tags that appear in 2+ sources
     clustered_tags = {tag: srcs for tag, srcs in tag_to_sources.items() if len(srcs) >= 2}
 
-    # Build set of source titles that appear in at least one cluster
-    clustered_source_titles: set[str] = set()
-    for srcs in clustered_tags.values():
-        for s in srcs:
-            clustered_source_titles.add(s["source_title"])
-
     # Build cluster list
     clusters = []
     for tag, srcs in clustered_tags.items():
@@ -61,6 +55,7 @@ async def library_clusters(user_id: str = Depends(get_user_id_dep)) -> dict:
             "total_chunks": total_chunks,
             "sources": [
                 {
+                    "source_id": s["source_id"],
                     "source_title": s["source_title"],
                     "source_type": s["source_type"],
                     "ingested_at": s["ingested_at"],
@@ -78,6 +73,7 @@ async def library_clusters(user_id: str = Depends(get_user_id_dep)) -> dict:
         source_tags = [t.lower().strip() for t in source.get("tags", []) if t.strip()]
         if not any(t in clustered_tags for t in source_tags):
             unclustered.append({
+                "source_id": source["source_id"],
                 "source_title": source["source_title"],
                 "source_type": source["source_type"],
                 "ingested_at": source["ingested_at"],
@@ -96,13 +92,10 @@ async def delete_library_source(
     req: DeleteSourceRequest,
     user_id: str = Depends(get_user_id_dep),
 ) -> dict:
-    result = await run_in_threadpool(delete_by_title, req.source_title, user_id=user_id)
-    chunks_removed = result["chunks_removed"]
-    if chunks_removed == 0:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Source not found: {req.source_title}",
-        )
+    """Delete one source by id, with its chunks and everything derived from them."""
+    chunks_removed = await run_in_threadpool(delete_source, req.source_id, user_id)
+    if chunks_removed is None:
+        raise HTTPException(status_code=404, detail="Source not found")
     return {
         "deleted": True,
         "chunks_removed": chunks_removed,

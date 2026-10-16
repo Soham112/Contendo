@@ -329,17 +329,14 @@ def delete_sources(source_ids: list[str], user_id: str) -> int:
     return len(rows)
 
 
-def delete_by_title(source_title: str, user_id: str) -> dict:
-    """Library delete: every source with this title, and chunks with this title
-    that have no source (written before `sources` existed).
-
-    Returns {"deleted": True, "chunks_removed": int}.
-    """
-    rows = (supabase.table("embeddings").select("id,source_id").eq("source_title", source_title)
-            .eq("user_id", user_id).execute().data or [])
-    delete_sources(sorted({r["source_id"] for r in rows if r.get("source_id")}), user_id)
-    derived_store.delete_chunks([r["id"] for r in rows if not r.get("source_id")], user_id)
-    return {"deleted": True, "chunks_removed": len(rows)}
+def delete_source(source_id: str, user_id: str) -> int | None:
+    """Library delete: one source, by id (titles are not unique). Returns the
+    chunks removed, or None when the user has no source with this id."""
+    if get_source(source_id, user_id) is None:
+        return None
+    chunks = len(derived_store.chunk_ids_of_sources([source_id], user_id))
+    delete_sources([source_id], user_id)
+    return chunks
 
 
 def delete_all_for_user(user_id: str) -> int:

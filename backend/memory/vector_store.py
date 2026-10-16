@@ -550,7 +550,11 @@ def query_by_hash(content_hash: str, user_id: str) -> dict | None:
 
 
 def get_all_sources(user_id: str) -> list[dict]:
-    """Return all sources for the user, grouped by source_id, sorted newest first."""
+    """Return all sources for the user, grouped by source_id, sorted newest first.
+
+    Consolidation chunks are derived briefs, not sources (their source_id is an
+    entity id), so they are not listed: a Library card is always deletable by id.
+    """
     response = (
         supabase.table("embeddings")
         .select("*")
@@ -563,6 +567,8 @@ def get_all_sources(user_id: str) -> list[dict]:
 
     groups: dict[str, dict] = {}
     for row in rows:
+        if row.get("node_type") == "consolidation":
+            continue
         sid = row.get("source_id") or "unknown"
         if sid not in groups:
             groups[sid] = {
