@@ -21,14 +21,6 @@ def headers(client, production, auth_headers):
     return auth_headers(USER)
 
 
-@pytest.fixture(autouse=True)
-def _empty_transcript_cache():
-    from extractors import youtube
-    youtube._cache.clear()
-    yield
-    youtube._cache.clear()
-
-
 # --- URL ------------------------------------------------------------------------------
 
 def test_page_text_is_the_main_content_with_the_real_title():
@@ -146,53 +138,7 @@ def test_obsidian_fixes_embeds_math_and_aliases():
         "# Growth\n\nSee our pricing page and Churn.\nArea grows as x^2 when both sides double.\n\nEnd.")
 
 
-# --- YouTube ----------------------------------------------------------------------------
-
-@pytest.mark.parametrize("url", ["https://youtu.be/abcdefghijk", "https://www.youtube.com/watch?t=3&v=abcdefghijk",
-                                 "https://youtube.com/shorts/abcdefghijk"])
-def test_video_ids(url):
-    from extractors.youtube import video_id
-    assert video_id(url) == "abcdefghijk"
-
-
-@pytest.fixture
-def supadata(monkeypatch):
-    import httpx
-    from extractors import youtube
-    calls = []
-
-    def get(url, **kw):
-        calls.append(kw["params"]["videoId"])
-        return httpx.Response(200, json={"content": "Today we talk about pricing. " * 30, "title": "Pricing talk"})
-    monkeypatch.setenv("SUPADATA_API_KEY", "test-key")
-    monkeypatch.setattr(youtube.httpx, "get", get)
-    return calls
-
-
-def test_preview_then_save_costs_one_transcript_call(client, headers, fake_db, ingestion, supadata):
-    url = "https://youtu.be/abcdefghijk"
-    preview = client.post("/fetch-youtube-transcript", headers=headers, json={"url": url})
-    assert preview.status_code == 200 and preview.json()["title"] == "Pricing talk"
-    saved = client.post("/ingest", headers=headers, json={"source_type": "youtube", "video_url": url})
-    assert saved.status_code == 200 and saved.json()["chunks_stored"] > 0
-    assert supadata == ["abcdefghijk"]
-    [row] = fake_db.tables["sources"]
-    assert (row["extractor"], row["source_url"]) == ("supadata", "https://www.youtube.com/watch?v=abcdefghijk")
-    assert row["raw_json"]["video_id"] == "abcdefghijk" and row["raw_json"]["response"]["title"] == "Pricing talk"
-
-
-def test_a_stale_or_missing_cache_entry_fetches_again(supadata, monkeypatch):
-    from extractors import youtube
-    clock = [1000.0]
-    monkeypatch.setattr(youtube.time, "monotonic", lambda: clock[0])
-    youtube.transcript("abcdefghijk")
-    youtube.transcript("abcdefghijk")
-    clock[0] += youtube.CACHE_SECONDS + 1
-    youtube.transcript("abcdefghijk")
-    youtube._cache.clear()                                   # a restart
-    youtube.transcript("abcdefghijk")
-    assert supadata == ["abcdefghijk"] * 3
-
+# --- YouTube: tests/test_youtube.py --------------------------------------------------------
 
 # --- images -----------------------------------------------------------------------------
 

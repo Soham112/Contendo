@@ -17,6 +17,7 @@ from memory.hierarchy_store import (
     upsert_topic_node,
 )
 from memory.entity_store import upsert_entity, upsert_chunk_entities, _normalize_entity_name
+from utils import language
 from utils.chunker import chunk_text
 
 logger = logging.getLogger(__name__)
@@ -329,6 +330,7 @@ def ingest_content(
     original: SourceOriginal,
     memory_context: str | None = None,
     replace_source_id: str | None = None,
+    reported_lang: str | None = None,
 ) -> dict:
     """Ingest content into the knowledge base.
 
@@ -344,11 +346,18 @@ def ingest_content(
         and the old chunks are deleted, see source_store.begin_replace). Used for
         the business profile note.
 
+    reported_lang: the language a provider reported for this text (Supadata's
+        `lang`), used only when the text is too short to identify.
+
+    Raises utils.language.UnsupportedLanguage, before any model call or write,
+    when the text is in a language the embedder can't search.
+
     Returns dict with keys: chunks_stored, tags, suggested_context (when inferred).
     """
     chunks = chunk_text(content)
     if not chunks:
         return {"chunks_stored": 0, "tags": []}
+    lang = language.require_supported(content, reported_lang)
 
     # Deduplication check — skip Claude call entirely if content already exists
     content_hash = compute_content_hash(content)
@@ -392,7 +401,7 @@ def ingest_content(
     source_id = replace_source_id or str(uuid.uuid4())
     begin = source_store.begin_replace if replace_source_id else source_store.begin_source
     write = begin(user_id, source_id, original, title=source_title,
-                  extracted_text=content, content_hash=content_hash)
+                  extracted_text=content, content_hash=content_hash, lang=lang)
     try:
         stored = upsert_chunks(
             chunks,

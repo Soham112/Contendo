@@ -1,0 +1,83 @@
+{
+ "_note": "Shape and metadata from real mode=native lang=en for kJQP7kiw5Fk, 2026-10-16: reported lang 'en' but the track is Spanish in capitals between ♪. Chunk text replaced (the original is song lyrics); offsets and span are real.",
+ "lang": "en",
+ "availableLangs": [
+  "en",
+  "ja",
+  "es"
+ ],
+ "content": [
+  {
+   "lang": "en",
+   "text": "♪ ESTE VIDEO TRATA DE CÓMO CONSTRUIMOS LA TIENDA ♪",
+   "offset": 433,
+   "duration": 27100
+  },
+  {
+   "lang": "en",
+   "text": "♪ PRIMERO ABRIMOS LA TERMINAL Y REVISAMOS EL PROYECTO ♪",
+   "offset": 27566,
+   "duration": 1534
+  },
+  {
+   "lang": "en",
+   "text": "♪ DESPUÉS ELEGIMOS LOS COLORES Y LAS FUENTES DE LA MARCA ♪",
+   "offset": 29633,
+   "duration": 1367
+  },
+  {
+   "lang": "en",
+   "text": "♪ LA PARTE MÁS DIFÍCIL FUE CONECTAR LOS PAGOS ♪",
+   "offset": 31300,
+   "duration": 933
+  },
+  {
+   "lang": "en",
+   "text": "♪ CADA PRODUCTO NECESITA SU PROPIA PÁGINA CON FOTOS ♪",
+   "offset": 32666,
+   "duration": 3934
+  },
+  {
+   "lang": "en",
+   "text": "♪ AL FINAL PROBAMOS TODO EN EL TELÉFONO ♪",
+   "offset": 36633,
+   "duration": 2900
+  },
+  {
+   "lang": "en",
+   "text": "♪ LOS CLIENTES ENCUENTRAN LO QUE BUSCAN MUCHO MÁS RÁPIDO ♪",
+   "offset": 41166,
+   "duration": 4367
+  },
+  {
+   "lang": "en",
+   "text": "♪ ESO ES TODO POR HOY, NOS VEMOS EN EL PRÓXIMO ♪",
+   "offset": 46366,
+   "duration": 3200
+  },
+  {
+   "lang": "en",
+   "text": "♪ ESTE VIDEO TRATA DE CÓMO CONSTRUIMOS LA TIENDA ♪",
+   "offset": 50666,
+   "duration": 1367
+  },
+  {
+   "lang": "en",
+   "text": "♪ PRIMERO ABRIMOS LA TERMINAL Y REVISAMOS EL PROYECTO ♪",
+   "offset": 52066,
+   "duration": 5100
+  },
+  {
+   "lang": "en",
+   "text": "♪ DESPUÉS ELEGIMOS LOS COLORES Y LAS FUENTES DE LA MARCA ♪",
+   "offset": 57200,
+   "duration": 3433
+  },
+  {
+   "lang": "en",
+   "text": "♪ LA PARTE MÁS DIFÍCIL FUE CONECTAR LOS PAGOS ♪",
+   "offset": 268300,
+   "duration": 5200
+  }
+ ]
+}

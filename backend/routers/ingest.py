@@ -10,6 +10,9 @@ so the frontend can offer to replace it. Resubmitting with `replace_source_id`
 re-extracts and replaces that source in place (unique chunk ids, old content
 intact until the new one is stored). Content whose text is already stored
 (content_hash) is a duplicate that replacing would not change.
+
+Language. ingest_content refuses text in a language the embedder can't search
+(utils/language.py); every route returns that as a 422 with the message.
 """
 import base64
 import binascii
@@ -29,6 +32,7 @@ from extractors.image import extract_image
 from extractors.url import extract_url, is_valid_url, normalize_url
 from extractors import youtube
 from memory import source_store
+from utils.language import UnsupportedLanguage
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -107,13 +111,20 @@ async def _extract(extract: Callable[[], Extraction], error_status: int) -> Extr
         raise HTTPException(status_code=error_status, detail=str(e))
 
 
+async def _ingest(**kwargs) -> dict:
+    try:
+        return await run_in_threadpool(ingest_content, **kwargs)
+    except UnsupportedLanguage as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
 async def _store(extract: Callable[[], Extraction], *, user_id: str, source_type: str, error_status: int,
                  replace_source_id: str | None = None, memory_context: str | None = None) -> IngestResponse:
     extraction = await _extract(extract, error_status)
-    result = await run_in_threadpool(
-        ingest_content, extraction.text, source_type=source_type, source_title=extraction.title,
+    result = await _ingest(
+        content=extraction.text, source_type=source_type, source_title=extraction.title,
         user_id=user_id, memory_context=memory_context, original=extraction.original,
-        replace_source_id=replace_source_id,
+        replace_source_id=replace_source_id, reported_lang=extraction.metadata.get("lang"),
     )
     response = IngestResponse(chunks_stored=result["chunks_stored"], tags=result["tags"],
                               title=extraction.title, word_count=extraction.metadata.get("word_count"))
@@ -172,9 +183,8 @@ async def ingest(req: IngestRequest, user_id: str = Depends(get_user_id_dep)) ->
 
     if not req.content or not req.content.strip():
         raise HTTPException(status_code=400, detail="content is required")
-    result = await run_in_threadpool(
-        ingest_content,
-        req.content,
+    result = await _ingest(
+        content=req.content,
         source_type=_note_source_type(req),
         source_title=req.source_title,
         user_id=user_id,
