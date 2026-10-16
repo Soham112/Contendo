@@ -1214,6 +1214,7 @@ Defined, with column notes, in `backend/migrations/007_add_accounts.sql`, `008_a
 | Score threshold is 75 | Defined in `pipeline/graph.py` as `SCORE_THRESHOLD = 75` |
 | Humanizer retries capped at 3 (`MAX_ITERATIONS`) | Guarantees the pipeline always terminates; surfaces best attempt regardless |
 | Embeddings are local (sentence-transformers) | No API key required, no per-call cost, adequate quality for retrieval |
+| Vector search is an exact per-user scan, no ANN index (migration 013) | The IVFFlat index searched ~1% of all rows and filtered by user afterwards: recall@8 vs exact was 0.03 on the main production library. Libraries are small (largest 149 chunks), so exact is cheap; recall@8 vs exact is now 1.00 with latency within noise. Add an ANN index (HNSW with iterative scans) only when measured per-user scan time threatens the latency budget. Eval: `evals/baselines/2026-10-16-exact-vector-search.md` |
 | YouTube ingest uses URL auto-fetch + manual fallback | The Feed Memory YouTube tab first tries `POST /fetch-youtube-transcript` from a pasted URL and shows a transcript preview on success; users can always paste transcript text manually if fetch is unavailable for a specific video. |
 | Claude model selection | Draft generation and all main pipeline calls use `claude-sonnet-4-6`. Archetype choice (`choose_archetype()` in `archetype_agent.py`) uses `claude-haiku-4-5-20251001` (`max_tokens=300`, structured output) for low-latency classification before the Sonnet draft call. |
 | Similarity threshold is 0.3 | Cosine similarity returned by `match_embeddings` RPC — chunks below this are too semantically distant to help |
@@ -1347,6 +1348,21 @@ Defined, with column notes, in `backend/migrations/007_add_accounts.sql`, `008_a
 ---
 
 ## 6. WHAT IS NOT BUILT YET
+
+### Retrieval quality backlog (measured on quality_v1)
+
+Found by the retrieval scorecard (`docs/QUALITY.md` B1; harness `evals/quality_retrieval.py`). Starting point: `evals/baselines/2026-10-16-exact-vector-search.md` (dev Recall@cutoff 0.57, MRR 0.63, Precision@cutoff 0.65; hold-out Precision@cutoff 0.74, off-topic rate 0.07). Each change is scored against that run on dev, then on hold-out, and kept only if it doesn't give back recall or slow time to first word. In build order:
+
+| # | Change | Evidence today | Should move | Step |
+|---|---|---|---|---|
+| 1 | Index the source title (and later a one-line summary) with each chunk, for both embeddings and BM25 | rf-03: note titled as the topic scores cosine 0.287 (gate 0.30); tc-03 "Nearshoring": cosine 0.19, BM25 0.0, the word is only in the title | Recall, MRR | 3 (chunking) |
+| 2 | Chunks that fit the embedder's window (all-MiniLM-L6-v2 reads 256 tokens) | 89% of production chunks are longer; 77% of stored text is never embedded | Recall, MRR | 3 (chunking) |
+| 3 | Choose the embedding model by measurement, not by default | near-miss articles score close to the user's own note on the same subject (XLR8) | Precision, off-topic rate | 3 (embeddings) |
+| 4 | Recalibrate the relevance floor and coverage gate (both 0.30) from score distributions of required vs off-topic sources | thresholds were set while vector search returned near-random rows; hold-out precision fell 0.85 → 0.74 and me-09 (uncovered, low authority) now passes the gate | Precision, off-topic rate, gate accuracy | after 3's embeddings settle |
+| 5 | Rank with provenance (own experience vs external), not similarity alone | re-06, fs-01: background or distractor outranks the required source | MRR, own-source share | 4 (needs 3's provenance fields) |
+| 6 | Pass fewer sources to the drafter, chosen by measurement (spec §7.1: 4-6 vs up to 12 today) | up to 8 hybrid + 4 entity chunks reach the drafter | Precision, prompt size, latency | 4 |
+| 7 | Keep entity enrichment only if it adds required sources | matches entity names as substrings of the query; adds up to 4 chunks | Precision | 4 |
+| 8 | Evidence Recall@cutoff: does the drafter's context contain the labelled fact, not only the right source | not measurable yet: needs fact labels per case | (new metric) | 3 (fact labels); candidate judge DeepEval `ContextualRecall` |
 
 First after this merge: `fix/retrieval-failure-status`, to distinguish retrieval outages from low coverage and remove topic/source excerpts from logs. This branch adds labels only.
 
