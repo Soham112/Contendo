@@ -108,19 +108,17 @@ def test_deleting_the_last_source_of_an_entity_removes_entity_and_brief(fake_db,
     assert _rows(fake_db, "chunk_entities") == []
 
 
-def test_delete_removes_hierarchy_rows_and_retrieval_counts_no_source_uses(fake_db, ingestion):
+def test_delete_removes_hierarchy_rows_and_the_sources_own_retrieval_count(fake_db, ingestion):
     a = _ingest(_text("a", "kafka"), title="Shared")
     b = _ingest(_text("b", "kafka"), title="Shared")
-    fake_db.tables["source_retrieval_stats"] = [{"user_id": USER, "source_title": "Shared", "retrieval_count": 4}]
+    fake_db.tables["source_retrieval_stats"] = [{"user_id": USER, "source_id": sid, "retrieval_count": 4}
+                                                for sid in (a, b)]
     assert {r["source_id"] for r in _rows(fake_db, "source_nodes")} == {a, b}
 
     source_store.delete_sources([a], USER)
     assert {r["source_id"] for r in _rows(fake_db, "source_nodes")} == {b}
     assert all(a not in t["child_source_ids"] for t in _rows(fake_db, "topic_nodes"))
-    assert _rows(fake_db, "source_retrieval_stats")                    # b still has the title
-
-    source_store.delete_sources([b], USER)
-    assert _rows(fake_db, "source_retrieval_stats") == []
+    assert [r["source_id"] for r in _rows(fake_db, "source_retrieval_stats")] == [b]   # same title, own count
 
 
 def test_library_delete_stops_keyword_search_returning_the_text(client, production, auth_headers, fake_db, ingestion):

@@ -184,24 +184,50 @@ def test_a_failed_source_lookup_still_returns_chunk_metadata(fake_db, monkeypatc
 
 # --- Retrieval stats ---------------------------------------------------------------
 
-def test_record_retrievals_counts_each_distinct_title_once_per_user(fake_db):
+def _sources(fake_db, *rows):
+    fake_db.tables.setdefault("sources", []).extend({"source_id": sid, "user_id": uid, "title": t} for sid, uid, t in rows)
+
+
+def test_record_retrievals_counts_each_distinct_source_once_per_user(fake_db):
     from memory.retrieval_stats_store import get_retrieval_counts, record_retrievals
 
+    _sources(fake_db, ("old", "u", "Old"), ("new", "u", "New"), ("theirs", "other", "New"))
     fake_db.tables["source_retrieval_stats"] = [
-        {"id": 1, "user_id": "u", "source_title": "Old", "retrieval_count": 4},
-        {"id": 2, "user_id": "other", "source_title": "New", "retrieval_count": 9},
+        {"id": 1, "user_id": "u", "source_id": "old", "retrieval_count": 4},
+        {"id": 2, "user_id": "other", "source_id": "theirs", "retrieval_count": 9},
     ]
-    record_retrievals("u", ["Old", "New", " New ", "", "Old"])
+    record_retrievals("u", ["old", "new", "new", "", "old"])
 
-    assert get_retrieval_counts("u") == {"Old": 5, "New": 1}
-    assert get_retrieval_counts("other") == {"New": 9}
+    assert get_retrieval_counts("u") == {"old": 5, "new": 1}
+    assert get_retrieval_counts("other") == {"theirs": 9}
 
 
-def test_record_retrievals_with_no_titles_touches_nothing(fake_db):
+def test_same_title_sources_and_untitled_sources_are_counted_separately(fake_db):
+    from memory.retrieval_stats_store import get_retrieval_counts, record_retrievals
+
+    _sources(fake_db, ("a", "u", ""), ("b", "u", ""), ("c", "u", "Notes"), ("d", "u", "Notes"))
+    record_retrievals("u", ["a", "c"])
+    record_retrievals("u", ["a"])
+    assert get_retrieval_counts("u") == {"a": 2, "c": 1}
+
+
+def test_ids_that_are_not_the_users_sources_are_not_counted(fake_db):
+    """A consolidation chunk's source_id is an entity id; another user's id isn't theirs."""
+    from memory.retrieval_stats_store import get_retrieval_counts, record_retrievals
+
+    _sources(fake_db, ("mine", "u", "Notes"), ("theirs", "other", "Notes"))
+    record_retrievals("u", ["mine", "entity-1", "theirs"])
+    assert get_retrieval_counts("u") == {"mine": 1}
+    assert get_retrieval_counts("other") == {}
+
+
+def test_record_retrievals_with_no_sources_writes_nothing(fake_db):
     from memory.retrieval_stats_store import record_retrievals
 
-    record_retrievals("u", ["", "  "])
+    record_retrievals("u", ["", ""])
     assert fake_db.log == []
+    record_retrievals("u", ["entity-1"])
+    assert fake_db.tables.get("source_retrieval_stats", []) == []
 
 
 def test_retrieval_does_not_wait_for_stats_writes(fake_db, monkeypatch):
@@ -211,7 +237,8 @@ def test_retrieval_does_not_wait_for_stats_writes(fake_db, monkeypatch):
     from agents.retrieval_agent import retrieval_node
     from memory.vector_store import upsert_chunks
 
-    upsert_chunks(["pgvector makes retrieval fast"], source_title="Notes", user_id="u")
+    upsert_chunks(["pgvector makes retrieval fast"], source_title="Notes", source_id="notes", user_id="u")
+    _sources(fake_db, ("notes", "u", "Notes"))
     release, started = threading.Event(), threading.Event()
     real = stats.record_retrievals
 
@@ -227,7 +254,7 @@ def test_retrieval_does_not_wait_for_stats_writes(fake_db, monkeypatch):
     assert started.wait(5) and stats.get_retrieval_counts("u") == {}
     release.set()
     stats.flush_pending_retrievals()
-    assert stats.get_retrieval_counts("u") == {"Notes": 1}
+    assert stats.get_retrieval_counts("u") == {"notes": 1}
 
 
 def test_a_failed_stats_write_is_logged_not_raised(fake_db, monkeypatch, caplog):
@@ -237,5 +264,5 @@ def test_a_failed_stats_write_is_logged_not_raised(fake_db, monkeypatch, caplog)
         raise RuntimeError("db down")
 
     monkeypatch.setattr(stats, "record_retrievals", boom)
-    stats.record_retrievals_in_background("u", ["Notes"]).result()
+    stats.record_retrievals_in_background("u", ["notes"]).result()
     assert "retrieval stats write failed" in caplog.text

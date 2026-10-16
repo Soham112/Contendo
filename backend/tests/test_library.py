@@ -98,3 +98,14 @@ def test_clusters_identify_sources_by_id(client, a_headers, fake_db, claude):
 
     clusters = client.get("/library/clusters", headers=a_headers).json()["clusters"]
     assert {s["source_id"] for c in clusters for s in c["sources"]} == ids
+
+
+def test_same_title_sources_show_their_own_retrieval_counts(client, a_headers, fake_db, ingestion):
+    from memory.retrieval_stats_store import record_retrievals
+    first = _ingest("First note about billing.", "")
+    second = _ingest("Second note, about hiring.", "")
+    record_retrievals(USER, [first])
+    record_retrievals(USER, [first, second])
+
+    counts = {s["source_id"]: s["retrieval_count"] for s in client.get("/library", headers=a_headers).json()["sources"]}
+    assert counts == {first: 2, second: 1}

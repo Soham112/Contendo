@@ -10,7 +10,8 @@ This module removes what no foreign key can reach:
   - entities no chunk links to any more
   - the consolidation chunk of every entity a deleted chunk was linked to: the
     brief may repeat the deleted text, so it is removed, not kept or rebuilt
-  - deleted sources in topic children, retrieval counts of titles no source has
+  - deleted sources in topic children (a source's retrieval count goes with its
+    row, by foreign key, migration 017)
   - the user's BM25 index, so keyword search stops returning deleted text
 """
 from __future__ import annotations
@@ -20,7 +21,6 @@ from db.supabase_client import supabase
 from memory.consolidation_store import delete_consolidation_chunks
 from memory.entity_store import delete_unlinked_entities, entity_ids_for_chunks
 from memory.hierarchy_store import remove_sources_from_topics
-from memory.retrieval_stats_store import delete_retrieval_counts
 from memory.vector_store import invalidate_bm25_cache
 
 
@@ -55,12 +55,6 @@ def delete_chunks(chunk_ids: list[str], user_id: str) -> int:
     return removed
 
 
-def after_sources_deleted(source_ids: set[str], titles: set[str], user_id: str) -> None:
+def after_sources_deleted(source_ids: set[str], user_id: str) -> None:
     """Clean up after these sources' rows are deleted (their chunks already are)."""
     remove_sources_from_topics(source_ids, user_id)
-    still_used = set()
-    for batch in id_batches(sorted(t for t in titles if t)):
-        rows = (supabase.table("sources").select("title").in_("title", batch)
-                .eq("user_id", user_id).execute().data or [])
-        still_used.update(r["title"] for r in rows)
-    delete_retrieval_counts(user_id, titles - still_used)

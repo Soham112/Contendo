@@ -366,7 +366,7 @@ def retrieval_node(state: PipelineState) -> PipelineState:
         try:
             with timed(timings, "retrieval_stats"):
                 record_retrievals_in_background(
-                    user_id, [chunk.get("source_title", "") for chunk in bundle["chunks"]]
+                    user_id, [chunk.get("source_id", "") for chunk in bundle["chunks"]]
                 )
         except Exception as stat_err:
             logger.warning("retrieval stat tracking failed (non-fatal): %s", stat_err)
