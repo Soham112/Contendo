@@ -3,7 +3,7 @@
 > Read this file at the start of every new session before touching any code.
 > It is the complete technical reference for the Contendo system.
 >
-> Diagrams of the system, data model, ingestion, retrieval and generation, with known issues and the build order: `docs/ARCHITECTURE.md` (local only, gitignored like the rest of `docs/`).
+> Diagrams of the system, data model, ingestion, retrieval and generation, with known issues and the build order: `docs/ARCHITECTURE.md`.
 
 ---
 
@@ -313,7 +313,7 @@ Review-fix additions: `backend/agents/refine_cited_agent.py` owns cited refineme
 | `frontend/content/home.ts` | Homepage SEO data (`HOME_SEO`), hero copy, FAQ (`homeFaqs()`, whose publishing answer follows `VERIFIED_PUBLISHING_PLATFORMS`) and the Organization `sameAs` list |
 | `frontend/components/marketing/` | `NicheLanding` (the server-rendered template), `Faq` (visible FAQ and its FAQPage JSON-LD from one list), `JsonLd`, `NicheLinks` |
 | `frontend/app/[niche]/page.tsx`, `frontend/app/sitemap.ts`, `frontend/app/robots.ts` | Niche landing route (only registered slugs exist), sitemap and robots |
-| `docs/archive/publishing-provider-evaluation.md`, `docs/publishing-roadmap.md` | Provider comparison; the path to our own platform apps. Note: `docs/` is in `.gitignore` |
+| `docs/archive/publishing-provider-evaluation.md`, `docs/publishing-roadmap.md` | Provider comparison; the path to our own platform apps |
 
 ## 2. AGENT CONTRACTS
 
