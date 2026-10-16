@@ -91,10 +91,11 @@ def test_oversized_binaries_and_pages_are_recorded_as_omitted():
     big = source_store.uploaded("file", data=b"x" * (source_store.MAX_RAW_BYTES + 1), mime="text/plain",
                                 extractor=("file_extractor.txt", "1"), title_provided=True)
     assert big.raw_bytes is None and big.raw_omitted_reason
-    page = source_store.fetched_page(url="https://e.com", raw_markdown="é" * (source_store.MAX_PAGE_BYTES // 2 + 1),
-                                     fetched_at="2026-10-15T00:00:00+00:00", extractor=("jina_reader", "1"),
+    page = source_store.fetched_page(url="https://e.com",
+                                     response_json={"data": {"content": "x" * (source_store.MAX_PAGE_BYTES + 1)}},
+                                     fetched_at="2026-10-15T00:00:00+00:00", extractor=("jina_reader", "2"),
                                      title_provided=True)
-    assert page.raw_text is None and page.raw_omitted_reason
+    assert page.raw_json is None and page.raw_omitted_reason
 
 
 @pytest.mark.parametrize("kwargs", [
@@ -168,21 +169,23 @@ def test_file_upload_keeps_the_file(client, headers, fake_db, ingestion):
 
 
 def test_scrape_keeps_the_readers_unprocessed_response(client, headers, fake_db, ingestion, monkeypatch):
-    import routers.ingest as ingest_router
-    raw = "# Pricing lessons\n\nNav\n" + NOTE
-    monkeypatch.setattr(ingest_router, "scrape_url", lambda url: {
-        "content": NOTE, "title": "Pricing lessons", "word_count": 1, "source_url": url,
-        "raw_markdown": raw, "fetched_at": "2026-10-15T10:00:00+00:00"})
-    assert client.post("/scrape-and-ingest", headers=headers, json={"url": "https://e.com/p"}).status_code == 200
+    import extractors.url as url_extractor
+    from tests.extraction_fixtures import jina
+    body = jina("jina_wikipedia_rag.json")
+    monkeypatch.setattr(url_extractor, "fetch", lambda url: body)
+    resp = client.post("/scrape-and-ingest", headers=headers, json={"url": "https://EN.wikipedia.org/wiki/RAG#top"})
+    assert resp.status_code == 200 and resp.json()["title"] == "Retrieval-augmented generation"
     [row] = _sources(fake_db)
-    assert (row["input_type"], row["extractor"], row["raw_text"]) == ("url", "jina_reader", raw)
-    assert row["extracted_text"] == NOTE and row["source_url"] == "https://e.com/p"
-    assert row["fetched_at"] == "2026-10-15T10:00:00+00:00" and row["title_origin"] == "provided"
+    assert (row["input_type"], row["extractor"], row["extractor_version"]) == ("url", "jina_reader", "2")
+    assert row["raw_json"] == body and row["raw_text"] is None
+    assert row["source_url"] == "https://en.wikipedia.org/wiki/RAG" and row["title_origin"] == "provided"
 
 
 def test_image_keeps_the_decoded_bytes(client, headers, fake_db, ingestion, monkeypatch):
-    import routers.ingest as ingest_router
-    monkeypatch.setattr(ingest_router, "extract_from_image", lambda *a, **k: NOTE)
+    import extractors.image as image_extractor
+    from agents.vision_agent import ImageReading
+    monkeypatch.setattr(image_extractor, "read_image",
+                        lambda *a, **k: ImageReading(transcribed_text=NOTE, description=""))
     data = b"\x89PNG fake"
     image = "data:image/png;base64," + base64.b64encode(data).decode()
     assert client.post("/ingest", headers=headers, json={"source_type": "image", "raw_image": image}).status_code == 200

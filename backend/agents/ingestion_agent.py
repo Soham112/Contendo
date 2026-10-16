@@ -358,6 +358,7 @@ def ingest_content(
             "chunks_stored": existing["chunk_count"],
             "tags": existing["tags"],
             "duplicate": True,
+            "duplicate_source_id": existing["source_id"],
         }
 
     tags = _extract_tags(content, user_id=user_id)
