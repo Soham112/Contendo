@@ -255,7 +255,8 @@ class FakeSupabase:
     FOREIGN_KEYS = {
         "entities": [("chunk_entities", "entity_id", "entity_id")],        # migration 004
         "embeddings": [("chunk_entities", "chunk_id", "id")],              # migration 016
-        "sources": [("source_nodes", "source_id", "source_id")],           # migration 016
+        "sources": [("source_nodes", "source_id", "source_id"),            # migration 016
+                    ("source_retrieval_stats", "source_id", "source_id")],  # migration 017
     }
 
     def cascade(self, table: str, removed: list[dict]) -> None:

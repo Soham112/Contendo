@@ -1,14 +1,15 @@
 """retrieval_stats_store.py — Tracks how often each source is retrieved during generation.
 
-Table: source_retrieval_stats (Supabase Postgres), unique on (user_id, source_title)
+Table: source_retrieval_stats (Supabase Postgres), unique on (user_id, source_id)
+(migration 017). Keyed by source id because titles are not unique. The foreign
+key to `sources` deletes a source's count with the source.
 
 Exposed API:
     init_retrieval_stats_db()                               — no-op (table exists in Supabase)
-    record_retrievals(user_id, source_titles)               — count += 1 per distinct title, one read + one upsert
-    record_retrievals_in_background(user_id, source_titles) — same, queued off the request path
+    record_retrievals(user_id, source_ids)                  — count += 1 per distinct source of the user
+    record_retrievals_in_background(user_id, source_ids)    — same, queued off the request path
     flush_pending_retrievals()                              — wait for queued writes (shutdown, tests)
-    get_retrieval_counts(user_id) -> dict                   — {source_title: count} for all sources
-    delete_retrieval_counts(user_id, source_titles)         — drop the counts of deleted sources
+    get_retrieval_counts(user_id) -> dict                   — {source_id: count}
 """
 
 import logging
@@ -30,44 +31,50 @@ def init_retrieval_stats_db() -> None:
     pass
 
 
-def record_retrievals(user_id: str, source_titles: list[str]) -> None:
-    """Increment retrieval_count by 1 for each distinct, non-empty title."""
-    titles = list(dict.fromkeys(t.strip() for t in source_titles if t and t.strip()))
-    if not titles:
+def record_retrievals(user_id: str, source_ids: list[str]) -> None:
+    """Increment retrieval_count by 1 for each distinct source id that is one of
+    the user's sources. Other ids are skipped: a consolidation chunk's source_id
+    is an entity id, and the foreign key would refuse the whole write."""
+    wanted = list(dict.fromkeys(i for i in source_ids if i))
+    if not wanted:
+        return
+    ids = [r["source_id"] for r in (supabase.table("sources").select("source_id").eq("user_id", user_id)
+                                    .in_("source_id", wanted).execute().data or [])]
+    if not ids:
         return
     now = datetime.now(timezone.utc).isoformat()
     existing = (
         supabase.table("source_retrieval_stats")
-        .select("source_title,retrieval_count")
+        .select("source_id,retrieval_count")
         .eq("user_id", user_id)
-        .in_("source_title", titles)
+        .in_("source_id", ids)
         .execute()
     )
-    counts = {row["source_title"]: row["retrieval_count"] or 0 for row in (existing.data or [])}
+    counts = {row["source_id"]: row["retrieval_count"] or 0 for row in (existing.data or [])}
     supabase.table("source_retrieval_stats").upsert(
         [
             {
                 "user_id": user_id,
-                "source_title": title,
-                "retrieval_count": counts.get(title, 0) + 1,
+                "source_id": source_id,
+                "retrieval_count": counts.get(source_id, 0) + 1,
                 "last_retrieved_at": now,
             }
-            for title in titles
+            for source_id in ids
         ],
-        on_conflict="user_id,source_title",
+        on_conflict="user_id,source_id",
     ).execute()
 
 
-def _record_quietly(user_id: str, source_titles: list[str]) -> None:
+def _record_quietly(user_id: str, source_ids: list[str]) -> None:
     try:
-        record_retrievals(user_id, source_titles)
+        record_retrievals(user_id, source_ids)
     except Exception as exc:
         logger.warning("retrieval stats write failed (non-critical): %s", exc)
 
 
-def record_retrievals_in_background(user_id: str, source_titles: list[str]) -> Future:
+def record_retrievals_in_background(user_id: str, source_ids: list[str]) -> Future:
     """Queue record_retrievals; returns at once. Failures are logged, never raised."""
-    return _writer.submit(_record_quietly, user_id, list(source_titles))
+    return _writer.submit(_record_quietly, user_id, list(source_ids))
 
 
 def flush_pending_retrievals() -> None:
@@ -76,23 +83,11 @@ def flush_pending_retrievals() -> None:
 
 
 def get_retrieval_counts(user_id: str) -> dict[str, int]:
-    """Return a mapping of source_title -> retrieval_count for the given user."""
+    """Return a mapping of source_id -> retrieval_count for the given user."""
     result = (
         supabase.table("source_retrieval_stats")
-        .select("source_title,retrieval_count")
+        .select("source_id,retrieval_count")
         .eq("user_id", user_id)
         .execute()
     )
-    return {row["source_title"]: row["retrieval_count"] for row in (result.data or [])}
-
-
-def delete_retrieval_counts(user_id: str, source_titles: set[str]) -> None:
-    """Drop the counts of these titles. Runs on the writer, after any queued increment."""
-    titles = sorted(t for t in source_titles if t)
-    if not titles:
-        return
-
-    def run() -> None:
-        supabase.table("source_retrieval_stats").delete() \
-            .eq("user_id", user_id).in_("source_title", titles).execute()
-    _writer.submit(run).result()
+    return {row["source_id"]: row["retrieval_count"] for row in (result.data or []) if row.get("source_id")}

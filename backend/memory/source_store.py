@@ -319,13 +319,13 @@ def delete_sources(source_ids: list[str], user_id: str) -> int:
     rows removed."""
     if not source_ids:
         return 0
-    rows = (supabase.table("sources").select("source_id,title,raw_storage_path,pending_replace")
+    rows = (supabase.table("sources").select("source_id,raw_storage_path,pending_replace")
             .in_("source_id", source_ids).eq("user_id", user_id).execute().data or [])
     derived_store.delete_chunks(derived_store.chunk_ids_of_sources(source_ids, user_id), user_id)
     _remove_objects([r.get("raw_storage_path") for r in rows]
                     + [(r.get("pending_replace") or {}).get("raw_storage_path") for r in rows])
     supabase.table("sources").delete().in_("source_id", source_ids).eq("user_id", user_id).execute()
-    derived_store.after_sources_deleted({r["source_id"] for r in rows}, {r.get("title") for r in rows}, user_id)
+    derived_store.after_sources_deleted({r["source_id"] for r in rows}, user_id)
     return len(rows)
 
 
