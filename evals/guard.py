@@ -92,6 +92,7 @@ RESET_TABLES: tuple[tuple[str, str], ...] = (
     ("chunk_entities", "user_id"),
     ("entities", "user_id"),
     ("embeddings", "user_id"),
+    ("sources", "user_id"),  # reset.py removes their Storage objects first
     ("source_nodes", "user_id"),
     ("topic_nodes", "user_id"),
     ("source_retrieval_stats", "user_id"),

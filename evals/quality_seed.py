@@ -157,12 +157,14 @@ def seed_user(slug: str, user_id: str, client: Any) -> str:
     """Seed one user: its persona's account and fixtures, and for a details state
     the case's pillar_details note, saved as routers/generate.py run_generation saves it."""
     from agents.ingestion_agent import ingest_content
+    from memory.source_store import typed_text
     persona = _persona_of(slug)
     extra = _seed_account(persona, user_id, client)
     case = qf.details_states().get(slug)
     if case:
         title, note = details_note_for(case, user_id)
-        ingest_content(note, source_type="personal_note", source_title=title, user_id=user_id, memory_context="work")
+        ingest_content(note, source_type="personal_note", source_title=title, user_id=user_id, memory_context="work",
+                       original=typed_text(text=note, title_provided=True))
         extra |= {title}
     summary = seed_persona(qf.load_quality_persona(persona), user_id, client, extra_titles=extra)
     return f"{slug} · {title} · {summary}" if case else summary
@@ -212,11 +214,11 @@ def import_me(user_id: str, client: Any) -> str:
     """Load the production export into the eval user `me`, rows as they are."""
     export = json.loads(qf.ME_EXPORT_FILE.read_text())
     t = export["tables"]
-    keyed = (("embeddings", "user_id", "id"), ("entities", "user_id", "entity_id"),
+    keyed = (("embeddings", "user_id", "id"), ("sources", "user_id", "source_id"), ("entities", "user_id", "entity_id"),
              ("chunk_entities", "user_id", "chunk_id,entity_id"), ("experience_nodes", "user_id", "experience_id"),
              ("accounts", "user_id", "user_id"))
     for table, user_col, conflict in keyed:
-        rows = [{**r, user_col: user_id} for r in t[table]]
+        rows = [{**r, user_col: user_id} for r in t.get(table, [])]  # exports before 014 have no sources
         for i in range(0, len(rows), _BATCH):
             client.table(table).upsert(rows[i:i + _BATCH], on_conflict=conflict).execute()
     for row in t["profiles"]:

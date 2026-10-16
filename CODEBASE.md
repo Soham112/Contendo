@@ -152,10 +152,14 @@ Review-fix additions: `backend/agents/refine_cited_agent.py` owns cited refineme
 | `backend/memory/hierarchy_store.py` | Supabase Postgres store for `source_nodes` and `topic_nodes` tables — `upsert_source_node`, `get_source_node`, `get_source_nodes` (many ids, one query, keyed by source_id), `source_node_exists`, `get_sources_for_user`, `upsert_topic_node`, `get_topic_node`, `get_topic_nodes` (many ids, one query, keyed by topic_id), `get_topics_for_user`, `find_matching_topic` (tag-overlap heuristic), `add_source_to_topic`; `init_db()` is a no-op; tags and child_source_ids stored as comma-separated TEXT |
 | `backend/memory/retrieval_stats_store.py` | Supabase Postgres store for `source_retrieval_stats` table — `init_retrieval_stats_db()` no-op; `record_retrievals(user_id, source_titles)` adds 1 per distinct non-empty title with one select and one upsert on `(user_id, source_title)`; `record_retrievals_in_background()` queues it on a single-worker executor (in-order, so one process never loses an increment; failures logged, never raised); `flush_pending_retrievals()` waits for queued writes (shutdown, tests); `get_retrieval_counts(user_id)` returns `{source_title: count}` dict |
 | `backend/memory/feedback_store.py` | Supabase Postgres store for `posts` and `post_versions` tables — all functions accept `user_id`; `init_db()` is a no-op; `post_owned_by()` validates ownership before version ops (also used by `routers/publishing.py`); `restore_version(post_id, version_id, user_id)` copies version content back to the post; `mark_published()` stamps `published_at` as UTC ISO |
-| `backend/tools/scraper_tool.py` | URL scraper using Jina Reader — `is_valid_url()`, `clean_scraped_text()`, `scrape_url()` |
-| `backend/tools/obsidian_tool.py` | Obsidian vault reader — `read_vault()` yields cleaned note dicts from a vault directory; `get_vault_stats()` accepts a path and returns stats (total_files, total_words, estimated_chunks, skipped_files, vault_name); `get_vault_stats_from_dir()` is the refactored core that both local and zip endpoints use; `extract_vault_from_zip(zip_bytes)` extracts a zip file to a temp directory, validates for path traversal attacks (rejects paths starting with `/` or containing `..`), and verifies .md files exist; `clean_obsidian_markdown()` strips wikilinks/frontmatter/Dataview/embeds |
+| `backend/tools/scraper_tool.py` | URL scraper using Jina Reader — `is_valid_url()`, `clean_scraped_text()`, `scrape_url()` (also returns `raw_markdown`, Jina's response before cleaning, and `fetched_at`); `EXTRACTOR` version |
+| `backend/tools/obsidian_tool.py` | Obsidian vault reader — `read_vault()` yields cleaned note dicts from a vault directory; `get_vault_stats()` accepts a path and returns stats (total_files, total_words, estimated_chunks, skipped_files, vault_name); `get_vault_stats_from_dir()` is the refactored core that both local and zip endpoints use; `extract_vault_from_zip(zip_bytes)` extracts a zip file to a temp directory, validates for path traversal attacks (rejects paths starting with `/` or containing `..`), and verifies .md files exist; `clean_obsidian_markdown()` strips wikilinks/frontmatter/Dataview/embeds; `read_vault()` also yields `raw_content` (the file as read); `EXTRACTOR` version |
 | `backend/tools/__init__.py` | Empty — tools directory retained for future use |
 | `backend/utils/chunker.py` | 500-word chunks with 50-word overlap |
+| `backend/memory/source_store.py` | Originals of every ingested source: the `sources` table and the private Storage bucket `source-originals` (migration 014). `SourceOriginal` (what the user gave us, extractor and version, title origin, authorship), builders `typed_text`, `uploaded` (bytes; over 10 MB recorded as omitted), `fetched_page` (Jina markdown; over 5 MB omitted). Write order `begin_source`/`begin_replace` (row pending, then object) → chunks → `mark_ready`; `discard_source`, `delete_sources`, `delete_all_for_user`, `find_source_id`, `sweep_stale_pending` and `start_sweeper` (startup and hourly) |
+| `backend/utils/source_rebuild.py` | Pure: rebuild a source's text from its chunks with chunker_v1's tokenization and verify by re-chunking (`rechunk_exact` / `rechunk_mismatch` / `incomplete`, plus whether the stored `content_hash` matches) |
+| `backend/scripts/backfill_sources.py` | One-time data migration for 014: report (read-only, default) or `--apply` the `sources` rows of existing sources as `rebuilt_from_chunks`; per-user counts, rebuild_check distribution, duplicate content per user. Production entry point (`--apply` needs `--confirm-production`); eval runs through `evals/backfill_sources.py`, behind the env guard. Rows moved from ChromaDB have `total_chunks` 0 (not recorded): completeness is then proven by a last chunk shorter than 500 words |
+| `backend/migrations/014_sources.sql`, `015_sources_unique_hash.sql` | 014: `sources` table, RLS with no policies, `embeddings.chunk_authorship`, private bucket `source-originals` (no object policies). 015: unique `(user_id, content_hash)`, applied only after the backfill's duplicate report is clean |
 | `backend/utils/formatters.py` | Prompt building blocks that depend only on the request. **Length:** `LINKEDIN_MAX_WORDS = 200` (the hard limit of a LinkedIn post: every length check uses it and compress runs only past it), `LINKEDIN_RANGE = (100, 150)` (what the drafter is asked for; the backend sets a LinkedIn post's length and ignores the requested one), `FIRST_POST_MAX_WORDS = 115` (a LinkedIn first post's hard limit), `WORD_RANGES` (by requested length: Medium, and LinkedIn for pipeline A only), `THREAD_TWEETS`, `FIRST_POST_RANGE = (70, 100)`, `resolve_length_target(format, length, *, first_post, thin_sources, requested_linkedin_length)` → `{min_words, max_words, may_expand, basis}` (plus `write_max_words` for a LinkedIn post; basis `linkedin`, `first_post`, `thin_sources` or `length_setting`) or `None` for threads, and `word_count_rule(target)` (the only wording of the length rule; it asks for `write_max_words` when present). **Archetypes:** `ARCHETYPES` registry of `Archetype(name, fits, structure, needs_event)` for the 7 original keys plus the neutral `general`; `STORY_ARCHETYPES`; `get_archetype(key)` (unknown key → `general`). Blocks describe structure only. **Format and tone:** `get_format_instructions(format, length, tone)`; tone text is voice only; `normalise_post_punctuation(text)` normalises prose em dashes at finalize and successful selection-refine output; numeric/date ranges become en dashes and literal spans remain verbatim `STYLE_RULES` (format with `words_to_avoid`): the one copy of the anti-AI phrasing, rhythm, em-dash and voice rules, read by pipeline A's humanizer and the single-writer draft prompt; wording is the humanizer's, unchanged. `count_words(text)`: the one word count (whitespace tokens). `draft_max_tokens(target)`: the single-writer draft budget, `max_words × TOKENS_PER_WORD (1.9) × DRAFT_TOKEN_MARGIN (1.25)`, never below `MIN_DRAFT_MAX_TOKENS` (2000); 4275 for Medium long-form. |
 | `backend/tests/test_post_punctuation.py` | Finalize and selection-refine output punctuation regressions: lowercase/capital replacements, whitespace, Unicode capitals, paragraph preservation and unchanged non-em-dash text |
 | `backend/utils/text_spans.py` | Shared Markdown parser adapter for literal source spans (existing `markdown-it-py`, now declared directly): Markdown code, URLs, link destinations, HTML and quoted literals. Preserves original offsets for typography and sentence segmentation. |
@@ -232,6 +236,7 @@ Review-fix additions: `backend/agents/refine_cited_agent.py` owns cited refineme
 | `evals/guard.py` | Pure safety checks: `EVAL_SUPABASE_URL` host must be `<EXPECTED_PROJECT_REF>.supabase.co`; `evals/.env` allows only known keys; `ANTHROPIC_API_KEY` format check (never echoed); removes `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN`; refuses if backend modules were imported first; replaces `dotenv.load_dotenv` with a no-op so `backend/.env` is never read; sets every var in `BACKEND_ENV_KEYS` explicitly (plus `DEEPEVAL_TELEMETRY_OPT_OUT`, `DEEPEVAL_DISABLE_DOTENV`); `RESET_TABLES` and `resolve_reset_targets()` for reset **Step 7:** `PIPELINE_VARIANT` is in `BACKEND_ENV_KEYS` and may be set in `evals/.env`; `check_pipeline_variant` refuses a value that is not in the backend's `PIPELINE_VARIANTS`, which `pipeline_variants()` reads from `backend/config/features.py` without importing the backend. |
 | `evals/loaders.py` | Loads and validates `fixtures/users.json`, persona fixtures (`fixtures/personas/<slug>/profile.json`, `experience_nodes.json`, `posts.json`, `sources/*.md` with a `title`/`source_type`/`memory_context` header) and `goldens/goldens.jsonl` |
 | `evals/seed.py` | Idempotent seeding per persona: `save_profile`, `save_experience_nodes` (deterministic uuid5 ids), `ingest_content` with explicit `memory_context`, seed posts via `log_post` (matched by topic, so `first_post` is False); warns about DB sources no longer in fixtures; `--check` validates without writing |
+| `evals/backfill_sources.py` | Eval entry point for `backend/scripts/backfill_sources.py`: loads the eval env behind the guard first (the guard refuses any module under `backend/` loaded earlier, the script itself included); report by default, `--apply` to insert |
 | `evals/reset.py` | Deletes rows for the uuids in `fixtures/users.json` only (`--quality`: `fixtures/quality_v1/users.json`), across every migration table with a user id (`guard.RESET_TABLES`); shows counts and requires typing the project ref; keeps auth users |
 | `evals/quality_fixtures.py` | Loads and validates the quality_v1 set: personas (null profile and empty library allowed, optional `account.json`), `cases.jsonl` (+ private `me` cases), label ids, own-experience ids per persona, `fixtures/quality_v1/users.json` |
 | `evals/quality_seed.py` | Seeds quality_v1: `--create-users`, `--estimate` (expected and upper-bound Claude cost), accounts saved like `PUT /account/segment`, then `seed.seed_persona`; `--persona me` loads the production export; stops at `--spend-cap` measured from `usage_events` (needs migration 006) |
@@ -308,7 +313,7 @@ Review-fix additions: `backend/agents/refine_cited_agent.py` owns cited refineme
 |---|---|
 | **Reads** | `content: str`, `source_type: str` (passed directly, not from pipeline state) |
 | **Writes** | Returns `{ chunks_stored: int, tags: list[str] }` on new content; `{ chunks_stored: int, tags: list[str], duplicate: True }` if content already exists — not a pipeline node |
-| **Side effects** | Computes SHA-256 hash of normalised content and calls `query_by_hash()` before any Claude call. If duplicate: returns immediately. If new: calls Claude for tag extraction, upserts chunks to Supabase `embeddings` with `source_title`, `ingested_at`, and `content_hash` metadata. |
+| **Side effects** | Computes SHA-256 hash of normalised content and calls `query_by_hash()` before any Claude call. If duplicate: returns immediately. If new: calls Claude for tag extraction, writes the `sources` row (status pending) and any Storage object from the required `original: SourceOriginal`, upserts chunks to Supabase `embeddings` with `source_title`, `ingested_at`, and `content_hash` metadata, then marks the row ready; a failure before that removes row, object and chunks. `replace_source_id` updates an existing source in place (business profile note). |
 
 **`source_type` value documentation (`embeddings` table):**
 
@@ -925,7 +930,7 @@ data: {"status_code": 503, "detail": "Our writing service is overloaded right no
   "message": "Removed 5 chunks"
 }
 ```
-**Notes:** Deletes all `embeddings` rows with matching `source_title` metadata for the current `user_id` via `delete_source()` in `vector_store.py`. The router reads `result["chunks_removed"]` and returns the flat response above: `deleted` is a boolean, `chunks_removed` is an integer, and `message` is a string. Returns 404 if the count is 0. After a successful response, the frontend removes the card and subtracts `chunks_removed` from the displayed total.
+**Notes:** Deletes all `embeddings` rows with matching `source_title` metadata for the current `user_id` via `delete_source()` in `vector_store.py`, plus those sources' `sources` rows and stored originals. The router reads `result["chunks_removed"]` and returns the flat response above: `deleted` is a boolean, `chunks_removed` is an integer, and `message` is a string. Returns 404 if the count is 0. After a successful response, the frontend removes the card and subtracts `chunks_removed` from the displayed total.
 
 ---
 
@@ -998,6 +1003,14 @@ data: {"status_code": 503, "detail": "Our writing service is overloaded right no
 { "is_admin": false }
 ```
 **Notes:** Lets the frontend hide admin links and pages. Grants nothing by itself.
+
+### DELETE /admin/users/{user_id}/sources
+**Auth:** `Depends(require_admin)`
+**Response:**
+```json
+{ "user_id": "…", "sources_removed": 12 }
+```
+**Notes:** Account deletion, sources part: removes every `sources` row of that user, its stored original in the `source-originals` bucket, and its chunks. Run it when handling an emailed deletion request (there is no self-service account deletion). Derived data (`chunk_entities`, consolidation chunks) is not removed yet: next branch.
 
 ---
 
@@ -1097,6 +1110,24 @@ All need a token. A plan refusal is **402** `{detail: {code: "upgrade_required" 
 **Migration:** `backend/migrations/002_add_memory_context.sql` — adds the column and updates the `match_embeddings` RPC to return it.
 
 ---
+
+### Sources table and originals bucket (Supabase)
+
+Migration `014_sources.sql`. One row per source, the record every derived row can be rebuilt from; `source_id` is the same id as `embeddings.source_id` (no FK: consolidation rows use an entity id there). RLS enabled with no policies (service-role only). Binary originals live in the private bucket `source-originals` at `{user_id}/{source_id}/{sha256}{ext}`, 10 MB limit, no `storage.objects` policies (deny-all to clients).
+
+| Column | Meaning |
+|---|---|
+| `status` | `pending` (written before the object and chunks) or `ready`. Pending over 30 min is removed by the sweeper |
+| `input_type` | `note` (typed or pasted text, incl. pillar details and onboarding story), `file`, `url`, `youtube`, `image`, `obsidian`, `business_profile`, `unknown` (backfill only) |
+| `raw_text` / `raw_json` / `raw_storage_path` | the original: text as received (Jina's unprocessed markdown for URLs, 5 MB cap; the Obsidian file before cleaning), the business-profile answers, or the Storage object (`raw_mime`, `raw_size_bytes`, `raw_sha256`). `raw_omitted_reason` when over a cap |
+| `extracted_text`, `extractor`, `extractor_version`, `extracted_at` | the text that was chunked and what produced it (`verbatim`, `file_extractor.pdf`, `jina_reader`, `vision_agent`, `obsidian_tool`, `business_notes.*`, `rebuilt_from_chunks`); bump the module's `EXTRACTOR` version when its output changes |
+| `source_url`, `original_filename`, `fetched_at`, `title`, `title_origin` | `title_origin`: `provided` (a real title: user-typed, page heading, filename) or `derived` (first line, URL fallback); NULL on backfilled rows |
+| `content_hash` | same function as ingestion dedup; unique per user after migration 015 |
+| `origin_status`, `rebuild_check`, `rebuild_hash_match` | `original`, or `rebuilt_from_chunks` with `rechunk_exact` / `rechunk_mismatch` / `incomplete` and whether the stored hash matched (line breaks are lost, so most don't) |
+| `authorship`, `authorship_set_by`, `authorship_detail` | who wrote it: `user_authored`, `user_stated`, `external`, `system_inferred`; set by `user`, `rule` or `classifier`; NULL = unknown. Not read by anything until the provenance classifier is measured |
+| (planned) `identity_id` | goes here, next to `user_id`, when the identities table exists (step 3, decision 4) |
+
+`embeddings.chunk_authorship` (same values, NULL = same as the source) is added by 014 and written by nothing yet.
 
 ### User events table (Supabase Postgres)
 **Table:** `user_events` in Supabase  
@@ -1210,6 +1241,10 @@ Defined, with column notes, in `backend/migrations/007_add_accounts.sql`, `008_a
 
 | Decision | Why |
 |----------|-----|
+| Originals: text in `sources`, binaries in a private bucket (2026-10-16) | Text is small and re-ingestion reads it in bulk with SQL; files up to 10 MB would bloat the table and its 1,000-row reads. URL originals are Jina's unprocessed markdown, not page HTML: fetching pages from our backend adds an SSRF surface and is often blocked. Jina's HTML mode can be added per source later if the HTML is ever needed |
+| Row before object before chunks, plus a sweeper (2026-10-16) | A `pending` row names the Storage path before the upload, so nothing can exist without a record; inline failures are cleaned up at once, and the sweeper (startup and hourly, pending over 30 min) covers process crashes. A bucket-listing cleanup job alone would have to diff every object against rows |
+| Authorship order: user's choice, then rule, then classifier (2026-10-16) | Rules only where the input path settles it (business profile form, pillar details and onboarding story → `user_stated`). Planned with the classifier: high-confidence results applied automatically, shown and one-click editable; low confidence asks the user; the user's choice always wins. Backfilled rows stay NULL, and nothing reads authorship until the classifier is measured on quality_v1 |
+| Bucket and table are deny-all to clients (2026-10-16) | Same pattern as every other table: only the backend's service role reads or writes; paths are per-user so per-user policies can be added if the frontend ever downloads originals directly |
 | pgvector uses `upsert`, never `insert` | Prevents duplicate chunks if the same content is re-ingested; Supabase `upsert()` resolves on the `id` primary key |
 | Score threshold is 75 | Defined in `pipeline/graph.py` as `SCORE_THRESHOLD = 75` |
 | Humanizer retries capped at 3 (`MAX_ITERATIONS`) | Guarantees the pipeline always terminates; surfaces best attempt regardless |
@@ -1365,6 +1400,13 @@ Found by the retrieval scorecard (`docs/QUALITY.md` B1; harness `evals/quality_r
 | 8 | Evidence Recall@cutoff: does the drafter's context contain the labelled fact, not only the right source | not measurable yet: needs fact labels per case | (new metric) | 3 (fact labels); candidate judge DeepEval `ContextualRecall` |
 
 First after this merge: `fix/retrieval-failure-status`, to distinguish retrieval outages from low coverage and remove topic/source excerpts from logs. This branch adds labels only.
+
+### Step 3 data layer: after `feature/preserve-originals`
+
+- **Next branch: delete cascade.** Deleting a source (Library, profile note replaced in place, `DELETE /admin/users/{id}/sources`) removes its row, Storage object and chunks, but not its `chunk_entities` links or the consolidation chunks built from it.
+- **Provenance classifier** (step 3.3): semantic, measured on quality_v1 labels before anything reads `authorship`. High-confidence results applied automatically, shown and one-click editable; low confidence asks the user; the user's explicit choice always wins.
+- `title_origin` now lives on `sources` (written at ingest; NULL on backfilled rows). The `fix/ingest-attribution` plan below should read it from there instead of adding it to `embeddings`.
+- No self-service account deletion: deletion is by email, using the admin endpoint for sources.
 
 ### `feat/archetype-set` follow-up notes
 

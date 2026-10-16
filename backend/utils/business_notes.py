@@ -15,6 +15,8 @@ from config.niches import OTHER_NICHE, SEGMENT_BUSINESS, TONES_BY_KEY, Niche, Pi
 # The one title the profile note is stored under, so saving the profile again
 # replaces the note instead of adding a second one.
 PROFILE_NOTE_TITLE = "Business profile"
+# Bump when profile_note changes what it writes (recorded per source).
+PROFILE_NOTE_EXTRACTOR = ("business_notes.profile_note", "1")
 
 # Label and business_profile key, in the order the note lists them.
 _PROFILE_LINES = (
@@ -48,6 +50,10 @@ def profile_note(business_profile: dict[str, Any], niche: Niche | None, other: s
         if value:
             lines.append(f"{label}: {value}")
     return "\n".join(lines)
+
+
+# Bump when details_note changes what it writes (recorded per source).
+DETAILS_NOTE_EXTRACTOR = ("business_notes.details_note", "1")
 
 
 def details_note(pillar: Pillar, details: str) -> tuple[str, str]:

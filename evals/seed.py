@@ -35,6 +35,7 @@ def seed_persona(persona: Persona, user_id: str, client: Any, extra_titles: froz
     A persona whose profile is None gets no profile row (a new user). extra_titles:
     sources seeded another way (a business profile note), so not reported as stale."""
     from agents.ingestion_agent import ingest_content
+    from memory.source_store import typed_text
     from memory.experience_store import save_experience_nodes
     from memory.feedback_store import log_post
     from memory.profile_store import save_profile
@@ -54,6 +55,8 @@ def seed_persona(persona: Persona, user_id: str, client: Any, extra_titles: froz
             source_title=source.title,
             user_id=user_id,
             memory_context=source.memory_context,
+            # Fixture sources stand for typed or pasted notes with their real titles.
+            original=typed_text(text=source.content, title_provided=True),
         )
         if result.get("duplicate"):
             duplicate += 1

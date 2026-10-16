@@ -188,6 +188,28 @@ def test_saving_the_profile_again_replaces_the_note(client, a_headers, fake_db, 
     assert "Harbor Street Realty" not in note
 
 
+def test_saving_the_profile_again_updates_its_one_sources_row(client, a_headers, fake_db, ingestion):
+    client.put("/account/segment", headers=a_headers, json=_business())
+    [first] = fake_db.tables["sources"]
+    renamed = {**BUSINESS_PROFILE, "business_name": "Quay Lane Homes"}
+    client.put("/account/segment", headers=a_headers, json=_business(business_profile=renamed))
+
+    [row] = fake_db.tables["sources"]
+    assert row["source_id"] == first["source_id"] and row["status"] == "ready"
+    assert "Quay Lane Homes" in row["extracted_text"]
+    assert row["raw_json"]["business_profile"]["business_name"] == "Quay Lane Homes"
+    assert (row["input_type"], row["authorship"], row["authorship_set_by"]) == ("business_profile", "user_stated", "rule")
+    assert {r["source_id"] for r in fake_db.tables["embeddings"]} == {row["source_id"]}
+
+
+def test_a_note_saved_before_sources_existed_is_replaced(client, a_headers, fake_db, ingestion):
+    fake_db.tables["embeddings"] = [{"id": "legacy_0", "user_id": "user-a", "source_id": "legacy",
+                                     "source_title": "Business profile", "content": "Old note"}]
+    client.put("/account/segment", headers=a_headers, json=_business())
+    assert "legacy" not in {r["source_id"] for r in fake_db.tables["embeddings"]}
+    assert len(fake_db.tables["sources"]) == 1
+
+
 def test_other_niche_note_uses_the_users_own_words(client, a_headers, fake_db, ingestion):
     client.put("/account/segment", headers=a_headers,
                json=_business(business_niche="other", business_niche_other="Dog groomer"))

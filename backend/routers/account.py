@@ -11,10 +11,11 @@ from starlette.concurrency import run_in_threadpool
 from agents.ingestion_agent import ingest_content
 from auth.supabase_jwt import get_user_id_dep
 from config import niches
+from memory import source_store
 from memory.account_store import get_account, mark_segment_skipped, save_segment, should_ask_segment
 from memory.profile_store import DEFAULT_PROFILE, profile_exists, save_profile
 from memory.vector_store import delete_source, invalidate_bm25_cache
-from utils.business_notes import PROFILE_NOTE_TITLE, niche_label, profile_note
+from utils.business_notes import PROFILE_NOTE_EXTRACTOR, PROFILE_NOTE_TITLE, niche_label, profile_note
 from utils.frames import BUSINESS_PROFILE_SOURCE_TYPE
 
 logger = logging.getLogger(__name__)
@@ -121,13 +122,17 @@ def _ensure_voice_profile(account: dict, user_id: str) -> None:
 
 def _save_profile_to_memory(account: dict, user_id: str) -> None:
     """Replace the user's business profile note with one built from the account.
-    Stored through the normal ingestion path, as the user's own work."""
+    Stored through the normal ingestion path, as the user's own work. The note
+    keeps one `sources` row, updated in place on every save."""
     note = profile_note(
         account["business_profile"],
         niches.get_niche(account["business_niche"]),
         account.get("business_niche_other"),
     )
-    delete_source(PROFILE_NOTE_TITLE, user_id=user_id)
+    existing = source_store.find_source_id(user_id, "business_profile")
+    if existing is None:
+        # A note stored before `sources` existed has chunks but no row.
+        delete_source(PROFILE_NOTE_TITLE, user_id=user_id)
     invalidate_bm25_cache(user_id)
     ingest_content(
         note,
@@ -135,6 +140,15 @@ def _save_profile_to_memory(account: dict, user_id: str) -> None:
         source_title=PROFILE_NOTE_TITLE,
         user_id=user_id,
         memory_context="work",
+        replace_source_id=existing,
+        original=source_store.SourceOriginal(
+            input_type="business_profile",
+            extractor=PROFILE_NOTE_EXTRACTOR[0], extractor_version=PROFILE_NOTE_EXTRACTOR[1],
+            raw_json={k: account.get(k) for k in ("business_profile", "business_niche", "business_niche_other")},
+            title_origin="provided",
+            # The form's answers are the user's own statements (rule, not a guess).
+            authorship="user_stated", authorship_set_by="rule",
+        ),
     )
 
 

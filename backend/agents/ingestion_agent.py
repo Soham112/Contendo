@@ -6,6 +6,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
 from llm.client import HAIKU, SONNET, complete
+from memory import source_store
+from memory.source_store import SourceOriginal
 from memory.vector_store import invalidate_bm25_cache, query_by_hash, upsert_chunks
 from memory.hierarchy_store import (
     add_source_to_topic,
@@ -323,13 +325,21 @@ def ingest_content(
     source_title: str | None = None,
     *,
     user_id: str,
+    original: SourceOriginal,
     memory_context: str | None = None,
+    replace_source_id: str | None = None,
 ) -> dict:
     """Ingest content into the knowledge base.
+
+    content is the extracted text; original is what the user gave us and how it
+    was extracted (stored in `sources`, see memory/source_store.py).
 
     memory_context: "work" | "personal_project" | "learning" | "observation" | None
         When None, the Haiku language pattern classifier is run to infer context
         automatically. Explicitly provided values are always used as-is.
+
+    replace_source_id: an existing source this content replaces in place (same
+        source_id, row updated, old chunks removed). Used for the business profile note.
 
     Returns dict with keys: chunks_stored, tags, suggested_context (when inferred).
     """
@@ -375,19 +385,26 @@ def ingest_content(
     ingested_at = datetime.now(timezone.utc).isoformat()
 
     # Generate source_id here so it's accessible for hierarchy persistence
-    source_id = str(uuid.uuid4())
-
-    stored = upsert_chunks(
-        chunks,
-        source_type=source_type,
-        tags=tags,
-        source_id=source_id,
-        source_title=source_title,
-        ingested_at=ingested_at,
-        user_id=user_id,
-        content_hash=content_hash,
-        memory_context=memory_context,
-    )
+    source_id = replace_source_id or str(uuid.uuid4())
+    begin = source_store.begin_replace if replace_source_id else source_store.begin_source
+    begin(user_id, source_id, original, title=source_title,
+          extracted_text=content, content_hash=content_hash)
+    try:
+        stored = upsert_chunks(
+            chunks,
+            source_type=source_type,
+            tags=tags,
+            source_id=source_id,
+            source_title=source_title,
+            ingested_at=ingested_at,
+            user_id=user_id,
+            content_hash=content_hash,
+            memory_context=memory_context,
+        )
+    except Exception:
+        source_store.discard_source(source_id, user_id)
+        raise
+    source_store.mark_ready(source_id, user_id)
 
     # Invalidate BM25 cache so the next generation request picks up the new
     # corpus. Safe to call even if no cache entry exists yet.
@@ -416,7 +433,7 @@ def ingest_content(
     # Hierarchy persistence — runs after successful chunk storage.
     # Wrapped in try/except: a failure here must NEVER fail ingestion.
     try:
-        if not source_node_exists(source_id, user_id=user_id):
+        if replace_source_id or not source_node_exists(source_id, user_id=user_id):
             source_summary = _generate_source_summary(content, user_id=user_id)
             topic_id = _assign_to_topic(source_id, tags, user_id=user_id)
             upsert_source_node(

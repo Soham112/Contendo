@@ -63,7 +63,11 @@ def main(argv: list[str] | None = None) -> int:
         print("Aborted.")
         return 1
 
+    from memory.source_store import delete_all_for_user
+
     for slug, uid in targets.items():
+        # Stored originals live in Storage, not a table: remove them with their rows.
+        delete_all_for_user(uid)
         for table, column in RESET_TABLES:
             if counts[(slug, table)]:
                 client.table(table).delete(returning=ReturnMethod.minimal).eq(column, uid).execute()

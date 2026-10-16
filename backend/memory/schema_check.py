@@ -15,6 +15,7 @@ REQUIRED_TABLES = {
     "stripe_events": "event_id,type",
     "generation_usage": "user_id,period,count",
     "publish_approvals": "id,user_id,flags,accepted_flag_ids,approved_at",
+    "sources": "source_id,user_id,status,input_type,extracted_text,origin_status,updated_at",
 }
 
 
@@ -26,6 +27,6 @@ def verify_schema() -> None:
             logger.exception("Startup schema probe failed for %s", table)
             raise RuntimeError(
                 f"Backend startup blocked: database schema unavailable at {table}. "
-                "Apply migrations 007–012 in order to this deployment's Supabase project; "
+                "Apply migrations 007–014 in order to this deployment's Supabase project; "
                 "check database access and reload the PostgREST schema cache, then redeploy."
             ) from exc

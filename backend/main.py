@@ -20,6 +20,7 @@ from memory.hierarchy_store import init_db as init_hierarchy_db
 from memory.retrieval_stats_store import flush_pending_retrievals, init_retrieval_stats_db
 from memory.usage_store import set_main_loop
 from memory.schema_check import verify_schema
+from memory.source_store import start_sweeper
 from starlette.concurrency import run_in_threadpool
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -76,7 +77,10 @@ async def lifespan(app: FastAPI):
     # Sends due publish jobs. None when PUBLISHING_PROVIDER is unset; raises
     # (aborting startup) when it is set but misconfigured.
     publish_task = publish_worker.start()
+    # Removes sources an ingest left 'pending' when the process died mid-write.
+    sweeper_task = start_sweeper()
     yield
+    sweeper_task.cancel()
     if publish_task is not None:
         publish_task.cancel()
     # Retrieval stats are written in the background; finish them before exit.

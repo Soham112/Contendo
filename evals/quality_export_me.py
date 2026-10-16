@@ -33,6 +33,7 @@ PAGE = 1000  # Supabase returns at most 1,000 rows per request
 # topic list decides first_post); post content is not copied.
 TABLES = (
     ("embeddings", "*", "user_id"),
+    ("sources", "*", "user_id"),
     ("entities", "*", "user_id"),
     ("chunk_entities", "*", "user_id"),
     ("experience_nodes", "*", "user_id"),

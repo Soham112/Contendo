@@ -2,6 +2,9 @@ import base64
 
 from llm.client import SONNET, complete
 
+# Bump when SYSTEM_PROMPT or the model changes (recorded per source).
+EXTRACTOR = ("vision_agent", "1")
+
 SYSTEM_PROMPT = """You are an image-to-knowledge extractor. Your job is to read images — diagrams, screenshots, slides, photos of whiteboards, charts — and extract all meaningful information as clean, structured text.
 
 Rules:
