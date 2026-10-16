@@ -17,10 +17,10 @@ from billing.entitlements import get_entitlements
 from billing.gates import quota_exceeded
 from config import features
 from config.niches import Pillar
-from memory import billing_store
+from memory import billing_store, source_store
 from memory.account_store import get_account
 from pipeline.graph import run_pipeline
-from utils.business_notes import details_note, find_pillar
+from utils.business_notes import DETAILS_NOTE_EXTRACTOR, details_note, find_pillar
 from utils.formatters import LINKEDIN_POST
 
 logger = logging.getLogger(__name__)
@@ -263,6 +263,13 @@ async def run_generation(
             await run_in_threadpool(
                 ingest_content, note, source_type="personal_note", source_title=title,
                 user_id=user_id, memory_context="work",
+                original=source_store.SourceOriginal(
+                    input_type="note", extractor=DETAILS_NOTE_EXTRACTOR[0],
+                    extractor_version=DETAILS_NOTE_EXTRACTOR[1], raw_text=details,
+                    raw_json={"pillar": pillar.key}, title_origin="derived",
+                    # Typed in answer to the pillar's question: the user's own statement.
+                    authorship="user_stated", authorship_set_by="rule",
+                ),
             )
         result = await run_in_threadpool(
             _run_pipeline, on_draft_text,

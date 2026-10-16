@@ -32,6 +32,7 @@ from rank_bm25 import BM25Okapi
 from sentence_transformers import SentenceTransformer
 
 from config.retrieval import RELEVANCE_THRESHOLD  # noqa: F401  (re-exported for callers)
+from memory.source_store import delete_sources
 from db.supabase_client import supabase
 
 logger = logging.getLogger(__name__)
@@ -590,22 +591,25 @@ def get_all_sources(user_id: str) -> list[dict]:
 
 
 def delete_source(source_title: str, user_id: str) -> dict:
-    """Delete all chunks with matching source_title for this user.
+    """Delete all chunks with matching source_title for this user, and the
+    sources rows and stored originals of those sources.
 
     Returns {"deleted": True, "chunks_removed": int}.
     """
     # Fetch matching rows first to get a count
     count_resp = (
         supabase.table("embeddings")
-        .select("id")
+        .select("id,source_id")
         .eq("source_title", source_title)
         .eq("user_id", user_id)
         .execute()
     )
-    count = len(count_resp.data or [])
+    rows = count_resp.data or []
+    count = len(rows)
 
     if count > 0:
         supabase.table("embeddings").delete().eq("source_title", source_title).eq("user_id", user_id).execute()
+        delete_sources(sorted({r["source_id"] for r in rows if r.get("source_id")}), user_id)
 
     return {"deleted": True, "chunks_removed": count}
 

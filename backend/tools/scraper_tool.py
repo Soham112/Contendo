@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 import httpx
 from urllib.parse import urlparse
 
@@ -16,6 +18,10 @@ CAPTCHA_SIGNALS = [
     "one more step",
     "please complete the security check",
 ]
+
+
+# Jina Reader markdown + clean_scraped_text. Bump when either changes.
+EXTRACTOR = ("jina_reader", "1")
 
 
 def detect_captcha(text: str) -> bool:
@@ -63,7 +69,8 @@ def clean_scraped_text(text: str) -> str:
 def scrape_url(url: str) -> dict:
     """Scrape a URL using Jina Reader (r.jina.ai).
 
-    Returns a dict with: content, title, word_count, source_url.
+    Returns a dict with: content, title, word_count, source_url, raw_markdown
+    (Jina's response before clean_scraped_text), fetched_at.
     Raises ValueError with a user-friendly message on any failure.
 
     Upgrade path to Tavily for higher quality:
@@ -104,6 +111,7 @@ def scrape_url(url: str) -> dict:
             "The site may block automated access. Try copying the text manually."
         )
 
+    fetched_at = datetime.now(timezone.utc).isoformat()
     raw_text = response.text.strip()
 
     if len(raw_text) < 200:
@@ -139,4 +147,6 @@ def scrape_url(url: str) -> dict:
         "title": title,
         "word_count": word_count,
         "source_url": url,
+        "raw_markdown": response.text,
+        "fetched_at": fetched_at,
     }

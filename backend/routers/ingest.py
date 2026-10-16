@@ -1,4 +1,7 @@
+import base64
+import binascii
 import logging
+import mimetypes
 import os
 import re
 import shutil
@@ -29,15 +32,17 @@ def _require_local_path_ingest() -> None:
         raise HTTPException(status_code=403, detail=_OBSIDIAN_DISABLED_MSG)
 
 from agents.ingestion_agent import ingest_content, _classify_memory_context, _crossref_experience_context
-from agents.vision_agent import extract_from_image
+from agents.vision_agent import EXTRACTOR as VISION_EXTRACTOR, extract_from_image
+from memory import source_store
 from tools.obsidian_tool import (
+    EXTRACTOR as OBSIDIAN_EXTRACTOR,
     extract_vault_from_zip,
     get_vault_stats,
     get_vault_stats_from_dir,
     read_vault,
 )
-from tools.scraper_tool import scrape_url
-from utils.file_extractor import extract_text_from_file
+from tools.scraper_tool import EXTRACTOR as SCRAPER_EXTRACTOR, scrape_url
+from utils.file_extractor import EXTRACTOR_VERSION as FILE_EXTRACTOR_VERSION, extract_text_from_file
 
 router = APIRouter()
 
@@ -131,6 +136,23 @@ def _title_from_text(text: str, filename: str) -> str:
     return title
 
 
+def _image_bytes(raw_image: str) -> bytes:
+    payload = raw_image.split(",", 1)[1] if "," in raw_image else raw_image
+    try:
+        return base64.b64decode(payload, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=400, detail="raw_image is not valid base64")
+
+
+def _obsidian_original(note: dict) -> source_store.SourceOriginal:
+    """The note file's text as read; clean_obsidian_markdown is the extraction."""
+    return source_store.SourceOriginal(
+        input_type="obsidian", extractor=OBSIDIAN_EXTRACTOR[0], extractor_version=OBSIDIAN_EXTRACTOR[1],
+        raw_text=note["raw_content"], raw_mime="text/markdown",
+        original_filename=note["relative_path"], title_origin="provided",
+    )
+
+
 @router.post("/ingest", response_model=IngestResponse)
 async def ingest(
     req: IngestRequest,
@@ -146,10 +168,16 @@ async def ingest(
                 media_type = "image/png"
             elif "image/webp" in header:
                 media_type = "image/webp"
+        original = source_store.uploaded(
+            "image", data=_image_bytes(req.raw_image), mime=media_type,
+            extractor=VISION_EXTRACTOR, title_provided=False,
+        )
         extracted_text = await run_in_threadpool(
             extract_from_image, req.raw_image, media_type=media_type, user_id=user_id
         )
-        result = await run_in_threadpool(ingest_content, extracted_text, source_type="image", user_id=user_id)
+        result = await run_in_threadpool(
+            ingest_content, extracted_text, source_type="image", user_id=user_id, original=original
+        )
     else:
         if not req.content or not req.content.strip():
             raise HTTPException(status_code=400, detail="content is required")
@@ -176,6 +204,10 @@ async def ingest(
             source_title=req.source_title,
             user_id=user_id,
             memory_context=req.memory_context,
+            original=source_store.typed_text(
+                "youtube" if req.source_type == "youtube" else "note",
+                text=req.content, title_provided=bool(req.source_title),
+            ),
         )
 
     if result.get("duplicate"):
@@ -224,9 +256,17 @@ async def ingest_file(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    source_title = _title_from_text(text, file.filename or "")
+    filename = file.filename or ""
+    source_title = _title_from_text(text, filename)
+    original = source_store.uploaded(
+        "file", data=raw,
+        mime=file.content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream",
+        extractor=(f"file_extractor.{Path(filename).suffix.lstrip('.').lower()}", FILE_EXTRACTOR_VERSION),
+        title_provided=source_title == Path(filename).stem, filename=filename,
+    )
     result = await run_in_threadpool(
-        ingest_content, text, source_type="article", source_title=source_title, user_id=user_id
+        ingest_content, text, source_type="article", source_title=source_title,
+        user_id=user_id, original=original,
     )
     if result.get("duplicate"):
         return IngestResponse(
@@ -253,6 +293,11 @@ async def scrape_and_ingest(
         source_type="article",
         source_title=scraped["title"],
         user_id=user_id,
+        original=source_store.fetched_page(
+            url=scraped["source_url"], raw_markdown=scraped["raw_markdown"],
+            fetched_at=scraped["fetched_at"], extractor=SCRAPER_EXTRACTOR,
+            title_provided=scraped["title"] != scraped["source_url"],
+        ),
     )
     if result.get("duplicate"):
         return {
@@ -349,6 +394,7 @@ async def obsidian_ingest(
                 source_type="note",
                 source_title=note["filename"],
                 user_id=user_id,
+                original=_obsidian_original(note),
             )
             total_chunks += result["chunks_stored"]
             all_tags.update(result["tags"])
@@ -433,6 +479,7 @@ async def obsidian_ingest_zip(
                     source_type="note",
                     source_title=note["filename"],
                     user_id=user_id,
+                    original=_obsidian_original(note),
                 )
                 total_chunks += result["chunks_stored"]
                 all_tags.update(result["tags"])

@@ -192,9 +192,11 @@ def test_consolidate_entity_logs(claude, usage_calls, monkeypatch):
 
 def test_ingest_content_passes_user_id_to_every_claude_call(claude, usage_calls):
     from agents.ingestion_agent import ingest_content
+    from memory.source_store import typed_text
 
     claude.respond_with(lambda kw: "[]")
-    ingest_content("Some notes about building a data pipeline. " * 20, source_type="note", user_id=USER)
+    text = "Some notes about building a data pipeline. " * 20
+    ingest_content(text, source_type="note", user_id=USER, original=typed_text(text=text, title_provided=False))
 
     events = {e for e, _ in _events(usage_calls)}
     assert {"ingest_tags", "memory_context_classify", "ingest_summary", "ingest_entities"} <= events

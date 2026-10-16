@@ -1,6 +1,9 @@
 import io
 from typing import IO
 
+# Bump when an extractor's output changes (recorded per source as file_extractor.<ext>).
+EXTRACTOR_VERSION = "1"
+
 
 def extract_from_pdf(file_bytes: bytes) -> str:
     import fitz  # pymupdf

@@ -9,6 +9,7 @@ from agents.onboarding_agent import suggest_takes
 from agents.ingestion_agent import ingest_content
 from auth.supabase_jwt import get_user_id_dep
 from llm.client import StructuredOutputError
+from memory import source_store
 from memory.account_store import get_account
 from memory.onboarding_store import record_step, personalization_status
 from memory.profile_store import load_profile, save_profile
@@ -64,7 +65,11 @@ async def first_post(body: Brief, user_id: str = Depends(get_user_id_dep)) -> Ge
             # A personal note supplies factual evidence, unlike a topic instruction.
             await run_in_threadpool(ingest_content, body.story.strip(), source_type='personal_note',
                                     source_title='First post: ' + body.topic.strip(), user_id=user_id,
-                                    memory_context='work')
+                                    memory_context='work',
+                                    # Typed in answer to onboarding's question: the user's own statement.
+                                    original=source_store.typed_text(
+                                        text=body.story.strip(), title_provided=False,
+                                        authorship='user_stated', authorship_set_by='rule'))
         result = await generate(GenerateRequest(
             topic=body.topic, tone=(account.get('business_profile') or {}).get('tone', 'casual'),
             context='Author’s account: ' + body.story + ('\nChosen viewpoint: ' + body.take if body.take else ''),

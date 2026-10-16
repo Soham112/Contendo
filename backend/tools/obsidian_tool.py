@@ -15,6 +15,8 @@ SKIP_FOLDERS = {
 }
 
 MIN_CONTENT_LENGTH = 100
+# Bump when clean_obsidian_markdown changes what it keeps (recorded per source).
+EXTRACTOR = ("obsidian_tool", "1")
 
 
 def clean_obsidian_markdown(text: str) -> str:
@@ -43,7 +45,8 @@ def clean_obsidian_markdown(text: str) -> str:
 def read_vault(vault_path: str) -> Iterator[dict]:
     """Recursively read all .md files from an Obsidian vault.
 
-    Yields dicts with: filename, relative_path, content, word_count.
+    Yields dicts with: filename, relative_path, content (cleaned), raw_content
+    (the file text as read), word_count.
     Skips config folders, hidden folders, and notes shorter than MIN_CONTENT_LENGTH.
     """
     vault = Path(vault_path)
@@ -60,11 +63,11 @@ def read_vault(vault_path: str) -> Iterator[dict]:
             continue
 
         try:
-            content = md_file.read_text(encoding="utf-8", errors="ignore")
+            raw_content = md_file.read_text(encoding="utf-8", errors="ignore")
         except Exception:
             continue
 
-        content = clean_obsidian_markdown(content)
+        content = clean_obsidian_markdown(raw_content)
 
         if len(content.strip()) < MIN_CONTENT_LENGTH:
             continue
@@ -73,6 +76,7 @@ def read_vault(vault_path: str) -> Iterator[dict]:
             "filename": md_file.stem,
             "relative_path": str(md_file.relative_to(vault)),
             "content": content,
+            "raw_content": raw_content,
             "word_count": len(content.split()),
         }
 

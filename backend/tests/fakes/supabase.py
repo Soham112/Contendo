@@ -2,7 +2,8 @@
 
 Supports the subset of the supabase-py query builder the backend uses:
 table().select/insert/upsert/update/delete, filters eq/neq/in_/gt/gte/lt/lte,
-order, limit, execute, and rpc("match_embeddings").
+order, limit, range, execute, rpc("match_embeddings"), and storage.from_(bucket)
+upload/remove (objects kept in `fake_db.objects`).
 
 Tables start empty for every test (see conftest.py). Inspect them directly
 in assertions via `fake_db.tables["posts"]`.
@@ -38,6 +39,7 @@ class FakeQuery:
         self._filters: list[Callable[[dict], bool]] = []
         self._order: list[tuple[str, bool]] = []
         self._limit: int | None = None
+        self._offset = 0
         self._count = None
 
     # --- operations -------------------------------------------------------
@@ -106,6 +108,10 @@ class FakeQuery:
         self._limit = n
         return self
 
+    def range(self, start: int, end: int, **_):
+        self._offset, self._limit = start, end - start + 1
+        return self
+
     # --- execution --------------------------------------------------------
     def _matches(self, row: dict) -> bool:
         return all(f(row) for f in self._filters)
@@ -125,6 +131,7 @@ class FakeQuery:
             for col, desc in reversed(self._order):
                 out.sort(key=lambda r: (r.get(col) is None, r.get(col)), reverse=desc)
             total = len(out)
+            out = out[self._offset:]
             if self._limit is not None:
                 out = out[: self._limit]
             return FakeResponse([self._project(r) for r in out], total if self._count else None)
@@ -184,16 +191,46 @@ def _cosine(a: list[float], b: list[float]) -> float:
     return dot / (na * nb) if na and nb else 0.0
 
 
+class FakeBucket:
+    def __init__(self, db: "FakeSupabase", bucket: str):
+        self._db, self._bucket = db, bucket
+
+    def upload(self, path: str, data: bytes, file_options: dict | None = None):
+        if self._db.fail_uploads:
+            raise RuntimeError("storage upload failed")
+        key = (self._bucket, path)
+        if key in self._db.objects:
+            raise RuntimeError("The resource already exists")  # like Storage without upsert
+        self._db.objects[key] = bytes(data)
+        return {"path": path}
+
+    def remove(self, paths: list[str]):
+        return [{"name": p} for p in paths if self._db.objects.pop((self._bucket, p), None) is not None]
+
+
+class FakeStorage:
+    def __init__(self, db: "FakeSupabase"):
+        self._db = db
+
+    def from_(self, bucket: str) -> FakeBucket:
+        return FakeBucket(self._db, bucket)
+
+
 class FakeSupabase:
     def __init__(self):
         self.tables: dict[str, list[dict]] = {}
         self.log: list[tuple[str, str]] = []
         self._ids: dict[str, int] = {}
+        self.objects: dict[tuple[str, str], bytes] = {}
+        self.fail_uploads = False
+        self.storage = FakeStorage(self)
 
     def reset(self) -> None:
         self.tables.clear()
         self.log.clear()
         self._ids.clear()
+        self.objects.clear()
+        self.fail_uploads = False
 
     # Tables whose primary key is a UUID in the real schema (gen_random_uuid()):
     # their ids are strings, so code that passes an id around as str matches.

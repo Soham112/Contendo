@@ -7,9 +7,11 @@ they are an admin, so the frontend can hide admin links.
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
+from starlette.concurrency import run_in_threadpool
 
 from auth.supabase_jwt import get_user_id_dep, is_admin, require_admin
 from db.supabase_client import supabase
+from memory.source_store import delete_all_for_user
 
 router = APIRouter(prefix="/admin")
 
@@ -18,6 +20,14 @@ router = APIRouter(prefix="/admin")
 async def get_admin_status(user_id: str = Depends(get_user_id_dep)) -> dict:
     """Whether the signed-in user is an admin. Cosmetic: the admin routes enforce it."""
     return {"is_admin": is_admin(user_id)}
+
+
+@router.delete("/users/{user_id}/sources")
+async def delete_user_sources(user_id: str, _admin_id: str = Depends(require_admin)) -> dict:
+    """Account deletion, sources part: every source row of the user, its stored
+    original in Storage and its chunks. Run when handling a deletion request."""
+    removed = await run_in_threadpool(delete_all_for_user, user_id)
+    return {"user_id": user_id, "sources_removed": removed}
 
 
 @router.get("/usage")

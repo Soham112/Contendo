@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from auth.supabase_jwt import get_user_id_dep
 from memory.vector_store import delete_source, get_all_sources, get_total_chunks
@@ -94,7 +95,7 @@ async def delete_library_source(
     req: DeleteSourceRequest,
     user_id: str = Depends(get_user_id_dep),
 ) -> dict:
-    result = delete_source(req.source_title, user_id=user_id)
+    result = await run_in_threadpool(delete_source, req.source_title, user_id=user_id)
     chunks_removed = result["chunks_removed"]
     if chunks_removed == 0:
         raise HTTPException(
