@@ -209,11 +209,12 @@ export function useApi() {
     ingestFile: (formData: FormData) =>
       apiFetch("/ingest-file", { method: "POST", body: formData }),
 
-    scrapeAndIngest: (url: string) =>
+    /** replace_source_id: replace that duplicate with a fresh read of the same URL. */
+    scrapeAndIngest: (url: string, replace_source_id?: string) =>
       apiFetch("/scrape-and-ingest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, replace_source_id }),
       }),
 
     obsidianPreview: (vault_path: string) =>

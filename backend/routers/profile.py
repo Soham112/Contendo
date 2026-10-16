@@ -11,7 +11,7 @@ from auth.supabase_jwt import get_user_id_dep
 from llm.client import SONNET, complete
 from memory.experience_store import save_experience_nodes
 from memory.profile_store import load_profile, profile_exists, save_profile
-from utils.file_extractor import extract_from_pdf
+from extractors.file import extract_pdf as extract_from_pdf
 
 logger = logging.getLogger(__name__)
 

@@ -26,7 +26,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from publishing import worker as publish_worker
 from routers import (
-    account, admin, analytics, billing, feedback, generate, generate_stream, history, ideas, ingest, library,
+    account, admin, analytics, billing, feedback, generate, generate_stream, history, ideas, ingest, library, obsidian,
     profile, onboarding, publishing, stats,
 )
 
@@ -124,6 +124,7 @@ app.include_router(account.router)
 app.include_router(billing.router)
 app.include_router(publishing.router)
 app.include_router(ingest.router)
+app.include_router(obsidian.router)
 app.include_router(generate.router)
 app.include_router(generate_stream.router)
 app.include_router(history.router)

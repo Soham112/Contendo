@@ -136,8 +136,11 @@ def _extract_entities():
 
 
 def _vision():
-    from agents.vision_agent import extract_from_image
-    extract_from_image("data:image/png;base64,AAAA", media_type="image/png", user_id=USER)
+    from agents.vision_agent import read_image
+    read_image("data:image/png;base64,AAAA", media_type="image/png", user_id=USER)
+
+
+VISION_JSON = '{"transcribed_text": "Q3 goals", "description": ""}'
 
 
 def _svg():
@@ -163,8 +166,8 @@ def _visuals():
     (_visuals, ("visual_svg", "sonnet")),
 ], ids=lambda v: v.__name__.strip("_") if callable(v) else None)
 def test_call_site_logs_usage(claude, usage_calls, call, expected):
-    # Valid for the SVG sites and plain text for the rest; the scorer needs its structured reply.
-    claude.queue(score_json() if call is _score_text else "<svg></svg>")
+    # Valid for the SVG sites and plain text for the rest; structured calls need their reply.
+    claude.queue(score_json() if call is _score_text else VISION_JSON if call is _vision else "<svg></svg>")
     call()
     assert _events(usage_calls) == [expected]
     _assert_user(usage_calls)
@@ -249,7 +252,7 @@ def _threaded_functions():
         refine_agent.refine_selection, scorer_agent.score_text,
         ingestion_agent._extract_tags, ingestion_agent._generate_source_summary,
         ingestion_agent._classify_memory_context, ingestion_agent._extract_entities_for_chunk,
-        vision_agent.extract_from_image, visual_agent.generate_svg_for_diagram, visual_agent.generate_visuals,
+        vision_agent.read_image, visual_agent.generate_svg_for_diagram, visual_agent.generate_visuals,
     ]
 
 

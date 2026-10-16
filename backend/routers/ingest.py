@@ -1,53 +1,40 @@
+"""Adding content: notes, images, files, URLs and YouTube videos.
+
+Extraction is in backend/extractors/ (one module per input type); these routes
+check for a duplicate, extract, and store through ingest_content.
+
+Duplicates. A file or image with the same bytes (sha256), or a page or video
+with the same normalised URL, is already in the library: the route answers at
+once, before any paid call, with the existing source and `replaceable: true`,
+so the frontend can offer to replace it. Resubmitting with `replace_source_id`
+re-extracts and replaces that source in place (unique chunk ids, old content
+intact until the new one is stored). Content whose text is already stored
+(content_hash) is a duplicate that replacing would not change.
+"""
 import base64
 import binascii
 import logging
 import mimetypes
-import os
-import re
-import shutil
-from pathlib import Path
+from typing import Callable
 
-import httpx
-
-logger = logging.getLogger(__name__)
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from auth.supabase_jwt import get_user_id_dep
-from config import security
-
-_SUPADATA_API_KEY = os.getenv("SUPADATA_API_KEY")
-_OBSIDIAN_DISABLED_MSG = (
-    "Obsidian vault ingestion from a folder path is disabled on this server. "
-    "It reads directly from the server's filesystem, so it only makes sense when "
-    "the backend runs on your own machine. Upload the vault as a zip instead."
-)
-
-
-def _require_local_path_ingest() -> None:
-    """Reading a caller-supplied path from the server's disk is opt-in
-    (ALLOW_LOCAL_PATH_INGEST=1), whatever ENVIRONMENT says."""
-    if not security.current().allow_local_path_ingest:
-        raise HTTPException(status_code=403, detail=_OBSIDIAN_DISABLED_MSG)
-
 from agents.ingestion_agent import ingest_content, _classify_memory_context, _crossref_experience_context
-from agents.vision_agent import EXTRACTOR as VISION_EXTRACTOR, extract_from_image
+from auth.supabase_jwt import get_user_id_dep
+from extractors import Extraction, ExtractionError, ServiceUnavailable
+from extractors.file import extract_file
+from extractors.image import extract_image
+from extractors.url import extract_url, is_valid_url, normalize_url
+from extractors import youtube
 from memory import source_store
-from tools.obsidian_tool import (
-    EXTRACTOR as OBSIDIAN_EXTRACTOR,
-    extract_vault_from_zip,
-    get_vault_stats,
-    get_vault_stats_from_dir,
-    read_vault,
-)
-from tools.scraper_tool import EXTRACTOR as SCRAPER_EXTRACTOR, scrape_url
-from utils.file_extractor import EXTRACTOR_VERSION as FILE_EXTRACTOR_VERSION, extract_text_from_file
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
-MAX_ZIP_BYTES = 50 * 1024 * 1024  # 50 MB
+_IMAGE_TYPES = ("image/png", "image/webp")   # anything else is sent as image/jpeg
 
 
 class IngestRequest(BaseModel):
@@ -57,6 +44,8 @@ class IngestRequest(BaseModel):
     content_origin: str | None = None  # "personal" | "saved" — only meaningful when source_type is "note"
     source_title: str | None = None  # optional caller-supplied title for library card display
     memory_context: str | None = None  # "work" | "personal_project" | "learning" | "observation" | None
+    video_url: str | None = None  # youtube: saved from the transcript the preview fetched
+    replace_source_id: str | None = None  # replace this duplicate (see the module docstring)
 
 
 class SuggestContextRequest(BaseModel):
@@ -68,14 +57,16 @@ class IngestResponse(BaseModel):
     tags: list[str]
     duplicate: bool = False
     message: str = ""
+    existing_source_id: str | None = None  # the source a duplicate matched
+    existing_title: str | None = None
+    replaceable: bool = False  # same file or URL: re-extracting may change it
+    title: str | None = None
+    word_count: int | None = None
 
 
 class ScrapeRequest(BaseModel):
     url: str
-
-
-class ObsidianRequest(BaseModel):
-    vault_path: str
+    replace_source_id: str | None = None
 
 
 class YouTubeTranscriptRequest(BaseModel):
@@ -88,153 +79,127 @@ class YouTubeTranscriptResponse(BaseModel):
     title: str
 
 
-def _extract_video_id(url: str) -> str | None:
-    """Extract the 11-character video ID from common YouTube URL formats.
-
-    Handles:
-      - https://youtu.be/VIDEO_ID
-      - https://www.youtube.com/watch?v=VIDEO_ID (query params in any order)
-      - https://www.youtube.com/shorts/VIDEO_ID
-    """
-    # youtu.be short links
-    short = re.match(r"^https?://youtu\.be/([A-Za-z0-9_-]{11})", url.strip())
-    if short:
-        return short.group(1)
-    # youtube.com/watch?v=... (v= may not be the first param)
-    watch = re.search(r"[?&]v=([A-Za-z0-9_-]{11})", url)
-    if watch and "youtube.com" in url:
-        return watch.group(1)
-    # youtube.com/shorts/VIDEO_ID
-    shorts = re.match(r"^https?://(?:www\.)?youtube\.com/shorts/([A-Za-z0-9_-]{11})", url.strip())
-    if shorts:
-        return shorts.group(1)
-    return None
+def _already_stored(existing: dict) -> IngestResponse:
+    return IngestResponse(
+        chunks_stored=0, tags=[], duplicate=True, replaceable=True,
+        existing_source_id=existing["source_id"], existing_title=existing.get("title"),
+        message="This is already in your knowledge base",
+    )
 
 
-def _title_from_text(text: str, filename: str) -> str:
-    """Extract a human-readable title from the start of document text.
-
-    Looks for the first newline or sentence boundary within the first 150
-    characters. Falls back to the filename stem if the result is too short
-    (e.g. a page number or single word on its own line).
-    """
-    head = text.strip()[:150]
-
-    cuts: list[int] = []
-    newline_pos = head.find("\n")
-    if newline_pos != -1:
-        cuts.append(newline_pos)
-    sentence_match = re.search(r"[.!?](?:\s|$)", head)
-    if sentence_match:
-        cuts.append(sentence_match.start() + 1)  # include the punctuation
-
-    title = head[: min(cuts)].strip() if cuts else head.strip()
-
-    if len(title) < 10:
-        title = Path(filename).stem
-
-    return title
+def _check_duplicate(user_id: str, replace_source_id: str | None, **key) -> IngestResponse | None:
+    """A response for an existing source with this key, or None to go on. A
+    replace may only target the source that has this key."""
+    existing = source_store.find_duplicate(user_id, **key)
+    if replace_source_id:
+        if not existing or existing["source_id"] != replace_source_id:
+            raise HTTPException(status_code=409, detail="This source can't be replaced with different content.")
+        return None
+    return _already_stored(existing) if existing else None
 
 
-def _image_bytes(raw_image: str) -> bytes:
-    payload = raw_image.split(",", 1)[1] if "," in raw_image else raw_image
+async def _extract(extract: Callable[[], Extraction], error_status: int) -> Extraction:
     try:
-        return base64.b64decode(payload, validate=True)
+        return await run_in_threadpool(extract)
+    except ServiceUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except ExtractionError as e:
+        raise HTTPException(status_code=error_status, detail=str(e))
+
+
+async def _store(extract: Callable[[], Extraction], *, user_id: str, source_type: str, error_status: int,
+                 replace_source_id: str | None = None, memory_context: str | None = None) -> IngestResponse:
+    extraction = await _extract(extract, error_status)
+    result = await run_in_threadpool(
+        ingest_content, extraction.text, source_type=source_type, source_title=extraction.title,
+        user_id=user_id, memory_context=memory_context, original=extraction.original,
+        replace_source_id=replace_source_id,
+    )
+    response = IngestResponse(chunks_stored=result["chunks_stored"], tags=result["tags"],
+                              title=extraction.title, word_count=extraction.metadata.get("word_count"))
+    if result.get("duplicate"):
+        response.duplicate = True
+        response.existing_source_id = result.get("duplicate_source_id")
+        response.message = "This content is already in your knowledge base"
+    return response
+
+
+def _image_input(raw_image: str) -> tuple[bytes, str]:
+    header, _, payload = raw_image.rpartition(",")
+    media_type = next((t for t in _IMAGE_TYPES if t in header), "image/jpeg")
+    try:
+        return base64.b64decode(payload, validate=True), media_type
     except (binascii.Error, ValueError):
         raise HTTPException(status_code=400, detail="raw_image is not valid base64")
 
 
-def _obsidian_original(note: dict) -> source_store.SourceOriginal:
-    """The note file's text as read; clean_obsidian_markdown is the extraction."""
-    return source_store.SourceOriginal(
-        input_type="obsidian", extractor=OBSIDIAN_EXTRACTOR[0], extractor_version=OBSIDIAN_EXTRACTOR[1],
-        raw_text=note["raw_content"], raw_mime="text/markdown",
-        original_filename=note["relative_path"], title_origin="provided",
-    )
+def _note_source_type(req: IngestRequest) -> str:
+    """Notes: content_origin (explicit legacy signal), then memory_context
+    (own experience → personal_note, learned → saved_content), else note."""
+    if req.source_type != "note":
+        return req.source_type
+    if req.content_origin == "personal":
+        return "personal_note"
+    if req.content_origin == "saved":
+        return "saved_content"
+    if req.memory_context in ("work", "personal_project"):
+        return "personal_note"
+    if req.memory_context in ("learning", "observation"):
+        return "saved_content"
+    return "note"
 
 
 @router.post("/ingest", response_model=IngestResponse)
-async def ingest(
-    req: IngestRequest,
-    user_id: str = Depends(get_user_id_dep),
-) -> IngestResponse:
+async def ingest(req: IngestRequest, user_id: str = Depends(get_user_id_dep)) -> IngestResponse:
     if req.source_type == "image":
         if not req.raw_image:
             raise HTTPException(status_code=400, detail="raw_image is required for image source_type")
-        media_type = "image/jpeg"
-        if req.raw_image.startswith("data:"):
-            header = req.raw_image.split(",")[0]
-            if "image/png" in header:
-                media_type = "image/png"
-            elif "image/webp" in header:
-                media_type = "image/webp"
-        original = source_store.uploaded(
-            "image", data=_image_bytes(req.raw_image), mime=media_type,
-            extractor=VISION_EXTRACTOR, title_provided=False,
-        )
-        extracted_text = await run_in_threadpool(
-            extract_from_image, req.raw_image, media_type=media_type, user_id=user_id
-        )
-        result = await run_in_threadpool(
-            ingest_content, extracted_text, source_type="image", user_id=user_id, original=original
-        )
-    else:
-        if not req.content or not req.content.strip():
-            raise HTTPException(status_code=400, detail="content is required")
-        # Resolve effective source_type for notes.
-        # Priority order:
-        #   1. content_origin field (explicit legacy signal)
-        #   2. memory_context field (new Phase 1 signal: work/personal_project → personal_note)
-        #   3. fallback: keep as "note"
-        effective_source_type = req.source_type
-        if req.source_type == "note":
-            if req.content_origin == "personal":
-                effective_source_type = "personal_note"
-            elif req.content_origin == "saved":
-                effective_source_type = "saved_content"
-            elif req.memory_context in ("work", "personal_project"):
-                # memory_context signals this is the user's own lived experience
-                effective_source_type = "personal_note"
-            elif req.memory_context in ("learning", "observation"):
-                effective_source_type = "saved_content"
-        result = await run_in_threadpool(
-            ingest_content,
-            req.content,
-            source_type=effective_source_type,
-            source_title=req.source_title,
-            user_id=user_id,
-            memory_context=req.memory_context,
-            original=source_store.typed_text(
-                "youtube" if req.source_type == "youtube" else "note",
-                text=req.content, title_provided=bool(req.source_title),
-            ),
-        )
+        data, media_type = _image_input(req.raw_image)
+        if dup := _check_duplicate(user_id, req.replace_source_id, raw_sha256=source_store.bytes_sha256(data)):
+            return dup
+        return await _store(lambda: extract_image(data, req.raw_image, media_type, user_id=user_id),
+                            user_id=user_id, source_type="image", error_status=422,
+                            replace_source_id=req.replace_source_id)
+    if req.source_type == "youtube" and req.video_url:
+        vid = youtube.video_id(req.video_url)
+        if not vid:
+            raise HTTPException(status_code=400, detail="Invalid YouTube URL.")
+        if dup := _check_duplicate(user_id, req.replace_source_id, source_url=youtube.canonical_url(vid)):
+            return dup
+        return await _store(lambda: youtube.extract_video(req.video_url), user_id=user_id, source_type="youtube",
+                            error_status=422, replace_source_id=req.replace_source_id,
+                            memory_context=req.memory_context)
 
+    if not req.content or not req.content.strip():
+        raise HTTPException(status_code=400, detail="content is required")
+    result = await run_in_threadpool(
+        ingest_content,
+        req.content,
+        source_type=_note_source_type(req),
+        source_title=req.source_title,
+        user_id=user_id,
+        memory_context=req.memory_context,
+        original=source_store.typed_text(
+            "youtube" if req.source_type == "youtube" else "note",   # a transcript pasted by hand
+            text=req.content, title_provided=bool(req.source_title),
+        ),
+    )
     if result.get("duplicate"):
-        return IngestResponse(
-            chunks_stored=result["chunks_stored"],
-            tags=result["tags"],
-            duplicate=True,
-            message="This content is already in your knowledge base",
-        )
+        return IngestResponse(chunks_stored=result["chunks_stored"], tags=result["tags"], duplicate=True,
+                              existing_source_id=result.get("duplicate_source_id"),
+                              message="This content is already in your knowledge base")
     return IngestResponse(chunks_stored=result["chunks_stored"], tags=result["tags"])
 
 
 @router.post("/suggest-memory-context")
-async def suggest_memory_context(
-    req: SuggestContextRequest,
-    user_id: str = Depends(get_user_id_dep),
-) -> dict:
+async def suggest_memory_context(req: SuggestContextRequest, user_id: str = Depends(get_user_id_dep)) -> dict:
     """Classify content into a memory context for UI pre-selection.
 
-    Returns {"suggested_context": "work" | "personal_project" | "learning" | "observation"}
-    The frontend calls this after content is entered to pre-select the context pill.
-    Classification uses Claude Haiku language pattern detection on the first 200 words.
+    Returns {"suggested_context": "work" | "personal_project" | "learning" | "observation"}.
+    Experience cross-reference first (deterministic), then the Haiku classifier.
     """
     if not req.content or not req.content.strip():
         return {"suggested_context": "learning"}
-    # Experience cross-reference first (deterministic, no LLM) — falls back
-    # to Haiku classifier when no known entity matches are found in the text.
     suggested = await run_in_threadpool(_crossref_experience_context, req.content, user_id)
     if not suggested:
         suggested = await run_in_threadpool(_classify_memory_context, req.content, user_id=user_id)
@@ -244,6 +209,7 @@ async def suggest_memory_context(
 @router.post("/ingest-file", response_model=IngestResponse)
 async def ingest_file(
     file: UploadFile = File(...),
+    replace_source_id: str | None = Form(None),
     user_id: str = Depends(get_user_id_dep),
 ) -> IngestResponse:
     raw = await file.read()
@@ -251,252 +217,31 @@ async def ingest_file(
         raise HTTPException(status_code=413, detail="File exceeds 10 MB limit.")
     if not raw:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
-    try:
-        text = await run_in_threadpool(extract_text_from_file, file.filename or "", raw)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-
+    if dup := _check_duplicate(user_id, replace_source_id, raw_sha256=source_store.bytes_sha256(raw)):
+        return dup
     filename = file.filename or ""
-    source_title = _title_from_text(text, filename)
-    original = source_store.uploaded(
-        "file", data=raw,
-        mime=file.content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream",
-        extractor=(f"file_extractor.{Path(filename).suffix.lstrip('.').lower()}", FILE_EXTRACTOR_VERSION),
-        title_provided=source_title == Path(filename).stem, filename=filename,
-    )
-    result = await run_in_threadpool(
-        ingest_content, text, source_type="article", source_title=source_title,
-        user_id=user_id, original=original,
-    )
-    if result.get("duplicate"):
-        return IngestResponse(
-            chunks_stored=result["chunks_stored"],
-            tags=result["tags"],
-            duplicate=True,
-            message="This content is already in your knowledge base",
-        )
-    return IngestResponse(chunks_stored=result["chunks_stored"], tags=result["tags"])
+    mime = file.content_type or mimetypes.guess_type(filename)[0]
+    return await _store(lambda: extract_file(filename, raw, mime), user_id=user_id, source_type="article",
+                        error_status=422, replace_source_id=replace_source_id)
 
 
-@router.post("/scrape-and-ingest")
-async def scrape_and_ingest(
-    req: ScrapeRequest,
-    user_id: str = Depends(get_user_id_dep),
-) -> dict:
-    try:
-        scraped = await run_in_threadpool(scrape_url, req.url)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    result = await run_in_threadpool(
-        ingest_content,
-        content=scraped["content"],
-        source_type="article",
-        source_title=scraped["title"],
-        user_id=user_id,
-        original=source_store.fetched_page(
-            url=scraped["source_url"], raw_markdown=scraped["raw_markdown"],
-            fetched_at=scraped["fetched_at"], extractor=SCRAPER_EXTRACTOR,
-            title_provided=scraped["title"] != scraped["source_url"],
-        ),
-    )
-    if result.get("duplicate"):
-        return {
-            "chunks_stored": result["chunks_stored"],
-            "tags": result["tags"],
-            "title": scraped["title"],
-            "word_count": scraped["word_count"],
-            "duplicate": True,
-            "message": "This content is already in your knowledge base",
-        }
-    return {
-        "chunks_stored": result["chunks_stored"],
-        "tags": result["tags"],
-        "title": scraped["title"],
-        "word_count": scraped["word_count"],
-    }
+@router.post("/scrape-and-ingest", response_model=IngestResponse)
+async def scrape_and_ingest(req: ScrapeRequest, user_id: str = Depends(get_user_id_dep)) -> IngestResponse:
+    if not is_valid_url(req.url):
+        raise HTTPException(status_code=400, detail="Invalid URL. Please include https:// at the start.")
+    if dup := _check_duplicate(user_id, req.replace_source_id, source_url=normalize_url(req.url)):
+        return dup
+    return await _store(lambda: extract_url(req.url), user_id=user_id, source_type="article",
+                        error_status=400, replace_source_id=req.replace_source_id)
 
 
 @router.post("/fetch-youtube-transcript", response_model=YouTubeTranscriptResponse)
-async def fetch_youtube_transcript(
-    req: YouTubeTranscriptRequest,
-    user_id: str = Depends(get_user_id_dep),
-) -> YouTubeTranscriptResponse:
-    """Fetch a YouTube transcript from a URL without ingesting it.
-
-    Calls the Supadata REST API to retrieve the transcript. The caller decides
-    when to ingest (via POST /ingest with source_type="youtube").
-    """
-    if not _SUPADATA_API_KEY:
-        raise HTTPException(status_code=503, detail="Transcript service not configured")
-
-    video_id = _extract_video_id(req.url)
-    if not video_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid YouTube URL. Supported formats: youtube.com/watch?v=ID, youtu.be/ID, youtube.com/shorts/ID",
-        )
-
-    async with httpx.AsyncClient(timeout=15) as client:
-        response = await client.get(
-            "https://api.supadata.ai/v1/youtube/transcript",
-            params={"videoId": video_id, "text": "true"},
-            headers={"x-api-key": _SUPADATA_API_KEY},
-        )
-
-    if response.status_code == 404:
-        raise HTTPException(status_code=422, detail="No transcript found for this video")
-    if response.status_code == 429:
-        raise HTTPException(status_code=503, detail="Transcript service limit reached")
-    if response.status_code != 200:
-        raise HTTPException(status_code=502, detail="Transcript service error")
-
-    data = response.json()
-    text = data.get("content") or ""
-    if not text:
-        raise HTTPException(status_code=422, detail="No transcript found for this video")
-
-    title = data.get("title") or f"YouTube Video {video_id}"
-    return YouTubeTranscriptResponse(transcript=text, video_id=video_id, title=title)
-
-
-@router.post("/obsidian/preview")
-async def obsidian_preview(
-    req: ObsidianRequest,
-    user_id: str = Depends(get_user_id_dep),
-) -> dict:
-    _require_local_path_ingest()
-    try:
-        return await run_in_threadpool(get_vault_stats, req.vault_path)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@router.post("/obsidian/ingest")
-async def obsidian_ingest(
-    req: ObsidianRequest,
-    user_id: str = Depends(get_user_id_dep),
-) -> dict:
-    _require_local_path_ingest()
-    try:
-        notes = await run_in_threadpool(lambda: list(read_vault(req.vault_path)))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    total_chunks = 0
-    all_tags: set[str] = set()
-    processed = 0
-
-    for note in notes:
-        try:
-            result = await run_in_threadpool(
-                ingest_content,
-                content=note["content"],
-                source_type="note",
-                source_title=note["filename"],
-                user_id=user_id,
-                original=_obsidian_original(note),
-            )
-            total_chunks += result["chunks_stored"]
-            all_tags.update(result["tags"])
-            processed += 1
-        except Exception:
-            continue
-
-    return {
-        "total_files_processed": processed,
-        "total_chunks_stored": total_chunks,
-        "total_words_processed": sum(n["word_count"] for n in notes),
-        "skipped_files": len(notes) - processed,
-        "all_tags": sorted(all_tags),
-    }
-
-
-@router.post("/obsidian/preview-zip")
-async def obsidian_preview_zip(
-    file: UploadFile = File(...),
-    user_id: str = Depends(get_user_id_dep),
-) -> dict:
-    """Preview an Obsidian vault from a zip file without ingesting it.
-    
-    Returns vault stats (name, file count, word count, estimated chunks).
-    No environment guard — works on both localhost and production.
-    """
-    raw = await file.read()
-    if len(raw) > MAX_ZIP_BYTES:
-        raise HTTPException(status_code=413, detail="Zip file exceeds 50 MB limit.")
-    if not raw:
-        raise HTTPException(status_code=400, detail="Uploaded zip file is empty.")
-    
-    temp_dir = None
-    try:
-        # Extract zip and get stats
-        temp_dir = await run_in_threadpool(extract_vault_from_zip, raw)
-        stats = await run_in_threadpool(get_vault_stats_from_dir, temp_dir)
-        return stats
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    finally:
-        # Clean up temp directory
-        if temp_dir:
-            shutil.rmtree(temp_dir, ignore_errors=True)
-
-
-@router.post("/obsidian/ingest-zip")
-async def obsidian_ingest_zip(
-    file: UploadFile = File(...),
-    user_id: str = Depends(get_user_id_dep),
-) -> dict:
-    """Ingest an Obsidian vault from a zip file into the knowledge base.
-    
-    Extracts the zip, reads all .md files, and ingests the content.
-    No environment guard — works on both localhost and production.
-    """
-    raw = await file.read()
-    if len(raw) > MAX_ZIP_BYTES:
-        raise HTTPException(status_code=413, detail="Zip file exceeds 50 MB limit.")
-    if not raw:
-        raise HTTPException(status_code=400, detail="Uploaded zip file is empty.")
-    
-    temp_dir = None
-    try:
-        # Extract zip and read vault
-        temp_dir = await run_in_threadpool(extract_vault_from_zip, raw)
-        notes = await run_in_threadpool(lambda: list(read_vault(temp_dir)))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    
-    # Ingest all notes
-    total_chunks = 0
-    all_tags: set[str] = set()
-    processed = 0
-
-    try:
-        for note in notes:
-            try:
-                result = await run_in_threadpool(
-                    ingest_content,
-                    content=note["content"],
-                    source_type="note",
-                    source_title=note["filename"],
-                    user_id=user_id,
-                    original=_obsidian_original(note),
-                )
-                total_chunks += result["chunks_stored"]
-                all_tags.update(result["tags"])
-                processed += 1
-            except Exception:
-                continue
-    finally:
-        # Clean up temp directory after ingestion completes or fails
-        if temp_dir:
-            shutil.rmtree(temp_dir, ignore_errors=True)
-
-    return {
-        "total_files_processed": processed,
-        "total_chunks_stored": total_chunks,
-        "total_words_processed": sum(n["word_count"] for n in notes),
-        "skipped_files": len(notes) - processed,
-        "all_tags": sorted(all_tags),
-    }
-
-
+async def fetch_youtube_transcript(req: YouTubeTranscriptRequest,
+                                   user_id: str = Depends(get_user_id_dep)) -> YouTubeTranscriptResponse:
+    """Preview: fetch the transcript and keep it for the save (extractors/youtube.py)."""
+    vid = youtube.video_id(req.url)
+    if not vid:
+        raise HTTPException(status_code=400, detail="Invalid YouTube URL. Supported formats: "
+                                                    "youtube.com/watch?v=ID, youtu.be/ID, youtube.com/shorts/ID")
+    extraction = await _extract(lambda: youtube.extract_video(req.url), 422)
+    return YouTubeTranscriptResponse(transcript=extraction.text, video_id=vid, title=extraction.title)

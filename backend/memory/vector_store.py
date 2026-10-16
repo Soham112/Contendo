@@ -530,11 +530,11 @@ def query_similar_hybrid_batch(
 def query_by_hash(content_hash: str, user_id: str) -> dict | None:
     """Check if content with this hash already exists.
 
-    Returns {"chunk_count": int, "tags": list[str]} if found, None otherwise.
+    Returns {"chunk_count": int, "tags": list[str], "source_id": str} if found, None otherwise.
     """
     response = (
         supabase.table("embeddings")
-        .select("content,tags")
+        .select("content,tags,source_id")
         .eq("content_hash", content_hash)
         .eq("user_id", user_id)
         .execute()
@@ -546,7 +546,7 @@ def query_by_hash(content_hash: str, user_id: str) -> dict | None:
     tags_raw = rows[0].get("tags", "")
     tags = [t.strip() for t in tags_raw.split(",") if t.strip()] if tags_raw else []
 
-    return {"chunk_count": len(rows), "tags": tags}
+    return {"chunk_count": len(rows), "tags": tags, "source_id": rows[0].get("source_id")}
 
 
 def get_all_sources(user_id: str) -> list[dict]:

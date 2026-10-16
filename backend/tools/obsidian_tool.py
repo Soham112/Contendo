@@ -1,10 +1,11 @@
 import io
-import re
 import shutil
 import tempfile
 import zipfile
 from pathlib import Path
 from typing import Iterator
+
+from extractors.obsidian import clean_obsidian_markdown
 
 SKIP_FOLDERS = {
     ".obsidian",
@@ -15,31 +16,6 @@ SKIP_FOLDERS = {
 }
 
 MIN_CONTENT_LENGTH = 100
-# Bump when clean_obsidian_markdown changes what it keeps (recorded per source).
-EXTRACTOR = ("obsidian_tool", "1")
-
-
-def clean_obsidian_markdown(text: str) -> str:
-    """Remove Obsidian-specific syntax before ingestion."""
-    # Remove YAML frontmatter (between --- lines)
-    text = re.sub(r"^---\s*\n.*?\n---\s*\n", "", text, flags=re.DOTALL)
-
-    # Convert [[wikilinks]] to just the link text
-    text = re.sub(r"\[\[([^\]|]+)\|?[^\]]*\]\]", r"\1", text)
-
-    # Remove ^block-references
-    text = re.sub(r"\^\w+", "", text)
-
-    # Remove ==highlights== markers but keep text
-    text = re.sub(r"==([^=]+)==", r"\1", text)
-
-    # Remove embedded file references ![[file]]
-    text = re.sub(r"!\[\[[^\]]+\]\]", "", text)
-
-    # Remove Dataview queries (```dataview blocks)
-    text = re.sub(r"```dataview.*?```", "", text, flags=re.DOTALL)
-
-    return text.strip()
 
 
 def read_vault(vault_path: str) -> Iterator[dict]:

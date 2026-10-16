@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import mimetypes
 from dataclasses import dataclass
@@ -91,17 +92,35 @@ def uploaded(input_type: str, *, data: bytes, mime: str, extractor: tuple[str, s
     )
 
 
-def fetched_page(*, url: str, raw_markdown: str, fetched_at: str, extractor: tuple[str, str],
+def fetched_page(*, url: str, response_json: dict, fetched_at: str, extractor: tuple[str, str],
                  title_provided: bool) -> SourceOriginal:
-    """Original for a scraped URL: the reader's unprocessed response, capped at MAX_PAGE_BYTES."""
-    too_large = len(raw_markdown.encode()) > MAX_PAGE_BYTES
+    """Original for a scraped URL: the reader's unprocessed JSON response, capped at MAX_PAGE_BYTES."""
+    too_large = len(json.dumps(response_json).encode()) > MAX_PAGE_BYTES
     return SourceOriginal(
         input_type="url", extractor=extractor[0], extractor_version=extractor[1],
-        raw_text=None if too_large else raw_markdown, raw_mime="text/markdown",
+        raw_json=None if too_large else response_json, raw_mime="application/json",
         raw_omitted_reason=f"over {MAX_PAGE_BYTES} bytes" if too_large else None,
         source_url=url, fetched_at=fetched_at,
         title_origin="provided" if title_provided else "derived",
     )
+
+
+def bytes_sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def find_duplicate(user_id: str, *, raw_sha256: str | None = None, source_url: str | None = None) -> dict | None:
+    """The user's source with these exact bytes (files, images) or this URL
+    (pages, videos; already normalised by the extractor), or None."""
+    query = supabase.table("sources").select("source_id,title,input_type").eq("user_id", user_id)
+    if raw_sha256:
+        query = query.eq("raw_sha256", raw_sha256)
+    elif source_url:
+        query = query.eq("source_url", source_url)
+    else:
+        return None
+    rows = query.limit(1).execute().data or []
+    return rows[0] if rows else None
 
 
 def _now() -> str:

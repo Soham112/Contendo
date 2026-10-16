@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Puzzle } from "lucide-react";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useApi, type MemoryContext } from "@/lib/api";
+import { ingestOutcome, keepsInput, type IngestResult } from "@/lib/ingest-result";
 import { useTracking } from "@/lib/useTracking";
 import ExtensionInstallModal from "@/components/ExtensionInstallModal";
 import Link from "next/link";
@@ -202,7 +203,7 @@ export default function FeedMemory() {
   const [zipIsDragging, setZipIsDragging] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("Reading vault notes...");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ chunks_stored: number; tags: string[]; title?: string; word_count?: number; duplicate?: boolean } | null>(null);
+  const [result, setResult] = useState<IngestResult | null>(null);
   const [error, setError] = useState("");
   // YouTube two-path state
   const [ytUrl, setYtUrl] = useState("");
@@ -555,7 +556,8 @@ export default function FeedMemory() {
     setObsidianPhase("input");
   };
 
-  const handleSubmit = async () => {
+  /** replaceSourceId: resend the same input to replace that duplicate (lib/ingest-result.ts). */
+  const handleSubmit = async (replaceSourceId?: string) => {
     setError("");
     setResult(null);
 
@@ -588,32 +590,22 @@ export default function FeedMemory() {
       if (activeTab === "file") {
         const formData = new FormData();
         formData.append("file", uploadedFile!);
+        if (replaceSourceId) formData.append("replace_source_id", replaceSourceId);
         res = await api.ingestFile(formData);
       } else if (activeTab === "url") {
-        res = await api.scrapeAndIngest(urlInput.trim());
+        res = await api.scrapeAndIngest(urlInput.trim(), replaceSourceId);
       } else {
-        const body: { source_type: string; raw_image?: string; content?: string; source_title?: string; memory_context?: MemoryContext | null } = {
+        const body: { source_type: string; raw_image?: string; content?: string; source_title?: string; memory_context?: MemoryContext | null; video_url?: string; replace_source_id?: string } = {
           source_type: activeTab,
           memory_context: memoryContext,
         };
+        if (replaceSourceId) body.replace_source_id = replaceSourceId;
         if (activeTab === "image") { body.raw_image = imagePreview; body.content = ""; }
         else if (activeTab === "youtube") {
-          let transcript = ytTranscript; // may already be set by manual textarea
-          if (ytUrl.trim()) {
-            setYtFetching(true);
-            const fetchRes = await api.fetchYoutubeTranscript(ytUrl.trim());
-            setYtFetching(false);
-            if (!fetchRes.ok) {
-              const errData = await fetchRes.json().catch(() => ({})) as { detail?: string };
-              setYtFetchError(errData.detail ?? "Failed to fetch transcript");
-              return;
-            }
-            const fetchData = await fetchRes.json();
-            transcript = fetchData.transcript;
-            setYtTranscript(transcript);
-            body.source_title = fetchData.title;
-          }
-          body.content = transcript;
+          // A link is saved from the transcript the server fetched for the
+          // preview (or fetches again); a pasted transcript is saved as typed.
+          if (ytUrl.trim()) body.video_url = ytUrl.trim();
+          else body.content = ytManualText || ytTranscript;
         }
         else { body.content = content; }
         res = await api.ingestContent(body);
@@ -624,8 +616,9 @@ export default function FeedMemory() {
         throw new Error(err.detail ?? "Ingest failed");
       }
 
-      const data = await res.json();
-      if (!data.duplicate && !(data.chunks_stored > 0)) {
+      const data: IngestResult = await res.json();
+      const outcome = ingestOutcome(data);
+      if (outcome.kind === "empty") {
         throw new Error("No chunks were stored. Check that the source contains readable text and try again.");
       }
       setResult(data);
@@ -635,9 +628,12 @@ export default function FeedMemory() {
         button_name: "ingest_submit",
         metadata: { source_type: activeTab, chunks_stored: data.chunks_stored ?? 0, duplicate: !!data.duplicate },
       });
+      if (keepsInput(outcome)) return;   // the card offers Replace with the same input
       showToast(
         data.duplicate
-          ? `This source is already in memory (${data.chunks_stored} chunks).`
+          ? "This source is already in your library."
+          : replaceSourceId
+          ? `Replaced. ${data.chunks_stored} passages stored.`
           : `Ingested successfully! Added ${data.chunks_stored} chunks.`,
         "success",
       );
@@ -1201,7 +1197,7 @@ export default function FeedMemory() {
               )
             ) : (
               <Button
-                onClick={handleSubmit}
+                onClick={() => handleSubmit()}
                 loading={loading}
                 disabled={!!missingInput}
                 disabledReason={missingInput}
@@ -1234,7 +1230,21 @@ export default function FeedMemory() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-[15px] font-medium text-on-surface">Already in your library</p>
-                <p className="text-sm text-secondary mt-0.5">You added this before, so there was nothing new to save.</p>
+                {result.replaceable && result.existing_source_id ? (
+                  <>
+                    <p className="text-sm text-secondary mt-0.5">
+                      You added this {activeTab === "url" || activeTab === "youtube" ? "link" : activeTab === "image" ? "image" : "file"} before
+                      {result.existing_title ? <> as &ldquo;{result.existing_title}&rdquo;</> : null}. Replace it to read it again with the latest extraction.
+                    </p>
+                    <div className="mt-3">
+                      <Button variant="secondary" size="sm" loading={loading} onClick={() => handleSubmit(result.existing_source_id ?? undefined)}>
+                        Replace
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-secondary mt-0.5">You added this before, so there was nothing new to save.</p>
+                )}
                 {result.tags.length > 0 && (
                   <div className="mt-3 flex flex-wrap gap-1.5">
                     {result.tags.map((tag) => (
