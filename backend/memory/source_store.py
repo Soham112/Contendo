@@ -60,6 +60,7 @@ class SourceOriginal:
     original_filename: str | None = None
     fetched_at: str | None = None
     title_origin: str | None = None
+    author: str | None = None   # the creator a provider names (a YouTube channel), not authorship
     authorship: str | None = None
     authorship_set_by: str | None = None
 
@@ -135,7 +136,7 @@ def _storage_path(user_id: str, source_id: str, original: SourceOriginal, sha256
 
 
 def _content_fields(user_id: str, source_id: str, original: SourceOriginal, *,
-                    title: str, extracted_text: str, content_hash: str) -> dict[str, Any]:
+                    title: str, extracted_text: str, content_hash: str, lang: str | None) -> dict[str, Any]:
     fields: dict[str, Any] = {
         "status": "pending",
         "input_type": original.input_type,
@@ -152,6 +153,8 @@ def _content_fields(user_id: str, source_id: str, original: SourceOriginal, *,
         "raw_sha256": None,
         "raw_omitted_reason": original.raw_omitted_reason,
         "extracted_text": extracted_text,
+        "lang": lang,
+        "author": original.author,
         "extractor": original.extractor,
         "extractor_version": original.extractor_version,
         "extracted_at": _now(),
@@ -220,10 +223,10 @@ class SourceWrite:
 
 
 def begin_source(user_id: str, source_id: str, original: SourceOriginal, *,
-                 title: str, extracted_text: str, content_hash: str) -> SourceWrite:
+                 title: str, extracted_text: str, content_hash: str, lang: str | None) -> SourceWrite:
     """Steps 1-2 for a new source. On an upload failure the row is removed and the error raised."""
     fields = _content_fields(user_id, source_id, original, title=title,
-                             extracted_text=extracted_text, content_hash=content_hash)
+                             extracted_text=extracted_text, content_hash=content_hash, lang=lang)
     write = SourceWrite(user_id, source_id, new_ingest_id(), fields)
     supabase.table("sources").insert(
         {"source_id": source_id, "user_id": user_id, "ingest_id": write.ingest_id, **fields}
@@ -237,7 +240,7 @@ def begin_source(user_id: str, source_id: str, original: SourceOriginal, *,
 
 
 def begin_replace(user_id: str, source_id: str, original: SourceOriginal, *,
-                  title: str, extracted_text: str, content_hash: str) -> SourceWrite:
+                  title: str, extracted_text: str, content_hash: str, lang: str | None) -> SourceWrite:
     """New content for an existing source (same source_id). The old content,
     chunks and object stay live until commit(); abort() or a crash leaves them
     intact. The row records the replace in `pending_replace` first, so a crash
@@ -249,7 +252,7 @@ def begin_replace(user_id: str, source_id: str, original: SourceOriginal, *,
     if old.get("pending_replace") and datetime.fromisoformat(old["updated_at"]) < _stale_cutoff_dt():
         _resolve_stale_replace(old)
     fields = _content_fields(user_id, source_id, original, title=title,
-                             extracted_text=extracted_text, content_hash=content_hash)
+                             extracted_text=extracted_text, content_hash=content_hash, lang=lang)
     fields.pop("status")
     pending = {"ingest_id": new_ingest_id(), "raw_storage_path": fields["raw_storage_path"],
                "old_storage_path": old.get("raw_storage_path")}

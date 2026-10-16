@@ -1,0 +1,100 @@
+{
+ "_note": "mode=generate shape (chunk lang null, as in the real generate response) with the real English chunks of o0UmCtfL1UY.",
+ "lang": "en",
+ "availableLangs": [
+  "en",
+  "none"
+ ],
+ "content": [
+  {
+   "lang": null,
+   "text": "In today's video, I'm going to show you",
+   "offset": 0,
+   "duration": 3360
+  },
+  {
+   "lang": null,
+   "text": "guys how to build this online store",
+   "offset": 1320,
+   "duration": 4400
+  },
+  {
+   "lang": null,
+   "text": "using Claude and Shopify. We're going to",
+   "offset": 3360,
+   "duration": 4880
+  },
+  {
+   "lang": null,
+   "text": "build a fully custom theme for this, so",
+   "offset": 5720,
+   "duration": 5120
+  },
+  {
+   "lang": null,
+   "text": "let's [music] go.",
+   "offset": 8240,
+   "duration": 2600
+  },
+  {
+   "lang": null,
+   "text": "So, firstly, a little bit of a",
+   "offset": 11440,
+   "duration": 4760
+  },
+  {
+   "lang": null,
+   "text": "backstory. Between 2015 and 2022, I ran",
+   "offset": 12680,
+   "duration": 5280
+  },
+  {
+   "lang": null,
+   "text": "a clothing brand called Plan Zero. So,",
+   "offset": 16200,
+   "duration": 3200
+  },
+  {
+   "lang": null,
+   "text": "I'm going to be basing this design off",
+   "offset": 17960,
+   "duration": 3240
+  },
+  {
+   "lang": null,
+   "text": "my own real clothing brand. So, I",
+   "offset": 19400,
+   "duration": 3600
+  },
+  {
+   "lang": null,
+   "text": "already have all these photos for a web",
+   "offset": 21200,
+   "duration": 3120
+  },
+  {
+   "lang": null,
+   "text": "store, which I'm going to use. But,",
+   "offset": 23000,
+   "duration": 2960
+  },
+  {
+   "lang": null,
+   "text": "don't worry if you don't already have",
+   "offset": 24320,
+   "duration": 3320
+  },
+  {
+   "lang": null,
+   "text": "products or mock-ups cuz I'll give you",
+   "offset": 25960,
+   "duration": 3360
+  },
+  {
+   "lang": null,
+   "text": "Bye.",
+   "offset": 484040,
+   "duration": 2320
+  }
+ ]
+}

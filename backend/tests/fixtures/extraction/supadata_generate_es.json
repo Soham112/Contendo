@@ -1,0 +1,72 @@
+{
+ "_note": "Shape and metadata from real mode=generate for kJQP7kiw5Fk, 2026-10-16 (lang 'es', chunk lang null). Chunk text replaced (song lyrics); offsets are real.",
+ "lang": "es",
+ "availableLangs": [
+  "es",
+  "en",
+  "ja",
+  "none"
+ ],
+ "content": [
+  {
+   "text": "este video trata de cómo construimos la tienda",
+   "offset": 51480,
+   "duration": 4950
+  },
+  {
+   "text": "primero abrimos la terminal y revisamos el proyecto",
+   "offset": 57870,
+   "duration": 5580
+  },
+  {
+   "text": "después elegimos los colores y las fuentes de la marca",
+   "offset": 63810,
+   "duration": 4540
+  },
+  {
+   "text": "la parte más difícil fue conectar los pagos",
+   "offset": 68350,
+   "duration": 5840
+  },
+  {
+   "text": "cada producto necesita su propia página con fotos",
+   "offset": 74590,
+   "duration": 4570
+  },
+  {
+   "text": "al final probamos todo en el teléfono",
+   "offset": 79160,
+   "duration": 3230
+  },
+  {
+   "text": "los clientes encuentran lo que buscan mucho más rápido",
+   "offset": 85160,
+   "duration": 5740
+  },
+  {
+   "text": "eso es todo por hoy, nos vemos en el próximo",
+   "offset": 90900,
+   "duration": 5520
+  },
+  {
+   "text": "este video trata de cómo construimos la tienda",
+   "offset": 96740,
+   "duration": 5980
+  },
+  {
+   "text": "primero abrimos la terminal y revisamos el proyecto",
+   "offset": 102720,
+   "duration": 5730
+  },
+  {
+   "text": "después elegimos los colores y las fuentes de la marca",
+   "offset": 108590,
+   "duration": 5640
+  },
+  {
+   "text": "la parte más difícil fue conectar los pagos",
+   "offset": 252200,
+   "duration": 5440
+  }
+ ]
+}

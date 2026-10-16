@@ -35,7 +35,7 @@ const ALL_TABS: { id: SourceType; label: string; description: string; localOnly?
   {
     id: "file",
     label: "File",
-    description: "Upload a PDF, DOCX, or TXT file. Its text is added to your library.",
+    description: "Upload a PDF, DOCX, TXT, or MD file. Its text is added to your library.",
   },
   {
     id: "youtube",
@@ -396,10 +396,11 @@ export default function FeedMemory() {
       "application/pdf",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       "text/plain",
+      "text/markdown",
     ];
-    const extAllowed = file.name.match(/\.(pdf|docx|txt)$/i);
+    const extAllowed = file.name.match(/\.(pdf|docx|txt|md)$/i);
     if (!allowed.includes(file.type) && !extAllowed) {
-      setError("Unsupported file type. Please upload a PDF, DOCX, or TXT file.");
+      setError("Unsupported file type. Please upload a PDF, DOCX, TXT, or MD file.");
       return;
     }
     setError("");
@@ -998,7 +999,7 @@ export default function FeedMemory() {
                       <span className="block text-[15px] text-secondary">
                         {isDragging ? "Drop file here" : "Click or drag a file here"}
                       </span>
-                      <span className="block text-xs text-on-surface-variant">PDF, DOCX, or TXT · max 10 MB</span>
+                      <span className="block text-xs text-on-surface-variant">PDF, DOCX, TXT, or MD · max 10 MB</span>
                     </span>
                   </button>
                 ) : (
@@ -1020,7 +1021,7 @@ export default function FeedMemory() {
                     </Button>
                   </div>
                 )}
-                <input ref={docFileInputRef} type="file" accept=".pdf,.docx,.txt" onChange={handleDocFileChange} className="hidden" />
+                <input ref={docFileInputRef} type="file" accept=".pdf,.docx,.txt,.md" onChange={handleDocFileChange} className="hidden" />
               </div>
 
             ) : activeTab === "youtube" ? (

@@ -6,6 +6,7 @@ anthropic==1.13.0
 chromadb==0.5.23
 sentence-transformers==3.3.1
 numpy<2
+py3langid==0.2.2  # language identification at ingestion (utils/language.py); 0.3+ needs numpy 2
 langgraph==0.2.60
 langchain-core==0.3.28
 Pillow==11.0.0
