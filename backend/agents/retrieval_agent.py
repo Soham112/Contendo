@@ -1,6 +1,7 @@
 import logging
 
 from config import retrieval as cfg
+from config import features
 from pipeline.state import PipelineState
 from memory.vector_store import (
     _chunk_key,
@@ -53,19 +54,25 @@ def _compute_retrieval_confidence(results: list[dict]) -> str:
     return "low"
 
 
-def coverage_gate(results: list[dict], bypass: bool = False, first_post: bool = False) -> dict:
+def coverage_gate(results: list[dict], bypass: bool = False, first_post: bool = False, business: dict | None = None) -> dict:
     """Decide whether the knowledge base covers the topic well enough to draft.
 
     decision: "pass"; "low_coverage"; "bypassed" (low coverage, but the request
     asked for a no-specifics post); or "skipped_first_post" (low coverage, but
     a user's first post is written from their profile and onboarding answers,
     not the knowledge base). Includes the scores, thresholds, and the closest
-    sources found, for the response and the generation trace.
+    sources found, for the response and the generation trace. With the business
+    block enabled, insufficient coverage is profile_only when the pillar is
+    writable_from_profile (or absent); other pillars remain low_coverage even
+    on a first post. Passing numeric coverage is checked before that fallback.
     """
     top_cosine, top_bm25 = _top_scores(results)
     covered = _has_coverage(top_cosine, top_bm25)
     if covered:
         decision = "pass"
+    elif business is not None and features.business_block_enabled():
+        pillar = business.get("pillar") or {}
+        decision = "profile_only" if not pillar or pillar["writable_from_profile"] else "low_coverage"
     elif bypass:
         decision = "bypassed"
     elif first_post:
@@ -306,7 +313,7 @@ def _enrich_with_entity_chunks(
         if not candidate_ids:
             return existing_chunks
 
-        additional = get_chunks_by_ids(candidate_ids[: max_additional * 2], user_id)
+        additional = get_chunks_by_ids(candidate_ids if features.business_block_enabled() else candidate_ids[: max_additional * 2], user_id)
         for chunk in additional:
             chunk["entity_linked"] = True
         _fill_real_similarity(additional, embed_texts([query_topic])[0], user_id)
@@ -406,6 +413,7 @@ def retrieval_node(state: PipelineState) -> PipelineState:
         raw_results,
         bypass=bool(state.get("no_specifics")),
         first_post=bool(state.get("first_post")),
+        business=state.get("business"),
     )
     logger.info(
         "coverage gate: %s (top cosine %.3f, top bm25 %.3f) for user %s",

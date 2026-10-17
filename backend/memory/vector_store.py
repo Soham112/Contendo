@@ -21,6 +21,8 @@ RPC required:
 """
 
 import json
+from config import features
+
 import logging
 import math
 import re
@@ -162,7 +164,7 @@ def query_similar(
     if embedding is None:
         embedding = embed_texts([query])[0]
 
-    response = supabase.rpc("match_embeddings", {
+    response = supabase.rpc("match_embeddings_without_business_profile" if features.business_block_enabled() else "match_embeddings", {
         "query_embedding": embedding,
         "match_user_id": user_id,
         "match_count": n_results,
@@ -272,20 +274,26 @@ def _tokenize(text: str) -> list[str]:
     return tokens
 
 
+def _retrievable(query):
+    """Filter in Postgres before pagination or ranking, retaining legacy NULLs."""
+    if features.business_block_enabled():
+        return query.or_("source_type.is.null,source_type.neq.business_profile")
+    return query
+
+
 def _fetch_corpus_for_bm25(user_id: str) -> list[dict]:
     """Fetch all chunk content + metadata for a user — no embedding column.
 
     Deliberately excludes the 384-dim vector to minimise payload size.
     """
-    response = (
+    response = _retrievable(
         supabase.table("embeddings")
         .select(
             "id,content,source_id,source_title,source_type,"
             "tags,chunk_index,total_chunks,content_hash,node_type,memory_context,ingested_at"
         )
         .eq("user_id", user_id)
-        .execute()
-    )
+    ).execute()
     corpus = []
     for row in response.data or []:
         content = row.get("content", "")
@@ -323,7 +331,7 @@ def _get_or_build_bm25(user_id: str) -> tuple:
     """
     now = datetime.now()
     cached = _bm25_cache.get(user_id)
-    if cached and (now - cached["built_at"]).total_seconds() < BM25_CACHE_TTL_SECONDS:
+    if cached and cached.get("business_block") == features.business_block_enabled() and (now - cached["built_at"]).total_seconds() < BM25_CACHE_TTL_SECONDS:
         return cached["bm25"], cached["corpus"]
 
     corpus = _fetch_corpus_for_bm25(user_id)
@@ -332,7 +340,7 @@ def _get_or_build_bm25(user_id: str) -> tuple:
 
     tokenized_corpus = [_tokenize(chunk["text"]) for chunk in corpus]
     bm25 = BM25Okapi(tokenized_corpus)
-    _bm25_cache[user_id] = {"bm25": bm25, "corpus": corpus, "built_at": now}
+    _bm25_cache[user_id] = {"bm25": bm25, "corpus": corpus, "built_at": now, "business_block": features.business_block_enabled()}
     logger.info("BM25 index built for user %s — %d chunks", user_id, len(corpus))
     return bm25, corpus
 
@@ -611,7 +619,7 @@ def get_chunks_by_ids(chunk_ids: list[str], user_id: str) -> list[dict]:
     """
     if not chunk_ids:
         return []
-    response = (
+    response = _retrievable(
         supabase.table("embeddings")
         .select(
             "id,content,source_id,source_title,source_type,"
@@ -619,8 +627,7 @@ def get_chunks_by_ids(chunk_ids: list[str], user_id: str) -> list[dict]:
         )
         .in_("id", chunk_ids)
         .eq("user_id", user_id)
-        .execute()
-    )
+    ).execute()
     results = []
     for row in (response.data or []):
         content = row.get("content", "")

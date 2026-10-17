@@ -111,12 +111,12 @@ WRITING_SAMPLES_RULE = (
 )
 
 
-def _voice_lines(profile: dict[str, Any]) -> list[str]:
+def _voice_lines(profile: dict[str, Any], *, include_identity: bool = True) -> list[str]:
     """How the author sounds and who they write for. Nothing here is content."""
     lines = [
         f"Name: {profile.get('name', 'Unknown')}",
         f"Role: {profile.get('role', 'Unknown')}",
-    ]
+    ] if include_identity else []
     if profile.get("target_audience"):
         lines += ["", f"Target audience: {profile['target_audience']}"]
     voice = profile.get("voice_descriptors", [])
@@ -141,11 +141,11 @@ def _sample_lines(profile: dict[str, Any]) -> list[str]:
     return lines
 
 
-def profile_voice_context(profile: dict[str, Any]) -> str:
+def profile_voice_context(profile: dict[str, Any], *, include_identity: bool = True) -> str:
     """The profile as a voice reference, for prompts that write or judge a post
     (draft, critic, humanizer). Leaves out the bio, topics of expertise and
     opinions: those are content, and a post's content comes from its sources."""
-    return "\n".join([*_voice_lines(profile), *_sample_lines(profile)])
+    return "\n".join([*_voice_lines(profile, include_identity=include_identity), *_sample_lines(profile)])
 
 
 def profile_to_context_string(profile: dict[str, Any]) -> str:

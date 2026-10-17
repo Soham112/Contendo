@@ -14,6 +14,8 @@ prompt, but the model names the structure only. The drafter, which sees the
 topic and every source, names the event (agents/draft_prompt.py).
 """
 
+from config import features
+
 import logging
 from uuid import uuid4
 from typing import Any
@@ -111,6 +113,8 @@ def _offer(state: PipelineState) -> tuple[list[dict], list[dict], list[str], lis
     profile = state.get("profile") or {}
     perspective = state.get("perspective") or "opinion"
     chunks = [] if perspective == "opinion" else (state.get("retrieval_bundle") or {}).get("chunks", [])
+    if features.business_block_enabled():
+        chunks = [c for c in chunks if chunk_field(c, "source_type") != "business_profile"]
     own = [c for c in chunks if is_self_authored(c, profile)]
     external = [c for c in chunks if not is_self_authored(c, profile)]
     allowed = allowed_archetypes(perspective, len(own))

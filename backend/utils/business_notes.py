@@ -1,14 +1,17 @@
 """The notes a business user's answers are saved to memory as.
 
 Both are plain text built from what the user typed, then stored through the
-normal ingestion path (agents.ingestion_agent.ingest_content), so retrieval,
-citations and the coverage gate treat them like any other source.
+normal ingestion path (agents.ingestion_agent.ingest_content). The profile note
+is retained for Library and rollback; with the business block enabled, account
+facts reach generation directly and its stored note is excluded from retrieval.
 
 Where the answers came from does not matter here: a later website import or
 voice input fills the same business profile fields and reuses profile_note.
 """
 
 from typing import Any
+
+from config import features
 
 from config.niches import OTHER_NICHE, SEGMENT_BUSINESS, TONES_BY_KEY, Niche, Pillar, get_niche
 
@@ -73,8 +76,8 @@ def find_pillar(account: dict[str, Any], pillar_key: str | None) -> Pillar | Non
 
 def business_context(account: dict[str, Any], pillar_key: str | None = None) -> dict[str, Any] | None:
     """What the pipeline knows about a business user (PipelineState["business"]),
-    or None for anyone else. The business's facts are not here: they reach a
-    post only as sources, through the profile note."""
+    or None for anyone else. With the block enabled, facts are built fresh
+    from the account and kept separate from retrieved sources."""
     if account.get("segment") != SEGMENT_BUSINESS:
         return None
     niche = get_niche(account.get("business_niche"))
@@ -83,9 +86,10 @@ def business_context(account: dict[str, Any], pillar_key: str | None = None) -> 
     notes = str(profile.get("tone_notes") or "").strip()
     pillar = find_pillar(account, pillar_key)
     return {
+        **({"facts": profile_note(profile, niche, account.get("business_niche_other"))} if features.business_block_enabled() else {}),
         "niche": niche.key if niche else "",
         "niche_label": niche_label(niche, account.get("business_niche_other")),
         "tone": ". ".join(part for part in (tone.label if tone else "", notes) if part),
-        "pillar": {"key": pillar.key, "label": pillar.label, "about": pillar.about, "needs": pillar.needs}
+        "pillar": {"key": pillar.key, "label": pillar.label, "about": pillar.about, "needs": pillar.needs, "writable_from_profile": pillar.writable_from_profile}
         if pillar else None,
     }

@@ -41,9 +41,10 @@ def refine_cited(selected_text: str, instruction: str, full_post: str, profile: 
 
     def attempt(event_type: str, previous: str = "", problems: list[dict] | None = None) -> dict[str, Any]:
         prompt = build_refine_cited_prompt(
-            profile_context=profile_voice_context(profile), words_to_avoid=profile.get("words_to_avoid", []),
+            profile_context=profile_voice_context(profile, include_identity=not bool((cited.business or {}).get("facts"))), words_to_avoid=profile.get("words_to_avoid", []),
             sources_block=cited.block, topic=cited.topic, context=cited.context, full_post=full_post,
             selected_text=selected_text, instruction=instruction, previous=previous, problems=problems,
+            business=cited.business,
             empty_retry=event_type == "refine_selection_retry" and not previous.strip())
         message = complete(
             model=cited.model,
@@ -57,7 +58,7 @@ def refine_cited(selected_text: str, instruction: str, full_post: str, profile: 
         finalised, stripped = finalise_marked(marked, None)
         spans = [span.as_dict() for span in stripped.spans]
         failures = [{"kind": f.kind, "text": f.text, "start": f.start, "end": f.end} for f in stripped.failures]
-        checks = run_passage_checks(finalised.text, spans, failures, cited.source_index, cited.chunks, request, profile)
+        checks = run_passage_checks(finalised.text, spans, failures, cited.source_index, cited.chunks, request, profile, (cited.business or {}).get("facts", ""))
         entry = {"event_type": event_type, "stop_reason": message.stop_reason, "marked": marked, "text": finalised.text,
                  "note": note, "citations": spans, "checks": checks,
                  "reason": "empty_output" if not finalised.text.strip() and not note else None}

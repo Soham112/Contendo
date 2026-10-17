@@ -1,6 +1,6 @@
 # Contendo architecture
 
-Drawn from the code at commit `6e5ec7c` (main) plus branch `fix/duplicate-shows-match` on 2026-10-16. **Update the affected diagram in the same PR as any change to ingestion, storage, retrieval or generation.**
+Drawn from the code at commit `aa7f56c` plus the working changes on `feat/business-block`, 2026-10-16. **Update the affected diagram in the same PR as any change to ingestion, storage, retrieval or generation.**
 
 Legend (flowcharts): green = built and working · orange = built, known issue · purple dashed = planned · blue = storage · grey = external service.
 
@@ -281,7 +281,7 @@ Notes:
 - The Library deletes one source by `source_id`; titles are not unique (one production library has 21 sources with no title).
 - A duplicate is found by file or URL before extraction, or by exact text after it (sources saved before their URL was kept, such as videos stored as transcripts). Both answers name the match and offer Replace, which re-extracts into the same source even when the text is unchanged, so a better title, URL, channel or language can be written. A Replace that matched only by text must still have that text.
 - Every source's text is identified before anything is paid for or stored (`utils/language.py`): the embedder is English-only, so a confidently non-English source is refused with its language named; short text is undetermined and accepted. Obsidian skips such a note; the business profile save reports `memory_saved: false`. A multilingual embedder is backlog, only if non-English users are supported.
-- Business answers reach memory only as the profile note; tone is left out of the note and goes to the prompt instead (diagram 5).
+- Business answers remain stored as a profile note for Library and rollback. With `BUSINESS_BLOCK_ENABLED=1` (default), the read path excludes it and generation builds the facts fresh from the account (diagram 5). Tone remains separate.
 
 ## 4. Read path: retrieval (the RAG part)
 
@@ -292,22 +292,24 @@ flowchart TD
   q["Query = topic + optional context"] --> expn["Load all experience_nodes<br/>read only by pipeline A's fact checker"]
   expn --> par
   subgraph par["query_similar_hybrid · two threads"]
-    vec["Vector search<br/>match_embeddings RPC · exact cosine over the user's rows · top 8"]
-    kw["Keyword search · BM25 · top 8<br/>cache miss: download whole library, rebuild index"]
+    vec["Vector search<br/>match_embeddings_without_business_profile RPC · exact cosine · top 8<br/>business_profile excluded before LIMIT (021)"]
+    kw["Keyword search · BM25 · top 8<br/>cache miss: download eligible rows, rebuild index<br/>business_profile excluded in Postgres"]
   end
   vec --> rrf["RRF merge, k = 60 · top 8"]
   kw --> rrf
   kw -.->|"timeout or 504: skipped, warning in logs only"| rrf
   rrf --> rel["Keep chunks with cosine 0.30+ or BM25 0.30+"]
-  rel --> enr["Entity enrichment: up to 4 more chunks<br/>linked to entities whose name appears in the query text"]
+  rel --> enr["Entity enrichment: up to 4 more chunks<br/>linked to entities whose name appears in the query text<br/>business_profile excluded by DB query before selection"]
   enr --> bundle["Bundle: chunks + source summaries + sibling chunks of the top 3 sources + topic summaries<br/>one batched query each"]
   bundle --> fmt["Sources block for the prompt: the chunks only<br/>about 8.7k tokens for 5 chunks"]
   bundle -.-> stats["Retrieval stats, written in background"]
   rrf --> gate{"Coverage gate on the raw matches"}
   gate -->|pass| go["Continue to generation"]
-  gate -->|"low, user's first post"| fp["Write from profile and onboarding answers"]
-  gate -->|low| lc["Stop: empty post + closest sources"]
-  class q,vec,rrf,rel,stats,go,fp built
+  gate -->|"low, business: no pillar or writable_from_profile=true"| po["profile_only · short target · account facts [[B]]"]
+  gate -->|"low, business: writable_from_profile=false"| bl["low_coverage · ask for pillar.needs"]
+  gate -->|"low, individual first post"| fp["Write from profile and onboarding answers"]
+  gate -->|"low, other"| lc["Stop: empty post + closest sources"]
+  class q,vec,rrf,rel,stats,go,fp,po,bl built
   class expn,kw,enr,bundle,fmt,lc issue
   classDef built fill:#d6eadc,stroke:#2f7a4f,color:#10261a
   classDef issue fill:#f6dfc4,stroke:#b5651d,color:#2b1a08
@@ -335,13 +337,13 @@ What happens after Generate is clicked. One Opus call chooses the structure and 
 flowchart TD
   req["POST /generate/stream<br/>validate · auth · quota"] --> lp["load_profile<br/>profile · business context · every past topic"]
   req -->|"business: pillar_details saved as a source note first"| rt
-  acc[("accounts<br/>niche · tone · tone_notes")] -->|"business_context: niche, tone, pillar about + needs"| lp
+  acc[("accounts<br/>identity · business facts · tone")] -->|"fresh profile_note + pillar.writable_from_profile + needs"| lp
   lp --> rt["retrieval · diagram 4"]
   rt --> gate{"coverage gate"}
   gate -->|low| lc["Empty post + closest sources"]
-  gate -->|pass| plan["plan<br/>length 100-150 words, max 200<br/>perspective: experience · learned · mixed · opinion"]
+  gate -->|"pass or profile_only"| plan["plan<br/>profile_only: first-post short range; otherwise 100-150, max 200<br/>perspective: experience · learned · mixed · opinion"]
   plan --> allow["Allowed structures, decided in code · diagram 6"]
-  lp -.->|"BUSINESS POST block: tone, pillar, never invent its needs"| draft
+  lp -.->|"Fixed BUSINESS FACTS [[B]] after voice; never event evidence<br/>BUSINESS POST: tone + pillar"| draft
   allow --> draft["ONE Opus 5.5 call · effort low<br/>chooses structure + writes cited draft<br/>prompt about 18.4k tokens"]
   draft -->|"text deltas"| sse["Live preview in the browser<br/>envelope and citation markers hidden"]
   draft -->|"cut off, declined or empty"| tr["No post: status and message"]
@@ -369,6 +371,8 @@ flowchart TD
 
 Notes:
 
+- `BUSINESS_BLOCK_ENABLED=0` restores the original retrieval RPC, BM25 corpus, gate and archetype behavior, and removes the facts block. Migration 021 must precede the backend deploy; rows are retained. BM25 caches rebuild when the flag changes.
+- The account supplies business name and role at request time; stored voice descriptors and writing samples remain style references. Business identity is omitted from draft/refine voice blocks. `[[B]]` cites only the saved account facts, never an event source. Refine uses the original trace facts even with no retrieved chunks.
 - Prompt is about 18.4k tokens against a target of about 2.3k: sources 8.7k, every past topic 3k (grows about 30 tokens per post), rules 2.7k, profile 1.7k, structure options 0.9k.
 - Opus thinking varies from 0 to 840 tokens on the same prompt even at effort low, so time to first word varies from about 1.5 s to about 15 s (replay of 12 calls, 2026-10-15).
 - Drafts run 164-209 words against the requested 100-150.
@@ -546,7 +550,7 @@ Notes:
 | `get_all_sources` has the same 1,000-row cap and selects every column, embeddings included | `backend/memory/vector_store.py · get_all_sources` | Step 3 (with the Postgres BM25 move) |
 | `source_nodes` and `topic_nodes` are empty in production (0 rows for 250 chunks) | `backend/memory/hierarchy_store.py · agents/ingestion_agent.py` | Step 2 (audit) |
 | memory_context missing on 91% of production chunks; real mislabels (an outside article stored as personal_project; own writing stored as article) | `backend/agents/ingestion_agent.py · utils/frames.py chunk_frame` | Step 3 |
-| Business profile note counts as own experience: unlocks experience perspective and story types with no stored event | `backend/utils/frames.py SELF_FRAMES · agents/archetype_agent.py allowed_archetypes` | Step 5 (verify in baseline first) |
+| **Fixed on feat/business-block, flag on:** stored business profile excluded from all retrieval; fixed account block never unlocks story structures | `backend/agents/draft_prompt.py · memory/vector_store.py · agents/archetype_agent.py` | Fixed, flag on; migration 021 before deploy |
 | Business posts get two tone instructions (request tone and business tone) | `backend/agents/draft_prompt.py _business_post · utils/formatters.py get_format_instructions` | Step 5 |
 | Business first post (onboarding) passes the business tone key as the request tone, which `get_format_instructions` silently turns into casual; no pillar; the story isn't ingested (an individual's is), so its facts reach the post only as context | `backend/routers/onboarding.py` | Step 5 |
 | The experience perspective says "write in first person" with no business variant; "we" is implied only by the BUSINESS POST line | `backend/utils/frames.py PERSPECTIVES · agents/draft_prompt.py` | Step 5 |
