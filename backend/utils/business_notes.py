@@ -42,8 +42,8 @@ def niche_label(niche: Niche | None, other: str | None) -> str:
     return niche.label
 
 
-def profile_note(business_profile: dict[str, Any], niche: Niche | None, other: str | None) -> str:
-    """The business profile as a note. Tone is left out: it is voice, not content."""
+def _profile_facts(business_profile: dict[str, Any], niche: Niche | None, other: str | None) -> list[str]:
+    """One account-attributed fact per filled field, retaining multiline values."""
     lines = []
     kind = niche_label(niche, other)
     if kind:
@@ -52,7 +52,12 @@ def profile_note(business_profile: dict[str, Any], niche: Niche | None, other: s
         value = str(business_profile.get(key) or "").strip()
         if value:
             lines.append(f"{label}: {value}")
-    return "\n".join(lines)
+    return lines
+
+
+def profile_note(business_profile: dict[str, Any], niche: Niche | None, other: str | None) -> str:
+    """The stored profile note; tone is voice, not content."""
+    return "\n".join(_profile_facts(business_profile, niche, other))
 
 
 # Bump when details_note changes what it writes (recorded per source).
@@ -86,7 +91,8 @@ def business_context(account: dict[str, Any], pillar_key: str | None = None) -> 
     notes = str(profile.get("tone_notes") or "").strip()
     pillar = find_pillar(account, pillar_key)
     return {
-        **({"facts": profile_note(profile, niche, account.get("business_niche_other"))} if features.business_block_enabled() else {}),
+        **({"facts": profile_note(profile, niche, account.get("business_niche_other")),
+             "fact_items": _profile_facts(profile, niche, account.get("business_niche_other"))} if features.business_block_enabled() else {}),
         "niche": niche.key if niche else "",
         "niche_label": niche_label(niche, account.get("business_niche_other")),
         "tone": ". ".join(part for part in (tone.label if tone else "", notes) if part),

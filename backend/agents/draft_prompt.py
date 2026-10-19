@@ -13,7 +13,6 @@ themselves live in agents/draft_agent.py.
 
 from memory.profile_store import profile_voice_context
 from config import features
-from utils.frames import FRAMES
 from pipeline.state import PipelineState
 from utils.formatters import (
     ARCHETYPES, GENERAL_ARCHETYPE, STORY_ARCHETYPES, STYLE_RULES,
@@ -125,9 +124,15 @@ def business_facts(state: dict) -> str:
     facts = (state.get("business") or {}).get("facts")
     if not features.business_block_enabled() or not facts:
         return ""
-    return ("BUSINESS FACTS [[B]]: facts stated by the business; may be stated as written; "
-            "never evidence that something happened.\n" + FRAMES["BUSINESS_PROFILE"].rule
-            + "\n" + facts + "\nCite facts from this block with [[B]].\n\n")
+    items = state["business"].get("fact_items") or facts.splitlines()
+    rendered = "\n".join("- " + item.replace("\n", "\n  ") for item in items)
+    return (
+        "BUSINESS FACTS [[B]]: business-stated facts, never event evidence.\n"
+        "Keep each fact's subject, quantity, conditions and scope unchanged. Quantity words "
+        "apply only to their attached subject. Named services or offers do not establish inclusions. "
+        "Unstated facts are unknown, not absent: claim neither that the business does nor does not do them.\n"
+        + rendered + "\nCite these facts with [[B]].\n\n"
+    )
 
 
 def _business_post(business: dict | None) -> str:

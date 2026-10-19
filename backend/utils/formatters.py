@@ -103,6 +103,7 @@ def resolve_length_target(
     first_post: bool = False,
     thin_sources: bool = False,
     requested_linkedin_length: bool = False,
+    profile_only: bool = False,
 ) -> dict[str, Any] | None:
     """The one length target for a post, or None for formats not measured in
     words (threads).
@@ -110,6 +111,7 @@ def resolve_length_target(
     {min_words, max_words, may_expand, basis}, plus write_max_words for a
     LinkedIn post. max_words is the hard limit every length check uses;
     write_max_words, when present, is the maximum the drafter is asked for.
+    - basis "profile_only": no floor, 100-word prompt and hard ceiling; never expanded.
     - basis "first_post": FIRST_POST_RANGE, whatever length was requested.
       Trimmed if over; never expanded.
     - basis "thin_sources" (low retrieval confidence): the range's ceiling with
@@ -119,6 +121,9 @@ def resolve_length_target(
       requested_linkedin_length, pipeline A's): the requested range; may be
       expanded up to its floor.
     """
+    if profile_only:
+        return {"min_words": 0, "max_words": 100, "write_max_words": 100,
+                "may_expand": False, "basis": "profile_only"}
     format_type = _normalise(format_type, "linkedin post")
     if format_type == "linkedin post" and not requested_linkedin_length:
         return _linkedin_target(first_post=first_post, thin_sources=thin_sources)

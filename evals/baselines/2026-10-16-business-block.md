@@ -207,3 +207,28 @@ Across 27 business cases: rendered full prompts **−3,047 tokens** in total; ga
 - `evals/tests/test_quality.py`
 
 Files created in the original implementation: migration 021 (DB exclusion RPC), test_business_block.py (coverage), this measurement report. This revision created only ignored measurement/audit artifacts; scratch scripts stay outside the repo and are removed. No new stopgap was introduced.
+
+## Step 11: frontend contract and paid before/after check (2026-10-16)
+
+Completed at **$2.491464**, under the $5 cap. The eval database has migration 021; default D-Opus-low was run once per business case per arm with the flag off/on, respecting real coverage gates. **54 valid case-arms, 43 drafts (22 before, 21 after), 11 gate stops**. One transient re-07/before retrieval failure made no paid call and was retried; all final source-id sequences match step 10. No commits, pushes, frontend changes or application changes.
+
+**A — contract finding:** successful profile_only drafts serialize as status=ok and display/autosave normally for /generate and /generate/stream. Both APIs preserve the new pillar-needs advice in suggestion. The frontend drops it: generateOutcome has no suggestion field; CreatePost stores only closest sources/opinion flag; ConfigureForm/LowCoverageNotice show hard-coded generic copy. Onboarding’s generateErrorMessage also substitutes generic text. GenerateResult omits suggestion although api.ts declares it. Thus the specific instruction about what to add never displays. Detailed paths: [frontend contract audit](../results/quality_v1/business-block-gen/frontend-contract.md). No frontend fix was made. Existing checks: 31 frontend outcome/stream/onboarding tests and 74 backend stream/business tests passed.
+
+**B — quality on the same 17 drafted pairs (dev 10, hold-out 7):**
+
+| Criterion | Dev before → after | Hold-out before → after |
+|---|---|---|
+| 13, source-audited | 9/10 (90%) → 5/10 (50%) | 3/7 (42.9%) → 4/7 (57.1%) |
+| B6b, all applicable per-post fields | 8/10 (80%) → 5/10 (50%) | 3/7 (42.9%) → 3/7 (42.9%) |
+
+The rates use Sonnet-assisted judgments followed by source-by-source adjudication. Raw replies, Boolean/rationale contradictions and every correction remain available. Missing needs honestly omitted were not scored as fabricated. The source audit flags unsupported practices, guarantees, event logistics and extra temporal/majority claims; it allows current views and generic advice. B6b sequence quality is scored separately per persona. These are single drafts, not significance-tested population estimates.
+
+**Changed gates:** nb-01/03/04/05/06 now stop low_coverage (no after draft); fs-07 and bo-02/03/04/05 are profile_only. After profile_only: fs-07/bo-03 stay grounded; bo-02 promises no week-long queue/downtime, bo-04 invents brake-inspection scope, and bo-05 invents staffing/booking/no-handoff guarantees. Wheelwright repeatedly restates the same services and mechanic/van/same-week facts: promotional/repetitive, without hard selling.
+
+**Close read:** re-05 invents no new local market figure; before adds unverified "recently" to an undated real sale note. fs-06 invents no named member or first-year result, but before asserts an unstated simple-teaching practice and after upgrades a typical-customer description to an actual majority. Both miss the member-story pillar. bo-06’s prices are explicitly dated spring 2026 and sourced in both arms; they are stale for the winter topic, but no new winter price/offer was invented. Exact quotations and markers are in the report.
+
+**B citations:** all **29** final after B spans checked against the actual block: **25 supported, 4 not fully supported** (bo-04 e-bike inspection scope; fs-03 every-session coach coverage; fs-06 actual majority of coached customers; re-04 majority of clients being moving families). All spans and exact profile evidence are in the B audit.
+
+**Instrumentation:** paired median visible first word **3.671s → 3.695s**; actual paired input **85,277 → 87,039 (+1,762)**. Across all drafted cases, actual input **106,299 → 99,819 (−6,480)** because gates change the population. TTFW is pipeline start to first settled visible post prose, excluding HTTP/auth/browser time. The shared LinkedIn format still says "No call-to-action", conflicting with the business-CTA criterion; no prompt was changed here.
+
+Saved under [business-block-gen](../results/quality_v1/business-block-gen/report.md): drafts, prompts/responses, complete traces, raw/audited scores, all unsupported-claim quotations, every B citation/evidence, sequence reviews, timing/token CSV, spend ledger and reconciliation. The scoped usage_events check found **96 calls totalling $2.491464**, matching the ledger. See [full report](../results/quality_v1/business-block-gen/report.md) and [scoring method](../results/quality_v1/business-block-gen/audit-method.md). The results directory is ignored by git; the baseline section is tracked. Stopped after the requested check.

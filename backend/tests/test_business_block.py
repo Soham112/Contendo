@@ -186,3 +186,60 @@ def test_flag_off_restores_profile_story_offer_and_removes_block(monkeypatch):
     state = make_state([PROFILE_CHUNK], business=business_context(ACCOUNT))
     assert set(structure_offer(state)) & STORY
     assert 'BUSINESS FACTS [[B]]' not in build_cited_prompt(state)[0]
+
+
+def test_business_block_has_one_attributed_fact_per_filled_field(monkeypatch):
+    from agents.draft_prompt import business_facts
+    from utils.business_notes import business_context
+    monkeypatch.setenv("BUSINESS_BLOCK_ENABLED", "1")
+    profile = {"business_name": "Workshop", "services": "Repairs\nE-bike checks",
+               "service_area": "   ", "website": None, "tone": "friendly"}
+    context = business_context({**ACCOUNT, "business_profile": profile})
+    block = business_facts({"business": context})
+    facts = [line for line in block.splitlines() if line.startswith("- ")]
+    assert facts == ["- Kind of business: Real estate agent",
+                     "- Business name: Workshop", "- What we do: Repairs"]
+    assert "- What we do: Repairs\n  E-bike checks" in block
+    assert "Area served:" not in block
+    assert "Website:" not in block
+    assert "friendly" not in block
+    assert len(context["fact_items"]) == 3
+
+
+@pytest.mark.parametrize("builder", ["cited", "pipeline_a"])
+def test_fact_contract_is_business_only_and_disappears_with_flag_off(monkeypatch, builder):
+    from agents.draft_prompt import build_cited_prompt, build_prompt
+    from utils.business_notes import business_context
+    def render(state):
+        return build_cited_prompt(state)[0] if builder == "cited" else build_prompt(state, "chunks")
+    monkeypatch.setenv("BUSINESS_BLOCK_ENABLED", "1")
+    business = make_state([], business=business_context(ACCOUNT))
+    contract = ("subject, quantity, conditions and scope unchanged",
+                "Quantity words apply only to their attached subject",
+                "Named services or offers do not establish inclusions",
+                "Unstated facts are unknown, not absent")
+    assert all(rule in render(business) for rule in contract)
+    assert all(rule not in render(make_state([OWN])) for rule in contract)
+    monkeypatch.setenv("BUSINESS_BLOCK_ENABLED", "0")
+    assert all(rule not in render(business) for rule in contract)
+
+
+@pytest.mark.parametrize("first_post", [False, True])
+@pytest.mark.parametrize("words,expected", [(1, "ok"), (100, "ok"), (101, "over_length")])
+def test_profile_only_prompt_and_final_validation_share_no_floor_and_100_ceiling(first_post, words, expected):
+    from agents.draft_prompt import build_cited_prompt
+    from pipeline.finalise import finalise
+    from pipeline.graph import plan_node
+    state = make_state([], first_post=first_post, retrieval_confidence="low",
+                       coverage_gate={"decision": "profile_only"})
+    plan_node(state)
+    prompt, _ = build_cited_prompt(state)
+    target = state["length_target"]
+    assert target == {"min_words": 0, "max_words": 100, "write_max_words": 100,
+                      "may_expand": False, "basis": "profile_only"}
+    assert "LENGTH: at most 100 words." in prompt
+    assert "Never pad to reach a length." in prompt
+    result = finalise(" ".join(["word"] * words), target)
+    assert result.record["length"] == expected
+    assert result.record["over_by"] == max(0, words - 100)
+    assert result.record["under_by"] == 0

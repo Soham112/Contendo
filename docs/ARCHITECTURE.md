@@ -1,6 +1,6 @@
 # Contendo architecture
 
-Drawn from the code at commit `aa7f56c` plus the working changes on `feat/business-block`, 2026-10-16. **Update the affected diagram in the same PR as any change to ingestion, storage, retrieval or generation.**
+Drawn from the code at commit `f7b3af9` plus the working changes on `feat/business-block`, 2026-10-16. **Update the affected diagram in the same PR as any change to ingestion, storage, retrieval or generation.**
 
 Legend (flowcharts): green = built and working · orange = built, known issue · purple dashed = planned · blue = storage · grey = external service.
 
@@ -305,7 +305,7 @@ flowchart TD
   bundle -.-> stats["Retrieval stats, written in background"]
   rrf --> gate{"Coverage gate on the raw matches"}
   gate -->|pass| go["Continue to generation"]
-  gate -->|"low, business: no pillar or writable_from_profile=true"| po["profile_only · short target · account facts [[B]]"]
+  gate -->|"low, business: no pillar or writable_from_profile=true"| po["profile_only · no minimum, max 100 · account facts [[B]]"]
   gate -->|"low, business: writable_from_profile=false"| bl["low_coverage · ask for pillar.needs"]
   gate -->|"low, individual first post"| fp["Write from profile and onboarding answers"]
   gate -->|"low, other"| lc["Stop: empty post + closest sources"]
@@ -341,9 +341,9 @@ flowchart TD
   lp --> rt["retrieval · diagram 4"]
   rt --> gate{"coverage gate"}
   gate -->|low| lc["Empty post + closest sources"]
-  gate -->|"pass or profile_only"| plan["plan<br/>profile_only: first-post short range; otherwise 100-150, max 200<br/>perspective: experience · learned · mixed · opinion"]
+  gate -->|"pass or profile_only"| plan["plan<br/>profile_only: no minimum, max 100; otherwise 100-150, max 200<br/>perspective: experience · learned · mixed · opinion"]
   plan --> allow["Allowed structures, decided in code · diagram 6"]
-  lp -.->|"Fixed BUSINESS FACTS [[B]] after voice; never event evidence<br/>BUSINESS POST: tone + pillar"| draft
+  lp -.->|"Discrete BUSINESS FACTS [[B]] after voice; preserve subject/quantity/conditions/scope; never event evidence<br/>BUSINESS POST: tone + pillar"| draft
   allow --> draft["ONE Opus 5.5 call · effort low<br/>chooses structure + writes cited draft<br/>prompt about 18.4k tokens"]
   draft -->|"text deltas"| sse["Live preview in the browser<br/>envelope and citation markers hidden"]
   draft -->|"cut off, declined or empty"| tr["No post: status and message"]
@@ -533,6 +533,7 @@ Notes:
 
 | Issue | Where | Fixed in |
 |---|---|---|
+| Shared view-contract loophole affects individual and business users: the draft prompt defines `[[V]]` as stating no fact, but “Don't make claims about what most people... unless a source says so; state it as the author's view instead” invites unsupported facts to be relabelled as views. Specifics detect only numbers, money, durations and dates; pipeline checks record issues without enforcing them. | `backend/agents/draft_prompt.py`; `backend/utils/specifics.py`; `backend/pipeline/checks.py:294` | Planned `fix/view-contract`: global view contract plus semantic grounding of factual spans after first text; enforcement and latency to be decided. |
 | Keyword search downloads the whole library on cache miss; Supabase caps it at 1,000 rows (confirmed; no user near it yet, max 149 chunks); a fallback to vector-only is only a log warning and isn't in the trace (0 clear fallbacks in 32 traces) | `backend/memory/vector_store.py · _fetch_corpus_for_bm25` | Steps 1 (verify) and 3-4 (Postgres BM25) |
 | memory_context and tags set once per document, not per chunk | `backend/agents/ingestion_agent.py · ingest_content` | Step 3 |
 | Experience nodes are roles from the profile form, not events, and not linked to chunks | `backend/memory/experience_store.py · backend/routers/profile.py` | Step 3 |

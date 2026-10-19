@@ -70,8 +70,7 @@ def plan_node(state: PipelineState) -> PipelineState:
         requested_linkedin_length=state.get("variant") == "A",
     )
     if gate == "profile_only":
-        state["length_target"] = resolve_length_target(state.get("format", ""), "concise", first_post=True, thin_sources=True)
-        state["length_target"]["basis"] = "profile_only"
+        state["length_target"] = resolve_length_target(state.get("format", ""), "concise", profile_only=True)
     # The notes don't cover the topic, but a post is written anyway (a first
     # post from the onboarding answers, or an opinion post without specifics).
     not_covered = bool(state.get("no_specifics")) or gate in ("skipped_first_post", "bypassed")
