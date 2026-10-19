@@ -53,7 +53,7 @@ class KeywordProbe:
         vector_store._get_or_build_bm25 = observed
 
     def start(self, client: Any, user_id: str) -> None:
-        count = client.table("embeddings").select("id", count="exact", head=True).eq("user_id", user_id).execute()
+        count = self.vs._retrievable(client.table("embeddings").select("id", count="exact", head=True).eq("user_id", user_id)).execute()
         self.state = {"ran": False, "error": None, "corpus_size": None, "library_chunks": count.count or 0}
 
 
@@ -112,25 +112,71 @@ def _retrieve(case: dict[str, Any], user_id: str, client: Any, probe: KeywordPro
     raise AssertionError("unreachable")
 
 
-def run_case(case: dict[str, Any], user_id: str, client: Any, probe: KeywordProbe, snapshot) -> dict[str, Any]:
+def measure_prompt(state: dict, count_tokens: bool) -> dict:
+    """Render the full default prompt from live retrieval; count freely if requested."""
+    from pipeline.graph import plan_node
+    from agents.one_call_prompt import build_one_call_prompt
+    from agents.archetype_agent import structure_offer
+    from agents.draft_prompt import business_facts
+    state["variant"] = "D-Opus-low"
+    plan_node(state)
+    prompt, _ = build_one_call_prompt(state, structure_offer(state))
+    facts = business_facts(state)
+    result = {"business_block_present": bool(facts) and facts in prompt}
+    if count_tokens:
+        from llm.client import client as llm_client
+        from llm.models import role_models
+        model = role_models("D-Opus-low")["draft"]
+        result["prompt_tokens"] = llm_client.messages.count_tokens(model=model, messages=[{"role": "user", "content": prompt}]).input_tokens
+        if facts:
+            result["block_tokens"] = llm_client.messages.count_tokens(model=model, messages=[{"role": "user", "content": facts}]).input_tokens
+    return result
+
+
+def run_case(case: dict[str, Any], user_id: str, client: Any, probe: KeywordProbe, snapshot, count_tokens: bool = False) -> dict[str, Any]:
     from quality_seed import details_note_for
     details = details_note_for(case, user_id) if case["pillar_details"] else None
     state, attempts = _retrieve(case, user_id, client, probe)
     label = _labeller(case, snapshot)
     chunks = (state.get("retrieval_bundle") or {}).get("chunks", [])
     ranked = [{"label": label(c, details and details[0]), "similarity": c.get("similarity"),
-               "bm25_score": c.get("bm25_score"), "node_type": c.get("node_type") or "chunk"} for c in chunks]
+               "bm25_score": c.get("bm25_score"), "bm25_norm": c.get("bm25_norm"),
+               "chunk_id": c.get("id") or c.get("chunk_id"), "source_title": c.get("source_title"),
+               "entity_linked": bool(c.get("entity_linked")), "node_type": c.get("node_type") or "chunk"} for c in chunks]
     retrieved = list(dict.fromkeys(r["label"] for r in ranked))
     gate = state.get("coverage_gate") or {}
     drafted = [] if gate.get("decision") == "low_coverage" else retrieved
+    probe_snapshot = dict(probe.state)
+    prompt_check = measure_prompt(state, count_tokens)
+    if count_tokens and case.get("business_block"):
+        from unittest.mock import patch
+        # Re-run the original flag-off path solely to reconstruct its full prompt.
+        # Saved relabel rankings remain the metric baseline and are checked later.
+        with patch.dict("os.environ", {"BUSINESS_BLOCK_ENABLED": "0"}):
+            rollback, _ = _retrieve(case, user_id, client, probe)
+            before = measure_prompt(rollback, True)
+            prompt_check["baseline_prompt_tokens"] = before["prompt_tokens"]
+            prompt_check["baseline_gate"] = rollback["coverage_gate"]["decision"]
+            prompt_check["baseline_ranked_chunks"] = [
+                {"label": label(c, details and details[0]), "similarity": c.get("similarity"),
+                 "chunk_id": c.get("id") or c.get("chunk_id"), "source_title": c.get("source_title"),
+                 "bm25_norm": c.get("bm25_norm"), "entity_linked": bool(c.get("entity_linked"))}
+                for c in (rollback.get("retrieval_bundle") or {}).get("chunks", [])]
+        prompt_check["prompt_token_delta"] = prompt_check["prompt_tokens"] - before["prompt_tokens"]
+        prompt_check["draftable_token_delta"] = (
+            (0 if gate["decision"] == "low_coverage" else prompt_check["prompt_tokens"])
+            - (0 if prompt_check["baseline_gate"] == "low_coverage" else before["prompt_tokens"]))
     own = None if case["label_confidence"] == "metadata_only" else qf.own_label_ids(case["persona"])
     return {
         "id": case["id"], "persona": case["persona"], "split": case["split"],
         "label_confidence": case["label_confidence"], "first_post": state.get("first_post"),
+        "business_block": bool(case.get("business_block")),
+        "expected_gate": case.get("expected_gate"),
         "retrieval_path": state.get("retrieval_path"), "attempts": attempts,
         "gate": gate, "ranked_chunks": ranked, "drafted": drafted,
+        "prompt_check": prompt_check,
         "retrieval_timings": state.get("retrieval_timings"),
-        "scores": qm.score_case(case, drafted, retrieved, own, gate.get("decision"), dict(probe.state),
+        "scores": qm.score_case(case, drafted, retrieved, own, gate.get("decision"), probe_snapshot,
                                 state.get("retrieval_path"), attempts),
     }
 
@@ -182,6 +228,8 @@ def write_report(rows: list[dict[str, Any]], out: Path, meta: dict[str, Any]) ->
     groups = {
         "dev · verified": by(lambda r: r["split"] == "dev" and r["label_confidence"] == "verified"),
         "hold-out · verified": by(lambda r: r["split"] == "holdout" and r["label_confidence"] == "verified"),
+        "business · dev": by(lambda r: r.get("business_block") and r["split"] == "dev"),
+        "business · hold-out": by(lambda r: r.get("business_block") and r["split"] == "holdout"),
         "me · metadata_only": by(lambda r: r["label_confidence"] == "metadata_only"),
     }
     personas = {p: by(lambda r, p=p: r["persona"] == p) for p in (*qf.SYNTHETIC_SLUGS, qf.ME)}
@@ -197,12 +245,44 @@ def write_report(rows: list[dict[str, Any]], out: Path, meta: dict[str, Any]) ->
     out.write_text("\n".join(lines))
 
 
+def rescore_saved(source: Path, name: str) -> None:
+    """Score saved rankings and decisions with current labels, without retrieval."""
+    cases = {c["id"]: c for c in qf.load_cases()}
+    rows = [json.loads(line) for line in source.read_text().splitlines() if line.strip()]
+    private = PRIVATE_RESULTS_DIR / source.parent.name / "me_runs.jsonl"
+    if private.exists():
+        rows += [json.loads(line) for line in private.read_text().splitlines() if line.strip()]
+    for row in rows:
+        case = cases[row["id"]]
+        row["business_block"] = bool(case.get("business_block"))
+        row["expected_gate"] = case.get("expected_gate")
+        own = None if case["label_confidence"] == "metadata_only" else qf.own_label_ids(case["persona"])
+        retrieved = list(dict.fromkeys(r["label"] for r in row["ranked_chunks"]))
+        row["scores"] = qm.score_case(case, row["drafted"], retrieved, own, row["gate"]["decision"],
+                                      row["scores"]["hybrid_reliability"], row["retrieval_path"], row["attempts"])
+    out = RESULTS_DIR / name
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "runs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows if r["persona"] != qf.ME))
+    me_rows = [r for r in rows if r["persona"] == qf.ME]
+    if me_rows:
+        private_out = PRIVATE_RESULTS_DIR / name
+        private_out.mkdir(parents=True, exist_ok=True)
+        (private_out / "me_runs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in me_rows))
+    write_report(rows, out / "report.md", {"name": name, "commit": f"saved retrieval: {source.parent.name} (unchanged)",
+                 "at": datetime.now().isoformat(), "project": env.CONFIG.project_ref, "spend": 0})
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--name", default=datetime.now().strftime("%Y-%m-%d-retrieval"))
     parser.add_argument("--split", choices=("dev", "holdout", "all"), default="all")
     parser.add_argument("--only", action="append", help="case id (repeatable)")
+    parser.add_argument("--rescore", type=Path, help="Re-score saved runs against current labels; no retrieval or database calls")
+    parser.add_argument("--count-tokens", action="store_true", help="Also call the free token-count endpoint for each prompt (no generation)")
     args = parser.parse_args(argv)
+    if args.rescore:
+        rescore_saved(args.rescore, args.name)
+        return 0
     try:
         users = qf.load_quality_users()
         cases = [c for c in qf.load_cases() if args.split in ("all", c["split"]) and (not args.only or c["id"] in args.only)]
@@ -214,11 +294,16 @@ def main(argv: list[str] | None = None) -> int:
     except (EnvGuardError, FixtureError) as exc:
         print(f"refusing to run: {exc}", file=sys.stderr)
         return 2
+    from config import features
+    if features.business_block_enabled():
+        # Fail before the run if migration 021 is missing; hybrid search otherwise
+        # logs RPC failure and silently runs only BM25.
+        client.rpc("match_embeddings_without_business_profile", {"query_embedding": [0.0] * 384, "match_user_id": next(iter(users.values())), "match_count": 0}).execute()
     probe = KeywordProbe()
     rows = []
     with UsageLog() as usage:
         for case in cases:
-            rows.append(run_case(case, users[qf.user_slug(case)], client, probe, snapshot))
+            rows.append(run_case(case, users[qf.user_slug(case)], client, probe, snapshot, args.count_tokens))
             print(f"  {case['id']}: {rows[-1]['retrieval_path']} · gate {rows[-1]['gate'].get('decision')} · "
                   f"drafter {rows[-1]['drafted'] or 'none'}")
         spend = usage.spend(client, list(users.values()))

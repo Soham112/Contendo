@@ -2,6 +2,11 @@
 
 import os
 
+
+def business_block_enabled() -> bool:
+    """Read dynamically so rollback also changes retrieval and its cache."""
+    return os.environ.get("BUSINESS_BLOCK_ENABLED", "1").strip().lower() not in {"0", "false", "off"}
+
 # No-specifics ("opinion post without specifics") mode. Disabled until
 # citation-based drafting lands in the pipeline redesign: the after-the-fact
 # fixes (rewrite, re-check, repair) created dangling references, over-flagged

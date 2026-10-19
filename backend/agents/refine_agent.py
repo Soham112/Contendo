@@ -106,6 +106,7 @@ class CitedSources:
     topic: str
     context: str
     model: str                      # the model that drafted the post, which rewrites it
+    business: dict | None = None     # original account facts, preserved by the generation trace
 
 
 @dataclass(frozen=True)
@@ -135,8 +136,10 @@ def load_refine_sources(
     trace = get_trace_sources(user_id=user_id, trace_id=trace_id, post_id=post_id)
     if trace is None:
         raise MissingRefineSources("trace_not_found")
+    business = (trace.get("node_outputs") or {}).get("business")
+    has_facts = bool((business or {}).get("facts"))
     chunks = trace.get("retrieved")
-    if (not isinstance(chunks, list) or not chunks
+    if (not isinstance(chunks, list) or (not chunks and not has_facts)
             or any(not isinstance(chunk, dict) or not isinstance(chunk.get("text"), str)
                    or not chunk["text"].strip() for chunk in chunks)):
         raise MissingRefineSources("structured_chunks_missing")
@@ -148,6 +151,7 @@ def load_refine_sources(
         "profile": trace.get("profile_snapshot") or {},
         "retrieval_bundle": {"chunks": chunks},
         "no_specifics": no_specifics,
+        "business": business,
     }
     # An opinion post without specifics was written without its chunks; refining
     # it must not bring them in either.
@@ -163,8 +167,10 @@ def _cited_sources(trace: dict[str, Any], chunks: list[dict]) -> CitedSources | 
     that points outside the stored chunks is a broken trace: MissingRefineSources."""
     outputs = trace.get("node_outputs") or {}
     source_index = outputs.get("source_index")
-    if not source_index:
+    business = outputs.get("business")
+    if not source_index and not (business or {}).get("facts"):
         return None
+    source_index = source_index or {}
     try:
         block = sources_block_from_index(source_index, chunks)
     except (ValueError, KeyError, TypeError):
@@ -175,7 +181,7 @@ def _cited_sources(trace: dict[str, Any], chunks: list[dict]) -> CitedSources | 
     if drafted_by not in MODELS:
         raise MissingRefineSources("draft_model_unknown")
     model = drafted_by
-    return CitedSources(source_index, chunks, block, trace.get("topic") or "", trace.get("context") or "", model)
+    return CitedSources(source_index, chunks, block, trace.get("topic") or "", trace.get("context") or "", model, business)
 
 
 def _record_guard_retry(sources: RefineSources, user_id: str, first: list, second: list) -> None:

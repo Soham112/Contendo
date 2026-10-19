@@ -98,7 +98,7 @@ def uncited_span(spans: list[dict]) -> list[dict]:
     return [_issue("uncited_span", i, span["text"]) for i, span in enumerate(spans) if span["basis"] == "uncited"]
 
 
-def specific_not_in_cited_source(spans: list[dict], texts: dict[str, str], request: list[str]) -> list[dict]:
+def specific_not_in_cited_source(spans: list[dict], texts: dict[str, str], request: list[str], business: str = "") -> list[dict]:
     """A number, percentage, amount, duration, month, weekday or time phrase in
     a span that the span's own sources do not state. For a span citing the
     request, the sources are the topic and the context. detail.found_in names
@@ -110,6 +110,11 @@ def specific_not_in_cited_source(spans: list[dict], texts: dict[str, str], reque
             if not cited:
                 continue                     # only unknown ids: citation_unknown_id reports that
             against, exclude = [texts[sid] for sid in cited], cited
+        elif span["basis"] == "business":
+            if not business:
+                issues.append(_issue("citation_unknown_id", i, span["text"], ["B"]))
+                continue
+            against, exclude = [business], ()
         elif span["basis"] == "request":
             against, exclude = request, ()
         else:
@@ -237,6 +242,8 @@ def run_checks(state: PipelineState, marker_failures: list[dict]) -> dict[str, A
     what stripping its markers found; for a post changed since (compress), the
     marker-like text still in it.
     """
+    from config import features
+    business = (state.get("business") or {}).get("facts", "") if features.business_block_enabled() else ""
     spans = state.get("citations") or []
     source_index = state.get("source_index") or {}
     chunks = (state.get("retrieval_bundle") or {}).get("chunks", [])
@@ -246,7 +253,7 @@ def run_checks(state: PipelineState, marker_failures: list[dict]) -> dict[str, A
         *citation_malformed(marker_failures),
         *citation_unknown_id(spans, source_index),
         *uncited_span(spans),
-        *specific_not_in_cited_source(spans, texts, request),
+        *specific_not_in_cited_source(spans, texts, request, business),
         *view_contains_specific(spans, texts, request),
         *event_unverified(state.get("event"), source_index, chunks),
         *mixed_authorship_span(spans, source_index),
@@ -258,7 +265,7 @@ def run_checks(state: PipelineState, marker_failures: list[dict]) -> dict[str, A
 
 
 def run_passage_checks(text: str, spans: list[dict], marker_failures: list[dict], source_index: dict,
-                       chunks: list[dict], request: list[str], profile: dict) -> dict[str, Any]:
+                       chunks: list[dict], request: list[str], profile: dict, business: str = "") -> dict[str, Any]:
     """The checks that apply to one rewritten passage of a finished post (a
     selection refine): the citation grammar (malformed markers, unknown ids,
     uncited prose), specifics against the cited sources, specifics in a view,
@@ -272,7 +279,7 @@ def run_passage_checks(text: str, spans: list[dict], marker_failures: list[dict]
         *citation_malformed(marker_failures),
         *citation_unknown_id(spans, source_index),
         *uncited_span(spans),
-        *specific_not_in_cited_source(spans, texts, request),
+        *specific_not_in_cited_source(spans, texts, request, business),
         *view_contains_specific(spans, texts, request),
         *mixed_authorship_span(spans, source_index),
         *banned_text(text, spans, profile, first_post=False),

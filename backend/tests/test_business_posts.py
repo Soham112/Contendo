@@ -57,7 +57,8 @@ def test_business_context_carries_tone_and_the_named_pillar():
     assert business_context(ACCOUNT, "menu_highlight")["pillar"] is None
 
 
-def test_business_context_holds_no_business_facts():
+def test_business_context_holds_no_business_facts(monkeypatch):
+    monkeypatch.setenv("BUSINESS_BLOCK_ENABLED", "0")
     from utils.business_notes import business_context
 
     assert "Harbor" not in str(business_context(ACCOUNT, "just_sold"))

@@ -19,6 +19,7 @@ from typing import Any
 
 from guard import validate_users
 from loaders import EVALS_DIR, FixtureError, Persona, _load_json_list, parse_source
+from quality_metrics import BUSINESS_NOTE_SUFFIX  # noqa: F401  (re-exported: qf.BUSINESS_NOTE_SUFFIX)
 
 QUALITY_DIR = EVALS_DIR / "fixtures" / "quality_v1"
 PERSONAS_DIR = QUALITY_DIR / "personas"
@@ -33,7 +34,6 @@ ME_EXPORT_FILE = PRIVATE_DIR / "me" / "export.json"
 SYNTHETIC_SLUGS = ("rf", "tc", "ni0", "ni1", "re", "fs", "bo", "nb")
 ME = "me"
 DETAILS_SUFFIX = "-details"
-BUSINESS_NOTE_SUFFIX = "-bp"
 # The memory contexts that make a fixture source the author's own experience.
 OWN_CONTEXTS = frozenset({"work", "personal_project"})
 
@@ -145,6 +145,15 @@ def _case_errors(case: dict[str, Any], known: set[str]) -> list[str]:
         errs.append(f"{cid}: an angle is both eligible and ineligible")
     if (case["persona"] == ME) != (case["label_confidence"] == "metadata_only"):
         errs.append(f"{cid}: only persona me is metadata_only")
+    # Business posts get the profile note as a fixed block in the prompt, not
+    # through retrieval: business cases say so, and never require the note.
+    business = case["persona"] != ME and is_business(case["persona"])
+    if bool(case.get("business_block")) != business:
+        errs.append(f"{cid}: business_block must be true exactly for business personas")
+    if business and case.get("expected_gate") not in {"pass", "profile_only", "low_coverage"}:
+        errs.append(f"{cid}: every business case requires expected_gate (pass, profile_only or low_coverage)")
+    if business and case["persona"] + BUSINESS_NOTE_SUFFIX in required:
+        errs.append(f"{cid}: the profile note reaches business posts as a block, not a required source")
     return errs
 
 

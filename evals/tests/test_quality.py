@@ -137,6 +137,27 @@ def test_precision_counts_unlabelled_for_verified_but_not_metadata_only():
     assert qm.precision(_case(), [])["pass"] is None
 
 
+def test_business_cases_carry_business_block_and_never_require_the_note(cases):
+    business = {c["persona"] for c in cases if qf.is_business(c["persona"])}
+    assert all(c.get("business_block") for c in cases if c["persona"] in business)
+    assert not any(c.get("business_block") for c in cases if c["persona"] not in business)
+    known = set(qf.source_labels("re")) | {"re-bp"}
+    flagged = dict(persona="re", identity="business", evidence="business_facts", business_block=True, expected_gate="pass")
+    assert qf._case_errors(_case(**flagged, must_use_all=["re-s01"]), known) == []
+    assert any("block, not a required source" in e
+               for e in qf._case_errors(_case(**flagged, must_use_all=["re-bp"]), known))
+    assert any("business_block must be true" in e
+               for e in qf._case_errors(_case(**{**flagged, "business_block": False}), known))
+    assert any("business_block must be true" in e
+               for e in qf._case_errors(_case(business_block=True), set(qf.source_labels("rf"))))
+
+
+def test_the_profile_note_is_neutral_for_precision_in_business_block_cases():
+    labels = ["re-s01", "re-bp", "x"]
+    assert qm.precision(_case(persona="re", must_use_all=["re-s01"], business_block=True), labels)["value"] == 0.5
+    assert qm.precision(_case(persona="re", must_use_all=["re-s01"]), labels)["value"] == 0.333
+
+
 def test_off_topic_rate_and_list():
     assert qm.off_topic(_case(off_topic=["o"]), ["a", "o"]) == {"value": ["o"], "rate": 0.5, "pass": False}
 
@@ -174,3 +195,98 @@ def test_score_case_scores_the_drafter_and_keeps_pre_gate_recall():
     rates = qm.pass_rates([scored])
     assert rates["recall"] == (0, 1) and rates["hybrid_reliability"] == (1, 1) and rates["gate_accuracy"] == (0, 1)
     assert qm.means([scored])["mrr"] == 0.0 and qm.means([scored])["off_topic_rate"] is None
+
+
+def test_every_business_case_requires_expected_gate(cases):
+    for case in cases:
+        if not case.get("business_block"):
+            continue
+        assert case["expected_gate"] in {"pass", "profile_only", "low_coverage"}
+        changed = dict(case)
+        del changed["expected_gate"]
+        assert any("expected_gate" in e for e in qf._case_errors(changed, set()))
+
+
+@pytest.mark.parametrize("expected", ["pass", "profile_only", "low_coverage"])
+def test_business_gate_accuracy_uses_explicit_label_even_for_partial(expected):
+    case = _case(business_block=True, expected_gate=expected, coverage="partial")
+    assert qm.gate_accuracy(case, expected) is True
+    assert qm.gate_accuracy(case, "skipped_first_post") is False
+
+
+def test_rescore_saved_updates_business_gate_without_changing_rankings(tmp_path, monkeypatch):
+    import importlib
+    import sys
+    import types
+    fake_env = types.ModuleType('env')
+    fake_env.CONFIG = types.SimpleNamespace(project_ref='test-project')
+    monkeypatch.setitem(sys.modules, 'env', fake_env)
+    sys.modules.pop('quality_retrieval', None)
+    retrieval = importlib.import_module('quality_retrieval')
+    case = _case(persona='bo', business_block=True, expected_gate='profile_only')
+    row = {'id': case['id'], 'persona': 'bo', 'split': 'dev', 'label_confidence': 'verified',
+           'ranked_chunks': [], 'drafted': [], 'gate': {'decision': 'profile_only'},
+           'retrieval_path': 'hybrid', 'attempts': 1,
+           'scores': qm.score_case(case, [], [], frozenset(), 'profile_only', {}, 'hybrid', 1)}
+    row['scores']['gate_accuracy'] = None  # old label did not score this case
+    source = tmp_path / 'original' / 'runs.jsonl'
+    source.parent.mkdir()
+    original = json.dumps(row) + '\n'
+    source.write_text(original)
+    monkeypatch.setattr(qf, 'load_cases', lambda: [case])
+    monkeypatch.setattr(qf, 'own_label_ids', lambda slug: frozenset())
+    monkeypatch.setattr(retrieval, 'RESULTS_DIR', tmp_path / 'results')
+    monkeypatch.setattr(retrieval, 'PRIVATE_RESULTS_DIR', tmp_path / 'private')
+    retrieval.rescore_saved(source, 'rescored')
+    result = json.loads((tmp_path / 'results/rescored/runs.jsonl').read_text())
+    assert result['scores']['gate_accuracy'] is True
+    assert result['ranked_chunks'] == row['ranked_chunks'] and result['gate'] == row['gate']
+    assert source.read_text() == original
+    assert 'business · dev' in (tmp_path / 'results/rescored/report.md').read_text()
+    sys.modules.pop('quality_retrieval', None)
+
+
+def test_profile_writability_revision_preserves_review_labels_and_blocks_kitchen_case(cases):
+    by_id = {case['id']: case for case in cases}
+    assert by_id['nb-04']['expected_gate'] == 'low_coverage'
+    assert by_id['re-05']['expected_gate'] == 'low_coverage'
+    assert by_id['fs-06']['expected_gate'] == 'low_coverage'
+
+
+def test_free_paired_prompt_measurement_preserves_new_run_scores(tmp_path, monkeypatch):
+    import importlib
+    import os
+    import sys
+    import types
+    fake_env = types.ModuleType('env')
+    fake_env.CONFIG = types.SimpleNamespace(project_ref='test-project')
+    monkeypatch.setitem(sys.modules, 'env', fake_env)
+    monkeypatch.setitem(sys.modules, 'quality_seed', types.SimpleNamespace(details_note_for=lambda *args: None))
+    sys.modules.pop('quality_retrieval', None)
+    retrieval = importlib.import_module('quality_retrieval')
+    case = _case(persona='bo', business_block=True, expected_gate='profile_only')
+    probe = types.SimpleNamespace(state={})
+    seen = []
+
+    def retrieve(*args):
+        enabled = os.environ['BUSINESS_BLOCK_ENABLED'] == '1'
+        seen.append(enabled)
+        probe.state = {'ran': True, 'library_chunks': 1 if enabled else 2, 'corpus_size': 1 if enabled else 2}
+        return {'retrieval_bundle': {'chunks': []}, 'coverage_gate': {'decision': 'profile_only' if enabled else 'pass'},
+                'retrieval_path': 'hybrid', 'enabled': enabled}, 1
+
+    monkeypatch.setenv('BUSINESS_BLOCK_ENABLED', '1')
+    monkeypatch.setattr(retrieval, '_retrieve', retrieve)
+    monkeypatch.setattr(retrieval, '_labeller', lambda *args: lambda *args: 'unused')
+    monkeypatch.setattr(retrieval, 'measure_prompt', lambda state, count: {
+        'business_block_present': state['enabled'], 'prompt_tokens': 100 if state['enabled'] else 150})
+    monkeypatch.setattr(qf, 'own_label_ids', lambda slug: frozenset())
+    result = retrieval.run_case(case, 'user', None, probe, None, count_tokens=True)
+    assert seen == [True, False]
+    assert os.environ['BUSINESS_BLOCK_ENABLED'] == '1'
+    assert result['gate']['decision'] == 'profile_only'
+    assert result['scores']['hybrid_reliability']['library_chunks'] == 1
+    assert result['scores']['gate_accuracy'] is True
+    assert result['prompt_check']['prompt_token_delta'] == -50
+    assert result['prompt_check']['baseline_gate'] == 'pass'
+    sys.modules.pop('quality_retrieval', None)

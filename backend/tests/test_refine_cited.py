@@ -241,3 +241,29 @@ def test_every_call_of_the_default_pipeline_and_of_refine_is_logged_with_its_exa
     for event in logged:
         assert event["model"] in PRICES
         assert call_cost(event["model"], event["input_tokens"], event["output_tokens"]) > 0
+
+
+@pytest.mark.parametrize('invented', [False, True])
+def test_profile_only_trace_refine_preserves_business_grounding_without_chunks(refine, claude, fake_db, monkeypatch, invented):
+    from memory.profile_store import save_profile
+    monkeypatch.setenv('BUSINESS_BLOCK_ENABLED', '1')
+    [trace] = fake_db.tables['generation_traces']
+    trace['retrieved'] = []
+    trace['node_outputs']['source_index'] = {}
+    trace['node_outputs']['business'] = {'facts': 'Business name: New Harbor Realty\nWe serve 12 districts.'}
+    save_profile({'name': 'Stale Harbor Realty', 'voice_descriptors': ['warm']}, user_id=KB_USER)
+    good = 'We work across 12 districts. [[B]]'
+    claude.queue(*(['We work across 40 districts. [[B]]', good] if invented else [good]))
+    response = refine()
+    assert response.status_code == 200
+    body = response.json()
+    assert body['status'] == 'ok'
+    assert body['rewritten_text'] == 'We work across 12 districts.'
+    assert body['sources_used'] == 'trace'
+    prompt = _prompt(claude)
+    assert 'New Harbor Realty' in prompt and 'Stale Harbor Realty' not in prompt
+    assert 'warm' in prompt and '[[B]]' in prompt
+    assert '<source id=' not in prompt
+    assert len(claude.calls) == (2 if invented else 1)
+    if invented:
+        assert 'specific_not_in_cited_source' in _prompt(claude, 1)

@@ -89,6 +89,19 @@ class FakeQuery:
     def neq(self, col, val):
         return self._add(lambda r: r.get(col) != val)
 
+    def or_(self, expression):
+        """PostgREST OR for the nullable source-type retrieval filter."""
+        terms = [term.split(".", 2) for term in expression.split(",")]
+        def matches(row):
+            for col, op, value in terms:
+                actual = row.get(col)
+                if op == "is" and value == "null" and actual is None:
+                    return True
+                if op == "neq" and actual is not None and actual != value:
+                    return True
+            return False
+        return self._add(matches)
+
     def in_(self, col, vals):
         vals = list(vals)
         return self._add(lambda r: r.get(col) in vals)
@@ -277,11 +290,12 @@ class FakeSupabase:
         return FakeQuery(self, name)
 
     def rpc(self, name: str, params: dict) -> FakeRpc:
-        if name == "match_embeddings":
+        if name in {"match_embeddings", "match_embeddings_without_business_profile"}:
             def run():
                 rows = [
                     r for r in self.tables.get("embeddings", [])
                     if r.get("user_id") == params["match_user_id"] and r.get("embedding")
+                    and (name == "match_embeddings" or r.get("source_type") != "business_profile")
                 ]
                 scored = []
                 for r in rows:

@@ -37,9 +37,14 @@ MAX_ITERATIONS = 3
 def load_profile_node(state: PipelineState) -> PipelineState:
     user_id = state["user_id"]
     state["profile"] = load_profile(user_id=user_id)
-    business = business_context(get_account(user_id), state.get("pillar"))
+    account = get_account(user_id)
+    business = business_context(account, state.get("pillar"))
     if business:
         state["business"] = business
+        if features.business_block_enabled():
+            # All downstream readers, including pipeline A, see the account identity.
+            state["profile"] = {**state["profile"], "name": (account.get("business_profile") or {}).get("business_name", ""),
+                                "role": business["niche_label"]}
     state["iterations"] = 0
     state["archetype"] = state.get("archetype", "")
     state["critic_brief"] = {}
@@ -64,6 +69,8 @@ def plan_node(state: PipelineState) -> PipelineState:
         # Pipeline A, the rollback, keeps the length the request asks for.
         requested_linkedin_length=state.get("variant") == "A",
     )
+    if gate == "profile_only":
+        state["length_target"] = resolve_length_target(state.get("format", ""), "concise", profile_only=True)
     # The notes don't cover the topic, but a post is written anyway (a first
     # post from the onboarding answers, or an opinion post without specifics).
     not_covered = bool(state.get("no_specifics")) or gate in ("skipped_first_post", "bypassed")
@@ -323,7 +330,9 @@ def run_pipeline(
             "scored": False,
             "retrieval_confidence": result.get("retrieval_confidence", "low"),
             "closest_sources": gate.get("closest_sources", []),
-            "suggestion": LOW_COVERAGE_SUGGESTION,
+            "suggestion": ("Add " + result["business"]["pillar"]["needs"] + "."
+                           if features.business_block_enabled() and (result.get("business") or {}).get("pillar") and not result["business"]["pillar"]["writable_from_profile"]
+                           else LOW_COVERAGE_SUGGESTION),
             "trace_id": trace_id,
         }
 

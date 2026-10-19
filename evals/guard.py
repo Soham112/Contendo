@@ -34,7 +34,7 @@ REQUIRED_FILE_KEYS = (
     "EXPECTED_PROJECT_REF",
 )
 # Keys evals/.env may set to override a safe default.
-OPTIONAL_FILE_KEYS = ("LOG_LEVEL", "SUPABASE_JWT_SECRET", "PIPELINE_VARIANT")
+OPTIONAL_FILE_KEYS = ("LOG_LEVEL", "SUPABASE_JWT_SECRET", "PIPELINE_VARIANT", "BUSINESS_BLOCK_ENABLED")
 # Where the backend names its pipeline variants. A plain module (it imports
 # only os), so it can be read before the backend is configured.
 FEATURES_FILE = BACKEND_DIR / "config" / "features.py"
@@ -51,6 +51,7 @@ BACKEND_ENV_KEYS = (
     "FRONTEND_ORIGIN",
     "LOG_LEVEL",
     "PIPELINE_VARIANT",
+    "BUSINESS_BLOCK_ENABLED",
     "PUBLISHING_PROVIDER",
     "ZERNIO_API_KEY",
     "ZERNIO_WEBHOOK_SECRET",
@@ -213,6 +214,7 @@ def build_backend_env(values: Mapping[str, str], data_dir: str) -> dict[str, str
         "DATA_DIR": data_dir,
         "LOG_LEVEL": values.get("LOG_LEVEL") or "WARNING",
         "PIPELINE_VARIANT": values.get("PIPELINE_VARIANT") or "",
+        "BUSINESS_BLOCK_ENABLED": values.get("BUSINESS_BLOCK_ENABLED", "1"),
         "PUBLISHING_PROVIDER": "",
         "ZERNIO_API_KEY": "",
         "ZERNIO_WEBHOOK_SECRET": "",

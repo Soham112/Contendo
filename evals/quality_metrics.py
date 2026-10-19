@@ -18,10 +18,17 @@ fact, not only the right source). It needs fact labels, which step 3 adds.
 """
 from typing import Any
 
+BUSINESS_NOTE_SUFFIX = "-bp"   # a business persona's profile note label: "<persona>-bp"
+
 CONSOLIDATION = "consolidation"
 UNLABELLED = "unlabelled"
 PRECISION_PASS = 0.75  # docs/QUALITY.md criterion 2; to tune on the baseline distribution
 DIAGNOSTIC_K = (1, 3, 5)
+
+
+def business_note(case: dict[str, Any]) -> str | None:
+    """The case's profile note label when it reaches the post as the business block."""
+    return case["persona"] + BUSINESS_NOTE_SUFFIX if case.get("business_block") else None
 
 
 def _units(case: dict[str, Any]) -> list[set[str]]:
@@ -65,7 +72,10 @@ def mrr(case: dict[str, Any], labels: list[str]) -> dict[str, Any]:
 
 
 def _counted(case: dict[str, Any], labels: list[str]) -> list[str]:
-    counted = [l for l in labels if l != CONSOLIDATION]
+    """Drafter sources that count for precision and off-topic: not consolidation
+    briefs, and in business cases not the profile note, which reaches the post
+    as the business block (`business_block`)."""
+    counted = [l for l in labels if l != CONSOLIDATION and l != business_note(case)]
     if case["label_confidence"] == "metadata_only":
         counted = [l for l in counted if l != UNLABELLED]
     return counted
@@ -104,6 +114,8 @@ def own_share(case: dict[str, Any], labels: list[str], own_ids: frozenset[str] |
 def gate_accuracy(case: dict[str, Any], decision: str | None) -> bool | None:
     """Whether the coverage gate matches the labelled coverage (none -> stopped,
     full -> not stopped). Partial coverage has no expectation."""
+    if case.get("business_block"):
+        return decision == case["expected_gate"]
     if case["coverage"] == "partial":
         return None
     stopped = decision == "low_coverage"

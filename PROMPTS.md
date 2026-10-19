@@ -402,6 +402,34 @@ Write the post again without them, and add no other specifics.
 
 It shares these blocks with pipeline A's prompt above, word for word: the opening line, the author-voice block, format and tone, the topic block (topic rule, posted topics, perspective, grounding, first-post instruction), POST STRUCTURE, SOURCE RULES with the FABRICATION RULE, and the VISUAL PLACEHOLDER RULES. What differs: the sources are a delimited data block with ids instead of the grouped knowledge base; the style rules are in the prompt; the citation rules and (for story archetypes) the EVENT line rule are added; the "write now" line is last. In code the POST STRUCTURE block fills `CITED_PROMPT`'s `{structure}` slot (`render_cited_prompt()`), so variant D can put its structure choice there instead; the text below is what B and C send.
 
+**Business-only addition (flag on, 2026-10-16):** Immediately after Author voice, before Format, insert the following block. Identity lines are omitted from business voice; account facts supply the name. No insertion or whitespace change for individuals, or when `BUSINESS_BLOCK_ENABLED=0`. The same fixed block is supplied to pipeline A and to selection refine (from the saved trace). It never enters `<sources>` or the structure offer.
+
+```text
+BUSINESS FACTS [[B]]: business-stated facts, never event evidence.
+Keep each fact's subject, quantity, conditions and scope unchanged. Quantity words apply only to their attached subject. Named services or offers do not establish inclusions. Unstated facts are unknown, not absent: claim neither that the business does nor does not do them.
+- {filled profile field label}: {unchanged field value}
+Cite these facts with [[B]].
+```
+
+For business prompts only, replace the citation line `- Cite only ids that appear in <sources>, and cite a source only for what that source says.` with:
+
+```text
+- [[B]] cites the BUSINESS FACTS block only. For retrieved sources, cite only ids in <sources> and only what that source says.
+```
+
+For a business prompt without retrieved chunks, replace the NO NOTES/low-coverage grounding instruction with:
+
+```text
+PROFILE-ONLY GROUNDING: Use the BUSINESS FACTS block, topic and additional context. Write one focused point and stop when that material runs out. The business facts are not evidence of an event; invent no incident, result or customer.
+```
+
+Each filled account field is one attributed fact item; multiline values remain within their item. For `profile_only` (no pillar or `writable_from_profile=true`), use no minimum and a 100-word maximum in both the prompt and validation (`basis=profile_only`, no expansion). The exact length instruction is:
+
+```text
+LENGTH: at most 100 words. A short post is complete: say what the sources support and stop. Never pad to reach a length.
+```
+ A false pillar with insufficient retrieval stops before drafting. The request's first-post instruction is still present only for an actual first post. General fabrication, source, style and citation rules remain in force. Selection refine uses the same block and citation replacement from the generation trace, including when the stored source index and retrieved list are empty.
+
 **Prompt (`CITED_PROMPT`):**
 ```
 You are a ghostwriter. You write a post from the sources below, in the voice of the author described below. The sources decide what the post says. The author profile decides only how it sounds.

@@ -4,6 +4,7 @@ The drafter ends every prose span with exactly one marker:
 
     [[S2]]      supported by source S2 (ids as utils.frames.build_sources_block gives them)
     [[S1,S3]]   supported by both sources
+    [[B]]       stated in the fixed business facts block (never event evidence)
     [[R]]       stated in the request (the topic or the additional context)
     [[V]]       the author's view or reasoning, with no factual claim
 
@@ -31,7 +32,7 @@ _SOURCE_ID = r"S[1-9]\d*"
 SOURCE_ID_PATTERN = _SOURCE_ID     # for the other formats that name a source (utils/draft_output.py)
 # Deliberate tolerance: spaces around the ids and commas ("[[S1, S3]]").
 _VALID_INNER = re.compile(
-    rf"[ \t]*(?:(?P<sources>{_SOURCE_ID}(?:[ \t]*,[ \t]*{_SOURCE_ID})*)|(?P<basis>{REQUEST}|{VIEW}))[ \t]*"
+    rf"[ \t]*(?:(?P<sources>{_SOURCE_ID}(?:[ \t]*,[ \t]*{_SOURCE_ID})*)|(?P<basis>{REQUEST}|{VIEW}|B))[ \t]*"
 )
 # Anything shaped like a marker, tried in this order at each position:
 #   double  [[...]] on one line, valid or not
@@ -39,7 +40,7 @@ _VALID_INNER = re.compile(
 #   stray   an opening or closing pair with no partner
 _MARKER_LIKE = re.compile(
     r"(?P<double>\[\[(?P<inner>[^\[\]\n]*)\]\])"
-    r"|(?P<single>\[[ \t]*(?:S\d+(?:[ \t]*,[ \t]*S\d+)*|R|V)[ \t]*\])"
+    r"|(?P<single>\[[ \t]*(?:S\d+(?:[ \t]*,[ \t]*S\d+)*|R|V|B)[ \t]*\])"
     r"|(?P<stray>\[\[|\]\])"
 )
 # Closing punctuation written straight after a marker ("...fell [[S1]].") stays
@@ -65,7 +66,7 @@ class Span:
     start: int
     end: int
     text: str
-    basis: str                 # "sources" | "request" | "view" | "uncited"
+    basis: str                 # "sources" | "business" | "request" | "view" | "uncited"
     sources: tuple[str, ...]   # the cited S-ids when basis is "sources", else ()
 
     def as_dict(self) -> dict:
@@ -120,7 +121,7 @@ def _token(match: re.Match, offset: int) -> _Token:
     if not inner:
         return _Token(start, end, text, "malformed")
     if inner.group("basis"):
-        return _Token(start, end, text, "valid", "request" if inner.group("basis") == REQUEST else "view")
+        return _Token(start, end, text, "valid", {"R": "request", "V": "view", "B": "business"}[inner.group("basis")])
     ids = tuple(dict.fromkeys(part.strip() for part in inner.group("sources").split(",")))
     return _Token(start, end, text, "valid", "sources", ids)
 
@@ -333,6 +334,8 @@ def marker(span: Span) -> str:
     """The marker that says what this span cites; "" for an uncited span."""
     if span.basis == "sources":
         return f"[[{','.join(span.sources)}]]"
+    if span.basis == "business":
+        return "[[B]]"
     if span.basis == "request":
         return f"[[{REQUEST}]]"
     return f"[[{VIEW}]]" if span.basis == "view" else ""

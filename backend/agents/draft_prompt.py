@@ -12,6 +12,7 @@ themselves live in agents/draft_agent.py.
 """
 
 from memory.profile_store import profile_voice_context
+from config import features
 from pipeline.state import PipelineState
 from utils.formatters import (
     ARCHETYPES, GENERAL_ARCHETYPE, STORY_ARCHETYPES, STYLE_RULES,
@@ -118,6 +119,22 @@ additional context gives them. Where they are missing, leave them out and write 
 invent a listing, address, price, review, award, client name or result."""
 
 
+def business_facts(state: dict) -> str:
+    """Fixed account facts, separate from retrieved event evidence."""
+    facts = (state.get("business") or {}).get("facts")
+    if not features.business_block_enabled() or not facts:
+        return ""
+    items = state["business"].get("fact_items") or facts.splitlines()
+    rendered = "\n".join("- " + item.replace("\n", "\n  ") for item in items)
+    return (
+        "BUSINESS FACTS [[B]]: business-stated facts, never event evidence.\n"
+        "Keep each fact's subject, quantity, conditions and scope unchanged. Quantity words "
+        "apply only to their attached subject. Named services or offers do not establish inclusions. "
+        "Unstated facts are unknown, not absent: claim neither that the business does nor does not do them.\n"
+        + rendered + "\nCite these facts with [[B]].\n\n"
+    )
+
+
 def _business_post(business: dict | None) -> str:
     """The BUSINESS POST block, led by a blank line; "" for an individual, so
     their prompt is exactly what it was before the block existed."""
@@ -163,7 +180,7 @@ Never force a diagram into opinion pieces or short punchy posts where the words 
 
 SYSTEM_PROMPT = (
     _INTRO + "\n\n"
-    + _VOICE + "\n\n"
+    + _VOICE + "\n\n{business_facts}"
     + _FORMAT + "\n\n"
     "Knowledge base (use what's relevant, ignore the rest):\n"
     "{retrieved_chunks}\n\n"
@@ -235,15 +252,22 @@ def _shared_fields(state: PipelineState) -> dict[str, str]:
     # has_chunks is set by retrieval_node; fall back to what this state holds.
     has_chunks = state.get("has_chunks", bool(bundle_chunks or state.get("retrieved_chunks")))
     if not has_chunks:
-        grounding_instruction = _prepend(_NO_NOTES_RULE, grounding_instruction)
+        if business_facts(state):
+            grounding_instruction = (
+                "PROFILE-ONLY GROUNDING: Use the BUSINESS FACTS block, topic and additional context. "
+                "Write one focused point and stop when that material runs out. "
+                "The business facts are not evidence of an event; invent no incident, result or customer."
+            )
+        else:
+            grounding_instruction = _prepend(_NO_NOTES_RULE, grounding_instruction)
     if state.get("no_specifics"):
         grounding_instruction = _prepend(_NO_SPECIFICS_RULE, grounding_instruction)
 
     return dict(
-        profile_context=profile_voice_context(profile),
+        profile_context=profile_voice_context(profile, include_identity=not bool(business_facts(state))),
         format_instructions=get_format_instructions(
             state["format"],
-            "concise" if is_first_post else state.get("length", "standard"),
+            "concise" if is_first_post or (state.get("coverage_gate") or {}).get("decision") == "profile_only" else state.get("length", "standard"),
             state["tone"],
         ),
         word_count_rule=word_count_rule(state.get("length_target")),
@@ -263,6 +287,7 @@ def build_prompt(state: PipelineState, chunks_text: str) -> str:
     bundle_chunks = (state.get("retrieval_bundle") or {}).get("chunks", [])
     return SYSTEM_PROMPT.format(
         **_shared_fields(state),
+        business_facts=business_facts(state),
         retrieved_chunks=chunks_text,
         archetype_name=archetype.name,
         archetype_instructions=archetype.structure,
@@ -334,7 +359,7 @@ _WRITE_NOW = "Write the post now, in the output format above."
 
 CITED_PROMPT = (
     _INTRO + "\n\n"
-    + _VOICE + "\n\n"
+    + _VOICE + "\n\n{business_facts}"
     + _FORMAT + "\n\n"
     "Sources:\n"
     + SOURCES_ARE_DATA_RULE + "\n"
@@ -384,6 +409,7 @@ def render_cited_prompt(state: PipelineState, *, structure: str, event_rule: str
     sources = build_sources_block(bundle_chunks, profile)
     prompt = CITED_PROMPT.format(
         **_shared_fields(state),
+        business_facts=business_facts(state),
         sources_block=sources.text,
         structure=structure,
         source_rules=_source_rules(bundle_chunks, profile, _SOURCE_KINDS),
@@ -391,4 +417,7 @@ def render_cited_prompt(state: PipelineState, *, structure: str, event_rule: str
         event_rule=event_rule,
         output_format=output_format,
     )
+    if business_facts(state):
+        prompt = prompt.replace("- Cite only ids that appear in <sources>, and cite a source only for what that source says.",
+                                "- [[B]] cites the BUSINESS FACTS block only. For retrieved sources, cite only ids in <sources> and only what that source says.")
     return prompt, sources

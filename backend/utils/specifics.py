@@ -265,6 +265,7 @@ def grounding_texts(state: dict[str, Any], input_draft: str) -> list[str]:
     chunks = [c.get("text") or c.get("content") or "" for c in (state.get("retrieval_bundle") or {}).get("chunks", [])]
     return [
         input_draft,
+        (state.get("business") or {}).get("facts", ""),
         *chunks,
         *(state.get("retrieved_chunks") or []),
         *_strings(profile_facts(state.get("profile"))),
@@ -359,6 +360,7 @@ def guard_sources(state: dict[str, Any], input_draft: str | None = None,
         return GuardSources(facts=[topic, context, *_strings(profile), *extra_facts])
     chunks = (state.get("retrieval_bundle") or {}).get("chunks", [])
     return GuardSources(facts=[
+        (state.get("business") or {}).get("facts", ""),
         *extra_facts,
         *([input_draft] if input_draft is not None else []),
         *[c.get("text") or c.get("content") or "" for c in chunks],
