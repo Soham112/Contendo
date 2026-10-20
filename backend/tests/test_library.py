@@ -109,3 +109,26 @@ def test_same_title_sources_show_their_own_retrieval_counts(client, a_headers, f
 
     counts = {s["source_id"]: s["retrieval_count"] for s in client.get("/library", headers=a_headers).json()["sources"]}
     assert counts == {first: 2, second: 1}
+
+
+def test_library_shows_each_sources_authorship_and_who_set_it(client, a_headers, fake_db, ingestion):
+    """Classifier and user labels come through; an unanswered source is NULL (the user is asked)."""
+    mine, theirs, unanswered = _ingest("My note.", "A"), _ingest("An article.", "B"), _ingest("Unsure.", "C")
+    _ingest("Another user's note.", "D", user_id=OTHER)
+    labels = {mine: ("user_authored", "user"), theirs: ("external", "classifier")}
+    for row in fake_db.tables["sources"]:
+        if row["source_id"] in labels:
+            row["authorship"], row["authorship_set_by"] = labels[row["source_id"]]
+
+    got = {s["source_id"]: (s["authorship"], s["authorship_set_by"])
+           for s in client.get("/library", headers=a_headers).json()["sources"]}
+    assert got == {**labels, unanswered: (None, None)}
+
+
+def test_a_source_with_no_sources_row_is_unlabelled(client, a_headers, fake_db, ingestion):
+    """Legacy chunks written before migration 014 have no sources row."""
+    sid = _ingest("Old note.", "Old")
+    fake_db.tables["sources"] = [r for r in fake_db.tables["sources"] if r["source_id"] != sid]
+
+    [source] = client.get("/library", headers=a_headers).json()["sources"]
+    assert (source["authorship"], source["authorship_set_by"]) == (None, None)

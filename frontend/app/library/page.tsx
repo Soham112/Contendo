@@ -5,7 +5,11 @@ import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useApi } from "@/lib/api";
 import type { ClusterItem, ClusterSourceItem } from "@/lib/api";
-import { DELETE_FAILED_MESSAGE, deleteOutcome, focusOn, removeSource, sourceKey } from "@/lib/library";
+import {
+  DELETE_FAILED_MESSAGE, applyAuthorship, deleteOutcome, focusOn, needsAnswer, removeSource, sourceKey,
+  type AuthorshipChoice,
+} from "@/lib/library";
+import { AuthorshipControl } from "@/components/library/AuthorshipControl";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/card";
@@ -22,6 +26,8 @@ interface Source {
   chunk_count: number;
   tags: string[];
   retrieval_count: number;
+  authorship: string | null;
+  authorship_set_by: string | null;
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -123,9 +129,11 @@ function formatDate(iso: string): string {
 function SourceCard({
   source,
   onDelete,
+  onAuthorshipSaved,
 }: {
   source: Source;
   onDelete: (source_id: string, chunks_removed: number) => void;
+  onAuthorshipSaved: (source_id: string, authorship: AuthorshipChoice) => void;
 }) {
   const api = useApi();
   const [confirming, setConfirming] = useState(false);
@@ -223,6 +231,8 @@ function SourceCard({
         <p className="font-headline text-[14px] text-on-surface leading-snug line-clamp-2 font-semibold">
           {source.source_title || "Untitled"}
         </p>
+
+        <AuthorshipControl source={source} onSaved={onAuthorshipSaved} />
 
         {/* Tags */}
         {source.tags.length > 0 && (
@@ -544,6 +554,7 @@ export default function LibraryPage() {
   const [filter, setFilter] = useState<FilterType>("all");
   const [sort, setSort] = useState<SortOrder>("newest");
   const [search, setSearch] = useState("");
+  const [onlyNeedsAnswer, setOnlyNeedsAnswer] = useState(false);
   // ?source=<id>: show only that source (a link from a duplicate on Feed memory).
   const [focusId, setFocusId] = useState<string | null>(null);
   useEffect(() => {
@@ -626,11 +637,18 @@ export default function LibraryPage() {
     setTotalChunks((prev) => Math.max(0, prev - chunks_removed));
   };
 
+  const handleAuthorshipSaved = (source_id: string, authorship: AuthorshipChoice) => {
+    setSources((prev) => applyAuthorship(prev, source_id, authorship));
+  };
+
+  const needsAnswerCount = sources.filter(needsAnswer).length;
+
   const allTags = Array.from(new Set(sources.flatMap((s) => s.tags))).sort();
 
   const filtered = focusOn(sources, focusId)
     .filter((s) => filter === "all" || s.source_type === filter ||
       (filter === "note" && ["personal_note", "saved_content"].includes(s.source_type)))
+    .filter((s) => !onlyNeedsAnswer || needsAnswer(s))
     .filter((s) => {
       if (!search.trim()) return true;
       const q = search.toLowerCase();
@@ -740,6 +758,13 @@ export default function LibraryPage() {
                     {tab.label}
                   </button>
                 ))}
+                {(needsAnswerCount > 0 || onlyNeedsAnswer) && (
+                  <button type="button" aria-pressed={onlyNeedsAnswer}
+                    onClick={() => { setOnlyNeedsAnswer((on) => !on); setVisibleCount(6); }}
+                    className={chipClass(onlyNeedsAnswer, "sm:ml-auto")}>
+                    Needs your answer ({needsAnswerCount})
+                  </button>
+                )}
               </div>
             )}
 
@@ -780,8 +805,10 @@ export default function LibraryPage() {
                 {!focusId && sources.length > 0 && filtered.length === 0 && (
                   <EmptyState
                     title="Nothing matches"
-                    body={search.trim() ? "Try a different search." : `You haven't added any ${(TYPE_LABELS[filter] ?? filter).toLowerCase()} sources yet.`}
-                    action={<Button variant="secondary" onClick={() => { setSearch(""); setFilter("all"); }}>Show all sources</Button>}
+                    body={search.trim() ? "Try a different search."
+                      : onlyNeedsAnswer ? "Every source here has an answer."
+                      : `You haven't added any ${(TYPE_LABELS[filter] ?? filter).toLowerCase()} sources yet.`}
+                    action={<Button variant="secondary" onClick={() => { setSearch(""); setFilter("all"); setOnlyNeedsAnswer(false); }}>Show all sources</Button>}
                   />
                 )}
 
@@ -793,6 +820,7 @@ export default function LibraryPage() {
                         key={sourceKey(source)}
                         source={source}
                         onDelete={handleSourceDeleted}
+                        onAuthorshipSaved={handleAuthorshipSaved}
                       />
                     ))}
                     <AddSourceCard onClick={() => router.push("/feed-memory")} />
@@ -807,6 +835,7 @@ export default function LibraryPage() {
                         key={sourceKey(source)}
                         source={source}
                         onDelete={handleSourceDeleted}
+                        onAuthorshipSaved={handleAuthorshipSaved}
                       />
                     ))}
                     <AddSourceCard onClick={() => router.push("/feed-memory")} />

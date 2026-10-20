@@ -6,7 +6,7 @@ from starlette.concurrency import run_in_threadpool
 
 from auth.supabase_jwt import get_user_id_dep
 from memory.authorship_store import set_user_authorship
-from memory.source_store import ReplaceInProgress, delete_source
+from memory.source_store import ReplaceInProgress, delete_source, get_authorships
 from memory.vector_store import get_all_sources, get_total_chunks
 from memory.retrieval_stats_store import get_retrieval_counts
 
@@ -26,8 +26,11 @@ class AuthorshipRequest(BaseModel):
 async def library(user_id: str = Depends(get_user_id_dep)) -> dict:
     sources = get_all_sources(user_id=user_id)
     retrieval_counts = get_retrieval_counts(user_id)
+    authorships = get_authorships(user_id)
     for source in sources:
         source["retrieval_count"] = retrieval_counts.get(source["source_id"], 0)
+        # Chunks with no sources row (legacy) have no label: the user is asked.
+        source.update(authorships.get(source["source_id"], {"authorship": None, "authorship_set_by": None}))
     return {
         "sources": sources,
         "total_chunks": get_total_chunks(user_id=user_id),

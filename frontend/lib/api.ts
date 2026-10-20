@@ -334,6 +334,14 @@ export function useApi() {
         body: JSON.stringify({ source_id }),
       }),
 
+    /** The user says whose material a source is. See lib/library.ts authorshipOutcome. */
+    setSourceAuthorship: (source_id: string, authorship: "user_authored" | "external") =>
+      apiFetch(`/sources/${encodeURIComponent(source_id)}/authorship`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ authorship }),
+      }),
+
     // ── History ───────────────────────────────────────────────────────────
     getHistory: () => apiFetch("/history"),
 
