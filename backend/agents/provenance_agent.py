@@ -16,11 +16,14 @@ between samples is the check on the reading itself. When the samples disagree,
 a paragraph either calls external is external (the safe side). Measured on
 labelled sources before anything reads the result (CODEBASE.md "Step 3 data layer").
 
-Nothing calls this at ingest yet; user_stated and system_inferred are set by
-rule, never here.
+Called at ingest (agents/ingestion_agent.py) and by scripts/backfill_authorship.py;
+nothing reads the result yet. user_stated and system_inferred are set by rule,
+never here.
 """
 import contextvars
+import json
 import logging
+import math
 import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -32,6 +35,7 @@ from pydantic import BaseModel, Field, create_model
 
 from agents.provenance_prompt import SYSTEM_PROMPT, AuthorContext, SourceFacts, user_message
 from llm.client import HAIKU, StructuredOutputError, complete_structured
+from llm.pricing import call_cost
 from config.niches import SEGMENT_BUSINESS, get_niche
 from memory.account_store import get_account
 from memory.experience_store import experience_nodes_to_context_string, get_experience_nodes
@@ -45,7 +49,8 @@ logger = logging.getLogger(__name__)
 # (stored with every result in sources.authorship_detail).
 # 2: provider_author fact, byline / interview / evidence rules, two samples.
 # 3: source_facts_used offers only the facts that have a value (reading_schema).
-CLASSIFIER = ("provenance_agent", "3")
+# 4: signed_by, checked against the user's name and the labels (v3 baseline: tc-p07).
+CLASSIFIER = ("provenance_agent", "4")
 
 # Independent readings per part; the result is confident only when they agree.
 SAMPLES = 2
@@ -59,6 +64,9 @@ FactName = Literal["title", "input_type", "source_type", "provider_author"]
 
 class ProvenanceReading(BaseModel):
     reasoning: str = Field(description="Who is speaking and whose experience the text describes; written before the label")
+    signed_by: str | None = Field(default=None, description=(
+        "The name a byline, signature or sign-off gives for the whole text, copied exactly from the text; "
+        "null when the text is unsigned"))
     authorship: Label = Field(description="The label that fits most of the text")
     other_paragraphs: list[int] = Field(default_factory=list,
                                         description="Numbers N of the [PN] paragraphs that have the other label")
@@ -130,10 +138,36 @@ def _opening(paras: list[Paragraph]) -> list[Paragraph]:
     return opening
 
 
+_NAME_TOKEN = re.compile(r"\w+")
+
+
+def _name_tokens(text: str) -> list[str]:
+    return [t.casefold() for t in _NAME_TOKEN.findall(text)]
+
+
+def _contains_name(signed_by: str, name: str) -> bool:
+    """Every word of `name`, in order, as consecutive words of the signature."""
+    want, have = _name_tokens(name), _name_tokens(signed_by)
+    return bool(want) and any(have[i:i + len(want)] == want for i in range(len(have) - len(want) + 1))
+
+
+def _signed_by_user(signed_by: str, author: AuthorContext) -> bool:
+    """The signature contains the user's full name or their business's full
+    name. A first name or initials alone do not match: the reading is then
+    asked about, never applied as the user's (the safe side)."""
+    return _contains_name(signed_by, author.name) or _contains_name(signed_by, author.business_name)
+
+
 def _check(reading: ProvenanceReading, part: list[Paragraph], text_normalised: str,
-           facts: SourceFacts, where: str) -> list[str]:
+           facts: SourceFacts, author: AuthorContext, where: str) -> list[str]:
     """Reasons this part's reading is not confident (structural checks only)."""
     reasons = []
+    if reading.signed_by:
+        if not _quote_in_text(reading.signed_by, text_normalised):
+            reasons.append(f"{where}: the signature is not in the text")
+        elif (not _signed_by_user(reading.signed_by, author)
+              and "user_authored" in _paragraph_labels(reading, part).values()):
+            reasons.append(f"{where}: signed by someone other than the user, yet labelled the user's")
     if reading.uncertain:
         reasons.append(f"{where}: the model was uncertain")
     ids = {p.id for p in part}
@@ -182,6 +216,42 @@ def plan_requests(text: str, *, facts: SourceFacts, author: AuthorContext) -> li
                         user_message(text, part, part_number=number, part_count=len(groups),
                                      opening=opening, facts=facts, author=author))
             for number, part in enumerate(groups, start=1)]
+
+
+# Offline cost estimate (the eval's --estimate and the backfill's): characters
+# per token for English prose (expected), and a denser ratio for the upper
+# bound; the forced tool call's own system prompt; a typical answer.
+CHARS_PER_TOKEN, CHARS_PER_TOKEN_UPPER = 3.5, 3.0
+TOOL_USE_OVERHEAD_TOKENS = 350
+TYPICAL_OUTPUT_TOKENS = 300
+
+
+def request_chars(text: str, *, facts: SourceFacts, author: AuthorContext) -> list[int]:
+    """Characters each call of classify_provenance sends: system prompt, tool definition, message."""
+    schema = reading_schema(facts).model_json_schema()
+    fixed = len(SYSTEM_PROMPT) + len(TOOL_NAME) + len(TOOL_DESCRIPTION) + len(json.dumps(schema))
+    return [fixed + len(r.message) for r in plan_requests(text, facts=facts, author=author)]
+
+
+def estimated_tokens(chars: int) -> tuple[int, int]:
+    """(expected, upper-bound) input tokens of one call that sends `chars` characters."""
+    return (math.ceil(chars / CHARS_PER_TOKEN) + TOOL_USE_OVERHEAD_TOKENS,
+            math.ceil(chars / CHARS_PER_TOKEN_UPPER) + TOOL_USE_OVERHEAD_TOKENS)
+
+
+def call_costs(input_pairs: list[tuple[int, int]]) -> tuple[int, int, float, float]:
+    """(calls, expected input tokens, expected USD, upper-bound USD) for parts
+    with these (expected, upper) input tokens: SAMPLES calls per part, and a
+    structured call is retried at most once, so the upper bound doubles every
+    call at max_tokens."""
+    calls = tokens = 0
+    expected = upper = 0.0
+    for exp_in, up_in in input_pairs:
+        calls += SAMPLES
+        tokens += SAMPLES * exp_in
+        expected += SAMPLES * call_cost(HAIKU, exp_in, TYPICAL_OUTPUT_TOKENS)
+        upper += SAMPLES * 2 * call_cost(HAIKU, up_in, MAX_TOKENS)
+    return calls, tokens, expected, upper
 
 
 def _read(request: PartRequest, schema: type[ProvenanceReading],
@@ -247,7 +317,7 @@ def classify_provenance(text: str, *, facts: SourceFacts, author: AuthorContext,
             reasons.append(f"{where}: a sample gave no valid answer")
         for reading in samples:
             readings.append(reading)
-            reasons += [r for r in _check(reading, request.paragraphs, text_normalised, facts, where)
+            reasons += [r for r in _check(reading, request.paragraphs, text_normalised, facts, author, where)
                         if r not in reasons]
         sampled = [_paragraph_labels(r, request.paragraphs) for r in samples]
         if any(s != sampled[0] for s in sampled[1:]):
@@ -270,8 +340,12 @@ def author_context_from(profile: dict | None, account: dict | None, nodes: list[
     if account.get("segment") == SEGMENT_BUSINESS and account.get("business_profile"):
         business = profile_note(account["business_profile"], get_niche(account.get("business_niche")),
                                 account.get("business_niche_other"))
+    business_name = ""
+    if account.get("segment") == SEGMENT_BUSINESS:
+        business_name = str((account.get("business_profile") or {}).get("business_name") or "")
     return AuthorContext(
         name=str(profile.get("name") or ""),
+        business_name=business_name,
         role=str(profile.get("role") or ""),
         business=business,
         experience=experience_nodes_to_context_string(nodes),

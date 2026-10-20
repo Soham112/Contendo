@@ -4,8 +4,9 @@ input_type: note
 source_type: personal_note
 title_origin: provided
 authorship: external
+authorship_other: 1
 split: dev
-tests: the user's own summary of an article, with no view of their own
+tests: mixed: the user's line saying they read an article (their own), then their summary of it, with no view of their own
 ---
 Read the Andreessen piece on AI in customer support this morning.
 

@@ -103,6 +103,7 @@ def upsert_chunks(
     content_hash: str = "",
     memory_context: str | None = None,
     ingest_id: str | None = None,
+    chunk_authorship: list[str | None] | None = None,
 ) -> int:
     """Embed chunks locally and upsert rows into the embeddings table.
 
@@ -113,6 +114,8 @@ def upsert_chunks(
 
     memory_context: "work" | "personal_project" | "learning" | "observation" | None
     ingest_id: the chunk set (memory.source_store.SourceWrite.ingest_id); a new one when None.
+    chunk_authorship: per chunk, its label when it differs from the source's
+        (utils.provenance_spans.chunk_labels); None = all the same as the source.
 
     Returns:
         Number of rows upserted.
@@ -125,6 +128,9 @@ def upsert_chunks(
     resolved_tags = ",".join(tags) if tags else ""
     total = len(chunks)
 
+    labels = chunk_authorship or [None] * total
+    if len(labels) != total:
+        raise ValueError("chunk_authorship needs one entry per chunk")
     embeddings = embed_texts(chunks)
 
     rows = []
@@ -144,6 +150,7 @@ def upsert_chunks(
             "content_hash": content_hash,
             "node_type": "chunk",
             "memory_context": memory_context,
+            "chunk_authorship": labels[i],
             "ingested_at": ingested_at or None,
         })
 

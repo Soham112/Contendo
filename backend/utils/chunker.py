@@ -1,7 +1,11 @@
 import re
+from dataclasses import dataclass
 
 CHUNK_SIZE_WORDS = 500
 OVERLAP_WORDS = 50
+
+# A word is a run of non-whitespace: exactly the tokens str.split() gives.
+_WORD = re.compile(r"\S+")
 
 
 def _tokenize(text: str) -> list[str]:
@@ -12,28 +16,31 @@ def _join(words: list[str]) -> str:
     return " ".join(words)
 
 
-def chunk_text(text: str) -> list[str]:
-    text = re.sub(r"\s+", " ", text.strip())
-    words = _tokenize(text)
+@dataclass(frozen=True)
+class ChunkSpan:
+    text: str     # the chunk as stored: its words joined by single spaces
+    start: int    # offsets into the chunked text: its first word starts at start,
+    end: int      # its last word ends at end
 
+
+def chunk_spans(text: str) -> list[ChunkSpan]:
+    """Chunks with their character offsets into `text` (sources.extracted_text),
+    so offset-based labels (provenance spans) can be mapped onto chunks."""
+    words = list(_WORD.finditer(text))
     if not words:
         return []
 
-    # If the entire text fits in one chunk, return it as-is
-    if len(words) <= CHUNK_SIZE_WORDS:
-        return [_join(words)]
-
     chunks = []
     start = 0
-
     while start < len(words):
-        end = start + CHUNK_SIZE_WORDS
-        chunk_words = words[start:end]
-        chunks.append(_join(chunk_words))
-
+        end = min(start + CHUNK_SIZE_WORDS, len(words))
+        piece = words[start:end]
+        chunks.append(ChunkSpan(_join([w.group() for w in piece]), piece[0].start(), piece[-1].end()))
         if end >= len(words):
             break
-
         start = end - OVERLAP_WORDS
-
     return chunks
+
+
+def chunk_text(text: str) -> list[str]:
+    return [chunk.text for chunk in chunk_spans(text)]

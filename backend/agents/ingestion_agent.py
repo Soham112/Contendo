@@ -1,11 +1,15 @@
 """Ingestion orchestration: dedup, the source row, chunks, then the side steps.
 
 Each model call lives in its own agent: tags (tagging_agent), memory_context
-(memory_context_agent), entities (entity_agent), source summary (summary_agent).
+(memory_context_agent), entities (entity_agent), source summary (summary_agent),
+authorship (provenance_agent, step 3.3; nothing reads it yet).
 """
+import contextvars
+import dataclasses
 import hashlib
 import logging
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 from agents.entity_agent import store_entities_for_chunks
@@ -14,6 +18,8 @@ from agents.memory_context_agent import (
     classify_memory_context,
     crossref_experience_context,
 )
+from agents.provenance_agent import Provenance, author_context, classify_provenance
+from agents.provenance_prompt import SourceFacts
 from agents.summary_agent import generate_source_summary
 from agents.tagging_agent import extract_tags
 from memory import source_store
@@ -21,7 +27,8 @@ from memory.source_store import SourceOriginal
 from memory.vector_store import invalidate_bm25_cache, query_by_hash, upsert_chunks
 from memory.hierarchy_store import assign_source_to_topic, source_node_exists, upsert_source_node
 from utils import language
-from utils.chunker import chunk_text
+from utils.chunker import chunk_spans
+from utils.provenance_spans import chunk_labels
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +41,40 @@ class ReplaceMismatch(ValueError):
 def compute_content_hash(content: str) -> str:
     normalised = content.strip().lower()
     return hashlib.sha256(normalised.encode()).hexdigest()
+
+
+def _settled_authorship(original: SourceOriginal, replace_source_id: str | None,
+                        user_id: str) -> tuple[str, str] | None:
+    """Authorship the classifier must not touch: a rule's (the route sets it on
+    `original`), or the user's choice for the source being replaced."""
+    if original.authorship:
+        return original.authorship, original.authorship_set_by
+    if replace_source_id:
+        old = source_store.get_source(replace_source_id, user_id)
+        if old and old.get("authorship_set_by") == "user":
+            return old["authorship"], "user"
+    return None
+
+
+def _provenance(content: str, facts: SourceFacts, user_id: str) -> Provenance | None:
+    """The classifier's reading, or None when it gave no valid answer or failed:
+    the source stays unlabelled (the user is asked) and ingestion goes on."""
+    try:
+        return classify_provenance(content, facts=facts, author=author_context(user_id), user_id=user_id)
+    except Exception as e:
+        logger.warning("provenance classification failed: %s", e)
+        return None
+
+
+def _tags_and_provenance(content: str, facts: SourceFacts | None, user_id: str) -> tuple[list[str], Provenance | None]:
+    """Tags, and the classifier's reading when facts are given, in parallel
+    (the classifier runs in a copy of this context, so it stays in the trace)."""
+    if facts is None:
+        return extract_tags(content, user_id=user_id), None
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(contextvars.copy_context().run, _provenance, content, facts, user_id)
+        tags = extract_tags(content, user_id=user_id)
+        return tags, future.result()
 
 
 def ingest_content(
@@ -78,9 +119,16 @@ def ingest_content(
     Raises utils.language.UnsupportedLanguage, before any model call or write,
     when the text is in a language the embedder can't search.
 
-    Returns dict with keys: chunks_stored, tags, suggested_context (when inferred).
+    Authorship (step 3.3): a rule's or, on Replace, the user's earlier choice is
+    kept; otherwise the provenance classifier runs alongside tag extraction. Its
+    label is written (authorship_set_by='classifier') only when confident;
+    authorship_detail always holds its reading. Passages labelled differently
+    become embeddings.chunk_authorship (utils.provenance_spans.chunk_labels).
+
+    Returns dict with keys: chunks_stored, tags, authorship, suggested_context (when inferred).
     """
-    chunks = chunk_text(content)
+    spans = chunk_spans(content)
+    chunks = [c.text for c in spans]
     if not chunks:
         return {"chunks_stored": 0, "tags": []}
     lang = language.require_supported(content, reported_lang)
@@ -99,7 +147,24 @@ def ingest_content(
             "duplicate_source_id": existing["source_id"],
         }
 
-    tags = extract_tags(content, user_id=user_id)
+    if source_title is None:
+        # Derive a human-readable title from the first 80 chars of content
+        first_line = content.strip().splitlines()[0].strip()
+        source_title = (first_line[:80] + "…") if len(first_line) > 80 else first_line
+
+    settled = _settled_authorship(original, replace_source_id, user_id)
+    facts = None if settled else SourceFacts(
+        title=source_title, title_origin=original.title_origin, input_type=original.input_type,
+        source_type=source_type, provider_author=original.author)
+    tags, provenance = _tags_and_provenance(content, facts, user_id)
+    authorship, set_by = settled or (None, None)
+    detail, passage_spans = None, []
+    if provenance is not None:
+        detail = provenance.detail()
+        if provenance.confident:
+            authorship, set_by, passage_spans = provenance.authorship, "classifier", provenance.spans
+    original = dataclasses.replace(original, authorship=authorship, authorship_set_by=set_by)
+    chunk_authorship = chunk_labels([(c.start, c.end) for c in spans], authorship, passage_spans)
 
     # Infer memory_context when not explicitly provided.
     # Priority: experience cross-reference (deterministic) → Haiku classifier (LLM).
@@ -119,18 +184,14 @@ def ingest_content(
         memory_context = crossref or classify_memory_context(content, user_id=user_id)
         context_was_inferred = True
 
-    if source_title is None:
-        # Derive a human-readable title from the first 80 chars of content
-        first_line = content.strip().splitlines()[0].strip()
-        source_title = (first_line[:80] + "…") if len(first_line) > 80 else first_line
-
     ingested_at = datetime.now(timezone.utc).isoformat()
 
     # Generate source_id here so it's accessible for hierarchy persistence
     source_id = replace_source_id or str(uuid.uuid4())
     begin = source_store.begin_replace if replace_source_id else source_store.begin_source
     write = begin(user_id, source_id, original, title=source_title,
-                  extracted_text=content, content_hash=content_hash, lang=lang)
+                  extracted_text=content, content_hash=content_hash, lang=lang,
+                  authorship_detail=detail)
     try:
         stored = upsert_chunks(
             chunks,
@@ -143,6 +204,7 @@ def ingest_content(
             content_hash=content_hash,
             memory_context=memory_context,
             ingest_id=write.ingest_id,
+            chunk_authorship=chunk_authorship,
         )
     except Exception:
         write.abort()
@@ -193,7 +255,8 @@ def ingest_content(
     except Exception as e:
         logger.warning("hierarchy persistence failed for source %s: %s", source_id, e)
 
-    result: dict = {"chunks_stored": stored, "tags": tags, "memory_context": memory_context}
+    result: dict = {"chunks_stored": stored, "tags": tags, "memory_context": memory_context,
+                    "authorship": authorship}
     if context_was_inferred:
         result["suggested_context"] = memory_context
     return result

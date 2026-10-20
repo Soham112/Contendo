@@ -89,3 +89,38 @@ def merge_runs(paras: list[Paragraph], labels: dict[int, str]) -> list[dict]:
             spans.append({"start": para.start, "end": para.end, "authorship": label})
         previous = para
     return spans
+
+
+def chunk_labels(chunks: list[tuple[int, int]], source_label: str | None,
+                 spans: list[dict]) -> list[str | None]:
+    """embeddings.chunk_authorship for each chunk [(start, end)] of the text:
+    None when the chunk has its source's label. Only spans whose label differs
+    from source_label count. External is the safe side: a chunk of a
+    user_authored source touching any external span is external; a chunk of an
+    external source is user_authored only when user_authored spans cover all of
+    it. Sources labelled by rule (user_stated, system_inferred) or not labelled
+    have no chunk labels."""
+    if source_label not in ("user_authored", "external"):
+        return [None] * len(chunks)
+    other = "external" if source_label == "user_authored" else "user_authored"
+    runs = sorted((s["start"], s["end"]) for s in spans if s["authorship"] == other)
+    labels: list[str | None] = []
+    for start, end in chunks:
+        if other == "external":
+            labels.append(other if any(s < end and e > start for s, e in runs) else None)
+        else:
+            labels.append(other if _covered(start, end, runs) else None)
+    return labels
+
+
+def _covered(start: int, end: int, runs: list[tuple[int, int]]) -> bool:
+    """[start, end) lies inside the union of the sorted runs (neighbouring
+    paragraphs with one label are already one run, see merge_runs)."""
+    reached = start
+    for s, e in runs:
+        if s > reached:
+            return False
+        reached = max(reached, e)
+        if reached >= end:
+            return True
+    return False
