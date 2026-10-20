@@ -2,6 +2,7 @@
 title: The refund-policy regression Sieve missed
 source_type: personal_note
 memory_context: work
+authorship: user_authored
 ---
 In March 2026 we shipped a prompt change to Sieve's own demo assistant. Our eval suite passed: 94% on the golden set. For three days the assistant told customers that refunds took 30 days instead of 14. A customer caught it, not us.
 

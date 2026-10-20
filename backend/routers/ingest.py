@@ -28,8 +28,8 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from agents.ingestion_agent import (ReplaceMismatch, ingest_content, _classify_memory_context,
-                                    _crossref_experience_context)
+from agents.ingestion_agent import ReplaceMismatch, ingest_content
+from agents.memory_context_agent import classify_memory_context, crossref_experience_context
 from auth.supabase_jwt import get_user_id_dep
 from extractors import Extraction, ExtractionError, ServiceUnavailable
 from extractors.file import extract_file
@@ -244,9 +244,9 @@ async def suggest_memory_context(req: SuggestContextRequest, user_id: str = Depe
     """
     if not req.content or not req.content.strip():
         return {"suggested_context": "learning"}
-    suggested = await run_in_threadpool(_crossref_experience_context, req.content, user_id)
+    suggested = await run_in_threadpool(crossref_experience_context, req.content, user_id)
     if not suggested:
-        suggested = await run_in_threadpool(_classify_memory_context, req.content, user_id=user_id)
+        suggested = await run_in_threadpool(classify_memory_context, req.content, user_id=user_id)
     return {"suggested_context": suggested}
 
 

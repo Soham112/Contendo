@@ -116,23 +116,29 @@ def _resume_ideas():
 
 
 def _extract_tags():
-    from agents.ingestion_agent import _extract_tags
-    _extract_tags("some text", user_id=USER)
+    from agents.tagging_agent import extract_tags
+    extract_tags("some text", user_id=USER)
 
 
 def _source_summary():
-    from agents.ingestion_agent import _generate_source_summary
-    _generate_source_summary("some text", user_id=USER)
+    from agents.summary_agent import generate_source_summary
+    generate_source_summary("some text", user_id=USER)
 
 
 def _classify_context():
-    from agents.ingestion_agent import _classify_memory_context
-    _classify_memory_context("some text", user_id=USER)
+    from agents.memory_context_agent import classify_memory_context
+    classify_memory_context("some text", user_id=USER)
 
 
 def _extract_entities():
-    from agents.ingestion_agent import _extract_entities_for_chunk
-    _extract_entities_for_chunk("some text", user_id=USER)
+    from agents.entity_agent import extract_entities_for_chunk
+    extract_entities_for_chunk("some text", user_id=USER)
+
+
+def _provenance():
+    from agents.provenance_agent import classify_provenance
+    from agents.provenance_prompt import AuthorContext, SourceFacts
+    classify_provenance("some text", facts=SourceFacts(), author=AuthorContext(), user_id=USER)
 
 
 def _vision():
@@ -141,6 +147,8 @@ def _vision():
 
 
 VISION_JSON = '{"transcribed_text": "Q3 goals", "description": ""}'
+PROVENANCE_JSON = ('{"reasoning": "r", "authorship": "external", "other_paragraphs": [], '
+                   '"evidence_quotes": [], "source_facts_used": [], "uncertain": true}')
 
 
 def _svg():
@@ -161,15 +169,18 @@ def _visuals():
     (_source_summary, ("ingest_summary", "haiku")),
     (_classify_context, ("memory_context_classify", "haiku")),
     (_extract_entities, ("ingest_entities", "haiku")),
+    (_provenance, ("provenance_classify", "haiku")),
     (_vision, ("vision_extract", "sonnet")),
     (_svg, ("visual_svg", "sonnet")),
     (_visuals, ("visual_svg", "sonnet")),
 ], ids=lambda v: v.__name__.strip("_") if callable(v) else None)
 def test_call_site_logs_usage(claude, usage_calls, call, expected):
     # Valid for the SVG sites and plain text for the rest; structured calls need their reply.
-    claude.queue(score_json() if call is _score_text else VISION_JSON if call is _vision else "<svg></svg>")
+    replies = 2 if call is _provenance else 1   # the provenance classifier takes two samples
+    claude.queue(*[score_json() if call is _score_text else VISION_JSON if call is _vision
+                   else PROVENANCE_JSON if call is _provenance else "<svg></svg>"] * replies)
     call()
-    assert _events(usage_calls) == [expected]
+    assert _events(usage_calls) == [expected] * replies
     _assert_user(usage_calls)
 
 
@@ -246,12 +257,14 @@ def test_router_passes_authenticated_user_id(client, claude, usage_calls, auth_h
 # --- Guards -------------------------------------------------------------------
 
 def _threaded_functions():
-    from agents import ingestion_agent, refine_agent, scorer_agent, vision_agent, visual_agent
+    from agents import (entity_agent, memory_context_agent, provenance_agent, refine_agent, scorer_agent,
+                        summary_agent, tagging_agent, vision_agent, visual_agent)
 
     return [
         refine_agent.refine_selection, scorer_agent.score_text,
-        ingestion_agent._extract_tags, ingestion_agent._generate_source_summary,
-        ingestion_agent._classify_memory_context, ingestion_agent._extract_entities_for_chunk,
+        tagging_agent.extract_tags, summary_agent.generate_source_summary,
+        memory_context_agent.classify_memory_context, entity_agent.extract_entities_for_chunk,
+        provenance_agent.classify_provenance,
         vision_agent.read_image, visual_agent.generate_svg_for_diagram, visual_agent.generate_visuals,
     ]
 

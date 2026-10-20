@@ -2,6 +2,7 @@
 title: Moving Sieve from per-seat to usage pricing
 source_type: personal_note
 memory_context: work
+authorship: user_authored
 ---
 In Q1 2026 we moved Sieve from per-seat pricing to a price per evaluated conversation. Two of our nine customers left within a month; both had large teams and low volume, so the new price was higher for them.
 

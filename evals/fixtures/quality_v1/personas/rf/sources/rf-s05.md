@@ -2,6 +2,7 @@
 title: The Ledger migration at Pellucid Logistics
 source_type: personal_note
 memory_context: work
+authorship: user_authored
 ---
 At Pellucid Logistics I was head of platform. In 2021 we moved the shipment ledger from one Postgres table to an event log. It took nine months instead of the planned four.
 

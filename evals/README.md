@@ -231,3 +231,22 @@ backend/venv/bin/python evals/reset.py --quality                  # delete the q
   would skip those writes; `UsageLog` runs one on a background thread for the run.
   Reports go to `results/quality_v1/<name>/`; persona `me`'s per-case rows to
   `private/quality_v1/results/<name>/`.
+
+## Provenance classifier (step 3.3)
+
+```bash
+backend/venv/bin/python evals/provenance_eval.py --check       # validate labels; $0
+backend/venv/bin/python evals/provenance_eval.py --estimate    # expected cost; $0, no network
+backend/venv/bin/python evals/provenance_eval.py --run --name <date>-<label>   # paid, asks first, --spend-cap 1.00
+backend/venv/bin/python evals/provenance_eval.py --rescore <name> --agreement-with <other name>
+```
+
+- Cases: every quality_v1 source (its `authorship` header) and `fixtures/provenance_v1/<persona>/*.md`,
+  hard cases for the classifier only, never seeded. The persona's profile, account and experience
+  nodes are the user's details. Hold-out: the provenance_v1 cases marked `split: holdout`, written after the
+  2026-10-19 baseline; every quality_v1 source and the first hold-out (read to diagnose that baseline) are dev.
+- The classifier runs on the fixture text: no database, no embeddings. Adding `authorship` headers
+  does not change any fixture's text, so the seeded eval users stay as they are.
+- Scores (`provenance_metrics.py`): the worst error is an outside paragraph applied as the user's
+  own without asking (target 0); own sources applied as external (5% or less); share applied
+  automatically (80% or more); run agreement between two runs (95% or more).

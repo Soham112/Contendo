@@ -33,6 +33,9 @@ GOLDENS_FILE = EVALS_DIR / "goldens" / "goldens.jsonl"
 # memory/experience_store.py, utils/formatters.py, agents/draft_agent.py).
 SOURCE_TYPES = {"article", "youtube", "note", "personal_note", "saved_content"}
 MEMORY_CONTEXTS = {"work", "personal_project", "learning", "observation"}
+# Whose material a source is, as the provenance classifier labels it
+# (backend agents/provenance_agent.py). Optional on legacy fixtures.
+AUTHORSHIPS = {"user_authored", "external"}
 NODE_TYPES = {"work", "personal_project", "education"}
 FORMATS = {"linkedin post", "medium article", "thread"}
 TONES = {"casual", "technical", "storytelling"}
@@ -64,6 +67,9 @@ class Source:
     memory_context: str
     content: str
     path: Path
+    authorship: str | None = None
+    # 1-based blank-line paragraphs of `content` with the other label (a mixed source)
+    authorship_other: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -96,7 +102,8 @@ def load_users(path: Path = USERS_FILE, *, allow_placeholders: bool = False) -> 
 # Personas
 # ---------------------------------------------------------------------------
 
-def parse_source(path: Path) -> Source:
+def parse_header(path: Path) -> tuple[dict[str, str], str]:
+    """A fixture file's '---' header as key -> value, and its body."""
     text = path.read_text()
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
@@ -113,8 +120,26 @@ def parse_source(path: Path) -> Source:
         if not sep:
             raise FixtureError(f"{path}: header line {line!r} is not 'key: value'")
         header[key.strip()] = value.strip()
-    content = "\n".join(lines[end + 1:]).strip()
+    return header, "\n".join(lines[end + 1:]).strip()
 
+
+def parse_authorship(path: Path, header: dict[str, str]) -> tuple[str | None, tuple[int, ...]]:
+    """The optional `authorship` and `authorship_other` header fields."""
+    authorship = header.get("authorship") or None
+    if authorship is not None and authorship not in AUTHORSHIPS:
+        raise FixtureError(f"{path}: authorship must be one of {sorted(AUTHORSHIPS)}")
+    raw = header.get("authorship_other", "")
+    try:
+        other = tuple(int(x) for x in raw.split(",") if x.strip())
+    except ValueError:
+        raise FixtureError(f"{path}: authorship_other must be comma-separated paragraph numbers")
+    if other and authorship is None:
+        raise FixtureError(f"{path}: authorship_other needs authorship")
+    return authorship, other
+
+
+def parse_source(path: Path) -> Source:
+    header, content = parse_header(path)
     for key in ("title", "source_type", "memory_context"):
         if not header.get(key):
             raise FixtureError(f"{path}: header is missing {key}")
@@ -124,7 +149,9 @@ def parse_source(path: Path) -> Source:
         raise FixtureError(f"{path}: memory_context must be one of {sorted(MEMORY_CONTEXTS)}")
     if not content:
         raise FixtureError(f"{path}: body is empty")
-    return Source(header["title"], header["source_type"], header["memory_context"], content, path)
+    authorship, other = parse_authorship(path, header)
+    return Source(header["title"], header["source_type"], header["memory_context"], content, path,
+                  authorship, other)
 
 
 def _load_json_list(path: Path) -> list[dict[str, Any]]:

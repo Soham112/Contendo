@@ -2,6 +2,7 @@
 title: Brightline Insurance pilot results
 source_type: personal_note
 memory_context: work
+authorship: user_authored
 ---
 Six-week pilot with Brightline Insurance (their support team of 22 agents), ended August 2026. Brightline agreed in writing that we can share these numbers publicly.
 

@@ -163,7 +163,7 @@ def experience_nodes_to_context_string(nodes: list[dict[str, Any]]) -> str:
     if groups["work"]:
         lines = ["WORK EXPERIENCE:"]
         for n in groups["work"]:
-            lines.append(f"  - {n['context_label']}")
+            lines.append(f"  - {_label(n)}")
             if n.get("description"):
                 lines.append(f"    {n['description']}")
             if n.get("domain_areas"):
@@ -173,7 +173,7 @@ def experience_nodes_to_context_string(nodes: list[dict[str, Any]]) -> str:
     if groups["personal_project"]:
         lines = ["PERSONAL PROJECTS:"]
         for n in groups["personal_project"]:
-            lines.append(f"  - {n['context_label']}")
+            lines.append(f"  - {_label(n)}")
             if n.get("description"):
                 lines.append(f"    {n['description']}")
             if n.get("domain_areas"):
@@ -183,7 +183,7 @@ def experience_nodes_to_context_string(nodes: list[dict[str, Any]]) -> str:
     if groups["education"]:
         lines = ["EDUCATION:"]
         for n in groups["education"]:
-            lines.append(f"  - {n['context_label']}")
+            lines.append(f"  - {_label(n)}")
             if n.get("description"):
                 lines.append(f"    {n['description']}")
         sections.append("\n".join(lines))
@@ -194,6 +194,13 @@ def experience_nodes_to_context_string(nodes: list[dict[str, Any]]) -> str:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _label(node: dict[str, Any]) -> str:
+    """A node's stored context_label, or one built from its fields (nodes not
+    read from the table, such as eval fixtures, have none)."""
+    return node.get("context_label") or _build_context_label(
+        node["node_type"], node["entity_name"], node.get("role"), node.get("start_date"), node.get("end_date"))
+
 
 def _deserialize(row: dict[str, Any]) -> dict[str, Any]:
     """Convert stored comma-separated domain_areas back to a list."""

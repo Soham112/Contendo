@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
@@ -209,3 +210,29 @@ def remove_sources_from_topics(source_ids: set[str], user_id: str) -> None:
         if kept != kids:
             supabase.table("topic_nodes").update({"child_source_ids": ",".join(kept)}) \
                 .eq("topic_id", topic["topic_id"]).eq("user_id", user_id).execute()
+
+
+def assign_source_to_topic(source_id: str, tags: list[str], user_id: str) -> str:
+    """Assign source to an existing topic (2+ tag overlap) or create a new one.
+
+    Returns the topic_id assigned.
+    """
+    existing_topic = find_matching_topic(tags, user_id=user_id)
+    if existing_topic:
+        topic_id = existing_topic["topic_id"]
+        add_source_to_topic(topic_id, source_id, user_id=user_id)
+        return topic_id
+
+    # No matching topic — create one with the first tag as the label
+    topic_id = str(uuid.uuid4())
+    topic_label = tags[0] if tags else "general"
+    upsert_topic_node(
+        topic_id=topic_id,
+        user_id=user_id,
+        topic_label=topic_label,
+        topic_summary="",
+        representative_tags=tags,
+        child_source_ids=[source_id],
+    )
+    return topic_id
+

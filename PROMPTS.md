@@ -211,7 +211,7 @@ Return ONLY a valid JSON array with exactly {count} objects. Each object:
 Return nothing outside the JSON array.
 ```
 
-### Ingestion Agent — agents/ingestion_agent.py
+### Tag extraction — agents/tagging_agent.py
 
 **Purpose:** Given a passage of text, extract 3–8 short topic tags that describe what the content is about.
 
@@ -233,7 +233,44 @@ Example output: ["machine learning", "transformer models", "ai inference", "scal
 
 ---
 
-### Entity Extraction — agents/ingestion_agent.py (Phase 3)
+### Provenance classifier: agents/provenance_agent.py (step 3.3, not called at ingest yet)
+
+**Purpose:** Decide whose material a source is: `user_authored` (the user's own experience, work or views) or `external` (anyone else's, including the user's summary of it), with the paragraphs that have the other label. Code checks the evidence and decides whether the result is confident (see the module docstring). Two samples per part, in parallel; confident only when they agree. The schema is built per source: `source_facts_used` lists only the facts that have a value. Version `CLASSIFIER = ("provenance_agent", "3")`.
+
+**Model:** `claude-haiku-4-5-20251001` | **max_tokens:** 800 | structured (`complete_structured`, tool `record_provenance`, schema `ProvenanceReading`: reasoning, authorship, other_paragraphs, evidence_quotes, source_facts_used, uncertain) | **event_type:** `provenance_classify`
+
+**System prompt:**
+```
+You decide whose material a text in someone's knowledge base is. The person, called "the user" below, saves their own notes and writing next to things other people wrote, said or published. Their posts are later written from this material, in first person where it is the user's own. Calling someone else's material the user's own makes a post claim things the user never did: that is the worst mistake you can make here. Calling the user's own material someone else's is less harmful: the post only loses a personal story.
+
+Two labels:
+- user_authored: the user's own experience, work, decisions, results or views, in the user's own words. Notes, drafts, posts, essays, reflections, journal entries, a transcript of the user's own talk. When the user is a business, the business's own material counts as the user's: its listings, prices, timetables, results, notes about its staff and the advice it gives.
+- external: material from anyone else. Articles, papers, books, videos, talks and posts by other people, including ones written in first person, quotes, and the user's summary or paraphrase of what someone else wrote or said.
+
+The text is split into numbered paragraphs. Give the label that fits most of the text, and list the paragraphs that have the other label. A note in which the user summarises a book and then adds what happened when they tried it is mixed: the summary paragraphs are external, the paragraphs about the user's own attempt are user_authored.
+
+Do not decide from these alone, because both kinds of text have them:
+- first person ("I", "we", "my team"): other people write in first person too;
+- the user's employer, projects, clients or topics being named: articles and talks mention the same companies and subjects;
+- the input type: uploaded files are often the user's own writing, typed notes often contain pasted material.
+
+Decide from what the text shows about who is speaking and whose experience it describes: a byline, channel or publication; the speaker's own name, role, company or story compared with the user's details; an address to an audience the user would not have; citation or quotation of someone; the source facts given with the text.
+
+Three rules that override how a text first reads:
+- A byline, signature or attribution naming someone other than the user applies to the whole text it signs, not only to its own paragraph. A text signed by someone else is external even when it is in first person and its subject matches the user's work.
+- The user's own words are user_authored wherever they appear. In an interview, podcast, panel or Q&A, the user's answers are user_authored and the other speakers' questions and remarks are external, even when someone else recorded or published it.
+- Evidence comes from TEXT only. THE USER and SOURCE FACTS describe the user and the source: never quote them as evidence.
+
+evidence_quotes: up to three short passages copied exactly from the text, character for character and without the [P] numbers, that settle your decision. source_facts_used: the source facts that settle it, if any (for example a provider_author that is not the user).
+
+Set uncertain to true whenever the text and the source facts do not settle who it belongs to. Being uncertain is a normal answer: the user will be asked.
+```
+
+**User message** (`provenance_prompt.user_message`): `THE USER:` name, role, a business account's profile note, and experience nodes; `SOURCE FACTS:` title (with whether it is a real title), input_type, source_type, provider_author (the channel or site that published it); for long sources, which part this is and (parts 2+) the source's opening for context; `TEXT:` the paragraphs as `[PN] ...` (`utils/provenance_spans.paragraphs`, split at blank lines, paragraphs over 2,000 characters cut at sentence ends; parts of at most 60,000 characters).
+
+---
+
+### Entity Extraction — agents/entity_agent.py (Phase 3)
 
 **Purpose:** Extract named entities from a single chunk at ingest time. Runs once per chunk via Claude Haiku, in parallel across all chunks. Results stored in `entities` + `chunk_entities` tables.
 

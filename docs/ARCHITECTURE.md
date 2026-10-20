@@ -200,7 +200,7 @@ Notes:
 
 - memory_context is decided once per document, so every chunk of a mixed document (own notes plus a quoted article) gets the same label.
 - experience_nodes come only from the profile form and resume extraction. They are not linked to the chunks that describe them, and hold roles and projects, not events (what happened, what was done, the outcome).
-- topic_nodes.topic_summary is written as an empty string when a topic is created (`agents/ingestion_agent.py · _assign_to_topic`) and nothing fills it later.
+- topic_nodes.topic_summary is written as an empty string when a topic is created (`memory/hierarchy_store.py · assign_source_to_topic`) and nothing fills it later.
 - No table for beliefs or opinions (only a list inside profiles.data), authority per topic, identities beyond the account segment, or strategy history (posts.archetype holds the structure only; no angle, hook or CTA).
 - `sources` is the record every derived row can be rebuilt from (migration 014). The 80 production sources (7 users, 2026-10-16) stored before it are `rebuilt_from_chunks`: text rebuilt from the chunks, line breaks lost, `raw_text` NULL, authorship NULL. Their files and images are gone; better extraction needs a re-upload.
 - Nothing reads `sources.authorship` or `embeddings.chunk_authorship` yet: they are written only by the user, a rule (business profile form, pillar details, onboarding story → `user_stated`) or, later, the provenance classifier, and read only once that classifier is measured on quality_v1. The pipeline's existing self/external "authorship" is a different thing, derived from frames (`utils/frames.py authorship`).
@@ -537,7 +537,7 @@ Notes:
 | Keyword search downloads the whole library on cache miss; Supabase caps it at 1,000 rows (confirmed; no user near it yet, max 149 chunks); a fallback to vector-only is only a log warning and isn't in the trace (0 clear fallbacks in 32 traces) | `backend/memory/vector_store.py · _fetch_corpus_for_bm25` | Steps 1 (verify) and 3-4 (Postgres BM25) |
 | memory_context and tags set once per document, not per chunk | `backend/agents/ingestion_agent.py · ingest_content` | Step 3 |
 | Experience nodes are roles from the profile form, not events, and not linked to chunks | `backend/memory/experience_store.py · backend/routers/profile.py` | Step 3 |
-| Topic summaries are never generated (always empty) | `backend/agents/ingestion_agent.py · _assign_to_topic` | Step 3 |
+| Topic summaries are never generated (always empty) | `backend/memory/hierarchy_store.py · assign_source_to_topic` | Step 3 |
 | Every past topic goes into the prompt; grows about 30 tokens per post | `backend/pipeline/graph.py · load_profile_node` | Step 3 (strategy history) |
 | Retrieval ranks by relevance only; outside articles can outrank the user's own notes | `backend/agents/retrieval_agent.py · retrieval_node` | Step 4 |
 | Source summaries, sibling chunks and topic summaries are fetched on every request but never reach the D-Opus-low prompt | `backend/agents/retrieval_agent.py · _build_retrieval_bundle` | Step 4 |
@@ -546,7 +546,7 @@ Notes:
 | Low coverage ends in an empty post | `backend/pipeline/graph.py · low_coverage_node` | Step 5 (cold start) |
 | No angle, hook, authority, beliefs or CTA logic | `backend/agents/archetype_agent.py · utils/formatters.py ARCHETYPES` | Step 5 |
 | Prompt about 18.4k tokens vs about 2.3k target | `backend/agents/one_call_prompt.py · draft_prompt.py` | Steps 4-5 |
-| Ingestion side steps (entities, summaries, consolidation) fail with only a log warning | `backend/agents/ingestion_agent.py` | Step 2 (audit how often) |
+| Ingestion side steps (entities, summaries, consolidation) fail with only a log warning | `backend/agents/ingestion_agent.py · entity_agent.py · summary_agent.py` | Step 2 (audit how often) |
 | Retrieval failure falls back to flat search, then to empty results (marked STOPGAP in code) | `backend/agents/retrieval_agent.py` | Step 4 |
 | `get_all_sources` has the same 1,000-row cap and selects every column, embeddings included | `backend/memory/vector_store.py · get_all_sources` | Step 3 (with the Postgres BM25 move) |
 | `source_nodes` and `topic_nodes` are empty in production (0 rows for 250 chunks) | `backend/memory/hierarchy_store.py · agents/ingestion_agent.py` | Step 2 (audit) |

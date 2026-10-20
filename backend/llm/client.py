@@ -78,7 +78,7 @@ client = anthropic.Anthropic(
 # run_in_threadpool copies the caller's context into the worker thread, so calls
 # made there are traced. ThreadPoolExecutor.submit() does NOT propagate
 # ContextVars, so calls made from executor threads (e.g. the parallel entity
-# extraction in ingestion_agent._store_entities_for_chunks) are not traced.
+# extraction in entity_agent.store_entities_for_chunks) are not traced.
 _trace: ContextVar[list[dict] | None] = ContextVar("llm_trace", default=None)
 # When the outermost trace_calls() block started, so each call records when it
 # began within the run (started_ms): sequential and parallel calls can be told apart.
@@ -210,7 +210,16 @@ def complete(
 
 class StructuredOutputError(RuntimeError):
     """A structured call did not return a valid answer. Callers decide what an
-    explicit failure looks like for them; they must not substitute a made-up one."""
+    explicit failure looks like for them; they must not substitute a made-up one.
+
+    `replies`: what each failed attempt returned, {"stop_reason", "tool_input"}
+    (tool_input None when there was no tool call), for a caller that keeps it
+    with its own data. Kept off the message: it may contain user content, and
+    messages go to logs."""
+
+    def __init__(self, message: str, replies: list[dict[str, Any]] | None = None):
+        super().__init__(message)
+        self.replies = replies or []
 
 
 class TruncatedStructuredOutputError(StructuredOutputError):
@@ -302,6 +311,7 @@ def complete_structured(
     complete() (the SDK retries those).
     """
     failures: list[str] = []
+    replies: list[dict[str, Any]] = []
     truncations = 0
     if models.spec(model).forced_tool_choice:
         tool_choice = {"type": "tool", "name": tool_name}
@@ -342,9 +352,11 @@ def complete_structured(
             except ValidationError as exc:
                 failure = f"reply does not match the schema: {_validation_summary(exc, schema)}"[:MAX_STRUCTURED_ERROR_CHARS]
         failures.append(failure)
+        replies.append({"stop_reason": message.stop_reason, "tool_input": tool_input})
         logger.warning("llm.complete_structured: %s attempt %d of 2 failed: %s", event_type, attempt, failure)
     error = TruncatedStructuredOutputError if truncations == 2 else StructuredOutputError
     raise error(
         f"{event_type}: no valid structured answer after 2 attempts. "
-        f"First: {failures[0]} Second: {failures[1]}"[:MAX_STRUCTURED_ERROR_CHARS]
+        f"First: {failures[0]} Second: {failures[1]}"[:MAX_STRUCTURED_ERROR_CHARS],
+        replies,
     )

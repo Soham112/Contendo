@@ -2,6 +2,7 @@
 title: I changed my mind about LLM-as-judge
 source_type: personal_note
 memory_context: work
+authorship: user_authored
 ---
 For most of 2025 I told customers not to use a model to grade a model. My view was that you cannot check a system with a copy of itself.
 

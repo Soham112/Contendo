@@ -2,6 +2,7 @@
 title: Gullwing: a side project that taught me docs-first
 source_type: personal_note
 memory_context: personal_project
+authorship: user_authored
 ---
 Gullwing is an open-source command-line tool I wrote on weekends in 2024 to diff the outputs of two prompts side by side. It has about 1,100 stars on GitHub.
 

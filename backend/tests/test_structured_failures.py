@@ -119,6 +119,25 @@ def test_complete_structured_returns_a_validated_model_or_raises(claude):
         assert len(claude.calls) == 2
 
 
+def test_failed_replies_are_kept_on_the_error_but_not_in_its_message(claude, caplog):
+    from pydantic import BaseModel
+
+    from llm.client import HAIKU, StructuredOutputError, complete_structured
+
+    class Answer(BaseModel):
+        value: int
+
+    claude.queue('{"value": "secret-many"}', "plain text")
+    with pytest.raises(StructuredOutputError) as raised:
+        complete_structured(schema=Answer, tool_name="answer", tool_description="d", model=HAIKU,
+                            messages=[{"role": "user", "content": "q"}], max_tokens=50,
+                            user_id=USER, event_type="test")
+    replies = raised.value.replies
+    assert replies[0] == {"stop_reason": "tool_use", "tool_input": {"value": "secret-many"}}
+    assert replies[1]["tool_input"] is None
+    assert "secret-many" not in str(raised.value) and "secret-many" not in caplog.text
+
+
 def test_complete_structured_retries_once_and_logs_both_attempts(claude, caplog):
     from pydantic import BaseModel
 

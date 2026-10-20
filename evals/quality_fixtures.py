@@ -89,6 +89,9 @@ def load_quality_persona(slug: str) -> Persona:
     if profile is not None and (not isinstance(profile, dict) or not profile.get("name") or not profile.get("role")):
         raise FixtureError(f"{root / 'profile.json'}: null, or an object with at least name and role")
     sources = [parse_source(p) for p in sorted((root / "sources").glob("*.md"))]
+    unlabelled = [s.path.name for s in sources if s.authorship is None]
+    if unlabelled:
+        raise FixtureError(f"{slug}: every source needs an authorship label: {unlabelled}")
     titles = [s.title for s in sources]
     if len(set(titles)) != len(titles):
         raise FixtureError(f"{slug}: source titles must be unique")
