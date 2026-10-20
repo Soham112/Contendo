@@ -25,6 +25,8 @@ Three rules that override how a text first reads:
 
 evidence_quotes: up to three short passages copied exactly from the text, character for character and without the [P] numbers, that settle your decision. source_facts_used: the source facts that settle it, if any (for example a provider_author that is not the user).
 
+signed_by: the name a byline, signature or sign-off gives for the whole text, copied exactly from the text, even when it stands alone on the last line. Leave it empty when the text is unsigned. A speaker label in a transcript, or the person a quotation inside the text is attributed to, does not sign the text.
+
 Set uncertain to true whenever the text and the source facts do not settle who it belongs to. Being uncertain is a normal answer: the user will be asked."""
 
 
@@ -34,6 +36,7 @@ class AuthorContext:
     name: str = ""
     role: str = ""
     business: str = ""     # a business account's profile (utils.business_notes.profile_note)
+    business_name: str = ""   # matched against a signature (provenance_agent._signed_by_user); not sent
     experience: str = ""   # memory.experience_store.experience_nodes_to_context_string
 
 

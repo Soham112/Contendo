@@ -233,11 +233,11 @@ Example output: ["machine learning", "transformer models", "ai inference", "scal
 
 ---
 
-### Provenance classifier: agents/provenance_agent.py (step 3.3, not called at ingest yet)
+### Provenance classifier: agents/provenance_agent.py (step 3.3, called at ingest; nothing reads the result yet)
 
-**Purpose:** Decide whose material a source is: `user_authored` (the user's own experience, work or views) or `external` (anyone else's, including the user's summary of it), with the paragraphs that have the other label. Code checks the evidence and decides whether the result is confident (see the module docstring). Two samples per part, in parallel; confident only when they agree. The schema is built per source: `source_facts_used` lists only the facts that have a value. Version `CLASSIFIER = ("provenance_agent", "3")`.
+**Purpose:** Decide whose material a source is: `user_authored` (the user's own experience, work or views) or `external` (anyone else's, including the user's summary of it), with the paragraphs that have the other label. Code checks the evidence and decides whether the result is confident (see the module docstring). Two samples per part, in parallel; confident only when they agree. The schema is built per source: `source_facts_used` lists only the facts that have a value. Version `CLASSIFIER = ("provenance_agent", "4")`: v4 adds `signed_by`; code makes a reading not confident when the signature is not in the text, or names someone other than the user (no word of the user's name) while some paragraph is labelled the user's.
 
-**Model:** `claude-haiku-4-5-20251001` | **max_tokens:** 800 | structured (`complete_structured`, tool `record_provenance`, schema `ProvenanceReading`: reasoning, authorship, other_paragraphs, evidence_quotes, source_facts_used, uncertain) | **event_type:** `provenance_classify`
+**Model:** `claude-haiku-4-5-20251001` | **max_tokens:** 800 | structured (`complete_structured`, tool `record_provenance`, schema `ProvenanceReading`: reasoning, signed_by, authorship, other_paragraphs, evidence_quotes, source_facts_used, uncertain) | **event_type:** `provenance_classify`
 
 **System prompt:**
 ```
@@ -262,6 +262,8 @@ Three rules that override how a text first reads:
 - Evidence comes from TEXT only. THE USER and SOURCE FACTS describe the user and the source: never quote them as evidence.
 
 evidence_quotes: up to three short passages copied exactly from the text, character for character and without the [P] numbers, that settle your decision. source_facts_used: the source facts that settle it, if any (for example a provider_author that is not the user).
+
+signed_by: the name a byline, signature or sign-off gives for the whole text, copied exactly from the text, even when it stands alone on the last line. Leave it empty when the text is unsigned. A speaker label in a transcript, or the person a quotation inside the text is attributed to, does not sign the text.
 
 Set uncertain to true whenever the text and the source facts do not settle who it belongs to. Being uncertain is a normal answer: the user will be asked.
 ```

@@ -136,7 +136,8 @@ def _storage_path(user_id: str, source_id: str, original: SourceOriginal, sha256
 
 
 def _content_fields(user_id: str, source_id: str, original: SourceOriginal, *,
-                    title: str, extracted_text: str, content_hash: str, lang: str | None) -> dict[str, Any]:
+                    title: str, extracted_text: str, content_hash: str, lang: str | None,
+                    authorship_detail: dict | None) -> dict[str, Any]:
     fields: dict[str, Any] = {
         "status": "pending",
         "input_type": original.input_type,
@@ -164,7 +165,7 @@ def _content_fields(user_id: str, source_id: str, original: SourceOriginal, *,
         "rebuild_hash_match": None,
         "authorship": original.authorship,
         "authorship_set_by": original.authorship_set_by,
-        "authorship_detail": None,
+        "authorship_detail": authorship_detail,
         "updated_at": _now(),
     }
     if original.raw_bytes is not None:
@@ -223,10 +224,12 @@ class SourceWrite:
 
 
 def begin_source(user_id: str, source_id: str, original: SourceOriginal, *,
-                 title: str, extracted_text: str, content_hash: str, lang: str | None) -> SourceWrite:
+                 title: str, extracted_text: str, content_hash: str, lang: str | None,
+                 authorship_detail: dict | None = None) -> SourceWrite:
     """Steps 1-2 for a new source. On an upload failure the row is removed and the error raised."""
     fields = _content_fields(user_id, source_id, original, title=title,
-                             extracted_text=extracted_text, content_hash=content_hash, lang=lang)
+                             extracted_text=extracted_text, content_hash=content_hash, lang=lang,
+                             authorship_detail=authorship_detail)
     write = SourceWrite(user_id, source_id, new_ingest_id(), fields)
     supabase.table("sources").insert(
         {"source_id": source_id, "user_id": user_id, "ingest_id": write.ingest_id, **fields}
@@ -240,7 +243,8 @@ def begin_source(user_id: str, source_id: str, original: SourceOriginal, *,
 
 
 def begin_replace(user_id: str, source_id: str, original: SourceOriginal, *,
-                  title: str, extracted_text: str, content_hash: str, lang: str | None) -> SourceWrite:
+                  title: str, extracted_text: str, content_hash: str, lang: str | None,
+                  authorship_detail: dict | None = None) -> SourceWrite:
     """New content for an existing source (same source_id). The old content,
     chunks and object stay live until commit(); abort() or a crash leaves them
     intact. The row records the replace in `pending_replace` first, so a crash
@@ -252,7 +256,8 @@ def begin_replace(user_id: str, source_id: str, original: SourceOriginal, *,
     if old.get("pending_replace") and datetime.fromisoformat(old["updated_at"]) < _stale_cutoff_dt():
         _resolve_stale_replace(old)
     fields = _content_fields(user_id, source_id, original, title=title,
-                             extracted_text=extracted_text, content_hash=content_hash, lang=lang)
+                             extracted_text=extracted_text, content_hash=content_hash, lang=lang,
+                             authorship_detail=authorship_detail)
     fields.pop("status")
     pending = {"ingest_id": new_ingest_id(), "raw_storage_path": fields["raw_storage_path"],
                "old_storage_path": old.get("raw_storage_path")}

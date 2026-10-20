@@ -213,7 +213,8 @@ def test_ingest_content_passes_user_id_to_every_claude_call(claude, usage_calls)
     ingest_content(text, source_type="note", user_id=USER, original=typed_text(text=text, title_provided=False))
 
     events = {e for e, _ in _events(usage_calls)}
-    assert {"ingest_tags", "memory_context_classify", "ingest_summary", "ingest_entities"} <= events
+    assert {"ingest_tags", "provenance_classify", "memory_context_classify", "ingest_summary",
+            "ingest_entities"} <= events
     _assert_user(usage_calls)
 
 

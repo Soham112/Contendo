@@ -4,7 +4,7 @@ input_type: note
 source_type: personal_note
 title_origin: derived
 authorship: external
-split: holdout
+split: dev
 tests: someone else's signed first-person post on the user's subject
 ---
 Every changeover project I run ends with shadow boards, and every client thinks the boards are the result. They are not.

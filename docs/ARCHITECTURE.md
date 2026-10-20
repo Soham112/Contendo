@@ -1,6 +1,6 @@
 # Contendo architecture
 
-Drawn from the code at commit `f7b3af9` plus the working changes on `feat/business-block`, 2026-10-16. **Update the affected diagram in the same PR as any change to ingestion, storage, retrieval or generation.**
+Drawn from the code at commit `a448ac6` plus the working changes on `feature/provenance-backend`, 2026-10-19. **Update the affected diagram in the same PR as any change to ingestion, storage, retrieval or generation.**
 
 Legend (flowcharts): green = built and working · orange = built, known issue · purple dashed = planned · blue = storage · grey = external service.
 
@@ -120,7 +120,7 @@ erDiagram
     text source_type "note, article, video, image, ..."
     text tags "comma text, one set per document"
     text memory_context "work, personal_project, learning, observation"
-    text chunk_authorship "NULL = same as its source; not written yet"
+    text chunk_authorship "NULL = same as its source; from authorship_detail spans; not read yet"
     text node_type "chunk or consolidation"
     text content_hash "dedupe"
     int chunk_index
@@ -203,7 +203,7 @@ Notes:
 - topic_nodes.topic_summary is written as an empty string when a topic is created (`memory/hierarchy_store.py · assign_source_to_topic`) and nothing fills it later.
 - No table for beliefs or opinions (only a list inside profiles.data), authority per topic, identities beyond the account segment, or strategy history (posts.archetype holds the structure only; no angle, hook or CTA).
 - `sources` is the record every derived row can be rebuilt from (migration 014). The 80 production sources (7 users, 2026-10-16) stored before it are `rebuilt_from_chunks`: text rebuilt from the chunks, line breaks lost, `raw_text` NULL, authorship NULL. Their files and images are gone; better extraction needs a re-upload.
-- Nothing reads `sources.authorship` or `embeddings.chunk_authorship` yet: they are written only by the user, a rule (business profile form, pillar details, onboarding story → `user_stated`) or, later, the provenance classifier, and read only once that classifier is measured on quality_v1. The pipeline's existing self/external "authorship" is a different thing, derived from frames (`utils/frames.py authorship`).
+- Nothing reads `sources.authorship` or `embeddings.chunk_authorship` yet: they are written by the user (`PATCH /sources/{id}/authorship`), a rule (business profile form, pillar details, onboarding story → `user_stated`) or the provenance classifier (at ingest and by `scripts/backfill_authorship.py`; label only when confident), and read only once classifier v3 is measured. The pipeline's existing self/external "authorship" is a different thing, derived from frames (`utils/frames.py authorship`).
 - `sources` has no FK from embeddings because consolidation rows put an entity id in `source_id`. Identities (step 3, decision 4) add `identity_id` to `sources` when that table exists.
 - Migration 016: deleting a chunk removes its `chunk_entities` links and deleting a `sources` row its `source_nodes` row (`ON DELETE CASCADE`). Since 017, a source's retrieval count goes the same way. Consolidation chunks, entities left without a chunk and topic children are cleaned up by `memory/derived_store.py` (diagram 3).
 - Chunk ids are unique per ingest (`ingest_id`); chunks written before 016 keep `{source_id}_{chunk_index}`. Nothing parses an id.
@@ -228,6 +228,8 @@ flowchart TD
   lang -->|"English or undetermined<br/>stored as sources.lang"| dup{"content_hash already stored?"}
   dup -->|yes| skip["Duplicate, named and replaceable · no model calls<br/>a user Replace goes on: same source refreshed in place<br/>a text-matched Replace with other text: 409"]
   dup -->|no| tags["Sonnet: 3-8 tags for the whole document<br/>from its first 1,500 words"]
+  dup -->|"no, and no rule or user label<br/>in parallel with tags"| prov["Haiku provenance classifier, 2 samples per part<br/>user_authored or external, passages as offsets<br/>label written only when confident · detail always<br/>spans mapped onto chunk_authorship · not read yet"]
+  prov --> pend
   tags --> ctxq{"valid memory_context chosen by user?"}
   ctxq -->|yes| one["One label for every chunk of the document"]
   ctxq -->|no| xref["Match against experience_nodes"]
@@ -262,6 +264,7 @@ flowchart TD
   pdet["/generate with pillar_details"] -->|"details_note, titled by pillar"| ic
   class i1,i2,i3,i4,i5,i6,dupk,dupr,ext,ic,chunk,lang,langr,tags,emb,inval,ent,summ,consC,xref,skip,bizA,pdet,pend,ready,sweep,casc,delp built
   class one,cls,topic,hier issue
+  class prov planned
   class rows,rows2,entT,exp,prof,acct,srcT,obj store
   classDef built fill:#d6eadc,stroke:#2f7a4f,color:#10261a
   classDef issue fill:#f6dfc4,stroke:#b5651d,color:#2b1a08
@@ -272,6 +275,7 @@ flowchart TD
 
 Notes:
 
+- Provenance (step 3.3, purple: built but classifier v3 not measured, nothing reads it): whose material a source is, per source with passage offsets mapped onto chunks. A rule's label or, on Replace, the user's earlier choice skips it; an API error or no valid answer leaves the source unknown.
 - Classification is per document, not per chunk (orange). This is where a user's own XLR8 notes and an article about the same technology can end up indistinguishable.
 - Nothing extracts experience events, beliefs or writing style from content as it arrives. Those are the spec's creator-intelligence items.
 - LinkedIn profile import (Apify or Zernio) is not built yet.
@@ -535,6 +539,7 @@ Notes:
 |---|---|---|
 | Shared view-contract loophole affects individual and business users: the draft prompt defines `[[V]]` as stating no fact, but “Don't make claims about what most people... unless a source says so; state it as the author's view instead” invites unsupported facts to be relabelled as views. Specifics detect only numbers, money, durations and dates; pipeline checks record issues without enforcing them. | `backend/agents/draft_prompt.py`; `backend/utils/specifics.py`; `backend/pipeline/checks.py:294` | Planned `fix/view-contract`: global view contract plus semantic grounding of factual spans after first text; enforcement and latency to be decided. |
 | Keyword search downloads the whole library on cache miss; Supabase caps it at 1,000 rows (confirmed; no user near it yet, max 149 chunks); a fallback to vector-only is only a log warning and isn't in the trace (0 clear fallbacks in 32 traces) | `backend/memory/vector_store.py · _fetch_corpus_for_bm25` | Steps 1 (verify) and 3-4 (Postgres BM25) |
+| Provenance classifier v3 is wired in but not measured; nothing reads `authorship` until one paid run passes the targets | `backend/agents/provenance_agent.py · backend/agents/ingestion_agent.py` | Step 3.3 measurement |
 | memory_context and tags set once per document, not per chunk | `backend/agents/ingestion_agent.py · ingest_content` | Step 3 |
 | Experience nodes are roles from the profile form, not events, and not linked to chunks | `backend/memory/experience_store.py · backend/routers/profile.py` | Step 3 |
 | Topic summaries are never generated (always empty) | `backend/memory/hierarchy_store.py · assign_source_to_topic` | Step 3 |

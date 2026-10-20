@@ -17,7 +17,6 @@ import env  # noqa: F401  (must be the first project import)
 
 import argparse
 import json
-import math
 import sys
 from pathlib import Path
 from typing import Any
@@ -30,14 +29,6 @@ from spend import SpendCap
 RUNS_DIR = config.RESULTS_DIR / "provenance"
 EVAL_USER = "eval-provenance"
 DEFAULT_SPEND_CAP_USD = 1.00
-
-# Offline estimate: characters per token for English prose (expected), and a
-# denser ratio for the upper bound; the forced tool call's own system prompt;
-# a typical answer, and max_tokens for the upper bound.
-CHARS_PER_TOKEN, CHARS_PER_TOKEN_UPPER = 3.5, 3.0
-TOOL_USE_OVERHEAD_TOKENS = 350
-TYPICAL_OUTPUT_TOKENS = 300
-
 
 def _prepared(case: pf.Case) -> dict[str, Any]:
     """The classifier's inputs for a case, and its labels per paragraph."""
@@ -57,17 +48,6 @@ def _prepared(case: pf.Case) -> dict[str, Any]:
             "truth": truth, "facts": facts, "author": author_context_from(*pf.persona_details(case.persona))}
 
 
-def _request_chars(prepared: dict[str, Any]) -> list[int]:
-    """Characters sent per call: system prompt, tool definition, message."""
-    from agents.provenance_agent import TOOL_DESCRIPTION, TOOL_NAME, plan_requests, reading_schema
-    from agents.provenance_prompt import SYSTEM_PROMPT
-
-    schema = reading_schema(prepared["facts"]).model_json_schema()
-    fixed = len(SYSTEM_PROMPT) + len(TOOL_NAME) + len(TOOL_DESCRIPTION) + len(json.dumps(schema))
-    return [fixed + len(r.message) for r in plan_requests(prepared["case"].content, facts=prepared["facts"],
-                                                          author=prepared["author"])]
-
-
 def _count_tokens(prepared: dict[str, Any]) -> list[int]:
     """Exact input tokens per call from the token-counting endpoint (free)."""
     from agents.provenance_agent import TOOL_DESCRIPTION, TOOL_NAME, plan_requests, reading_schema
@@ -83,27 +63,18 @@ def _count_tokens(prepared: dict[str, Any]) -> list[int]:
 
 
 def estimate(prepared: list[dict[str, Any]], count_tokens: bool = False) -> dict[str, Any]:
-    """Expected and upper-bound USD for one run: SAMPLES calls per part, and a
-    structured call is retried at most once, so the upper bound doubles every call."""
-    from agents.provenance_agent import MAX_TOKENS, SAMPLES
-    from llm.client import HAIKU
-    from llm.pricing import call_cost
+    """Expected and upper-bound USD for one run (provenance_agent.call_costs)."""
+    from agents.provenance_agent import call_costs, estimated_tokens, request_chars
 
-    calls = expected = upper = 0.0
-    tokens_in = 0
+    pairs: list[tuple[int, int]] = []
     for p in prepared:
         if count_tokens:
-            counted = _count_tokens(p)
-            pairs = [(t, t) for t in counted]
+            pairs += [(t, t) for t in _count_tokens(p)]
         else:
-            pairs = [(math.ceil(c / CHARS_PER_TOKEN) + TOOL_USE_OVERHEAD_TOKENS,
-                      math.ceil(c / CHARS_PER_TOKEN_UPPER) + TOOL_USE_OVERHEAD_TOKENS) for c in _request_chars(p)]
-        for exp_in, up_in in pairs:
-            calls += SAMPLES
-            tokens_in += SAMPLES * exp_in
-            expected += SAMPLES * call_cost(HAIKU, exp_in, TYPICAL_OUTPUT_TOKENS)
-            upper += SAMPLES * 2 * call_cost(HAIKU, up_in, MAX_TOKENS)
-    return {"cases": len(prepared), "calls": int(calls), "input_tokens": tokens_in,
+            pairs += [estimated_tokens(c) for c in request_chars(p["case"].content, facts=p["facts"],
+                                                                  author=p["author"])]
+    calls, tokens_in, expected, upper = call_costs(pairs)
+    return {"cases": len(prepared), "calls": calls, "input_tokens": tokens_in,
             "expected_usd": expected, "upper_usd": upper, "counted": count_tokens}
 
 
@@ -236,6 +207,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     cost = estimate(prepared, count_tokens=args.count_tokens)
+    from agents.provenance_agent import CHARS_PER_TOKEN
     how = "counted" if cost["counted"] else f"estimated at {CHARS_PER_TOKEN} chars/token"
     print(f"{cost['calls']} calls, {cost['input_tokens']} input tokens ({how}). "
           f"Expected ${cost['expected_usd']:.4f}, upper bound ${cost['upper_usd']:.4f} (every call retried at max_tokens).")

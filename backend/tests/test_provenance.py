@@ -22,9 +22,10 @@ NOTE = ("I took 200 real tickets from our design partner and compared replies by
         "It took me six hours a week, every Friday.")
 
 
-def reading(authorship="user_authored", other=(), quotes=(), facts=(), uncertain=False) -> str:
-    return json.dumps({"reasoning": "who speaks", "authorship": authorship, "other_paragraphs": list(other),
-                       "evidence_quotes": list(quotes), "source_facts_used": list(facts), "uncertain": uncertain})
+def reading(authorship="user_authored", other=(), quotes=(), facts=(), uncertain=False, signed_by=None) -> str:
+    return json.dumps({"reasoning": "who speaks", "signed_by": signed_by, "authorship": authorship,
+                       "other_paragraphs": list(other), "evidence_quotes": list(quotes),
+                       "source_facts_used": list(facts), "uncertain": uncertain})
 
 
 def classify(text=NOTE, facts=NOTE_FACTS):
@@ -285,3 +286,53 @@ def test_a_person_account_has_no_business_block(claude):
     claude.queue(*[reading(quotes=["It took me six hours a week"])] * 2)
     classify_provenance(NOTE, facts=NOTE_FACTS, author=context, user_id=USER)
     assert "A business account" not in claude.calls[0]["messages"][-1]["content"]
+
+
+# --- Signatures (v4) -----------------------------------------------------------------------------
+
+SIGNED = NOTE + "\n\nRavi Mehta, lean coach"
+
+
+def _classify_signed(text=SIGNED, author=AUTHOR):
+    return classify_provenance(text, facts=NOTE_FACTS, author=author, user_id=USER)
+
+
+def test_a_reading_that_names_someone_elses_signature_but_labels_text_own_is_not_confident(claude):
+    claude.queue(*[reading(other=[3], quotes=["It took me six hours a week"], signed_by="Ravi Mehta, lean coach")] * 2)
+    result = _classify_signed()
+    assert not result.confident
+    assert any("signed by someone other than the user" in r for r in result.reasons)
+
+
+def test_someone_elses_signature_on_an_external_reading_is_confident(claude):
+    claude.queue(*[reading("external", quotes=["Ravi Mehta, lean coach"], signed_by="Ravi Mehta, lean coach")] * 2)
+    result = _classify_signed()
+    assert result.confident and result.authorship == "external"
+
+
+@pytest.mark.parametrize("signature,author,confident", [
+    ("Maya Rao", AUTHOR, True),                                        # the user's full name
+    ("— maya  rao, founder", AUTHOR, True),                            # case, spacing and role around it
+    ("Maya", AUTHOR, False),                                           # a first name alone is asked about
+    ("Maya Raoul", AUTHOR, False),                                     # a different name sharing letters
+    ("The Fernleigh Homes team", AuthorContext(business_name="Fernleigh Homes"), True),
+    ("Brookfield Homes", AuthorContext(business_name="Fernleigh Homes"), False),
+])
+def test_a_signature_matches_the_user_only_by_full_name(claude, signature, author, confident):
+    text = NOTE + "\n\n" + signature
+    claude.queue(*[reading(quotes=["It took me six hours a week"], signed_by=signature)] * 2)
+    assert _classify_signed(text=text, author=author).confident is confident
+
+
+def test_a_signature_not_in_the_text_is_not_confident(claude):
+    claude.queue(*[reading(quotes=["It took me six hours a week"], signed_by="Maya Rao")] * 2)
+    result = classify()
+    assert not result.confident and any("signature is not in the text" in r for r in result.reasons)
+
+
+def test_business_name_comes_from_a_business_account_only():
+    from agents.provenance_agent import author_context_from
+    business = {"segment": "business", "business_profile": {"business_name": "Fernleigh Homes"}}
+    assert author_context_from(None, business, []).business_name == "Fernleigh Homes"
+    person = {"segment": "person", "business_profile": {"business_name": "Side Gig"}}
+    assert author_context_from({"name": "Maya Rao"}, person, []).business_name == ""

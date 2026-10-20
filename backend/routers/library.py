@@ -1,9 +1,12 @@
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from auth.supabase_jwt import get_user_id_dep
-from memory.source_store import delete_source
+from memory.authorship_store import set_user_authorship
+from memory.source_store import ReplaceInProgress, delete_source
 from memory.vector_store import get_all_sources, get_total_chunks
 from memory.retrieval_stats_store import get_retrieval_counts
 
@@ -12,6 +15,11 @@ router = APIRouter()
 
 class DeleteSourceRequest(BaseModel):
     source_id: str = Field(min_length=1)
+
+
+class AuthorshipRequest(BaseModel):
+    # user_stated and system_inferred are set by rule only.
+    authorship: Literal["user_authored", "external"]
 
 
 @router.get("/library")
@@ -101,3 +109,20 @@ async def delete_library_source(
         "chunks_removed": chunks_removed,
         "message": f"Removed {chunks_removed} chunk{'s' if chunks_removed != 1 else ''}",
     }
+
+
+@router.patch("/sources/{source_id}/authorship")
+async def set_source_authorship(
+    source_id: str,
+    req: AuthorshipRequest,
+    user_id: str = Depends(get_user_id_dep),
+) -> dict:
+    """The user says whose material a source is (step 3.3). Their choice wins
+    over rule and classifier, is kept on Replace, and relabels the chunks."""
+    try:
+        result = await run_in_threadpool(set_user_authorship, source_id, user_id, req.authorship)
+    except ReplaceInProgress:
+        raise HTTPException(status_code=409, detail="This source is being replaced. Try again in a moment.")
+    if result is None:
+        raise HTTPException(status_code=404, detail="Source not found")
+    return result
