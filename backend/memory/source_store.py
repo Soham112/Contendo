@@ -327,6 +327,15 @@ def get_source(source_id: str, user_id: str) -> dict | None:
     return rows[0] if rows else None
 
 
+def get_authorships(user_id: str) -> dict[str, dict]:
+    """source_id -> {authorship, authorship_set_by} for the user's sources (the
+    Library card's label; NULL authorship means the user is asked)."""
+    rows = (supabase.table("sources").select("source_id,authorship,authorship_set_by")
+            .eq("user_id", user_id).execute().data or [])
+    return {r["source_id"]: {"authorship": r.get("authorship"),
+                             "authorship_set_by": r.get("authorship_set_by")} for r in rows}
+
+
 def find_source_id(user_id: str, input_type: str) -> str | None:
     """The user's newest source of this input type (for one-per-user sources
     like the business profile note)."""

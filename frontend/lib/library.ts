@@ -46,3 +46,87 @@ export async function deleteOutcome(response: Response): Promise<DeleteOutcome> 
   }
   return { ok: false, message: DELETE_FAILED_MESSAGE };
 }
+
+// ── Authorship (provenance step 3.3) ─────────────────────────────────────────
+
+/** Who wrote a source. user_stated and system_inferred are set by rule only. */
+export type Authorship = "user_authored" | "user_stated" | "external" | "system_inferred";
+/** What the user can choose (PATCH /sources/{id}/authorship). */
+export type AuthorshipChoice = "user_authored" | "external";
+export type AuthorshipSetBy = "user" | "classifier" | "rule";
+
+export interface AuthorshipFields extends SourceRef {
+  authorship?: string | null;
+  authorship_set_by?: string | null;
+}
+
+const AUTHORSHIP_LABELS: Record<Authorship, string> = {
+  user_authored: "Your writing",
+  external: "Someone else's",
+  user_stated: "Your answer to Contendo",
+  system_inferred: "Made by Contendo",
+};
+
+export const AUTHORSHIP_QUESTION = "Is this your own writing or experience?";
+export const AUTHORSHIP_CHOICES: { value: AuthorshipChoice; label: string }[] = [
+  { value: "user_authored", label: "Yes, mine" },
+  { value: "external", label: "No, someone else's" },
+];
+
+export type AuthorshipView =
+  | { kind: "ask" }
+  | { kind: "label"; authorship: Authorship; label: string; note: string | null; editable: boolean };
+
+/**
+ * What a Library card shows. No label (the classifier was not confident, or the
+ * source predates it): the user is asked. The user's choice is marked as theirs;
+ * a classifier label is marked as Contendo's guess; both can be changed. Rule
+ * labels are facts of the input path (a profile answer, an image description)
+ * and cannot be changed here. An unknown value is asked about, never guessed.
+ */
+export function authorshipView(source: AuthorshipFields): AuthorshipView {
+  const a = source.authorship;
+  if (!a || !(a in AUTHORSHIP_LABELS)) return { kind: "ask" };
+  const authorship = a as Authorship;
+  const label = AUTHORSHIP_LABELS[authorship];
+  if (authorship === "user_stated" || authorship === "system_inferred") {
+    return { kind: "label", authorship, label, note: null, editable: false };
+  }
+  const note = source.authorship_set_by === "user" ? "Set by you"
+    : source.authorship_set_by === "classifier" ? "Contendo's guess" : null;
+  return { kind: "label", authorship, label, note, editable: true };
+}
+
+/** Sources the "Needs your answer" filter shows. */
+export function needsAnswer(source: AuthorshipFields): boolean {
+  return authorshipView(source).kind === "ask";
+}
+
+/** The list with one source labelled by the user, as the backend just confirmed. */
+export function applyAuthorship<T extends AuthorshipFields>(sources: T[], sourceId: string, authorship: AuthorshipChoice): T[] {
+  return sources.map((s) => (s.source_id === sourceId ? { ...s, authorship, authorship_set_by: "user" } : s));
+}
+
+export const AUTHORSHIP_FAILED_MESSAGE = "Couldn't save this. Refresh and try again.";
+export const AUTHORSHIP_BUSY_MESSAGE = "This source is being replaced. Try again in a moment.";
+
+export type AuthorshipOutcome = { ok: true; authorship: AuthorshipChoice } | { ok: false; message: string };
+
+/**
+ * What a PATCH /sources/{id}/authorship response means. Only a 2xx whose body
+ * echoes the requested label as set by the user counts as saved; the card
+ * changes only then. 409 (a replace is running) gets its own message.
+ */
+export async function authorshipOutcome(response: Response, requested: AuthorshipChoice): Promise<AuthorshipOutcome> {
+  if (response.status === 409) return { ok: false, message: AUTHORSHIP_BUSY_MESSAGE };
+  if (!response.ok) return { ok: false, message: AUTHORSHIP_FAILED_MESSAGE };
+  try {
+    const body = await response.json();
+    if (body?.authorship === requested && body.authorship_set_by === "user") {
+      return { ok: true, authorship: requested };
+    }
+  } catch {
+    // fall through: an unreadable body is not a confirmation
+  }
+  return { ok: false, message: AUTHORSHIP_FAILED_MESSAGE };
+}
